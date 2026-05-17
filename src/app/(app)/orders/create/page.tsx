@@ -4,13 +4,17 @@ import { Permission } from "@/lib/constants/permissions";
 import { CURRENCIES } from "@/lib/constants/enums";
 import { requirePermission } from "@/server/auth/session";
 import { getSettings } from "@/server/services/settings.service";
+import { listActiveProviders } from "@/server/services/provider.service";
 
 export const metadata = { title: "Create order" };
 export const dynamic = "force-dynamic";
 
 export default async function CreateOrderPage() {
   await requirePermission(Permission.ORDER_CREATE);
-  const settings = await getSettings();
+  const [settings, providers] = await Promise.all([
+    getSettings(),
+    listActiveProviders(),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -22,6 +26,7 @@ export default async function CreateOrderPage() {
         allowedBookingTypes={settings.allowedBookingTypes}
         defaultCurrency={settings.defaultCurrency}
         allowedCurrencies={CURRENCIES}
+        providers={providers}
       />
     </div>
   );

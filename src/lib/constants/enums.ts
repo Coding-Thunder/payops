@@ -72,6 +72,12 @@ export const AuditAction = {
   EMAIL_FAILED: "EMAIL_FAILED",
 
   SETTINGS_UPDATED: "SETTINGS_UPDATED",
+
+  PROVIDER_CREATED: "PROVIDER_CREATED",
+  PROVIDER_UPDATED: "PROVIDER_UPDATED",
+  PROVIDER_STATUS_CHANGED: "PROVIDER_STATUS_CHANGED",
+  PROVIDER_LOGO_REPLACED: "PROVIDER_LOGO_REPLACED",
+  PROVIDER_ARCHIVED: "PROVIDER_ARCHIVED",
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 
@@ -82,6 +88,7 @@ export const AuditEntity = {
   SETTINGS: "SETTINGS",
   WEBHOOK: "WEBHOOK",
   SYSTEM: "SYSTEM",
+  PROVIDER: "PROVIDER",
 } as const;
 export type AuditEntity = (typeof AuditEntity)[keyof typeof AuditEntity];
 

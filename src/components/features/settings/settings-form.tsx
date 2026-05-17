@@ -24,6 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
 import { Section, SectionStack } from "@/components/common/section";
 import { api, ApiClientError } from "@/lib/api-client";
@@ -228,10 +229,17 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
                     <FormControl>
                       <Input
                         type="url"
-                        disabled={!canEdit || isSubmitting}
+                        readOnly
+                        disabled
+                        aria-disabled="true"
+                        className="font-mono text-[12.5px]"
                         {...field}
                       />
                     </FormControl>
+                    <FormDescription>
+                      Computed from the <code>APP_URL</code> environment
+                      variable. Change the deploy config to update.
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -245,15 +253,49 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
                     <FormControl>
                       <Input
                         type="url"
-                        disabled={!canEdit || isSubmitting}
+                        readOnly
+                        disabled
+                        aria-disabled="true"
+                        className="font-mono text-[12.5px]"
                         {...field}
                       />
                     </FormControl>
+                    <FormDescription>
+                      Computed from the <code>APP_URL</code> environment
+                      variable. Change the deploy config to update.
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
             </div>
+          </Section>
+
+          <Section
+            title="Cancellation & refund policy"
+            description="Shown in every confirmation email. Snapshotted onto each order at creation so disputes can attach the exact terms the customer paid against. Saving a change auto-bumps the policy version; existing orders keep pointing at the older version they were created under."
+          >
+            <FormField
+              control={form.control}
+              name="cancellationPolicy"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Policy text</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      rows={8}
+                      placeholder="One rule per line — paragraphs render with subtle spacing in the email."
+                      disabled={!canEdit || isSubmitting}
+                      {...field}
+                    />
+                  </FormControl>
+                  <p className="text-[11.5px] text-muted-foreground">
+                    20–4,000 characters. Use one statement per line.
+                  </p>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </Section>
         </SectionStack>
 

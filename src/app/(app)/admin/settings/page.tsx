@@ -29,6 +29,7 @@ export default async function AdminSettingsPage() {
           supportPhone: settings.supportPhone,
           successRedirectUrl: settings.successRedirectUrl,
           cancelRedirectUrl: settings.cancelRedirectUrl,
+          cancellationPolicy: settings.cancellationPolicy,
         }}
         canEdit={canEdit}
       />

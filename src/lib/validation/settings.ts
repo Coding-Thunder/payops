@@ -17,6 +17,11 @@ export const updateSettingsSchema = z.object({
   supportPhone: z.string().trim().min(5).max(32),
   successRedirectUrl: z.string().url(),
   cancelRedirectUrl: z.string().url(),
+  cancellationPolicy: z
+    .string()
+    .trim()
+    .min(20, "Policy must be at least 20 characters")
+    .max(4000, "Policy must be 4000 characters or fewer"),
 });
 
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;

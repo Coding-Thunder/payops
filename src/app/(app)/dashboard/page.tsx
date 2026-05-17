@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ActivityFeed } from "@/components/features/activity/activity-feed";
 import { OrderTable } from "@/components/features/orders/order-table";
+import { ProviderBadge } from "@/components/features/providers";
 import { Aurora } from "@/components/brand/aurora";
 import { FadeIn } from "@/components/motion/fade-in";
 import { PageHeader } from "@/components/common/page-header";
@@ -95,36 +96,36 @@ export default async function DashboardPage() {
         </FadeIn>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <FadeIn delay={60} className="space-y-3 lg:col-span-2">
-          <div className="flex items-center justify-between">
-            <h2 className="text-[14px] font-semibold tracking-tight">
-              {canSeeAll ? "Recent orders" : "Your recent orders"}
-            </h2>
-            <Button asChild variant="ghost" size="sm">
-              <Link href="/orders">
-                View all
-                <ArrowRightIcon className="size-3" />
+      {/* Stacked, full-width: keeps the orders table from forcing an
+          inner horizontal scroll when squeezed into a 2/3 grid column. */}
+      <FadeIn delay={60} className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-[14px] font-semibold tracking-tight">
+            {canSeeAll ? "Recent orders" : "Your recent orders"}
+          </h2>
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/orders">
+              View all
+              <ArrowRightIcon className="size-3" />
+            </Link>
+          </Button>
+        </div>
+        <OrderTable
+          items={recent.items}
+          emptyAction={
+            <Button asChild>
+              <Link href="/orders/create">
+                <PlusIcon className="size-3.5" />
+                Create your first order
               </Link>
             </Button>
-          </div>
-          <OrderTable
-            items={recent.items}
-            emptyAction={
-              <Button asChild>
-                <Link href="/orders/create">
-                  <PlusIcon className="size-3.5" />
-                  Create your first order
-                </Link>
-              </Button>
-            }
-          />
-        </FadeIn>
+          }
+        />
+      </FadeIn>
 
-        <FadeIn delay={120} className="lg:col-span-1">
-          <ActivityFeed />
-        </FadeIn>
-      </div>
+      <FadeIn delay={120}>
+        <ActivityFeed />
+      </FadeIn>
 
       {recent.items.some((o) => o.status === OrderStatus.PAYMENT_PENDING) ? (
         <FadeIn delay={180}>
@@ -139,16 +140,25 @@ export default async function DashboardPage() {
                   .map((o) => (
                     <li
                       key={o.id}
-                      className="flex items-center justify-between py-2"
+                      className="flex items-center justify-between gap-3 py-2"
                     >
                       <Link
                         href={`/orders/${o.id}`}
-                        className="flex items-center gap-3 hover:text-foreground text-muted-foreground transition-colors"
+                        className="flex min-w-0 flex-1 items-center gap-3 text-muted-foreground transition-colors hover:text-foreground"
                       >
-                        <span className="font-mono text-[12px] text-foreground">
-                          {o.orderNumber}
+                        <ProviderBadge
+                          provider={o.provider}
+                          showName={false}
+                          size="sm"
+                        />
+                        <span className="flex min-w-0 flex-col leading-tight">
+                          <span className="truncate text-[13px] text-foreground">
+                            {o.customer.name}
+                          </span>
+                          <span className="truncate font-mono text-[11px]">
+                            {o.orderNumber}
+                          </span>
                         </span>
-                        <span>{o.customer.name}</span>
                       </Link>
                       <span className="font-medium text-foreground tabular-nums">
                         {formatCurrency(o.pricing.amount, o.pricing.currency)}

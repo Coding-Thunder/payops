@@ -17,6 +17,7 @@ import {
   RECORD_STATES,
   RecordState,
 } from "@/lib/constants/enums";
+import { PROVIDER_KEY_REGEX } from "@/lib/constants/providers";
 
 export interface OrderDoc {
   orderNumber: string;
@@ -28,6 +29,16 @@ export interface OrderDoc {
     name: string;
     email: string;
     phone: string;
+  };
+  /** Rental brand snapshot. Frozen at creation so receipts and dashboards
+   *  keep showing the same brand even if the registry is later rebranded
+   *  or the catalog entry is deleted. */
+  provider: {
+    id: string;
+    name: string;
+    logo: string;
+    primaryColor?: string | null;
+    onPrimaryColor?: string | null;
   };
   vehicle: {
     company: string;
@@ -106,6 +117,25 @@ const vehicleSchema = new Schema(
   {
     company: { type: String, required: true, trim: true, maxlength: 80 },
     type: { type: String, required: true, trim: true, maxlength: 80 },
+  },
+  { _id: false },
+);
+
+const providerSchema = new Schema(
+  {
+    id: {
+      type: String,
+      required: true,
+      uppercase: true,
+      trim: true,
+      maxlength: 32,
+      match: PROVIDER_KEY_REGEX,
+      index: true,
+    },
+    name: { type: String, required: true, trim: true, maxlength: 80 },
+    logo: { type: String, required: true, maxlength: 200 },
+    primaryColor: { type: String, default: null, maxlength: 16 },
+    onPrimaryColor: { type: String, default: null, maxlength: 16 },
   },
   { _id: false },
 );
@@ -222,6 +252,7 @@ const orderSchema = new Schema<OrderDoc>(
       index: true,
     },
     customer: { type: customerSchema, required: true },
+    provider: { type: providerSchema, required: true },
     vehicle: { type: vehicleSchema, required: true },
     trip: { type: tripSchema, required: true },
     pricing: { type: pricingSchema, required: true },
@@ -258,7 +289,10 @@ orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ "createdBy.userId": 1, createdAt: -1 });
 orderSchema.index({ "customer.email": 1, createdAt: -1 });
 orderSchema.index({ state: 1, createdAt: -1 });
-orderSchema.index({ "payment.stripeSessionId": 1 }, { sparse: true });
+orderSchema.index({ "provider.id": 1, createdAt: -1 });
+// `payment.stripeSessionId` already has `index: true, sparse: true` on the
+// field definition — declaring it again here triggers a duplicate-index
+// warning at startup. Keep it on the field, drop the schema-level call.
 
 orderSchema.pre("validate", function () {
   if (this.trip?.pickupDate && this.trip?.dropoffDate) {

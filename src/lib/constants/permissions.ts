@@ -22,6 +22,9 @@ export const Permission = {
   SETTINGS_VIEW: "settings:view",
   SETTINGS_UPDATE: "settings:update",
 
+  PROVIDER_VIEW: "provider:view",
+  PROVIDER_MANAGE: "provider:manage",
+
   AUDIT_VIEW: "audit:view",
 } as const;
 export type Permission = (typeof Permission)[keyof typeof Permission];
@@ -51,6 +54,8 @@ const ADMIN_ONLY_PERMISSIONS: readonly Permission[] = [
   Permission.ANALYTICS_VIEW,
   Permission.SETTINGS_VIEW,
   Permission.SETTINGS_UPDATE,
+  Permission.PROVIDER_VIEW,
+  Permission.PROVIDER_MANAGE,
   Permission.AUDIT_VIEW,
 ];
 

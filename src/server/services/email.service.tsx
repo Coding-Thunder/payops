@@ -115,12 +115,15 @@ export async function sendPaymentConfirmationEmail(
     paidOn: order.payment.paidAt
       ? formatEmailDate(order.payment.paidAt)
       : formatEmailDate(new Date()),
+    provider: order.provider,
     vehicle: order.vehicle,
     trip: {
       pickupDate: formatEmailDay(order.trip.pickupDate),
       dropoffDate: formatEmailDay(order.trip.dropoffDate),
     },
     receiptUrl: order.payment.receiptUrl ?? null,
+    cancellationPolicy: order.policy?.text ?? "",
+    cancellationPolicyVersion: order.policy?.version ?? undefined,
   };
   const html = await render(<PaymentConfirmationEmail {...props} />);
   const text = await render(<PaymentConfirmationEmail {...props} />, {
@@ -137,14 +140,17 @@ export async function sendPaymentConfirmationEmail(
 }
 
 function subjectForBookingType(order: OrderDTO, brand: string): string {
+  // Provider name leads the subject so the customer can tell at a glance
+  // which rental this email is about — most actionable identifier first.
+  const providerName = order.provider?.name ?? brand;
   switch (order.bookingType) {
     case "NEW_BOOKING":
-      return `Booking confirmed • ${order.orderNumber} • ${brand}`;
+      return `${providerName} booking confirmed • ${order.orderNumber}`;
     case "MODIFICATION":
-      return `Modification payment confirmed • ${order.orderNumber} • ${brand}`;
+      return `${providerName} modification confirmed • ${order.orderNumber}`;
     case "CANCELLATION_CHARGE":
-      return `Cancellation payment confirmed • ${order.orderNumber} • ${brand}`;
+      return `${providerName} cancellation charge • ${order.orderNumber}`;
     default:
-      return `Payment confirmed • ${order.orderNumber} • ${brand}`;
+      return `${providerName} payment confirmed • ${order.orderNumber}`;
   }
 }

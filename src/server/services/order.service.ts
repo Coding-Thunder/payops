@@ -20,6 +20,7 @@ import {
 } from "@/lib/errors";
 import { roleHasPermission, Permission } from "@/lib/constants/permissions";
 import { DomainEventType } from "@/lib/constants/events";
+import { resolveProvider } from "@/lib/constants/providers";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { publishEvent } from "@/server/events/bus";
@@ -37,6 +38,7 @@ import { getStripe } from "@/server/payments/stripe";
 import { recordAudit } from "./audit.service";
 import { getSettings } from "./settings.service";
 import { generateOrderNumber } from "./order-number";
+import { buildProviderSnapshotFromKey } from "./provider.service";
 
 const ZERO_DECIMAL_CURRENCIES = new Set([
   "BIF",
@@ -84,6 +86,24 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
     status: doc.status as OrderStatus,
     state: doc.state as RecordState,
     customer: { ...doc.customer },
+    provider: doc.provider
+      ? {
+          id: doc.provider.id,
+          name: doc.provider.name,
+          logo: doc.provider.logo,
+          primaryColor: doc.provider.primaryColor ?? undefined,
+          onPrimaryColor: doc.provider.onPrimaryColor ?? undefined,
+        }
+      : (() => {
+          const fallback = resolveProvider(undefined);
+          return {
+            id: fallback.id,
+            name: fallback.name,
+            logo: fallback.logo,
+            primaryColor: fallback.primaryColor,
+            onPrimaryColor: fallback.onPrimaryColor,
+          };
+        })(),
     vehicle: { ...doc.vehicle },
     trip: {
       pickupDate: doc.trip.pickupDate.toISOString(),
@@ -107,6 +127,27 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
       userId: String(doc.createdBy.userId),
       name: doc.createdBy.name,
       email: doc.createdBy.email,
+    },
+    policy: {
+      acceptedAt:
+        doc.policy?.acceptedAt?.toISOString() ?? doc.createdAt.toISOString(),
+      version: doc.policy?.version ?? "v1",
+      text: doc.policy?.text ?? "",
+    },
+    risk: {
+      flagged: doc.risk?.flagged ?? false,
+      flaggedNote: doc.risk?.flaggedNote ?? null,
+      flaggedAt: doc.risk?.flaggedAt
+        ? doc.risk.flaggedAt.toISOString()
+        : null,
+      flaggedBy: doc.risk?.flaggedBy
+        ? {
+            userId: doc.risk.flaggedBy.userId
+              ? String(doc.risk.flaggedBy.userId)
+              : null,
+            name: doc.risk.flaggedBy.name ?? null,
+          }
+        : null,
     },
     notes: doc.notes ?? null,
     createdAt: doc.createdAt.toISOString(),
@@ -140,6 +181,8 @@ export async function createOrder(
   const orderId = new Types.ObjectId();
   const orderNumber = generateOrderNumber(settings.orderPrefix);
 
+  const providerSnapshot = await buildProviderSnapshotFromKey(input.provider);
+
   const created = await Order.create({
     _id: orderId,
     orderNumber,
@@ -147,6 +190,7 @@ export async function createOrder(
     status: OrderStatus.PAYMENT_PENDING,
     state: RecordState.ACTIVE,
     customer: input.customer,
+    provider: providerSnapshot,
     vehicle: input.vehicle,
     trip: {
       pickupDate: new Date(input.trip.pickupDate),
@@ -163,6 +207,12 @@ export async function createOrder(
       name: ctx.actor.name,
       email: ctx.actor.email,
     },
+    policy: {
+      acceptedAt: new Date(),
+      version: settings.cancellationPolicyVersion,
+      text: settings.cancellationPolicy,
+    },
+    risk: { flagged: false },
     notes: input.notes ?? null,
   });
 
@@ -348,15 +398,17 @@ function clampStripeExpiry(date: Date): number {
 }
 
 function describeProductName(input: CreateOrderInput): string {
+  const providerName = resolveProvider({ id: input.provider }).name;
+  const vehicle = `${input.vehicle.company} ${input.vehicle.type}`;
   switch (input.bookingType) {
     case BookingType.NEW_BOOKING:
-      return `${input.vehicle.company} ${input.vehicle.type} rental`;
+      return `${providerName} • ${vehicle} rental`;
     case BookingType.MODIFICATION:
-      return `Booking modification • ${input.vehicle.company} ${input.vehicle.type}`;
+      return `${providerName} booking modification • ${vehicle}`;
     case BookingType.CANCELLATION_CHARGE:
-      return `Cancellation charge • ${input.vehicle.company} ${input.vehicle.type}`;
+      return `${providerName} cancellation charge • ${vehicle}`;
     default:
-      return `${input.vehicle.company} ${input.vehicle.type}`;
+      return `${providerName} • ${vehicle}`;
   }
 }
 
@@ -541,6 +593,10 @@ export async function regeneratePaymentLink(
       orderNumber: doc.orderNumber,
       input: {
         bookingType: doc.bookingType,
+        // Regeneration reuses the snapshot already attached to the order —
+        // never re-validates against the live catalog so disabled providers
+        // can still have outstanding payment links refreshed.
+        provider: doc.provider?.id ?? resolveProvider(undefined).id,
         customer: doc.customer,
         vehicle: doc.vehicle,
         trip: {
@@ -606,4 +662,90 @@ export async function regeneratePaymentLink(
     order: orderToDTO(doc.toObject() as OrderDoc & { _id: Types.ObjectId }),
     checkoutUrl: session.url,
   };
+}
+
+/* ────────────────────── Risk-flag + dispute helpers ───────────────────── */
+
+interface FlagOrderInput {
+  flagged: boolean;
+  note?: string | null;
+}
+
+/**
+ * Toggle the at-risk flag on an order. The `flaggedBy` snapshot lets the
+ * disputes view show who first flagged the order without an extra join.
+ */
+export async function setOrderRiskFlag(
+  id: string,
+  input: FlagOrderInput,
+  ctx: OrderContext,
+): Promise<OrderDTO> {
+  await connectMongo();
+  if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
+  const doc = await Order.findById(id);
+  if (!doc) throw new NotFoundError("Order not found");
+
+  if (input.flagged) {
+    doc.risk = {
+      flagged: true,
+      flaggedNote: input.note?.trim() || null,
+      flaggedAt: new Date(),
+      flaggedBy: {
+        userId: new Types.ObjectId(ctx.actor.id),
+        name: ctx.actor.name,
+      },
+    };
+  } else {
+    doc.risk = {
+      flagged: false,
+      flaggedNote: null,
+      flaggedAt: null,
+      flaggedBy: null,
+    };
+  }
+  await doc.save();
+
+  await recordAudit({
+    action: AuditAction.ORDER_UPDATED,
+    entityType: AuditEntity.ORDER,
+    entityId: String(doc._id),
+    actor: {
+      userId: ctx.actor.id,
+      name: ctx.actor.name,
+      role: ctx.actor.role,
+    },
+    request: ctx.request ?? null,
+    metadata: {
+      action: input.flagged ? "risk_flagged" : "risk_unflagged",
+      note: input.note ?? null,
+    },
+  });
+
+  return orderToDTO(doc.toObject() as OrderDoc & { _id: Types.ObjectId });
+}
+
+/**
+ * Lists orders that operators should review. "At risk" is anything that
+ * matches at least one of:
+ *   - manually flagged (`risk.flagged === true`)
+ *   - status FAILED (Stripe rejected the payment) in the active state
+ *   - status EXPIRED in the active state (link never paid)
+ *
+ * Results are sorted with flagged orders first, then most-recent.
+ */
+export async function listAtRiskOrders(): Promise<OrderDTO[]> {
+  await connectMongo();
+  const docs = await Order.find({
+    $or: [
+      { "risk.flagged": true },
+      {
+        state: RecordState.ACTIVE,
+        status: { $in: [OrderStatus.FAILED, OrderStatus.EXPIRED] },
+      },
+    ],
+  })
+    .sort({ "risk.flagged": -1, updatedAt: -1 })
+    .limit(100)
+    .lean<(OrderDoc & { _id: Types.ObjectId })[]>();
+  return docs.map(orderToDTO);
 }

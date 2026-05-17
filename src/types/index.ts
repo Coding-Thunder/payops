@@ -7,6 +7,7 @@ import type {
   RecordState,
   UserRole,
 } from "@/lib/constants/enums";
+import type { ProviderSnapshot } from "@/lib/constants/providers";
 
 /** Public user shape used by the UI and API responses (never includes passwordHash). */
 export interface PublicUser {
@@ -90,6 +91,7 @@ export interface OrderDTO {
   status: OrderStatus;
   state: RecordState;
   customer: OrderCustomer;
+  provider: ProviderSnapshot;
   vehicle: OrderVehicle;
   trip: OrderTrip;
   pricing: OrderPricing;
@@ -114,6 +116,20 @@ export interface AuditLogDTO {
   userAgent?: string | null;
   metadata?: Record<string, unknown> | null;
   createdAt: string;
+}
+
+export interface ProviderDTO {
+  id: string;
+  key: string;
+  name: string;
+  logo: string;
+  primaryColor: string;
+  onPrimaryColor: string;
+  tagline: string;
+  status: RecordState;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface PaginatedResult<T> {

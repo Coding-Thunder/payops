@@ -46,5 +46,7 @@ export function formatEmailDay(value: Date | string): string {
   const day = d.getUTCDate();
   const month = monthShort[d.getUTCMonth()];
   const year = d.getUTCFullYear();
-  return `${day} ${month} ${year}`;
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${day} ${month} ${year} • ${hh}:${mm} UTC`;
 }

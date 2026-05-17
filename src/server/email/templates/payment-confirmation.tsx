@@ -18,12 +18,23 @@ import * as React from "react";
 
 import { BookingTypeLabel } from "@/lib/constants/labels";
 import type { BookingType } from "@/lib/constants/enums";
+import type { ProviderSnapshot } from "@/lib/constants/providers";
 
-// Minimal "RC" wordmark + key/car glyph baked into a data URI so the brand
-// renders without an external image host. Background is a deep navy that
-// reads well in both light and dark email clients.
-const LOGO_DATA_URI =
-  "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0OCA0OCI+PHJlY3Qgd2lkdGg9IjQ4IiBoZWlnaHQ9IjQ4IiByeD0iMTAiIGZpbGw9IiMxMTE4MjciLz48cGF0aCBkPSJNMTAuNSAyOWgyN2EyIDIgMCAwIDAgMS41LTMuM2wtMy00LjJjLS41LS43LTEuMy0xLjEtMi4yLTEuMUgxNC4yYy0uOSAwLTEuNy40LTIuMiAxLjFsLTMgNC4yYTIgMiAwIDAgMCAxLjUgMy4zWiIgZmlsbD0iI2ZmZmZmZiIvPjxjaXJjbGUgY3g9IjE2IiBjeT0iMzIiIHI9IjIuMiIgZmlsbD0iIzExMTgyNyIvPjxjaXJjbGUgY3g9IjMyIiBjeT0iMzIiIHI9IjIuMiIgZmlsbD0iIzExMTgyNyIvPjxwYXRoIGQ9Ik0xNi41IDIwbDIuNy03YzAtLjUuNC0xIDEuMS0xaDcuM2MuNyAwIDEgLjUgMS4xIDFsMi43IDdIMTYuNVoiIGZpbGw9IiMxMTE4MjciLz48L3N2Zz4=";
+import { EmailProviderHeader } from "@/components/features/providers/email-provider-header";
+
+// Stripe "S" mark — official rounded-square logo in their brand purple.
+// Inlined as a data URI so it renders in every email client (Gmail,
+// Outlook, Apple Mail) without depending on an external asset host.
+const STRIPE_LOGO_DATA_URI =
+  "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCIgdmlld0JveD0iMCAwIDMyIDMyIj48cmVjdCB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHJ4PSI3IiBmaWxsPSIjNjM1QkZGIi8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTE0LjQxIDEyLjdjMC0uODQuNjktMS4xNiAxLjgzLTEuMTYgMS42MyAwIDMuNy41IDUuMzQgMS4zOFY3Ljg3Yy0xLjc4LS43MS0zLjU1LS45OS01LjM0LS45OS00LjM1IDAtNy4yNSAyLjI3LTcuMjUgNi4wNiAwIDUuOTEgOC4xMyA0Ljk2IDguMTMgNy41MSAwIC45OS0uODYgMS4zMi0yLjA3IDEuMzItMS43OCAwLTQuMDYtLjczLTUuODctMS43MXY1LjEyYzIgLjg1IDQuMDIgMS4yMSA1Ljg3IDEuMjEgNC40NyAwIDcuNTMtMi4yMSA3LjUzLTYuMDYgMC02LjM2LTguMTctNS4yMy04LjE3LTcuNjF6Ii8+PC9zdmc+";
+
+// Inline lock-shield icon for the "secure payment" trust block.
+const LOCK_ICON_DATA_URI =
+  "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMxNTk5NjkiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTIgMjJzOC00IDgtMTBWNWwtOC0zLTggM3Y3YzAgNiA4IDEwIDggMTAiLz48cGF0aCBkPSJtOSAxMiAyIDIgNC00Ii8+PC9zdmc+";
+
+// Inline checkmark icon for the "Payment confirmed" pill.
+const CHECK_ICON_DATA_URI =
+  "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMwZTlmNmUiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMjAgNiA5IDE3bC01LTUiLz48L3N2Zz4=";
 
 export interface PaymentConfirmationEmailProps {
   brandName: string;
@@ -35,29 +46,49 @@ export interface PaymentConfirmationEmailProps {
   bookingType: BookingType;
   amount: string;
   paidOn: string;
+  /** Rental brand snapshot. Drives the colour band + logo strip directly
+   *  under the operator header so the receipt feels co-branded. */
+  provider: ProviderSnapshot;
   vehicle: { company: string; type: string };
   trip: { pickupDate: string; dropoffDate: string };
   receiptUrl?: string | null;
+  /** Free-text cancellation/refund policy snapshot. Rendered as a paragraph
+   *  inside the policy section. Pass an empty string to omit the section. */
+  cancellationPolicy?: string;
+  /** Policy version label (e.g. "v2") rendered in the email footer for
+   *  dispute-evidence purposes. */
+  cancellationPolicyVersion?: string;
 }
 
-const COLORS = {
-  bg: "#f4f6fa",
-  card: "#ffffff",
-  border: "#e6e9ee",
-  headerBg: "#111827",
-  headerText: "#ffffff",
-  headerAccent: "#94a3b8",
-  text: "#0f172a",
-  muted: "#475569",
-  faint: "#64748b",
-  divider: "#e2e8f0",
-  amountBg: "#f8fafc",
-  primary: "#0f766e",
-  link: "#0b6dd6",
+// ────────────────────────────────────────────────────────────────────────
+// Token palette — kept inline so the email renders identically in clients
+// that strip <style>/Tailwind. Everything is hex; Gmail-safe.
+// ────────────────────────────────────────────────────────────────────────
+const TOKENS = {
+  background: "#eef1f6",
+  surface: "#ffffff",
+  surfaceMuted: "#f8f9fb",
+  surfaceSubtle: "#f1f4f9",
+  border: "#e5e7eb",
+  borderSoft: "#eef0f4",
+  textPrimary: "#0f172a",
+  textSecondary: "#475569",
+  textMuted: "#64748b",
+  textInverted: "#ffffff",
+  brand: "#2563eb", // Tailwind blue-600
+  brandSoft: "#e3eefc",
+  brandDark: "#0b1220", // near-black navy for the brand header bar
+  brandSubtle: "#94a3b8", // muted slate for header eyebrow text
+  success: "#0e9f6e",
+  successSoft: "#ecfdf5",
+  successBorder: "#bbf7d0",
+  stripe: "#635BFF", // Stripe brand purple
+  stripeSoft: "#eef0ff",
 };
 
 export function PaymentConfirmationEmail({
   brandName,
+  appUrl,
   supportEmail,
   supportPhone,
   customerName,
@@ -65,317 +96,591 @@ export function PaymentConfirmationEmail({
   bookingType,
   amount,
   paidOn,
+  provider,
   vehicle,
   trip,
   receiptUrl,
+  cancellationPolicy,
+  cancellationPolicyVersion,
 }: PaymentConfirmationEmailProps) {
-  const year = new Date().getFullYear();
+  const preview = `${provider.name} — payment confirmed for ${orderNumber} (${amount})`;
+  const year = new Date().getUTCFullYear();
+  const policyParagraphs = cancellationPolicy
+    ? cancellationPolicy.split(/\n+/).filter((p) => p.trim().length > 0)
+    : [];
+
   return (
     <Html>
       <Head />
-      <Preview>{`${brandName} - payment confirmed - ${orderNumber} - ${amount}`}</Preview>
+      <Preview>{preview}</Preview>
       <Tailwind>
         <Body
           style={{
-            backgroundColor: COLORS.bg,
+            backgroundColor: TOKENS.background,
             fontFamily:
-              "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+              "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, Arial, sans-serif",
             margin: 0,
-            padding: "32px 0",
+            padding: "40px 12px",
+            color: TOKENS.textPrimary,
           }}
         >
           <Container
             style={{
-              backgroundColor: COLORS.card,
-              maxWidth: 600,
+              backgroundColor: TOKENS.surface,
+              borderRadius: 16,
+              maxWidth: 620,
               margin: "0 auto",
-              borderRadius: 14,
+              border: `1px solid ${TOKENS.border}`,
               overflow: "hidden",
-              border: `1px solid ${COLORS.border}`,
+              boxShadow:
+                "0 1px 2px rgba(15,23,42,0.04), 0 8px 24px rgba(15,23,42,0.06)",
             }}
           >
-            {/* Header band */}
+            {/* ───────── Header band — split-color wordmark on dark navy.
+                The image logo was removed; the brand identity is the text
+                itself: "Rental" in blue-600 + "Confirmation" in white. ── */}
             <Section
               style={{
-                backgroundColor: COLORS.headerBg,
-                padding: "22px 32px",
+                padding: "26px 32px",
+                backgroundColor: TOKENS.brandDark,
+                borderBottom: `1px solid ${TOKENS.brandDark}`,
               }}
             >
               <Row>
-                <Column width="44">
-                  <Img
-                    src={LOGO_DATA_URI}
-                    width="36"
-                    height="36"
-                    alt={brandName}
-                    style={{ borderRadius: 8, display: "block" }}
-                  />
-                </Column>
                 <Column>
                   <Text
                     style={{
-                      color: COLORS.headerText,
-                      fontSize: 14,
-                      fontWeight: 600,
-                      letterSpacing: "0.18em",
-                      textTransform: "uppercase",
                       margin: 0,
-                      lineHeight: "20px",
+                      fontSize: 22,
+                      fontWeight: 700,
+                      letterSpacing: "-0.015em",
+                      lineHeight: "26px",
                     }}
                   >
-                    {brandName}
+                    <span style={{ color: TOKENS.brand }}>Rental</span>
+                    <span style={{ color: TOKENS.textInverted }}>
+                      &nbsp;Confirmation
+                    </span>
                   </Text>
                   <Text
                     style={{
-                      color: COLORS.headerAccent,
-                      fontSize: 11,
                       margin: 0,
-                      marginTop: 2,
-                      letterSpacing: "0.04em",
+                      marginTop: 6,
+                      color: TOKENS.brandSubtle,
+                      fontSize: 10,
+                      fontWeight: 600,
+                      letterSpacing: "0.12em",
+                      textTransform: "uppercase",
+                      lineHeight: "14px",
                     }}
                   >
-                    Booking & payment confirmation
+                    Payment receipt
                   </Text>
                 </Column>
               </Row>
             </Section>
 
-            {/* Hero */}
-            <Section style={{ padding: "32px 32px 8px 32px" }}>
+            {/* Thin accent strip — visual tie between the dark header and
+                the white body. Solid blue rather than a gradient because
+                CSS gradients are unreliable across email clients. */}
+            <div
+              style={{
+                height: 3,
+                backgroundColor: TOKENS.brand,
+                lineHeight: "3px",
+                fontSize: 0,
+              }}
+            >
+              &nbsp;
+            </div>
+
+            {/* ───────── Rental provider strip ─────────
+                Sits between the operator header and the receipt body so
+                the customer immediately sees which brand the booking is
+                with. Image is loaded from an absolute URL so Gmail/Apple
+                Mail/Outlook can fetch it; the brand-colour background is
+                the visual fallback when images are blocked. */}
+            <EmailProviderHeader
+              provider={provider}
+              appUrl={appUrl}
+              eyebrow={`${BookingTypeLabel[bookingType]} booking`}
+            />
+
+            {/* ───────── Confirmation copy ───────── */}
+            <Section style={{ padding: "32px 32px 8px" }}>
+              <table
+                role="presentation"
+                cellPadding="0"
+                cellSpacing="0"
+                style={{
+                  borderCollapse: "collapse",
+                  marginBottom: 18,
+                }}
+              >
+                <tbody>
+                  <tr>
+                    <td
+                      style={{
+                        backgroundColor: TOKENS.successSoft,
+                        border: `1px solid ${TOKENS.successBorder}`,
+                        borderRadius: 999,
+                        padding: "5px 12px 5px 10px",
+                        verticalAlign: "middle",
+                      }}
+                    >
+                      <Img
+                        src={CHECK_ICON_DATA_URI}
+                        width="12"
+                        height="12"
+                        alt=""
+                        style={{
+                          verticalAlign: "middle",
+                          marginRight: 6,
+                          display: "inline-block",
+                        }}
+                      />
+                      <span
+                        style={{
+                          color: TOKENS.success,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          letterSpacing: "0.06em",
+                          textTransform: "uppercase",
+                          verticalAlign: "middle",
+                        }}
+                      >
+                        Payment confirmed
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
               <Heading
                 as="h1"
                 style={{
-                  color: COLORS.text,
-                  fontSize: 24,
-                  fontWeight: 600,
-                  letterSpacing: "-0.01em",
-                  margin: "0 0 8px 0",
+                  margin: 0,
+                  color: TOKENS.textPrimary,
+                  fontSize: 26,
+                  fontWeight: 700,
+                  lineHeight: "34px",
+                  letterSpacing: "-0.02em",
                 }}
               >
-                Payment confirmed
+                Thank you, {customerName}.
               </Heading>
               <Text
                 style={{
-                  color: COLORS.muted,
+                  marginTop: 12,
+                  marginBottom: 0,
+                  color: TOKENS.textSecondary,
                   fontSize: 14,
                   lineHeight: "22px",
-                  margin: 0,
                 }}
               >
-                Hi {customerName}, we&apos;ve received your payment for{" "}
-                <strong style={{ color: COLORS.text }}>
-                  {BookingTypeLabel[bookingType]}
+                We&apos;ve received your payment for{" "}
+                <strong style={{ color: TOKENS.textPrimary }}>
+                  {BookingTypeLabel[bookingType].toLowerCase()}
                 </strong>
-                . Keep this email as your receipt — your booking summary is
-                below.
+                . Your booking details are below — keep this email for your
+                records.
               </Text>
             </Section>
 
-            {/* Amount + Order card */}
-            <Section style={{ padding: "20px 32px 8px 32px" }}>
+            {/* ───────── Amount hero block ───────── */}
+            <Section style={{ padding: "20px 32px" }}>
               <div
                 style={{
-                  backgroundColor: COLORS.amountBg,
-                  border: `1px solid ${COLORS.border}`,
-                  borderRadius: 12,
-                  padding: "18px 22px",
+                  backgroundColor: TOKENS.brandSoft,
+                  borderRadius: 14,
+                  padding: "22px 26px",
+                  border: `1px solid #cfe0fb`,
                 }}
               >
                 <Row>
                   <Column>
                     <Text
                       style={{
-                        fontSize: 11,
-                        textTransform: "uppercase",
-                        letterSpacing: "0.08em",
-                        color: COLORS.faint,
                         margin: 0,
+                        color: TOKENS.textMuted,
+                        fontSize: 11,
+                        fontWeight: 600,
+                        letterSpacing: "0.10em",
+                        textTransform: "uppercase",
                       }}
                     >
                       Amount paid
                     </Text>
                     <Text
                       style={{
-                        color: COLORS.text,
-                        fontWeight: 600,
-                        fontSize: 22,
                         margin: 0,
-                        marginTop: 4,
-                        lineHeight: "28px",
+                        marginTop: 8,
+                        color: TOKENS.textPrimary,
+                        fontSize: 30,
+                        fontWeight: 700,
+                        letterSpacing: "-0.02em",
+                        lineHeight: "34px",
                       }}
                     >
                       {amount}
                     </Text>
                   </Column>
-                  <Column align="right">
+                  <Column align="right" style={{ verticalAlign: "top" }}>
                     <Text
                       style={{
-                        fontSize: 11,
-                        textTransform: "uppercase",
-                        letterSpacing: "0.08em",
-                        color: COLORS.faint,
                         margin: 0,
+                        color: TOKENS.textMuted,
+                        fontSize: 11,
+                        fontWeight: 600,
+                        letterSpacing: "0.10em",
+                        textTransform: "uppercase",
                       }}
                     >
                       Order
                     </Text>
                     <Text
                       style={{
-                        color: COLORS.text,
-                        fontWeight: 600,
-                        fontSize: 14,
-                        fontFamily:
-                          "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
                         margin: 0,
-                        marginTop: 6,
+                        marginTop: 8,
+                        color: TOKENS.textPrimary,
+                        fontSize: 14,
+                        fontWeight: 700,
+                        fontFamily: "ui-monospace, SFMono-Regular, monospace",
                       }}
                     >
                       {orderNumber}
+                    </Text>
+                    <Text
+                      style={{
+                        margin: 0,
+                        marginTop: 4,
+                        color: TOKENS.textMuted,
+                        fontSize: 11,
+                      }}
+                    >
+                      {paidOn}
                     </Text>
                   </Column>
                 </Row>
               </div>
             </Section>
 
-            {/* Booking details */}
-            <Section style={{ padding: "20px 32px 8px 32px" }}>
-              <Text
+            {/* ───────── Booking details ───────── */}
+            <Section style={{ padding: "10px 32px 24px" }}>
+              <Heading
+                as="h2"
                 style={{
+                  margin: 0,
+                  marginBottom: 12,
+                  color: TOKENS.textMuted,
                   fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: "0.10em",
                   textTransform: "uppercase",
-                  letterSpacing: "0.08em",
-                  color: COLORS.faint,
-                  margin: "0 0 12px 0",
-                  fontWeight: 600,
                 }}
               >
                 Booking details
-              </Text>
+              </Heading>
               <DetailRow
-                label="Booking type"
+                label="Type"
                 value={BookingTypeLabel[bookingType]}
               />
+              <DetailRow label="Provider" value={provider.name} />
               <DetailRow
                 label="Vehicle"
                 value={`${vehicle.company} • ${vehicle.type}`}
               />
               <DetailRow label="Pick-up" value={trip.pickupDate} />
-              <DetailRow label="Drop-off" value={trip.dropoffDate} />
-              <DetailRow label="Paid on" value={paidOn} />
+              <DetailRow
+                label="Drop-off"
+                value={trip.dropoffDate}
+                isLast={!receiptUrl}
+              />
+              {receiptUrl ? (
+                <DetailRow
+                  label="Stripe receipt"
+                  value={
+                    <Link
+                      href={receiptUrl}
+                      style={{
+                        color: TOKENS.brand,
+                        textDecoration: "underline",
+                      }}
+                    >
+                      View receipt
+                    </Link>
+                  }
+                  isLast
+                />
+              ) : null}
             </Section>
 
-            {/* Receipt CTA */}
-            {receiptUrl ? (
-              <Section style={{ padding: "10px 32px 20px 32px" }}>
-                <Link
-                  href={receiptUrl}
+            {/* ───────── Secure payment trust block ─────────
+                Card-shaped block that reassures the customer the
+                transaction is encrypted end-to-end. Inline Stripe logo
+                anchors the trust signal — bank-grade credibility in
+                under two seconds of scanning. */}
+            <Section style={{ padding: "0 32px 24px" }}>
+              <div
+                style={{
+                  backgroundColor: TOKENS.stripeSoft,
+                  borderRadius: 14,
+                  padding: "18px 22px",
+                  border: `1px solid #dadcff`,
+                }}
+              >
+                <Row>
+                  <Column style={{ width: 36, verticalAlign: "top" }}>
+                    <Img
+                      src={LOCK_ICON_DATA_URI}
+                      width="18"
+                      height="18"
+                      alt=""
+                      style={{ display: "block", marginTop: 2 }}
+                    />
+                  </Column>
+                  <Column style={{ verticalAlign: "top" }}>
+                    <Text
+                      style={{
+                        margin: 0,
+                        color: TOKENS.textPrimary,
+                        fontSize: 13,
+                        fontWeight: 700,
+                        lineHeight: "18px",
+                      }}
+                    >
+                      Payment is made and secured by{" "}
+                      <Img
+                        src={STRIPE_LOGO_DATA_URI}
+                        width="16"
+                        height="16"
+                        alt="Stripe"
+                        style={{
+                          display: "inline-block",
+                          verticalAlign: "-3px",
+                          marginLeft: 2,
+                          marginRight: 4,
+                          borderRadius: 4,
+                        }}
+                      />
+                      <span style={{ color: TOKENS.stripe }}>Stripe</span>
+                    </Text>
+                    <Text
+                      style={{
+                        margin: 0,
+                        marginTop: 6,
+                        color: TOKENS.textSecondary,
+                        fontSize: 12,
+                        lineHeight: "18px",
+                      }}
+                    >
+                      Your card details are encrypted end-to-end and never
+                      seen or stored by us. Stripe is PCI-DSS Level 1
+                      certified — the highest level of payment security.
+                    </Text>
+                  </Column>
+                </Row>
+              </div>
+            </Section>
+
+            {/* ───────── Cancellation policy ───────── */}
+            {policyParagraphs.length > 0 ? (
+              <>
+                <Hr
                   style={{
-                    display: "inline-block",
-                    color: COLORS.headerText,
-                    backgroundColor: COLORS.headerBg,
-                    padding: "10px 18px",
-                    borderRadius: 8,
-                    textDecoration: "none",
-                    fontSize: 13,
-                    fontWeight: 600,
+                    margin: 0,
+                    borderColor: TOKENS.borderSoft,
+                    borderTopWidth: 1,
                   }}
-                >
-                  View Stripe receipt →
-                </Link>
-              </Section>
+                />
+                <Section style={{ padding: "24px 32px" }}>
+                  <Heading
+                    as="h2"
+                    style={{
+                      margin: 0,
+                      marginBottom: 12,
+                      color: TOKENS.textMuted,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      letterSpacing: "0.10em",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Cancellation &amp; refund policy
+                  </Heading>
+                  {policyParagraphs.map((paragraph, idx) => (
+                    <Text
+                      key={idx}
+                      style={{
+                        margin: 0,
+                        marginTop: idx === 0 ? 0 : 8,
+                        color: TOKENS.textSecondary,
+                        fontSize: 13,
+                        lineHeight: "20px",
+                      }}
+                    >
+                      {paragraph}
+                    </Text>
+                  ))}
+                  {cancellationPolicyVersion ? (
+                    <Text
+                      style={{
+                        margin: 0,
+                        marginTop: 12,
+                        color: TOKENS.textMuted,
+                        fontSize: 11,
+                      }}
+                    >
+                      Policy version {cancellationPolicyVersion} • applied at
+                      payment
+                    </Text>
+                  ) : null}
+                </Section>
+              </>
             ) : null}
 
-            <Hr
-              style={{
-                borderColor: COLORS.divider,
-                margin: "8px 32px",
-              }}
-            />
-
-            {/* Support */}
-            <Section style={{ padding: "16px 32px 8px 32px" }}>
-              <Text
-                style={{
-                  fontSize: 11,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em",
-                  color: COLORS.faint,
-                  margin: "0 0 8px 0",
-                  fontWeight: 600,
-                }}
-              >
-                Need help?
-              </Text>
-              <Text
-                style={{
-                  color: COLORS.muted,
-                  fontSize: 13,
-                  lineHeight: "22px",
-                  margin: 0,
-                }}
-              >
-                Reply to this email or reach our team at{" "}
-                <Link
-                  href={`mailto:${supportEmail}`}
-                  style={{ color: COLORS.link, textDecoration: "underline" }}
-                >
-                  {supportEmail}
-                </Link>{" "}
-                · {supportPhone}. Please include your order number{" "}
-                <strong style={{ color: COLORS.text }}>{orderNumber}</strong>{" "}
-                so we can pull up your booking faster.
-              </Text>
-            </Section>
-
-            <Hr
-              style={{
-                borderColor: COLORS.divider,
-                margin: "16px 32px 0 32px",
-              }}
-            />
-
-            {/* Footer */}
+            {/* ───────── Footer ───────── */}
             <Section
               style={{
-                padding: "20px 32px 28px 32px",
-                textAlign: "center",
+                padding: "24px 32px 28px",
+                borderTop: `1px solid ${TOKENS.border}`,
+                backgroundColor: TOKENS.surfaceMuted,
               }}
             >
               <Text
                 style={{
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: COLORS.text,
-                  letterSpacing: "0.04em",
                   margin: 0,
+                  color: TOKENS.textPrimary,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  letterSpacing: "-0.005em",
                 }}
               >
-                {brandName}
+                Need help with this booking?
               </Text>
               <Text
                 style={{
-                  fontSize: 11,
-                  color: COLORS.faint,
                   margin: 0,
-                  marginTop: 4,
-                  lineHeight: "18px",
+                  marginTop: 6,
+                  color: TOKENS.textSecondary,
+                  fontSize: 13,
+                  lineHeight: "20px",
                 }}
               >
-                © {year} {brandName}. All rights reserved.
+                Please quote order number{" "}
+                <strong
+                  style={{
+                    fontFamily: "ui-monospace, SFMono-Regular, monospace",
+                    color: TOKENS.textPrimary,
+                  }}
+                >
+                  {orderNumber}
+                </strong>{" "}
+                in your message and we&apos;ll respond within one business
+                day.
               </Text>
-              <Text
+
+              {/* Action buttons — bulletproof email-friendly anchors.
+                  Email clients strip <button>, so we use styled <a>
+                  tags. Subject + body are pre-filled on the mailto so
+                  support gets the order context automatically. */}
+              <Row style={{ marginTop: 16 }}>
+                <Column style={{ width: "50%", paddingRight: 8 }}>
+                  <Link
+                    href={`mailto:${supportEmail}?subject=${encodeURIComponent(
+                      `Help with order ${orderNumber}`,
+                    )}&body=${encodeURIComponent(
+                      `Hi,\n\nI need help with order ${orderNumber}.\n\n`,
+                    )}`}
+                    style={{
+                      display: "inline-block",
+                      backgroundColor: TOKENS.brand,
+                      color: TOKENS.textInverted,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      padding: "11px 20px",
+                      borderRadius: 8,
+                      textDecoration: "none",
+                      letterSpacing: "-0.005em",
+                    }}
+                  >
+                    Email us
+                  </Link>
+                </Column>
+                <Column style={{ width: "50%", paddingLeft: 8 }}>
+                  <Link
+                    href={`tel:${supportPhone.replace(/[^\d+]/g, "")}`}
+                    style={{
+                      display: "inline-block",
+                      backgroundColor: TOKENS.surface,
+                      color: TOKENS.textPrimary,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      padding: "10px 19px",
+                      borderRadius: 8,
+                      textDecoration: "none",
+                      letterSpacing: "-0.005em",
+                      border: `1px solid ${TOKENS.border}`,
+                    }}
+                  >
+                    Call us
+                  </Link>
+                </Column>
+              </Row>
+
+              <Hr
                 style={{
-                  fontSize: 10,
-                  color: COLORS.faint,
-                  margin: 0,
-                  marginTop: 10,
-                  lineHeight: "16px",
+                  margin: "22px 0 18px",
+                  borderColor: TOKENS.borderSoft,
+                  borderTopWidth: 1,
                 }}
-              >
-                This is a transactional confirmation sent in response to your
-                booking. You&apos;re receiving it because you completed a
-                payment with {brandName} — no marketing list involved.
-              </Text>
+              />
+
+              <Row>
+                <Column>
+                  <Text
+                    style={{
+                      margin: 0,
+                      color: TOKENS.textMuted,
+                      fontSize: 11,
+                      lineHeight: "16px",
+                    }}
+                  >
+                    © {year} {brandName}. This is an automated payment
+                    receipt. You can reply to this email — it routes to our
+                    support team.
+                  </Text>
+                </Column>
+                <Column align="right" style={{ width: 110 }}>
+                  <Text
+                    style={{
+                      margin: 0,
+                      color: TOKENS.textMuted,
+                      fontSize: 10,
+                      fontWeight: 600,
+                      letterSpacing: "0.04em",
+                      lineHeight: "16px",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    Powered by{" "}
+                    <Img
+                      src={STRIPE_LOGO_DATA_URI}
+                      width="12"
+                      height="12"
+                      alt="Stripe"
+                      style={{
+                        display: "inline-block",
+                        verticalAlign: "-2px",
+                        marginRight: 3,
+                        borderRadius: 3,
+                      }}
+                    />
+                    <span style={{ color: TOKENS.stripe, fontWeight: 700 }}>
+                      Stripe
+                    </span>
+                  </Text>
+                </Column>
+              </Row>
             </Section>
           </Container>
         </Body>
@@ -384,30 +689,43 @@ export function PaymentConfirmationEmail({
   );
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+function DetailRow({
+  label,
+  value,
+  isLast,
+}: {
+  label: string;
+  value: React.ReactNode;
+  isLast?: boolean;
+}) {
+  const cellStyle: React.CSSProperties = {
+    paddingTop: 11,
+    paddingBottom: 11,
+    borderBottom: isLast ? "none" : `1px solid ${TOKENS.borderSoft}`,
+    verticalAlign: "middle",
+  };
   return (
     <Row>
-      <Column style={{ paddingBottom: 10, verticalAlign: "top" }}>
+      <Column style={{ ...cellStyle, width: "40%" }}>
         <Text
           style={{
-            fontSize: 12,
-            color: COLORS.faint,
             margin: 0,
+            color: TOKENS.textMuted,
+            fontSize: 12,
+            fontWeight: 500,
           }}
         >
           {label}
         </Text>
       </Column>
-      <Column
-        align="right"
-        style={{ paddingBottom: 10, verticalAlign: "top" }}
-      >
+      <Column style={{ ...cellStyle, textAlign: "right" }}>
         <Text
           style={{
-            fontSize: 13,
-            color: COLORS.text,
-            fontWeight: 500,
             margin: 0,
+            color: TOKENS.textPrimary,
+            fontSize: 13,
+            fontWeight: 600,
+            wordBreak: "break-word",
           }}
         >
           {value}

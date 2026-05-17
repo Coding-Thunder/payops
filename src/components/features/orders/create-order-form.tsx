@@ -42,12 +42,16 @@ import {
   createOrderSchema,
   type CreateOrderInput,
 } from "@/lib/validation";
-import type { OrderDTO } from "@/types";
+import type { OrderDTO, ProviderDTO } from "@/types";
+import { ProviderSelector } from "@/components/features/providers";
 
 interface CreateOrderFormProps {
   allowedBookingTypes: readonly BookingTypeT[];
   defaultCurrency: Currency;
   allowedCurrencies: readonly string[];
+  /** Active provider catalog. Empty array renders the selector with a
+   *  "configure providers first" prompt. */
+  providers: ProviderDTO[];
 }
 
 interface CreateOrderApiResponse {
@@ -59,6 +63,7 @@ export function CreateOrderForm({
   allowedBookingTypes,
   defaultCurrency,
   allowedCurrencies,
+  providers,
 }: CreateOrderFormProps) {
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
@@ -67,6 +72,7 @@ export function CreateOrderForm({
     resolver: zodResolver(createOrderSchema),
     defaultValues: {
       bookingType: allowedBookingTypes[0] ?? BookingType.NEW_BOOKING,
+      provider: providers[0]?.key ?? "",
       customer: { name: "", email: "", phone: "" },
       vehicle: { company: "", type: "" },
       trip: { pickupDate: "", dropoffDate: "" },
@@ -262,15 +268,45 @@ export function CreateOrderForm({
 
         <Card>
           <CardHeader>
-            <CardTitle>Vehicle</CardTitle>
+            <CardTitle>Rental provider & vehicle</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
+            <FormField
+              control={form.control}
+              name="provider"
+              render={({ field, fieldState }) => (
+                <FormItem className="sm:col-span-2">
+                  <FormLabel>Rental provider</FormLabel>
+                  <FormControl>
+                    <ProviderSelector
+                      id="order-provider"
+                      providers={providers}
+                      value={field.value ?? null}
+                      onChange={field.onChange}
+                      disabled={isSubmitting || providers.length === 0}
+                      invalid={!!fieldState.error}
+                      placeholder={
+                        providers.length === 0
+                          ? "Configure a provider in Admin → Providers"
+                          : "Select a rental provider"
+                      }
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Branding on the customer receipt is pulled from this
+                    selection.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             <FormField
               control={form.control}
               name="vehicle.company"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Car company / make</FormLabel>
+                  <FormLabel>Car make</FormLabel>
                   <FormControl>
                     <Input
                       placeholder="e.g. Toyota"
@@ -288,7 +324,7 @@ export function CreateOrderForm({
               name="vehicle.type"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Car type / model</FormLabel>
+                  <FormLabel>Car model</FormLabel>
                   <FormControl>
                     <Input
                       placeholder="e.g. Corolla SE"

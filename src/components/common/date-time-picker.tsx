@@ -90,13 +90,6 @@ export function DateTimePicker({
     commit(merged);
   }
 
-  function applyNow() {
-    const now = new Date();
-    setPendingHour(now.getHours());
-    setPendingMinute(now.getMinutes());
-    commit(now);
-  }
-
   const longLabel = parsed ? format(parsed, TRIGGER_FORMAT_DESKTOP) : placeholder;
   const shortLabel = parsed ? format(parsed, TRIGGER_FORMAT_MOBILE) : placeholder;
 
@@ -140,18 +133,9 @@ export function DateTimePicker({
         />
 
         <div className="border-t border-border bg-muted/30 px-3 py-2.5 flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-[10.5px] uppercase tracking-wider text-muted-foreground">
-              <ClockIcon className="size-3" />
-              Time
-            </div>
-            <button
-              type="button"
-              onClick={applyNow}
-              className="text-[11px] text-primary hover:underline"
-            >
-              Now
-            </button>
+          <div className="flex items-center gap-1.5 text-[10.5px] uppercase tracking-wider text-muted-foreground">
+            <ClockIcon className="size-3" />
+            Time
           </div>
           <TimeSegments
             hour={pendingHour}

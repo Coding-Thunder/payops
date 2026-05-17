@@ -15,6 +15,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { OrderStatusBadge } from "@/components/common/status-badges";
 import { EmptyState } from "@/components/common/empty-state";
+import { ProviderBadge } from "@/components/features/providers";
 import { BookingTypeLabel } from "@/lib/constants/labels";
 import { formatCurrency, formatDate, formatRelative } from "@/lib/format";
 import type { OrderDTO } from "@/types";
@@ -42,7 +43,8 @@ export function OrderTable({ items, emptyAction }: OrderTableProps) {
             <TableHead className="w-[180px]">Order</TableHead>
             <TableHead>Customer</TableHead>
             <TableHead className="hidden md:table-cell">Type</TableHead>
-            <TableHead className="hidden lg:table-cell">Vehicle</TableHead>
+            <TableHead className="hidden lg:table-cell">Provider</TableHead>
+            <TableHead className="hidden xl:table-cell">Vehicle</TableHead>
             <TableHead className="text-right">Amount</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="hidden md:table-cell">Created</TableHead>
@@ -79,6 +81,9 @@ export function OrderTable({ items, emptyAction }: OrderTableProps) {
                 </Badge>
               </TableCell>
               <TableCell className="hidden lg:table-cell">
+                <ProviderBadge provider={o.provider} size="sm" />
+              </TableCell>
+              <TableCell className="hidden xl:table-cell">
                 <div className="text-[13px] font-medium leading-tight">
                   {o.vehicle.company}
                 </div>

@@ -5,7 +5,9 @@ import { ArrowLeftIcon } from "lucide-react";
 import { ArchiveOrderButton } from "@/components/features/orders/archive-order-button";
 import { OrderDetailsCard } from "@/components/features/orders/order-details-card";
 import { OrderPaymentCard } from "@/components/features/orders/order-payment-card";
+import { RiskFlagDialog } from "@/components/features/disputes/risk-flag-dialog";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/common/page-header";
 import { Permission, roleHasPermission } from "@/lib/constants/permissions";
 import { OrderStatus, RecordState } from "@/lib/constants/enums";
@@ -40,6 +42,7 @@ export default async function OrderDetailPage({ params }: OrderPageProps) {
     roleHasPermission(user.role, Permission.ORDER_ARCHIVE) &&
     order.state === RecordState.ACTIVE &&
     order.status !== OrderStatus.PAID;
+  const canFlagRisk = roleHasPermission(user.role, Permission.ORDER_UPDATE);
 
   return (
     <div className="space-y-6">
@@ -53,11 +56,15 @@ export default async function OrderDetailPage({ params }: OrderPageProps) {
         title={order.orderNumber}
         description="Order details and payment status."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <OrderStatusBadge status={order.status} />
             {order.state !== RecordState.ACTIVE ? (
               <RecordStateBadge state={order.state} />
             ) : null}
+            {order.risk.flagged ? (
+              <Badge variant="destructive">Flagged</Badge>
+            ) : null}
+            {canFlagRisk ? <RiskFlagDialog order={order} /> : null}
             {canArchive ? <ArchiveOrderButton orderId={order.id} /> : null}
           </div>
         }

@@ -6,6 +6,7 @@ import {
   ORDER_STATUSES,
   RECORD_STATES,
 } from "@/lib/constants/enums";
+import { PROVIDER_KEY_REGEX } from "@/lib/constants/providers";
 
 const isoDateString = z
   .string()
@@ -17,6 +18,11 @@ const phoneRegex = /^[+0-9()\-\s]{7,32}$/;
 export const createOrderSchema = z
   .object({
     bookingType: z.enum(BOOKING_TYPES),
+    provider: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(PROVIDER_KEY_REGEX, "Select a rental provider"),
     customer: z.object({
       name: z.string().trim().min(2, "Customer name is required").max(120),
       email: z.string().email("Enter a valid email").toLowerCase(),

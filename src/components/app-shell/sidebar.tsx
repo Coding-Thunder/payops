@@ -6,8 +6,10 @@ import {
   BarChart3Icon,
   CreditCardIcon,
   HomeIcon,
+  PackageIcon,
   ScrollTextIcon,
   SettingsIcon,
+  ShieldAlertIcon,
   UsersIcon,
 } from "lucide-react";
 
@@ -58,6 +60,18 @@ const SECTIONS: NavSection[] = [
         label: "Team",
         icon: UsersIcon,
         permissions: [Permission.USER_VIEW],
+      },
+      {
+        href: "/admin/providers",
+        label: "Providers",
+        icon: PackageIcon,
+        permissions: [Permission.PROVIDER_VIEW],
+      },
+      {
+        href: "/admin/disputes",
+        label: "Disputes",
+        icon: ShieldAlertIcon,
+        permissions: [Permission.ORDER_VIEW_ALL],
       },
       {
         href: "/admin/audit",

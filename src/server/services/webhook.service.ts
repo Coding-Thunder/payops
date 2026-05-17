@@ -8,6 +8,10 @@ import {
   AuditEntity,
   OrderStatus,
 } from "@/lib/constants/enums";
+import {
+  ProviderId,
+  UNKNOWN_PROVIDER,
+} from "@/lib/constants/providers";
 import { DomainEventType } from "@/lib/constants/events";
 import { logger } from "@/lib/logger";
 import {
@@ -217,6 +221,21 @@ function orderDocToDTO(
     status: doc.status,
     state: doc.state,
     customer: { ...doc.customer },
+    provider: doc.provider
+      ? {
+          id: doc.provider.id,
+          name: doc.provider.name,
+          logo: doc.provider.logo,
+          primaryColor: doc.provider.primaryColor ?? undefined,
+          onPrimaryColor: doc.provider.onPrimaryColor ?? undefined,
+        }
+      : {
+          id: ProviderId.BUDGET,
+          name: UNKNOWN_PROVIDER.name,
+          logo: UNKNOWN_PROVIDER.logo,
+          primaryColor: UNKNOWN_PROVIDER.primaryColor,
+          onPrimaryColor: UNKNOWN_PROVIDER.onPrimaryColor,
+        },
     vehicle: { ...doc.vehicle },
     trip: {
       pickupDate: doc.trip.pickupDate.toISOString(),
@@ -240,6 +259,27 @@ function orderDocToDTO(
       userId: String(doc.createdBy.userId),
       name: doc.createdBy.name,
       email: doc.createdBy.email,
+    },
+    policy: {
+      acceptedAt:
+        doc.policy?.acceptedAt?.toISOString() ?? doc.createdAt.toISOString(),
+      version: doc.policy?.version ?? "v1",
+      text: doc.policy?.text ?? "",
+    },
+    risk: {
+      flagged: doc.risk?.flagged ?? false,
+      flaggedNote: doc.risk?.flaggedNote ?? null,
+      flaggedAt: doc.risk?.flaggedAt
+        ? doc.risk.flaggedAt.toISOString()
+        : null,
+      flaggedBy: doc.risk?.flaggedBy
+        ? {
+            userId: doc.risk.flaggedBy.userId
+              ? String(doc.risk.flaggedBy.userId)
+              : null,
+            name: doc.risk.flaggedBy.name ?? null,
+          }
+        : null,
     },
     notes: doc.notes ?? null,
     createdAt: doc.createdAt.toISOString(),

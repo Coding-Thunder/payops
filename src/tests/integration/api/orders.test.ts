@@ -1,0 +1,118 @@
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import { UserRole } from "@/lib/constants/enums";
+import { GET as listRoute, POST as createRoute } from "@/app/api/orders/route";
+import { actorFor, mockSession } from "@/tests/utils/auth";
+import { buildRequest, expectErr, expectOk, jsonBody } from "@/tests/utils/api";
+import { mockNextHeaders } from "@/tests/utils/next-headers";
+import { createSettings } from "@/tests/factories/settings.factory";
+import { ensureMongo } from "@/tests/utils/db";
+import { validCreateOrderInput } from "@/tests/fixtures/order-input.fixture";
+
+/**
+ * /api/orders — exercises the route handler boundary including:
+ *
+ *   - the `withApi` envelope wrapper turns thrown errors into JSON
+ *   - `requirePermission` is consulted before the handler body runs
+ *   - the integration with the order service produces a Stripe session id
+ *
+ * Auth is mocked at the `requirePermission` boundary so we don't need a
+ * real session cookie for every test.
+ */
+
+let headersMock: Awaited<ReturnType<typeof mockNextHeaders>>;
+let sessionMock: Awaited<ReturnType<typeof mockSession>> | null = null;
+
+beforeEach(async () => {
+  await ensureMongo();
+  await createSettings();
+  headersMock = await mockNextHeaders();
+});
+
+afterEach(async () => {
+  await headersMock.restore();
+  if (sessionMock) {
+    sessionMock.restore();
+    sessionMock = null;
+  }
+});
+
+describe("POST /api/orders", () => {
+  it("creates an order, returns 201, and exposes the checkout URL", async () => {
+    sessionMock = await mockSession(actorFor(UserRole.ADMIN));
+
+    const req = buildRequest("/api/orders", {
+      method: "POST",
+      body: validCreateOrderInput(),
+    });
+    const res = await createRoute(req);
+    const { status, body } = await jsonBody(res);
+
+    expect(status).toBe(201);
+    expectOk(body as never);
+    const data = (body as { data: { order: { id: string }; checkoutUrl: string } }).data;
+    expect(data.order.id).toMatch(/^[a-f0-9]{24}$/);
+    expect(data.checkoutUrl).toMatch(/^http/);
+  });
+
+  it("returns 422 when validation fails", async () => {
+    sessionMock = await mockSession(actorFor(UserRole.ADMIN));
+
+    const req = buildRequest("/api/orders", {
+      method: "POST",
+      body: {
+        ...validCreateOrderInput(),
+        pricing: { amount: -1, currency: "USD" },
+      },
+    });
+    const res = await createRoute(req);
+    const { status, body } = await jsonBody(res);
+    expect(status).toBe(422);
+    expectErr(body as never);
+    expect((body as { error: { code: string } }).error.code).toBe(
+      "VALIDATION_ERROR",
+    );
+  });
+
+  it("STAFF role can create orders", async () => {
+    sessionMock = await mockSession(actorFor(UserRole.STAFF));
+    const req = buildRequest("/api/orders", {
+      method: "POST",
+      body: validCreateOrderInput(),
+    });
+    const res = await createRoute(req);
+    expect(res.status).toBe(201);
+  });
+});
+
+describe("GET /api/orders", () => {
+  it("returns a paginated list scoped to the actor", async () => {
+    const actor = actorFor(UserRole.STAFF);
+    sessionMock = await mockSession(actor);
+    // Create one through the service so it gets the right createdBy
+    await createRoute(
+      buildRequest("/api/orders", {
+        method: "POST",
+        body: validCreateOrderInput(),
+      }),
+    );
+
+    const res = await listRoute(buildRequest("/api/orders"));
+    const { status, body } = await jsonBody(res);
+    expect(status).toBe(200);
+    expectOk(body as never);
+    const data = (body as { data: { items: unknown[]; total: number } }).data;
+    expect(data.items.length).toBe(1);
+    expect(data.total).toBe(1);
+  });
+
+  it("returns 422 for an invalid query string", async () => {
+    sessionMock = await mockSession(actorFor(UserRole.ADMIN));
+    const res = await listRoute(
+      buildRequest("/api/orders", {
+        searchParams: { page: "not-a-number" },
+      }),
+    );
+    expect(res.status).toBe(422);
+  });
+});

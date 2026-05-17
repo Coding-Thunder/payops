@@ -1,5 +1,7 @@
 import { env } from "@/lib/env";
 import { getOrderByNumber } from "@/server/services/order.service";
+import { ProviderBadge } from "@/components/features/providers";
+import { resolveProvider } from "@/lib/constants/providers";
 
 export const metadata = { title: "Payment received" };
 export const dynamic = "force-dynamic";
@@ -43,6 +45,13 @@ export default async function PaymentSuccessPage({
 
       {order ? (
         <div className="border-t border-slate-100 px-8 py-6">
+          <div className="flex items-center justify-between gap-3 pb-4">
+            <ProviderBadge
+              provider={order.provider}
+              size="md"
+              subtitle={resolveProvider(order.provider).tagline}
+            />
+          </div>
           <dl className="grid grid-cols-2 gap-y-3 text-sm">
             <dt className="text-slate-500">Order</dt>
             <dd className="text-right font-mono text-slate-900">
