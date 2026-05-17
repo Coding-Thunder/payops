@@ -1,6 +1,8 @@
+import { EmptyReceiptIllustration } from "@/components/brand/illustrations";
 import { cn } from "@/lib/utils";
 
 interface EmptyStateProps {
+  /** Custom icon node. If omitted, a default receipt illustration is shown. */
   icon?: React.ReactNode;
   title: string;
   description?: string;
@@ -18,7 +20,7 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        "flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card/40 p-10 text-center",
+        "flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-border bg-card/40 p-10 text-center",
         className,
       )}
     >
@@ -26,7 +28,9 @@ export function EmptyState({
         <div className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
           {icon}
         </div>
-      ) : null}
+      ) : (
+        <EmptyReceiptIllustration className="text-muted-foreground" />
+      )}
       <div className="space-y-1">
         <p className="text-sm font-medium text-foreground">{title}</p>
         {description ? (

@@ -2,6 +2,12 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * Table — Linear / Stripe style: dense rows, no heavy separators, soft
+ * hover, single hairline border between rows. Use TableHead for column
+ * labels — they're uppercase-tracked and muted so data reads as the
+ * dominant element on the screen.
+ */
 function Table({
   className,
   ...props
@@ -10,7 +16,10 @@ function Table({
     <div data-slot="table-container" className="relative w-full overflow-auto">
       <table
         data-slot="table"
-        className={cn("w-full caption-bottom text-sm", className)}
+        className={cn(
+          "w-full caption-bottom text-[13px] tabular-nums",
+          className,
+        )}
         {...props}
       />
     </div>
@@ -24,7 +33,7 @@ function TableHeader({
   return (
     <thead
       data-slot="table-header"
-      className={cn("[&_tr]:border-b bg-muted/40", className)}
+      className={cn("[&_tr]:border-b [&_tr]:border-border", className)}
       {...props}
     />
   );
@@ -51,7 +60,7 @@ function TableFooter({
     <tfoot
       data-slot="table-footer"
       className={cn(
-        "border-t bg-muted/50 font-medium [&>tr]:last:border-b-0",
+        "border-t border-border bg-surface-1 font-medium [&>tr]:last:border-b-0",
         className,
       )}
       {...props}
@@ -67,7 +76,9 @@ function TableRow({
     <tr
       data-slot="table-row"
       className={cn(
-        "border-b transition-colors hover:bg-muted/40 data-[state=selected]:bg-muted",
+        "border-b border-border transition-colors",
+        "hover:bg-surface-1 data-[state=selected]:bg-muted",
+        "last:border-b-0",
         className,
       )}
       {...props}
@@ -83,7 +94,8 @@ function TableHead({
     <th
       data-slot="table-head"
       className={cn(
-        "h-10 px-3 text-left align-middle text-xs font-medium uppercase tracking-wide text-muted-foreground",
+        "h-9 px-3 text-left align-middle font-medium",
+        "text-[10.5px] uppercase tracking-wider text-muted-foreground",
         "[&:has([role=checkbox])]:pr-0",
         className,
       )}
@@ -100,7 +112,7 @@ function TableCell({
     <td
       data-slot="table-cell"
       className={cn(
-        "p-3 align-middle text-sm",
+        "px-3 py-2.5 align-middle text-[13px] text-foreground",
         "[&:has([role=checkbox])]:pr-0",
         className,
       )}
@@ -116,7 +128,7 @@ function TableCaption({
   return (
     <caption
       data-slot="table-caption"
-      className={cn("mt-4 text-sm text-muted-foreground", className)}
+      className={cn("mt-4 text-[12.5px] text-muted-foreground", className)}
       {...props}
     />
   );

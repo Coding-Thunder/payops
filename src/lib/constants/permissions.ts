@@ -26,30 +26,39 @@ export const Permission = {
 } as const;
 export type Permission = (typeof Permission)[keyof typeof Permission];
 
+/**
+ * Permissions are layered: ADMIN inherits everything STAFF can do, and
+ * SUPER_ADMIN inherits everything ADMIN can do. This guarantees that any
+ * route guarded by a staff permission is automatically accessible to
+ * higher roles - useful when an admin needs to step in and work an order
+ * during high-load or emergencies.
+ */
+const STAFF_PERMISSIONS: readonly Permission[] = [
+  Permission.ORDER_VIEW_OWN,
+  Permission.ORDER_CREATE,
+  Permission.ORDER_REGENERATE_LINK,
+];
+
+const ADMIN_ONLY_PERMISSIONS: readonly Permission[] = [
+  Permission.USER_VIEW,
+  Permission.USER_CREATE,
+  Permission.USER_UPDATE,
+  Permission.USER_DISABLE,
+  Permission.USER_RESET_PASSWORD,
+  Permission.ORDER_VIEW_ALL,
+  Permission.ORDER_UPDATE,
+  Permission.ORDER_ARCHIVE,
+  Permission.ANALYTICS_VIEW,
+  Permission.SETTINGS_VIEW,
+  Permission.SETTINGS_UPDATE,
+  Permission.AUDIT_VIEW,
+];
+
 /** Role → permissions matrix. Single source of truth. */
 export const RolePermissions: Record<UserRole, ReadonlySet<Permission>> = {
+  STAFF: new Set<Permission>(STAFF_PERMISSIONS),
+  ADMIN: new Set<Permission>([...STAFF_PERMISSIONS, ...ADMIN_ONLY_PERMISSIONS]),
   SUPER_ADMIN: new Set<Permission>(Object.values(Permission)),
-  ADMIN: new Set<Permission>([
-    Permission.USER_VIEW,
-    Permission.USER_CREATE,
-    Permission.USER_UPDATE,
-    Permission.USER_DISABLE,
-    Permission.USER_RESET_PASSWORD,
-    Permission.ORDER_VIEW_ALL,
-    Permission.ORDER_CREATE,
-    Permission.ORDER_UPDATE,
-    Permission.ORDER_ARCHIVE,
-    Permission.ORDER_REGENERATE_LINK,
-    Permission.ANALYTICS_VIEW,
-    Permission.SETTINGS_VIEW,
-    Permission.SETTINGS_UPDATE,
-    Permission.AUDIT_VIEW,
-  ]),
-  STAFF: new Set<Permission>([
-    Permission.ORDER_VIEW_OWN,
-    Permission.ORDER_CREATE,
-    Permission.ORDER_REGENERATE_LINK,
-  ]),
 };
 
 export function roleHasPermission(

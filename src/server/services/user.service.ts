@@ -8,12 +8,14 @@ import {
   RecordState,
   UserRole,
 } from "@/lib/constants/enums";
+import { DomainEventType } from "@/lib/constants/events";
 import {
   ConflictError,
   ForbiddenError,
   NotFoundError,
   ValidationError,
 } from "@/lib/errors";
+import { publishEvent } from "@/server/events/bus";
 import type {
   CreateUserInput,
   ListUsersQuery,
@@ -131,6 +133,18 @@ export async function createUser(
     metadata: { email: doc.email, role: doc.role },
   });
 
+  publishEvent({
+    type: DomainEventType.USER_CREATED,
+    audience: { kind: "admins" },
+    actor: { id: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+    payload: {
+      userId: String(doc._id),
+      name: doc.name,
+      email: doc.email,
+      role: doc.role,
+    },
+  });
+
   return toPublic(doc.toObject() as UserDoc & { _id: Types.ObjectId });
 }
 
@@ -201,6 +215,17 @@ export async function updateUser(
     actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
     request: ctx.request ?? null,
     metadata: { changes },
+  });
+
+  publishEvent({
+    type: DomainEventType.USER_UPDATED,
+    audience: { kind: "admins" },
+    actor: { id: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+    payload: {
+      userId: String(doc._id),
+      name: doc.name,
+      changes,
+    },
   });
 
   return toPublic(doc.toObject() as UserDoc & { _id: Types.ObjectId });

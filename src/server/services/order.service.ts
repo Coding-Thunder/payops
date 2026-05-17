@@ -19,8 +19,10 @@ import {
   ValidationError,
 } from "@/lib/errors";
 import { roleHasPermission, Permission } from "@/lib/constants/permissions";
+import { DomainEventType } from "@/lib/constants/events";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
+import { publishEvent } from "@/server/events/bus";
 import { Order, type OrderDoc } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 import type {
@@ -227,7 +229,7 @@ export async function createOrder(
             : null,
       },
     },
-    { new: true },
+    { returnDocument: "after" },
   ).lean<OrderDoc & { _id: Types.ObjectId }>();
 
   if (!updated) throw new NotFoundError("Order vanished during creation");
@@ -244,6 +246,20 @@ export async function createOrder(
       currency: updated.pricing.currency,
       bookingType: updated.bookingType,
       stripeSessionId: session.id,
+    },
+  });
+
+  publishEvent({
+    type: DomainEventType.ORDER_CREATED,
+    audience: { kind: "creator", userId: ctx.actor.id },
+    actor: { id: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+    payload: {
+      orderId: String(updated._id),
+      orderNumber: updated.orderNumber,
+      amount: updated.pricing.amount,
+      currency: updated.pricing.currency,
+      customerName: updated.customer.name,
+      bookingType: updated.bookingType,
     },
   });
 
@@ -461,6 +477,17 @@ export async function archiveOrder(
     metadata: { reason: input.reason ?? null },
   });
 
+  publishEvent({
+    type: DomainEventType.ORDER_ARCHIVED,
+    audience: { kind: "creator", userId: String(doc.createdBy.userId) },
+    actor: { id: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+    payload: {
+      orderId: String(doc._id),
+      orderNumber: doc.orderNumber,
+      customerName: doc.customer.name,
+    },
+  });
+
   return orderToDTO(doc.toObject() as OrderDoc & { _id: Types.ObjectId });
 }
 
@@ -563,6 +590,16 @@ export async function regeneratePaymentLink(
     actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
     request: ctx.request ?? null,
     metadata: { stripeSessionId: session.id },
+  });
+
+  publishEvent({
+    type: DomainEventType.ORDER_LINK_REGENERATED,
+    audience: { kind: "creator", userId: String(doc.createdBy.userId) },
+    actor: { id: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+    payload: {
+      orderId: String(doc._id),
+      orderNumber: doc.orderNumber,
+    },
   });
 
   return {

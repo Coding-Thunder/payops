@@ -2,15 +2,13 @@ import Link from "next/link";
 import { ArrowRightIcon, PlusIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ActivityFeed } from "@/components/features/activity/activity-feed";
 import { OrderTable } from "@/components/features/orders/order-table";
+import { Aurora } from "@/components/brand/aurora";
+import { FadeIn } from "@/components/motion/fade-in";
 import { PageHeader } from "@/components/common/page-header";
+import { StatCard } from "@/components/common/stat-card";
 import { Permission, roleHasPermission } from "@/lib/constants/permissions";
 import { OrderStatus, RecordState } from "@/lib/constants/enums";
 import { formatCurrency } from "@/lib/format";
@@ -36,151 +34,132 @@ export default async function DashboardPage() {
       },
       { actor: user },
     ),
-    canSeeAnalytics
-      ? getAnalyticsSummary({
-          from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-        })
-      : null,
+    canSeeAnalytics ? getAnalyticsSummary() : null,
   ]);
+
+  const firstName = user.name.split(" ")[0];
 
   return (
     <div className="space-y-8">
-      <PageHeader
-        title={`Welcome back, ${user.name.split(" ")[0]}`}
-        description="Create payable orders and track every Stripe payment in one place."
-        actions={
-          <Button asChild>
-            <Link href="/orders/create">
-              <PlusIcon className="size-4" />
-              New order
-            </Link>
-          </Button>
-        }
-      />
+      <div className="relative overflow-hidden rounded-2xl border border-border bg-card">
+        <Aurora />
+        <div className="relative px-5 py-5 sm:px-8 sm:py-7">
+          <PageHeader
+            eyebrow="Workspace"
+            title={`Welcome back, ${firstName}`}
+            description="Create payable orders and track every Stripe payment in one place."
+            className="border-0 pb-0"
+            actions={
+              <Button asChild>
+                <Link href="/orders/create">
+                  <PlusIcon className="size-3.5" />
+                  New order
+                </Link>
+              </Button>
+            }
+          />
+        </div>
+      </div>
 
       {canSeeAnalytics && analytics ? (
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Stat
-            label="Revenue (30 days)"
-            value={formatCurrency(analytics.totals.revenue, analytics.totals.currency)}
-            sub={`${analytics.totals.ordersPaid} paid orders`}
-          />
-          <Stat
-            label="Conversion"
-            value={`${analytics.totals.conversionRate}%`}
-            sub={`${analytics.totals.ordersCreated} created`}
-          />
-          <Stat
-            label="Pending"
-            value={String(analytics.totals.ordersPending)}
-            sub="Awaiting customer payment"
-            tone="warning"
-          />
-          <Stat
-            label="Failed or expired"
-            value={String(
-              analytics.totals.ordersFailed + analytics.totals.ordersExpired,
-            )}
-            sub="Last 30 days"
-            tone="destructive"
-          />
-        </section>
+        <FadeIn>
+          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard
+              label="Revenue · 30d"
+              value={formatCurrency(
+                analytics.totals.revenue,
+                analytics.totals.currency,
+              )}
+              caption={`${analytics.totals.ordersPaid} paid orders`}
+            />
+            <StatCard
+              label="Conversion"
+              value={`${analytics.totals.conversionRate}%`}
+              caption={`${analytics.totals.ordersCreated} created`}
+            />
+            <StatCard
+              label="Outstanding"
+              value={analytics.totals.ordersPending}
+              caption="Awaiting customer payment"
+              variant="warning"
+            />
+            <StatCard
+              label="Failed / expired"
+              value={
+                analytics.totals.ordersFailed + analytics.totals.ordersExpired
+              }
+              caption="Last 30 days"
+              variant="destructive"
+            />
+          </section>
+        </FadeIn>
       ) : null}
 
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold tracking-tight">
-            {canSeeAll ? "Recent orders" : "Your recent orders"}
-          </h2>
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/orders">
-              View all
-              <ArrowRightIcon className="size-3.5" />
-            </Link>
-          </Button>
-        </div>
-        <OrderTable
-          items={recent.items}
-          emptyAction={
-            <Button asChild>
-              <Link href="/orders/create">
-                <PlusIcon className="size-4" />
-                Create your first order
+      <div className="grid gap-6 lg:grid-cols-3">
+        <FadeIn delay={60} className="space-y-3 lg:col-span-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-[14px] font-semibold tracking-tight">
+              {canSeeAll ? "Recent orders" : "Your recent orders"}
+            </h2>
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/orders">
+                View all
+                <ArrowRightIcon className="size-3" />
               </Link>
             </Button>
-          }
-        />
-      </section>
+          </div>
+          <OrderTable
+            items={recent.items}
+            emptyAction={
+              <Button asChild>
+                <Link href="/orders/create">
+                  <PlusIcon className="size-3.5" />
+                  Create your first order
+                </Link>
+              </Button>
+            }
+          />
+        </FadeIn>
+
+        <FadeIn delay={120} className="lg:col-span-1">
+          <ActivityFeed />
+        </FadeIn>
+      </div>
 
       {recent.items.some((o) => o.status === OrderStatus.PAYMENT_PENDING) ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Outstanding payments</CardTitle>
-            <CardDescription>
-              These customers still need to complete payment. Use the order
-              detail page to copy the payment link and resend it.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="text-sm space-y-2">
-              {recent.items
-                .filter((o) => o.status === OrderStatus.PAYMENT_PENDING)
-                .map((o) => (
-                  <li key={o.id} className="flex items-center justify-between">
-                    <Link
-                      href={`/orders/${o.id}`}
-                      className="hover:underline"
+        <FadeIn delay={180}>
+          <Card>
+            <CardHeader>
+              <CardTitle>Outstanding payments</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="divide-y divide-border text-[13px]">
+                {recent.items
+                  .filter((o) => o.status === OrderStatus.PAYMENT_PENDING)
+                  .map((o) => (
+                    <li
+                      key={o.id}
+                      className="flex items-center justify-between py-2"
                     >
-                      <span className="font-mono text-xs">
-                        {o.orderNumber}
-                      </span>{" "}
-                      • {o.customer.name}
-                    </Link>
-                    <span className="text-muted-foreground">
-                      {formatCurrency(o.pricing.amount, o.pricing.currency)}
-                    </span>
-                  </li>
-                ))}
-            </ul>
-          </CardContent>
-        </Card>
+                      <Link
+                        href={`/orders/${o.id}`}
+                        className="flex items-center gap-3 hover:text-foreground text-muted-foreground transition-colors"
+                      >
+                        <span className="font-mono text-[12px] text-foreground">
+                          {o.orderNumber}
+                        </span>
+                        <span>{o.customer.name}</span>
+                      </Link>
+                      <span className="font-medium text-foreground tabular-nums">
+                        {formatCurrency(o.pricing.amount, o.pricing.currency)}
+                      </span>
+                    </li>
+                  ))}
+              </ul>
+            </CardContent>
+          </Card>
+        </FadeIn>
       ) : null}
     </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  sub,
-  tone,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  tone?: "warning" | "destructive";
-}) {
-  return (
-    <Card>
-      <CardContent className="pt-6">
-        <p className="text-xs uppercase tracking-wider text-muted-foreground">
-          {label}
-        </p>
-        <p
-          className={
-            tone === "warning"
-              ? "mt-1 text-2xl font-semibold tracking-tight text-amber-600 dark:text-amber-400"
-              : tone === "destructive"
-                ? "mt-1 text-2xl font-semibold tracking-tight text-destructive"
-                : "mt-1 text-2xl font-semibold tracking-tight"
-          }
-        >
-          {value}
-        </p>
-        {sub ? (
-          <p className="mt-1 text-xs text-muted-foreground">{sub}</p>
-        ) : null}
-      </CardContent>
-    </Card>
   );
 }

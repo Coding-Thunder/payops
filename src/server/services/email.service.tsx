@@ -7,7 +7,7 @@ import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import type { OrderDTO } from "@/types";
 
-import { getResend } from "@/server/email/resend";
+import { getMailer } from "@/server/email/smtp";
 import {
   PaymentConfirmationEmail,
   type PaymentConfirmationEmailProps,
@@ -26,12 +26,12 @@ interface SendArgs {
 }
 
 async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
-  const client = getResend();
+  const mailer = getMailer();
   const fromAddress = env.server.EMAIL_FROM;
   const replyTo = env.server.EMAIL_REPLY_TO;
 
-  if (!client) {
-    logger.warn("email.skipped_no_resend_key", {
+  if (!mailer) {
+    logger.warn("email.skipped_no_smtp_config", {
       kind: args.kind,
       to: args.to,
       orderId: args.orderId ?? undefined,
@@ -40,13 +40,16 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
       action: AuditAction.EMAIL_FAILED,
       entityType: AuditEntity.ORDER,
       entityId: args.orderId ?? null,
-      metadata: { reason: "RESEND_API_KEY missing", kind: args.kind },
+      metadata: {
+        reason: "SMTP not configured (SMTP_HOST / SMTP_USER / SMTP_PASS)",
+        kind: args.kind,
+      },
     });
     return { id: null };
   }
 
   try {
-    const result = await client.emails.send({
+    const info = await mailer.sendMail({
       from: fromAddress,
       to: args.to,
       replyTo: replyTo || undefined,
@@ -55,9 +58,6 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
       text: args.text,
       headers: { "X-Entity-Kind": args.kind },
     });
-    if (result.error) {
-      throw new Error(result.error.message);
-    }
     await recordAudit({
       action: AuditAction.EMAIL_SENT,
       entityType: AuditEntity.ORDER,
@@ -65,10 +65,11 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
       metadata: {
         kind: args.kind,
         to: args.to,
-        providerId: result.data?.id ?? null,
+        messageId: info.messageId ?? null,
+        response: info.response ?? null,
       },
     });
-    return { id: result.data?.id ?? null };
+    return { id: info.messageId ?? null };
   } catch (err) {
     logger.error("email.send_failed", {
       kind: args.kind,

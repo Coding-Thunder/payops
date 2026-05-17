@@ -4,18 +4,9 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { LoaderIcon, PlusIcon } from "lucide-react";
+import { PlusIcon, UserPlusIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import {
   Form,
   FormControl,
@@ -26,6 +17,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import {
   Select,
   SelectContent,
@@ -34,13 +26,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
+import { FormDialog } from "@/components/common/form-dialog";
 import { api, ApiClientError } from "@/lib/api-client";
 import { UserRoleLabel } from "@/lib/constants/labels";
 import { UserRole } from "@/lib/constants/enums";
-import {
-  createUserSchema,
-  type CreateUserInput,
-} from "@/lib/validation";
+import { createUserSchema, type CreateUserInput } from "@/lib/validation";
 import type { PublicUser, SessionUser } from "@/types";
 
 interface CreateUserDialogProps {
@@ -50,6 +40,7 @@ interface CreateUserDialogProps {
 export function CreateUserDialog({ actorRole }: CreateUserDialogProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+
   const form = useForm<CreateUserInput>({
     resolver: zodResolver(createUserSchema),
     defaultValues: {
@@ -61,7 +52,6 @@ export function CreateUserDialog({ actorRole }: CreateUserDialogProps) {
     mode: "onTouched",
   });
 
-  const isSubmitting = form.formState.isSubmitting;
   const canCreateSuperAdmin = actorRole === UserRole.SUPER_ADMIN;
 
   async function onSubmit(values: CreateUserInput) {
@@ -73,31 +63,35 @@ export function CreateUserDialog({ actorRole }: CreateUserDialogProps) {
       router.refresh();
     } catch (err) {
       const message =
-        err instanceof ApiClientError
-          ? err.message
-          : "Could not create user";
+        err instanceof ApiClientError ? err.message : "Could not create user";
       toast.error(message);
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button>
-          <PlusIcon className="size-4" />
-          Add team member
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Add team member</DialogTitle>
-          <DialogDescription>
-            Create an account that can log in to the operations console. The
-            initial password is shared securely with the new user.
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <Button onClick={() => setOpen(true)}>
+        <PlusIcon className="size-3.5" />
+        Add team member
+      </Button>
+
+      <FormDialog
+        open={open}
+        onOpenChange={(o) => {
+          setOpen(o);
+          if (!o) form.reset();
+        }}
+        title="Add team member"
+        description="Create an account that can log in to the operations console. Share the initial password through a secure channel."
+        icon={<UserPlusIcon />}
+        submitLabel="Create user"
+        size="md"
+        onSubmit={async (e) => {
+          await form.handleSubmit(onSubmit)(e);
+        }}
+      >
         <Form {...form}>
-          <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
+          <div className="space-y-4">
             <FormField
               control={form.control}
               name="name"
@@ -105,41 +99,44 @@ export function CreateUserDialog({ actorRole }: CreateUserDialogProps) {
                 <FormItem>
                   <FormLabel>Full name</FormLabel>
                   <FormControl>
-                    <Input {...field} disabled={isSubmitting} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Email</FormLabel>
-                  <FormControl>
                     <Input
-                      type="email"
-                      inputMode="email"
+                      placeholder="Jane Smith"
+                      autoComplete="name"
                       {...field}
-                      disabled={isSubmitting}
                     />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
+
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Work email</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="email"
+                      inputMode="email"
+                      autoComplete="off"
+                      placeholder="jane@company.com"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             <FormField
               control={form.control}
               name="role"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Role</FormLabel>
-                  <Select
-                    value={field.value}
-                    onValueChange={field.onChange}
-                    disabled={isSubmitting}
-                  >
+                  <Select value={field.value} onValueChange={field.onChange}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Select role" />
@@ -163,6 +160,7 @@ export function CreateUserDialog({ actorRole }: CreateUserDialogProps) {
                 </FormItem>
               )}
             />
+
             <FormField
               control={form.control}
               name="password"
@@ -170,41 +168,19 @@ export function CreateUserDialog({ actorRole }: CreateUserDialogProps) {
                 <FormItem>
                   <FormLabel>Temporary password</FormLabel>
                   <FormControl>
-                    <Input
-                      type="text"
-                      autoComplete="off"
-                      {...field}
-                      disabled={isSubmitting}
-                    />
+                    <PasswordInput autoComplete="off" {...field} />
                   </FormControl>
                   <FormDescription>
-                    Must include upper, lower, number; at least 10 characters.
-                    Share via a secure channel; the user can change it later.
+                    At least 10 characters, including upper, lower, and a
+                    number. The user can change it after first login.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setOpen(false)}
-                disabled={isSubmitting}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? (
-                  <LoaderIcon className="size-4 animate-spin" />
-                ) : null}
-                Create user
-              </Button>
-            </DialogFooter>
-          </form>
+          </div>
         </Form>
-      </DialogContent>
-    </Dialog>
+      </FormDialog>
+    </>
   );
 }

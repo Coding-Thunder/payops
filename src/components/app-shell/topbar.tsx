@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { LogOutIcon, MenuIcon, UserCircleIcon } from "lucide-react";
+import { LogOutIcon, MenuIcon } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { LogoLockup } from "@/components/brand/logo";
 import { initialsFromName } from "@/lib/format";
 import { UserRoleLabel } from "@/lib/constants/labels";
 import { toast } from "@/components/ui/sonner";
@@ -49,59 +50,73 @@ export function Topbar({ user, brand }: TopbarProps) {
   }
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background px-4 md:px-6">
+    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/80 backdrop-blur-md px-4 md:px-6">
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetTrigger asChild>
-          <Button variant="ghost" size="icon" className="md:hidden">
-            <MenuIcon className="size-5" />
+          <Button variant="ghost" size="icon-sm" className="md:hidden">
+            <MenuIcon className="size-4" />
           </Button>
         </SheetTrigger>
-        <SheetContent side="left" className="p-0 w-72">
-          <SheetHeader className="px-5 py-4 border-b border-border">
-            <SheetTitle>{brand}</SheetTitle>
+        <SheetContent side="left" className="p-0 w-72 bg-sidebar">
+          <SheetHeader className="px-4 h-14 flex-row items-center border-b border-sidebar-border">
+            <SheetTitle asChild>
+              <LogoLockup brand={brand} subtitle="Ops console" size="sm" />
+            </SheetTitle>
           </SheetHeader>
-          <div className="flex md:hidden">
-            <Sidebar role={user.role} brand={brand} />
-          </div>
+          <Sidebar role={user.role} brand={brand} variant="embedded" />
         </SheetContent>
       </Sheet>
 
-      <div className="hidden md:block text-sm text-muted-foreground">
-        Operations console
+      <div className="hidden md:flex items-center gap-2 text-[12.5px] text-muted-foreground">
+        <span className="font-medium text-foreground">Payment operations</span>
       </div>
 
-      <div className="ml-auto flex items-center gap-3">
+      <div className="ml-auto flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            document.dispatchEvent(
+              new KeyboardEvent("keydown", { key: "k", metaKey: true }),
+            );
+          }}
+          className="hidden md:inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-1 px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted transition-colors"
+        >
+          <span>Search</span>
+          <kbd className="rounded bg-background px-1 text-[10px] font-medium text-foreground tabular-nums">
+            ⌘K
+          </kbd>
+        </button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
-              className="flex items-center gap-2 h-9 px-2"
+              className="h-8 gap-2 pr-2 pl-1.5"
             >
-              <Avatar className="size-7">
-                <AvatarFallback>{initialsFromName(user.name)}</AvatarFallback>
+              <Avatar className="size-6">
+                <AvatarFallback className="text-[10.5px]">
+                  {initialsFromName(user.name)}
+                </AvatarFallback>
               </Avatar>
-              <div className="hidden text-left sm:block">
-                <div className="text-xs font-medium leading-tight">
-                  {user.name}
-                </div>
-                <div className="text-[11px] text-muted-foreground leading-tight">
+              <div className="hidden text-left sm:block leading-tight">
+                <div className="text-[12.5px] font-medium">{user.name}</div>
+                <div className="text-[10.5px] text-muted-foreground">
                   {UserRoleLabel[user.role]}
                 </div>
               </div>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>
-              <div className="font-medium">{user.name}</div>
-              <div className="text-xs text-muted-foreground">{user.email}</div>
+            <DropdownMenuLabel className="flex flex-col gap-0.5 py-2">
+              <span className="text-[12.5px] font-medium text-foreground">
+                {user.name}
+              </span>
+              <span className="text-[11px] text-muted-foreground">
+                {user.email}
+              </span>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem disabled>
-              <UserCircleIcon className="size-4" /> {UserRoleLabel[user.role]}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onClick={onLogout}>
-              <LogOutIcon className="size-4" /> Sign out
+              <LogOutIcon className="size-3.5" /> Sign out
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

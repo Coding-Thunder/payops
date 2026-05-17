@@ -90,7 +90,7 @@ export async function ensureSettingsDocument(): Promise<SettingDoc> {
         cancelRedirectUrl: `${e.APP_URL}/orders/payment/cancelled`,
       },
     },
-    { new: true, upsert: true, setDefaultsOnInsert: true },
+    { returnDocument: "after", upsert: true, setDefaultsOnInsert: true },
   ).lean<SettingDoc>();
   if (!doc) throw new Error("Failed to load settings document");
   return doc;
@@ -109,7 +109,7 @@ export async function updateSettings(
         updatedBy: new Types.ObjectId(ctx.actorId),
       },
     },
-    { new: true },
+    { returnDocument: "after" },
   ).lean<SettingDoc>();
   if (!updated) throw new Error("Settings document missing after update");
 

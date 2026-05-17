@@ -6,13 +6,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { LoaderIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Form,
@@ -32,11 +25,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
+import { Section, SectionStack } from "@/components/common/section";
 import { api, ApiClientError } from "@/lib/api-client";
-import {
-  BOOKING_TYPES,
-  CURRENCIES,
-} from "@/lib/constants/enums";
+import { BOOKING_TYPES, CURRENCIES } from "@/lib/constants/enums";
 import { BookingTypeLabel } from "@/lib/constants/labels";
 import {
   updateSettingsSchema,
@@ -59,11 +50,13 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
   });
 
   const isSubmitting = form.formState.isSubmitting;
+  const isDirty = form.formState.isDirty;
 
   async function onSubmit(values: SettingsFormValues) {
     try {
       await api.patch("/api/admin/settings", values);
       toast.success("Settings updated");
+      form.reset(values);
       router.refresh();
     } catch (err) {
       const message =
@@ -74,92 +67,89 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
 
   return (
     <Form {...form}>
-      <form className="space-y-6" onSubmit={form.handleSubmit(onSubmit)}>
-        <Card>
-          <CardHeader>
-            <CardTitle>Order generation</CardTitle>
-            <CardDescription>
-              Controls how new orders are created and how long their payment
-              links remain valid.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            <FormField
-              control={form.control}
-              name="orderPrefix"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Order number prefix</FormLabel>
-                  <FormControl>
-                    <Input
-                      maxLength={6}
-                      disabled={!canEdit || isSubmitting}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormDescription>2–6 uppercase letters.</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="paymentExpiryHours"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Payment link expiry (hours)</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={720}
-                      disabled={!canEdit || isSubmitting}
-                      {...field}
-                      onChange={(e) => field.onChange(Number(e.target.value))}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Stripe clamps to 23.5h max; longer values are stored for the
-                    record.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="defaultCurrency"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Default currency</FormLabel>
-                  <Select
-                    value={field.value}
-                    onValueChange={field.onChange}
-                    disabled={!canEdit || isSubmitting}
-                  >
+      <form onSubmit={form.handleSubmit(onSubmit)}>
+        <SectionStack>
+          <Section
+            title="Order generation"
+            description="Controls how new orders are created and how long their payment links remain valid."
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="orderPrefix"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Order number prefix</FormLabel>
                     <FormControl>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
+                      <Input
+                        maxLength={6}
+                        disabled={!canEdit || isSubmitting}
+                        {...field}
+                      />
                     </FormControl>
-                    <SelectContent>
-                      {CURRENCIES.map((c) => (
-                        <SelectItem key={c} value={c}>
-                          {c}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                    <FormDescription>2–6 uppercase letters.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="paymentExpiryHours"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Payment link expiry (hours)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={720}
+                        disabled={!canEdit || isSubmitting}
+                        {...field}
+                        onChange={(e) => field.onChange(Number(e.target.value))}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Stripe clamps to 23.5h max.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="defaultCurrency"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Default currency</FormLabel>
+                    <Select
+                      value={field.value}
+                      onValueChange={field.onChange}
+                      disabled={!canEdit || isSubmitting}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {CURRENCIES.map((c) => (
+                          <SelectItem key={c} value={c}>
+                            {c}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
             <FormField
               control={form.control}
               name="allowedBookingTypes"
               render={({ field }) => (
-                <FormItem className="sm:col-span-2">
+                <FormItem>
                   <FormLabel>Allowed booking types</FormLabel>
                   <div className="grid gap-2 sm:grid-cols-3">
                     {BOOKING_TYPES.map((t) => {
@@ -167,7 +157,7 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
                       return (
                         <label
                           key={t}
-                          className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm cursor-pointer hover:bg-muted/40"
+                          className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-[13px] cursor-pointer transition-colors hover:bg-surface-1"
                         >
                           <Checkbox
                             checked={checked}
@@ -179,7 +169,7 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
                               field.onChange(Array.from(next));
                             }}
                           />
-                          {BookingTypeLabel[t]}
+                          <span>{BookingTypeLabel[t]}</span>
                         </label>
                       );
                     })}
@@ -188,96 +178,108 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
                 </FormItem>
               )}
             />
-          </CardContent>
-        </Card>
+          </Section>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Customer-facing details</CardTitle>
-            <CardDescription>
-              Used in confirmation emails and redirect URLs after Stripe
-              checkout.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            <FormField
-              control={form.control}
-              name="supportEmail"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Support email</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="email"
-                      disabled={!canEdit || isSubmitting}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="supportPhone"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Support phone</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="tel"
-                      disabled={!canEdit || isSubmitting}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="successRedirectUrl"
-              render={({ field }) => (
-                <FormItem className="sm:col-span-2">
-                  <FormLabel>Success redirect URL</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="url"
-                      disabled={!canEdit || isSubmitting}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="cancelRedirectUrl"
-              render={({ field }) => (
-                <FormItem className="sm:col-span-2">
-                  <FormLabel>Cancel redirect URL</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="url"
-                      disabled={!canEdit || isSubmitting}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </CardContent>
-        </Card>
+          <Section
+            title="Customer-facing details"
+            description="Used in confirmation emails and redirect URLs after Stripe checkout."
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="supportEmail"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Support email</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="email"
+                        disabled={!canEdit || isSubmitting}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="supportPhone"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Support phone</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="tel"
+                        disabled={!canEdit || isSubmitting}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="successRedirectUrl"
+                render={({ field }) => (
+                  <FormItem className="sm:col-span-2">
+                    <FormLabel>Success redirect URL</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="url"
+                        disabled={!canEdit || isSubmitting}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="cancelRedirectUrl"
+                render={({ field }) => (
+                  <FormItem className="sm:col-span-2">
+                    <FormLabel>Cancel redirect URL</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="url"
+                        disabled={!canEdit || isSubmitting}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+          </Section>
+        </SectionStack>
 
-        <div className="flex justify-end">
-          <Button type="submit" disabled={!canEdit || isSubmitting}>
-            {isSubmitting ? (
-              <LoaderIcon className="size-4 animate-spin" />
-            ) : null}
-            Save settings
-          </Button>
+        <div className="mt-6 flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-1 px-4 py-3">
+          <p className="text-[12.5px] text-muted-foreground">
+            {isDirty
+              ? "Unsaved changes"
+              : "No pending changes"}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => form.reset()}
+              disabled={!isDirty || isSubmitting}
+            >
+              Discard
+            </Button>
+            <Button type="submit" size="sm" disabled={!canEdit || isSubmitting}>
+              {isSubmitting ? (
+                <LoaderIcon className="size-3.5 animate-spin" />
+              ) : null}
+              Save settings
+            </Button>
+          </div>
         </div>
       </form>
     </Form>

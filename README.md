@@ -13,7 +13,7 @@ updates the order and sends a single branded confirmation email.
 - **Next.js (App Router) + TypeScript strict** — single repo, server-first
 - **MongoDB + Mongoose** — connection caching, strict schemas, indexes
 - **Stripe Checkout** — `checkout.session.completed` is the source of truth
-- **Resend + React Email** — one transactional template, locale-stable
+- **Nodemailer (Google Workspace SMTP) + React Email** — one transactional template, sent via your existing Workspace mailbox using an App Password
 - **JWT (jose) + HTTP-only cookies** — verified at the edge in middleware
 - **Zod** — every API input is validated; route handlers throw `AppError`
 - **shadcn/ui + Tailwind v4** — clean, accessible primitives
@@ -36,7 +36,6 @@ src/
 ├── lib/
 │   ├── constants/          # enums, labels, RBAC permission registry
 │   ├── validation/         # Zod schemas (auth, user, order, settings)
-│   ├── env.ts              # Strictly-typed env loader
 │   ├── errors.ts           # AppError hierarchy
 │   ├── format.ts           # Money / date formatters
 │   ├── api-client.ts       # Typed fetch wrapper (browser side)
@@ -45,7 +44,7 @@ src/
 │   ├── auth/               # JWT, password hashing, session, cookies, RBAC
 │   ├── api/                # Route helpers (withApi, respond, request-context)
 │   ├── db/                 # Mongoose connection + models
-│   ├── email/              # React Email templates + Resend client
+│   ├── email/              # React Email templates + Nodemailer SMTP transporter
 │   ├── payments/           # Stripe client factory
 │   └── services/           # Business logic (orders, users, audit, settings,
 │                              email, analytics, webhook)
@@ -70,30 +69,10 @@ scripts/
 - **Audit log captures every meaningful action** (login, order creation,
   payment success/failure, email send, settings update, etc.).
 
-## Environment
-
-Copy `.env.example` to `.env.local` and fill in:
-
-```env
-APP_URL=...
-MONGODB_URI=...
-JWT_SECRET=...               # 64+ random chars
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-RESEND_API_KEY=re_...
-EMAIL_FROM="PayOps Rentals <no-reply@…>"
-
-BOOTSTRAP_ADMIN_EMAIL=you@your-company.com
-BOOTSTRAP_ADMIN_PASSWORD=<set-a-strong-password>
-```
-
-`src/lib/env.ts` validates env vars at boot and throws on misconfiguration.
-
 ## Local development
 
 ```bash
 npm install
-cp .env.example .env.local       # then edit
 npm run seed                     # creates the bootstrap super admin
 npm run dev                      # http://localhost:3000
 ```
@@ -114,6 +93,34 @@ npm run lint
 npm run build
 ```
 
+## Email setup (Google Workspace SMTP)
+
+Confirmation emails are sent through your existing Google Workspace mailbox
+using an App Password — no third-party email service required.
+
+**One-time setup:**
+
+1. Workspace admin (admin.google.com) → Security → "Less secure apps" →
+   allow users to manage their App Passwords. (Required only if currently
+   blocked at the org level.)
+2. Sign in to the sending mailbox (e.g. `billing@rentalconfirmation.com`).
+3. Visit https://myaccount.google.com/security and turn on
+   **2-Step Verification** if it isn't already.
+4. Visit https://myaccount.google.com/apppasswords, create an App Password
+   named "PayOps" (or "PayOps prod" for production), and copy the 16-char
+   value.
+5. Paste that value into `SMTP_PASS` (spaces are stripped automatically).
+   No other env vars need to change.
+
+**Limits to keep in mind:**
+
+- Workspace mailbox limit: ~2,000 recipients/day per sender (more than
+  enough for one confirmation per paid order).
+- Per-message limit: ~500 recipients.
+
+**If email is misconfigured** — sends become `EMAIL_FAILED` audit rows;
+order flow continues normally. Check `/admin/audit` for the exact error.
+
 ## Operational notes
 
 - **Stripe webhook expiry**: Stripe limits checkout session expiry to
@@ -131,9 +138,11 @@ npm run build
 
 ## Hardening checklist before going live
 
-- [ ] Rotate `JWT_SECRET` to a fresh value (`openssl rand -base64 64`).
-- [ ] Verify a domain in Resend and set `EMAIL_FROM` accordingly.
-- [ ] Set `COOKIE_SECURE=true` in production environments.
 - [ ] Configure the production webhook secret in the Stripe dashboard.
 - [ ] Replace the bootstrap admin password after first login.
-- [ ] Restrict `BOOTSTRAP_ADMIN_*` env vars to the deploy/seed environment.
+- [ ] Generate a production Google Workspace **App Password** for the
+      sending mailbox (`billing@…`) and set `SMTP_PASS`. Use a separate App
+      Password per environment so dev / staging / prod can be revoked
+      independently. Requires 2-Step Verification on the account
+      (https://myaccount.google.com/security) and Workspace admin must
+      permit App Passwords (Admin Console → Security → Less secure apps).

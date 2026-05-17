@@ -2,17 +2,8 @@
 
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { LoaderIcon } from "lucide-react";
+import { KeyRoundIcon } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Form,
   FormControl,
@@ -22,8 +13,9 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { toast } from "@/components/ui/sonner";
+import { FormDialog } from "@/components/common/form-dialog";
 import { api, ApiClientError } from "@/lib/api-client";
 import {
   resetUserPasswordSchema,
@@ -48,17 +40,12 @@ export function ResetPasswordDialog({
     mode: "onTouched",
   });
 
-  const isSubmitting = form.formState.isSubmitting;
-
   async function onSubmit(values: ResetUserPasswordInput) {
     try {
-      await api.post(
-        `/api/admin/users/${user.id}/reset-password`,
-        values,
-      );
+      await api.post(`/api/admin/users/${user.id}/reset-password`, values);
       toast.success("Password reset. Share it securely with the user.");
-      onOpenChange(false);
       form.reset();
+      onOpenChange(false);
     } catch (err) {
       const message =
         err instanceof ApiClientError ? err.message : "Could not reset password";
@@ -67,58 +54,40 @@ export function ResetPasswordDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Reset password for {user.name}</DialogTitle>
-          <DialogDescription>
-            Generate a temporary password and share it with the user through a
-            secure channel.
-          </DialogDescription>
-        </DialogHeader>
-        <Form {...form}>
-          <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
-            <FormField
-              control={form.control}
-              name="newPassword"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Temporary password</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="text"
-                      autoComplete="off"
-                      {...field}
-                      disabled={isSubmitting}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Must include upper, lower, and a number; minimum 10
-                    characters.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => onOpenChange(false)}
-                disabled={isSubmitting}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? (
-                  <LoaderIcon className="size-4 animate-spin" />
-                ) : null}
-                Reset password
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
-      </DialogContent>
-    </Dialog>
+    <FormDialog
+      open={open}
+      onOpenChange={(o) => {
+        onOpenChange(o);
+        if (!o) form.reset();
+      }}
+      title={`Reset password for ${user.name}`}
+      description="Generate a temporary password and share it with the user through a secure channel."
+      icon={<KeyRoundIcon />}
+      tone="warning"
+      submitLabel="Reset password"
+      onSubmit={async (e) => {
+        await form.handleSubmit(onSubmit)(e);
+      }}
+    >
+      <Form {...form}>
+        <FormField
+          control={form.control}
+          name="newPassword"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Temporary password</FormLabel>
+              <FormControl>
+                <PasswordInput autoComplete="off" {...field} />
+              </FormControl>
+              <FormDescription>
+                Must include upper, lower, and a number; minimum 10
+                characters. The user can change it after logging in.
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </Form>
+    </FormDialog>
   );
 }

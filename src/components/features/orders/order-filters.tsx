@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { SearchIcon } from "lucide-react";
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 
 import { Input } from "@/components/ui/input";
 import {
@@ -28,11 +28,13 @@ export function OrderFilters({ canSeeAll }: OrderFiltersProps) {
   const router = useRouter();
   const params = useSearchParams();
   const [pending, startTransition] = useTransition();
-  const [query, setQuery] = useState(params.get("q") ?? "");
-
-  useEffect(() => {
-    setQuery(params.get("q") ?? "");
-  }, [params]);
+  const currentQueryParam = params.get("q") ?? "";
+  const [query, setQuery] = useState(currentQueryParam);
+  const [lastSyncedParam, setLastSyncedParam] = useState(currentQueryParam);
+  if (currentQueryParam !== lastSyncedParam) {
+    setLastSyncedParam(currentQueryParam);
+    setQuery(currentQueryParam);
+  }
 
   function update(name: string, value: string | null) {
     const next = new URLSearchParams(params.toString());
@@ -47,9 +49,9 @@ export function OrderFilters({ canSeeAll }: OrderFiltersProps) {
   }
 
   return (
-    <div className="flex flex-col gap-3 md:flex-row md:items-center">
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-1 p-2 md:flex-row md:items-center">
       <div className="relative flex-1 max-w-md">
-        <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -61,7 +63,7 @@ export function OrderFilters({ canSeeAll }: OrderFiltersProps) {
             }
           }}
           placeholder="Search by order, customer, phone, or vehicle"
-          className="pl-9"
+          className="h-8 pl-8 bg-background"
         />
       </div>
       <Select

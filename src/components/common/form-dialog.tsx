@@ -1,0 +1,162 @@
+"use client";
+
+import { LoaderIcon } from "lucide-react";
+import * as React from "react";
+
+import { Button, type ButtonProps } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  type DialogHeaderTone,
+} from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
+
+interface FormDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+
+  title: string;
+  description?: string;
+
+  /** Optional icon shown in a tinted square next to the title. */
+  icon?: React.ReactNode;
+  /** Tone for the icon background — default is brand. */
+  tone?: DialogHeaderTone;
+
+  /** Content (form fields). */
+  children: React.ReactNode;
+
+  /** Width preset. Defaults to "md" (480px). */
+  size?: "sm" | "md" | "lg" | "xl";
+
+  /** Submit button label. Defaults to "Save". */
+  submitLabel?: string;
+  /** Cancel button label. Defaults to "Cancel". */
+  cancelLabel?: string;
+  /** Submit button variant. Defaults to "default". */
+  submitVariant?: ButtonProps["variant"];
+
+  /** Async submit handler. Disables the submit while the promise is in-flight. */
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void | Promise<void>;
+
+  /** External pending state when the parent component manages submission. */
+  pending?: boolean;
+  /** Disables submit even when not pending (e.g. invalid form). */
+  submitDisabled?: boolean;
+
+  /** Extra footer slot rendered on the left side (status text, secondary actions). */
+  footerLeading?: React.ReactNode;
+  /** Skip closing-on-overlay-click (useful for destructive flows). */
+  preventOverlayClose?: boolean;
+
+  className?: string;
+}
+
+/**
+ * Standard form-in-a-dialog wrapper. Caller renders fields inside, this
+ * component owns:
+ *   - the surface, header, scrollable body, sticky footer
+ *   - the form element, the cancel/submit buttons, and the pending state
+ *
+ * Use this for every form dialog so spacing and interaction model stay
+ * identical site-wide.
+ */
+export function FormDialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  icon,
+  tone = "default",
+  children,
+  size = "md",
+  submitLabel = "Save",
+  cancelLabel = "Cancel",
+  submitVariant = "default",
+  onSubmit,
+  pending = false,
+  submitDisabled = false,
+  footerLeading,
+  preventOverlayClose,
+  className,
+}: FormDialogProps) {
+  const [internalPending, setInternalPending] = React.useState(false);
+  const isPending = pending || internalPending;
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (isPending) return;
+    const result = onSubmit(event);
+    if (result instanceof Promise) {
+      setInternalPending(true);
+      try {
+        await result;
+      } finally {
+        setInternalPending(false);
+      }
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        size={size}
+        className={cn("max-h-[min(90vh,720px)]", className)}
+        onInteractOutside={
+          preventOverlayClose ? (e) => e.preventDefault() : undefined
+        }
+        onEscapeKeyDown={
+          preventOverlayClose ? (e) => e.preventDefault() : undefined
+        }
+      >
+        <form
+          onSubmit={handleSubmit}
+          noValidate
+          className="flex flex-col min-h-0 flex-1"
+        >
+          <DialogHeader icon={icon} tone={tone}>
+            <DialogTitle>{title}</DialogTitle>
+            {description ? (
+              <DialogDescription>{description}</DialogDescription>
+            ) : null}
+          </DialogHeader>
+
+          <DialogBody>{children}</DialogBody>
+
+          <DialogFooter>
+            {footerLeading ? (
+              <div className="flex flex-1 items-center text-[12px] text-muted-foreground">
+                {footerLeading}
+              </div>
+            ) : null}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => onOpenChange(false)}
+              disabled={isPending}
+            >
+              {cancelLabel}
+            </Button>
+            <Button
+              type="submit"
+              variant={submitVariant}
+              size="sm"
+              disabled={isPending || submitDisabled}
+            >
+              {isPending ? (
+                <LoaderIcon className="size-3.5 animate-spin" />
+              ) : null}
+              {submitLabel}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}

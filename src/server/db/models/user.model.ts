@@ -77,7 +77,9 @@ const userSchema = new Schema<UserDoc>(
   },
 );
 
-userSchema.index({ email: 1 }, { unique: true });
+// email already has `unique: true` on the field definition above, so no
+// separate index call is needed - declaring both creates a duplicate-index
+// warning at startup.
 userSchema.index({ status: 1, role: 1 });
 
 export const User: Model<UserDoc> =

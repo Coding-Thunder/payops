@@ -16,7 +16,7 @@ const SENSITIVE_KEYS = new Set([
   "cookie",
   "set-cookie",
   "stripe_secret_key",
-  "resend_api_key",
+  "smtp_pass",
   "jwt_secret",
 ]);
 
@@ -47,13 +47,13 @@ function emit(level: Level, message: string, context?: Record<string, unknown>) 
   };
   const line = JSON.stringify(payload);
   if (level === "error") {
-    // eslint-disable-next-line no-console
+     
     console.error(line);
   } else if (level === "warn") {
-    // eslint-disable-next-line no-console
+     
     console.warn(line);
   } else {
-    // eslint-disable-next-line no-console
+     
     console.log(line);
   }
 }

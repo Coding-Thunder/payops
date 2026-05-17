@@ -4,10 +4,11 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CalendarIcon, LoaderIcon } from "lucide-react";
+import { LoaderIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DateTimePicker } from "@/components/common/date-time-picker";
 import {
   Form,
   FormControl,
@@ -144,19 +145,19 @@ export function CreateOrderForm({
             <FormField
               control={form.control}
               name="trip.pickupDate"
-              render={({ field }) => (
+              render={({ field, fieldState }) => (
                 <FormItem>
-                  <FormLabel>Pick-up date</FormLabel>
+                  <FormLabel>Pick-up date & time</FormLabel>
                   <FormControl>
-                    <div className="relative">
-                      <CalendarIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        type="datetime-local"
-                        className="pl-9"
-                        disabled={isSubmitting}
-                        {...field}
-                      />
-                    </div>
+                    <DateTimePicker
+                      id="pickup-date"
+                      value={field.value ?? ""}
+                      onChange={field.onChange}
+                      disabled={isSubmitting}
+                      placeholder="Select pick-up"
+                      ariaInvalid={!!fieldState.error}
+                      minDate={new Date(new Date().setHours(0, 0, 0, 0))}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -166,23 +167,27 @@ export function CreateOrderForm({
             <FormField
               control={form.control}
               name="trip.dropoffDate"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Drop-off date</FormLabel>
-                  <FormControl>
-                    <div className="relative">
-                      <CalendarIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        type="datetime-local"
-                        className="pl-9"
+              render={({ field, fieldState }) => {
+                const pickup = form.watch("trip.pickupDate");
+                const min = pickup ? new Date(pickup) : new Date();
+                return (
+                  <FormItem>
+                    <FormLabel>Drop-off date & time</FormLabel>
+                    <FormControl>
+                      <DateTimePicker
+                        id="dropoff-date"
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
                         disabled={isSubmitting}
-                        {...field}
+                        placeholder="Select drop-off"
+                        ariaInvalid={!!fieldState.error}
+                        minDate={min}
                       />
-                    </div>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                );
+              }}
             />
           </CardContent>
         </Card>

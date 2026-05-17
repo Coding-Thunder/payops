@@ -6,6 +6,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { PageHeader } from "@/components/common/page-header";
+import { StatCard } from "@/components/common/stat-card";
 import { RevenueChart } from "@/components/features/analytics/revenue-chart";
 import { BookingTypeLabel } from "@/lib/constants/labels";
 import { Permission } from "@/lib/constants/permissions";
@@ -18,43 +19,43 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminAnalyticsPage() {
   await requirePermission(Permission.ANALYTICS_VIEW);
-  const summary = await getAnalyticsSummary({
-    from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-  });
+  const summary = await getAnalyticsSummary();
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <PageHeader
+        eyebrow="Admin"
         title="Analytics"
-        description={`Range: ${formatDate(summary.range.from)} → ${formatDate(summary.range.to)} (30 days)`}
+        description={`Range · ${formatDate(summary.range.from)} → ${formatDate(summary.range.to)} (30 days)`}
       />
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
           label="Revenue"
           value={formatCurrency(
             summary.totals.revenue,
             summary.totals.currency,
           )}
-          sub={`${summary.totals.ordersPaid} paid`}
+          caption={`${summary.totals.ordersPaid} paid`}
         />
-        <Stat
-          label="Avg order value"
+        <StatCard
+          label="Average order"
           value={formatCurrency(
             summary.totals.averageOrderValue,
             summary.totals.currency,
           )}
-          sub="Across paid orders"
+          caption="Across paid orders"
         />
-        <Stat
+        <StatCard
           label="Conversion"
           value={`${summary.totals.conversionRate}%`}
-          sub={`${summary.totals.ordersCreated} total orders`}
+          caption={`${summary.totals.ordersCreated} total`}
         />
-        <Stat
-          label="Pending"
-          value={String(summary.totals.ordersPending)}
-          sub={`${summary.totals.ordersFailed + summary.totals.ordersExpired} failed/expired`}
+        <StatCard
+          label="Outstanding"
+          value={summary.totals.ordersPending}
+          caption={`${summary.totals.ordersFailed + summary.totals.ordersExpired} failed/expired`}
+          variant="warning"
         />
       </section>
 
@@ -73,25 +74,31 @@ export default async function AdminAnalyticsPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>By booking type</CardTitle>
           </CardHeader>
           <CardContent>
             {summary.bookingTypes.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No data yet.</p>
+              <p className="text-[12.5px] text-muted-foreground">
+                No data yet.
+              </p>
             ) : (
-              <ul className="space-y-3">
+              <ul className="divide-y divide-border text-[13px]">
                 {summary.bookingTypes.map((b) => (
                   <li
                     key={b.bookingType}
-                    className="flex items-center justify-between text-sm"
+                    className="flex items-center justify-between py-2"
                   >
-                    <span>{BookingTypeLabel[b.bookingType]}</span>
-                    <span className="text-muted-foreground">
-                      {b.count} orders •{" "}
-                      {formatCurrency(b.revenue, summary.totals.currency)}
+                    <span className="text-foreground">
+                      {BookingTypeLabel[b.bookingType]}
+                    </span>
+                    <span className="text-muted-foreground tabular-nums">
+                      {b.count} orders ·{" "}
+                      <span className="text-foreground font-medium">
+                        {formatCurrency(b.revenue, summary.totals.currency)}
+                      </span>
                     </span>
                   </li>
                 ))}
@@ -107,18 +114,22 @@ export default async function AdminAnalyticsPage() {
           </CardHeader>
           <CardContent>
             {summary.topStaff.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No data yet.</p>
+              <p className="text-[12.5px] text-muted-foreground">
+                No data yet.
+              </p>
             ) : (
-              <ul className="space-y-3">
+              <ul className="divide-y divide-border text-[13px]">
                 {summary.topStaff.map((s) => (
                   <li
                     key={s.userId}
-                    className="flex items-center justify-between text-sm"
+                    className="flex items-center justify-between py-2"
                   >
-                    <span>{s.name}</span>
-                    <span className="text-muted-foreground">
-                      {s.orders} orders •{" "}
-                      {formatCurrency(s.revenue, summary.totals.currency)}
+                    <span className="text-foreground">{s.name}</span>
+                    <span className="text-muted-foreground tabular-nums">
+                      {s.orders} orders ·{" "}
+                      <span className="text-foreground font-medium">
+                        {formatCurrency(s.revenue, summary.totals.currency)}
+                      </span>
                     </span>
                   </li>
                 ))}
@@ -128,29 +139,5 @@ export default async function AdminAnalyticsPage() {
         </Card>
       </div>
     </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  sub,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-}) {
-  return (
-    <Card>
-      <CardContent className="pt-6">
-        <p className="text-xs uppercase tracking-wider text-muted-foreground">
-          {label}
-        </p>
-        <p className="mt-1 text-2xl font-semibold tracking-tight">{value}</p>
-        {sub ? (
-          <p className="mt-1 text-xs text-muted-foreground">{sub}</p>
-        ) : null}
-      </CardContent>
-    </Card>
   );
 }

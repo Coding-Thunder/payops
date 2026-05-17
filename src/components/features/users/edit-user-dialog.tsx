@@ -3,17 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { LoaderIcon } from "lucide-react";
+import { UserCogIcon } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Form,
   FormControl,
@@ -31,14 +22,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
+import { FormDialog } from "@/components/common/form-dialog";
 import { api, ApiClientError } from "@/lib/api-client";
-import {
-  RecordStateLabel,
-  UserRoleLabel,
-} from "@/lib/constants/labels";
+import { RecordStateLabel, UserRoleLabel } from "@/lib/constants/labels";
 import {
   RECORD_STATES,
-  RecordState,
   UserRole,
   USER_ROLES,
 } from "@/lib/constants/enums";
@@ -74,7 +62,6 @@ export function EditUserDialog({
     mode: "onTouched",
   });
 
-  const isSubmitting = form.formState.isSubmitting;
   const canSetSuperAdmin = actorRole === UserRole.SUPER_ADMIN;
 
   async function onSubmit(values: UpdateUserInput) {
@@ -91,31 +78,39 @@ export function EditUserDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Edit {user.name}</DialogTitle>
-          <DialogDescription>
-            Update profile, role, or status. Role and status changes are
-            recorded in the audit log.
-          </DialogDescription>
-        </DialogHeader>
-        <Form {...form}>
-          <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Name</FormLabel>
-                  <FormControl>
-                    <Input {...field} disabled={isSubmitting} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={`Edit ${user.name}`}
+      description={
+        isSelf
+          ? "You can rename yourself but cannot change your own role or status."
+          : "Role or status changes are recorded in the audit log."
+      }
+      icon={<UserCogIcon />}
+      tone="info"
+      submitLabel="Save changes"
+      onSubmit={async (e) => {
+        await form.handleSubmit(onSubmit)(e);
+      }}
+    >
+      <Form {...form}>
+        <div className="space-y-4">
+          <FormField
+            control={form.control}
+            name="name"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Name</FormLabel>
+                <FormControl>
+                  <Input {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
+          <div className="grid gap-4 sm:grid-cols-2">
             <FormField
               control={form.control}
               name="role"
@@ -125,7 +120,7 @@ export function EditUserDialog({
                   <Select
                     value={field.value}
                     onValueChange={field.onChange}
-                    disabled={isSubmitting || isSelf}
+                    disabled={isSelf}
                   >
                     <FormControl>
                       <SelectTrigger>
@@ -134,8 +129,7 @@ export function EditUserDialog({
                     </FormControl>
                     <SelectContent>
                       {USER_ROLES.filter(
-                        (r) =>
-                          r !== UserRole.SUPER_ADMIN || canSetSuperAdmin,
+                        (r) => r !== UserRole.SUPER_ADMIN || canSetSuperAdmin,
                       ).map((r) => (
                         <SelectItem key={r} value={r}>
                           {UserRoleLabel[r]}
@@ -157,7 +151,7 @@ export function EditUserDialog({
                   <Select
                     value={field.value}
                     onValueChange={field.onChange}
-                    disabled={isSubmitting || isSelf}
+                    disabled={isSelf}
                   >
                     <FormControl>
                       <SelectTrigger>
@@ -176,26 +170,9 @@ export function EditUserDialog({
                 </FormItem>
               )}
             />
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => onOpenChange(false)}
-                disabled={isSubmitting}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? (
-                  <LoaderIcon className="size-4 animate-spin" />
-                ) : null}
-                Save changes
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
-      </DialogContent>
-    </Dialog>
+          </div>
+        </div>
+      </Form>
+    </FormDialog>
   );
 }

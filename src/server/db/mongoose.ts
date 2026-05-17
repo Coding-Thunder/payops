@@ -15,7 +15,7 @@ type CachedMongoose = {
 };
 
 declare global {
-  // eslint-disable-next-line no-var
+   
   var __payopsMongoose: CachedMongoose | undefined;
 }
 

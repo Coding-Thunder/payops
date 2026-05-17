@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { XCircleIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { CancelledIllustration } from "@/components/brand/illustrations";
 import { getOrderByNumber } from "@/server/services/order.service";
 
 export const metadata = { title: "Payment cancelled" };
@@ -21,10 +21,8 @@ export default async function PaymentCancelledPage({
   return (
     <div className="mx-auto max-w-xl py-10">
       <Card>
-        <CardContent className="pt-10 pb-10 text-center space-y-4">
-          <div className="mx-auto flex size-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
-            <XCircleIcon className="size-7" />
-          </div>
+        <CardContent className="pt-10 pb-10 text-center space-y-5">
+          <CancelledIllustration className="mx-auto text-muted-foreground" />
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">
               Payment not completed

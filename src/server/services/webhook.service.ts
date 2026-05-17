@@ -8,6 +8,7 @@ import {
   AuditEntity,
   OrderStatus,
 } from "@/lib/constants/enums";
+import { DomainEventType } from "@/lib/constants/events";
 import { logger } from "@/lib/logger";
 import {
   Order,
@@ -15,6 +16,7 @@ import {
   type OrderDocument,
 } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
+import { publishEvent } from "@/server/events/bus";
 
 import { recordAudit } from "./audit.service";
 import { sendPaymentConfirmationEmail } from "./email.service";
@@ -127,7 +129,7 @@ async function handleCheckoutCompleted(
       },
       $push: { "payment.processedWebhookEventIds": event.id },
     },
-    { new: true },
+    { returnDocument: "after" },
   ).lean<OrderDoc & { _id: Types.ObjectId }>();
 
   if (!updated) {
@@ -155,6 +157,17 @@ async function handleCheckoutCompleted(
   });
 
   if (!isAlreadyPaid) {
+    publishEvent({
+      type: DomainEventType.ORDER_PAID,
+      audience: { kind: "creator", userId: String(updated.createdBy.userId) },
+      payload: {
+        orderId: String(updated._id),
+        orderNumber: updated.orderNumber,
+        amountReceived,
+        currency: updated.pricing.currency,
+        customerName: updated.customer.name,
+      },
+    });
     await sendConfirmationOnce(String(updated._id));
   }
 
@@ -173,7 +186,7 @@ async function sendConfirmationOnce(orderId: string): Promise<void> {
   const claimed = await Order.findOneAndUpdate(
     { _id: orderId, "payment.confirmationEmailSentAt": null },
     { $set: { "payment.confirmationEmailSentAt": new Date() } },
-    { new: true },
+    { returnDocument: "after" },
   ).lean<OrderDoc & { _id: Types.ObjectId }>();
 
   if (!claimed) return; // Already sent by another worker.
@@ -262,7 +275,7 @@ async function handleCheckoutExpired(
       },
       $push: { "payment.processedWebhookEventIds": event.id },
     },
-    { new: true },
+    { returnDocument: "after" },
   ).lean<OrderDoc & { _id: Types.ObjectId }>();
 
   if (!updated) {
@@ -274,6 +287,16 @@ async function handleCheckoutExpired(
     entityType: AuditEntity.PAYMENT,
     entityId: String(updated._id),
     metadata: { sessionId: session.id, eventId: event.id },
+  });
+
+  publishEvent({
+    type: DomainEventType.ORDER_EXPIRED,
+    audience: { kind: "creator", userId: String(updated.createdBy.userId) },
+    payload: {
+      orderId: String(updated._id),
+      orderNumber: updated.orderNumber,
+      customerName: updated.customer.name,
+    },
   });
 
   return { handled: true, duplicate: false, orderId: String(updated._id) };
@@ -334,7 +357,7 @@ async function failOrder(
       },
       $push: { "payment.processedWebhookEventIds": event.id },
     },
-    { new: true },
+    { returnDocument: "after" },
   ).lean<OrderDoc & { _id: Types.ObjectId }>();
 
   if (!updated) {
@@ -346,6 +369,17 @@ async function failOrder(
     entityType: AuditEntity.PAYMENT,
     entityId: String(updated._id),
     metadata: { reason, eventId: event.id },
+  });
+
+  publishEvent({
+    type: DomainEventType.ORDER_FAILED,
+    audience: { kind: "creator", userId: String(updated.createdBy.userId) },
+    payload: {
+      orderId: String(updated._id),
+      orderNumber: updated.orderNumber,
+      customerName: updated.customer.name,
+      reason,
+    },
   });
 
   return { handled: true, duplicate: false, orderId: String(updated._id) };

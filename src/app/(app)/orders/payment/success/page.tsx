@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { CheckCircle2Icon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { SuccessIllustration } from "@/components/brand/illustrations";
 import { getOrderByNumber } from "@/server/services/order.service";
 
 export const metadata = { title: "Payment success" };
@@ -22,10 +22,8 @@ export default async function PaymentSuccessPage({
   return (
     <div className="mx-auto max-w-xl py-10">
       <Card>
-        <CardContent className="pt-10 pb-10 text-center space-y-4">
-          <div className="mx-auto flex size-14 items-center justify-center rounded-full bg-success/15 text-success">
-            <CheckCircle2Icon className="size-7" />
-          </div>
+        <CardContent className="pt-10 pb-10 text-center space-y-5">
+          <SuccessIllustration className="mx-auto text-success" />
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">
               Payment received

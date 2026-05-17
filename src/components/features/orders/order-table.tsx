@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { ChevronRightIcon } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -13,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { OrderStatusBadge } from "@/components/common/status-badges";
 import { EmptyState } from "@/components/common/empty-state";
 import { BookingTypeLabel } from "@/lib/constants/labels";
@@ -35,7 +35,7 @@ export function OrderTable({ items, emptyAction }: OrderTableProps) {
     );
   }
   return (
-    <div className="rounded-lg border border-border bg-card">
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
       <Table>
         <TableHeader>
           <TableRow>
@@ -46,16 +46,16 @@ export function OrderTable({ items, emptyAction }: OrderTableProps) {
             <TableHead className="text-right">Amount</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="hidden md:table-cell">Created</TableHead>
-            <TableHead className="w-[40px]" />
+            <TableHead className="w-[36px]" />
           </TableRow>
         </TableHeader>
         <TableBody>
           {items.map((o) => (
-            <TableRow key={o.id} className="cursor-pointer">
+            <TableRow key={o.id}>
               <TableCell>
                 <Link
                   href={`/orders/${o.id}`}
-                  className="font-mono text-xs font-medium text-foreground hover:underline"
+                  className="font-mono text-[12px] font-medium text-foreground hover:underline"
                 >
                   {o.orderNumber}
                 </Link>
@@ -66,21 +66,23 @@ export function OrderTable({ items, emptyAction }: OrderTableProps) {
                 ) : null}
               </TableCell>
               <TableCell>
-                <div className="font-medium text-foreground text-sm">
+                <div className="font-medium text-foreground text-[13px] leading-tight">
                   {o.customer.name}
                 </div>
-                <div className="text-xs text-muted-foreground">
+                <div className="text-[11.5px] text-muted-foreground leading-tight mt-0.5">
                   {o.customer.email}
                 </div>
               </TableCell>
               <TableCell className="hidden md:table-cell">
-                <Badge variant="outline">
+                <Badge variant="secondary">
                   {BookingTypeLabel[o.bookingType]}
                 </Badge>
               </TableCell>
-              <TableCell className="hidden lg:table-cell text-sm">
-                <div className="font-medium">{o.vehicle.company}</div>
-                <div className="text-xs text-muted-foreground">
+              <TableCell className="hidden lg:table-cell">
+                <div className="text-[13px] font-medium leading-tight">
+                  {o.vehicle.company}
+                </div>
+                <div className="text-[11.5px] text-muted-foreground leading-tight mt-0.5">
                   {o.vehicle.type}
                 </div>
               </TableCell>
@@ -90,14 +92,14 @@ export function OrderTable({ items, emptyAction }: OrderTableProps) {
               <TableCell>
                 <OrderStatusBadge status={o.status} />
               </TableCell>
-              <TableCell className="hidden md:table-cell text-xs text-muted-foreground">
+              <TableCell className="hidden md:table-cell text-[11.5px] text-muted-foreground">
                 <div>{formatDate(o.createdAt)}</div>
                 <div>{formatRelative(o.createdAt)}</div>
               </TableCell>
               <TableCell>
                 <Button asChild variant="ghost" size="icon-sm">
                   <Link href={`/orders/${o.id}`}>
-                    <ChevronRightIcon className="size-4" />
+                    <ChevronRightIcon className="size-3.5" />
                   </Link>
                 </Button>
               </TableCell>

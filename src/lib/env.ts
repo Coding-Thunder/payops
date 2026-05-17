@@ -30,7 +30,17 @@ const serverSchema = z.object({
     .min(1, "STRIPE_WEBHOOK_SECRET is required"),
   STRIPE_PUBLISHABLE_KEY: z.string().optional(),
 
-  RESEND_API_KEY: z.string().optional(),
+  // ---- SMTP (Google Workspace + App Password) ----
+  // Leave SMTP_HOST empty to disable email sending (failed sends become
+  // EMAIL_FAILED audit rows; nothing else breaks).
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
+  SMTP_SECURE: z
+    .union([z.string(), z.boolean()])
+    .transform((v) => (typeof v === "boolean" ? v : v === "true"))
+    .default(false),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
   EMAIL_FROM: z
     .string()
     .default("PayOps Rentals <no-reply@payops.example.com>"),
@@ -41,10 +51,6 @@ const serverSchema = z.object({
   DEFAULT_CURRENCY: z.string().default("USD"),
   DEFAULT_PAYMENT_EXPIRY_HOURS: z.coerce.number().int().positive().default(24),
   DEFAULT_ORDER_PREFIX: z.string().default("ORD"),
-
-  BOOTSTRAP_ADMIN_EMAIL: z.string().email().optional(),
-  BOOTSTRAP_ADMIN_PASSWORD: z.string().min(8).optional(),
-  BOOTSTRAP_ADMIN_NAME: z.string().optional(),
 });
 
 const clientSchema = z.object({

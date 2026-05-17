@@ -6,6 +6,7 @@ import {
   Heading,
   Hr,
   Html,
+  Img,
   Preview,
   Row,
   Section,
@@ -16,6 +17,14 @@ import * as React from "react";
 
 import { BookingTypeLabel } from "@/lib/constants/labels";
 import type { BookingType } from "@/lib/constants/enums";
+
+/**
+ * Inline SVG brand mark encoded as a data URI so it renders in every email
+ * client without needing an external asset host. Uses currentColor-style
+ * fills baked-in (Gmail strips most SVG fanciness but keeps simple paths).
+ */
+const LOGO_DATA_URI =
+  "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0OCA0OCI+PHJlY3Qgd2lkdGg9IjQ4IiBoZWlnaHQ9IjQ4IiByeD0iMTAiIGZpbGw9IiMwYjZkZDYiLz48cGF0aCBkPSJNMTQgMTJoMTIuNWE4LjUgOC41IDAgMCAxIDAgMTdIMTl2N2gtNVYxMloiIGZpbGw9IiNmZmZmZmYiLz48Y2lyY2xlIGN4PSIyNi41IiBjeT0iMjAuNSIgcj0iMy4yNSIgZmlsbD0iI2ZmZmZmZiIgZmlsbC1vcGFjaXR5PSIwLjQiLz48L3N2Zz4=";
 
 export interface PaymentConfirmationEmailProps {
   brandName: string;
@@ -55,10 +64,23 @@ export function PaymentConfirmationEmail({
         <Body className="bg-[#f6f8fb] font-sans py-8">
           <Container className="bg-white rounded-xl mx-auto max-w-[600px] border border-[#e6e9ee]">
             <Section className="px-8 pt-8 pb-4">
-              <Text className="text-xs tracking-[0.18em] font-semibold uppercase text-[#0b6dd6] m-0">
-                {brandName}
-              </Text>
-              <Heading className="text-[#0f172a] text-2xl font-semibold mt-3 mb-2">
+              <Row>
+                <Column width="44">
+                  <Img
+                    src={LOGO_DATA_URI}
+                    width="36"
+                    height="36"
+                    alt={brandName}
+                    style={{ borderRadius: 8 }}
+                  />
+                </Column>
+                <Column>
+                  <Text className="text-xs tracking-[0.18em] font-semibold uppercase text-[#0b6dd6] m-0">
+                    {brandName}
+                  </Text>
+                </Column>
+              </Row>
+              <Heading className="text-[#0f172a] text-2xl font-semibold mt-4 mb-2">
                 Payment confirmed
               </Heading>
               <Text className="text-[#475569] text-sm m-0 leading-relaxed">
