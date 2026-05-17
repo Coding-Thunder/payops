@@ -37,8 +37,8 @@ function toDTO(doc: SettingDoc | null): OperationalSettings {
       defaultCurrency: (e.DEFAULT_CURRENCY as Currency) || "USD",
       supportEmail: e.SUPPORT_EMAIL,
       supportPhone: e.SUPPORT_PHONE,
-      successRedirectUrl: `${e.APP_URL}/orders/payment/success`,
-      cancelRedirectUrl: `${e.APP_URL}/orders/payment/cancelled`,
+      successRedirectUrl: `${e.APP_URL}/pay/success`,
+      cancelRedirectUrl: `${e.APP_URL}/pay/cancelled`,
       updatedAt: new Date(0).toISOString(),
     };
   }
@@ -49,8 +49,10 @@ function toDTO(doc: SettingDoc | null): OperationalSettings {
     defaultCurrency: doc.defaultCurrency,
     supportEmail: doc.supportEmail,
     supportPhone: doc.supportPhone,
-    successRedirectUrl: doc.successRedirectUrl,
-    cancelRedirectUrl: doc.cancelRedirectUrl,
+    // Redirect URLs are always derived from APP_URL so deploys / domain
+    // changes propagate without a settings migration.
+    successRedirectUrl: `${e.APP_URL}/pay/success`,
+    cancelRedirectUrl: `${e.APP_URL}/pay/cancelled`,
     updatedAt: doc.updatedAt.toISOString(),
   };
 }
@@ -86,8 +88,8 @@ export async function ensureSettingsDocument(): Promise<SettingDoc> {
         defaultCurrency: e.DEFAULT_CURRENCY,
         supportEmail: e.SUPPORT_EMAIL,
         supportPhone: e.SUPPORT_PHONE,
-        successRedirectUrl: `${e.APP_URL}/orders/payment/success`,
-        cancelRedirectUrl: `${e.APP_URL}/orders/payment/cancelled`,
+        successRedirectUrl: `${e.APP_URL}/pay/success`,
+        cancelRedirectUrl: `${e.APP_URL}/pay/cancelled`,
       },
     },
     { returnDocument: "after", upsert: true, setDefaultsOnInsert: true },

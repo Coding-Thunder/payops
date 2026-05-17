@@ -8,6 +8,7 @@ const serverSchema = z.object({
     .default("development"),
 
   APP_NAME: z.string().min(1).default("PayOps Rentals"),
+  CUSTOMER_BRAND_NAME: z.string().min(1).default("Rental Confirmation"),
   APP_URL: z.string().url().default("http://localhost:3000"),
 
   MONGODB_URI: z.string().min(1, "MONGODB_URI is required"),

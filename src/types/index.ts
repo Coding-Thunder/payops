@@ -67,6 +67,22 @@ export interface OrderCreator {
   email: string;
 }
 
+export interface OrderPolicy {
+  acceptedAt: string;
+  version: string;
+  text: string;
+}
+
+export interface OrderRisk {
+  flagged: boolean;
+  flaggedNote?: string | null;
+  flaggedAt?: string | null;
+  flaggedBy?: {
+    userId: string | null;
+    name: string | null;
+  } | null;
+}
+
 export interface OrderDTO {
   id: string;
   orderNumber: string;
@@ -79,6 +95,8 @@ export interface OrderDTO {
   pricing: OrderPricing;
   payment: OrderPayment;
   createdBy: OrderCreator;
+  policy: OrderPolicy;
+  risk: OrderRisk;
   notes?: string | null;
   createdAt: string;
   updatedAt: string;

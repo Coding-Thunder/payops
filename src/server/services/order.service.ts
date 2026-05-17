@@ -318,10 +318,10 @@ async function buildCheckoutSession(args: BuildSessionInput) {
         bookingType: args.input.bookingType,
         actorId: args.actor.id,
         actorEmail: args.actor.email,
-        appName: env.server.APP_NAME,
+        appName: env.server.CUSTOMER_BRAND_NAME,
       },
       payment_intent_data: {
-        description: `${env.server.APP_NAME} • ${args.orderNumber}`,
+        description: `${env.server.CUSTOMER_BRAND_NAME} • ${args.orderNumber}`,
         metadata: {
           orderId: args.orderId,
           orderNumber: args.orderNumber,

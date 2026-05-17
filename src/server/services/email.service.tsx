@@ -99,7 +99,7 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
 export async function sendPaymentConfirmationEmail(
   order: OrderDTO,
 ): Promise<{ id: string | null }> {
-  const brandName = env.server.APP_NAME;
+  const brandName = env.server.CUSTOMER_BRAND_NAME;
   const props: PaymentConfirmationEmailProps = {
     brandName,
     appUrl: env.server.APP_URL,

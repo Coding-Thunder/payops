@@ -60,6 +60,26 @@ export interface OrderDoc {
     name: string;
     email: string;
   };
+  /** Snapshot of the cancellation policy at the moment this order was
+   *  created. Frozen for the lifetime of the order so disputes can show
+   *  the exact terms the customer was charged under. */
+  policy: {
+    acceptedAt: Date;
+    version: string;
+    text: string;
+  };
+  /** Operator-facing risk flag. Lets admins mark an order as "watch this"
+   *  (customer complaint, chargeback warning, contested charge, etc.).
+   *  Surfaces on the /admin/disputes page. */
+  risk: {
+    flagged: boolean;
+    flaggedNote?: string | null;
+    flaggedAt?: Date | null;
+    flaggedBy?: {
+      userId?: Types.ObjectId | null;
+      name?: string | null;
+    } | null;
+  };
   notes?: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -145,6 +165,33 @@ const creatorSchema = new Schema(
   { _id: false },
 );
 
+const policySchema = new Schema(
+  {
+    acceptedAt: { type: Date, required: true, default: Date.now },
+    version: { type: String, required: true, maxlength: 16, default: "v1" },
+    text: { type: String, required: true, maxlength: 4000, default: "" },
+  },
+  { _id: false },
+);
+
+const riskFlaggedBySchema = new Schema(
+  {
+    userId: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    name: { type: String, default: null },
+  },
+  { _id: false },
+);
+
+const riskSchema = new Schema(
+  {
+    flagged: { type: Boolean, default: false, index: true },
+    flaggedNote: { type: String, default: null, maxlength: 2000 },
+    flaggedAt: { type: Date, default: null },
+    flaggedBy: { type: riskFlaggedBySchema, default: null },
+  },
+  { _id: false },
+);
+
 const orderSchema = new Schema<OrderDoc>(
   {
     orderNumber: {
@@ -180,6 +227,16 @@ const orderSchema = new Schema<OrderDoc>(
     pricing: { type: pricingSchema, required: true },
     payment: { type: paymentSchema, required: true },
     createdBy: { type: creatorSchema, required: true },
+    policy: {
+      type: policySchema,
+      required: true,
+      default: () => ({ acceptedAt: new Date(), version: "v1", text: "" }),
+    },
+    risk: {
+      type: riskSchema,
+      required: true,
+      default: () => ({ flagged: false }),
+    },
     notes: { type: String, default: null, maxlength: 2000 },
   },
   {

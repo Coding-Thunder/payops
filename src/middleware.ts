@@ -12,11 +12,15 @@ const PUBLIC_PATHS = [
   "/api/health",
 ];
 
+/** Public path prefixes for customer-facing pages (no auth). */
+const PUBLIC_PREFIXES = ["/pay/"];
+
 /** Admin-only path prefixes (super_admin + admin). */
 const ADMIN_PATH_PREFIXES = ["/admin", "/api/admin"];
 
 function isPublic(pathname: string): boolean {
   if (PUBLIC_PATHS.includes(pathname)) return true;
+  if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) return true;
   if (pathname.startsWith("/_next")) return true;
   if (pathname.startsWith("/favicon")) return true;
   if (pathname.startsWith("/static")) return true;
