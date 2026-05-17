@@ -88,9 +88,13 @@ export function ProviderBadge({
   );
 }
 
-function absoluteUrl(base: string, path: string): string {
+function absoluteUrl(base: string | undefined | null, path: string): string {
   if (path.startsWith("data:")) return path;
   if (/^https?:\/\//i.test(path)) return path;
+  // Fall back to the path itself when `base` is missing — caller mis-wired
+  // their props, but we'd rather render a possibly-broken image than crash
+  // the whole template.
+  if (!base) return path.startsWith("/") ? path : `/${path}`;
   const trimmedBase = base.replace(/\/+$/, "");
   const trimmedPath = path.startsWith("/") ? path : `/${path}`;
   return `${trimmedBase}${trimmedPath}`;

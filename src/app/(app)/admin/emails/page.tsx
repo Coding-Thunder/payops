@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { EmailPreviewControls } from "@/components/features/emails/email-preview-controls";
 import { Permission } from "@/lib/constants/permissions";
 import { BookingType, BOOKING_TYPES } from "@/lib/constants/enums";
+import { env } from "@/lib/env";
 import { requirePermission } from "@/server/auth/session";
 import { getBranding } from "@/server/services/branding.service";
 import { ensureSettingsDocument } from "@/server/services/settings.service";
@@ -59,7 +60,7 @@ export default async function AdminEmailsPage({
 
   const props = buildPaymentPreviewProps({
     brandName: branding.brandName,
-    appUrl: branding.appUrl,
+    appUrl: env.server.APP_URL,
     supportEmail: branding.supportEmail,
     supportPhone: branding.supportPhone,
     provider: {
