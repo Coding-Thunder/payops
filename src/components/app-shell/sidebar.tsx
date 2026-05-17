@@ -6,6 +6,7 @@ import {
   BarChart3Icon,
   CreditCardIcon,
   HomeIcon,
+  MailIcon,
   PackageIcon,
   PaletteIcon,
   ScrollTextIcon,
@@ -73,6 +74,12 @@ const SECTIONS: NavSection[] = [
         label: "Branding",
         icon: PaletteIcon,
         permissions: [Permission.BRANDING_VIEW],
+      },
+      {
+        href: "/admin/emails",
+        label: "Email previews",
+        icon: MailIcon,
+        permissions: [Permission.SETTINGS_VIEW],
       },
       {
         href: "/admin/disputes",

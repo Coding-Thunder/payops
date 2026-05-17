@@ -9,7 +9,8 @@ const nextConfig: NextConfig = {
   // and the separate pass gives us identical coverage with a saner
   // memory profile.
   typescript: { ignoreBuildErrors: true },
-  eslint: { ignoreDuringBuilds: true },
+  // Next 16 removed the `eslint` key — `next build` no longer bundles a
+  // lint pass. Linting still runs via `npm run lint` locally and in CI.
   experimental: {
     serverActions: {
       bodySizeLimit: "1mb",

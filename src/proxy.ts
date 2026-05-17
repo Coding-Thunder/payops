@@ -50,7 +50,12 @@ async function verifyToken(token: string, secret: Uint8Array) {
   }
 }
 
-export async function middleware(req: NextRequest) {
+/**
+ * Next.js 16 renamed the `middleware` file convention to `proxy`. The
+ * exported function name follows suit — semantics are identical, this is
+ * just the deprecated-warning fix.
+ */
+export async function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
   if (isPublic(pathname)) return NextResponse.next();
 
