@@ -32,6 +32,8 @@ import { OrderStatus } from "@/lib/constants/enums";
 import { api, ApiClientError } from "@/lib/api-client";
 import { formatCurrency, formatDate, formatRelative } from "@/lib/format";
 import type { OrderDTO } from "@/types";
+import { useWorkspaceStore } from "@/workspace/store";
+import { WorkspaceTabType } from "@/workspace/types";
 
 interface OrderTableProps {
   items: OrderDTO[];
@@ -180,6 +182,25 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
                   <Link
                     href={`/orders/${o.id}`}
                     className="font-mono text-[12px] font-medium text-foreground hover:underline"
+                    onAuxClick={(e) => {
+                      // Middle-click → open a workspace tab WITHOUT
+                      // navigating away from the list. Matches Chrome's
+                      // "open in new tab" muscle memory.
+                      if (e.button !== 1) return;
+                      e.preventDefault();
+                      useWorkspaceStore.getState().openTab(
+                        {
+                          type: WorkspaceTabType.ORDER_DETAILS,
+                          payload: {
+                            orderId: o.id,
+                            orderNumber: o.orderNumber,
+                            customerName: o.customer.name,
+                          },
+                        },
+                        { activate: false },
+                      );
+                      toast.success(`Opened ${o.orderNumber} in a tab`);
+                    }}
                   >
                     {o.orderNumber}
                   </Link>

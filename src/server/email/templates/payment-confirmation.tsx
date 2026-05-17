@@ -49,7 +49,7 @@ export interface PaymentConfirmationEmailProps {
   /** Rental brand snapshot. Drives the colour band + logo strip directly
    *  under the operator header so the receipt feels co-branded. */
   provider: ProviderSnapshot;
-  vehicle: { company: string; type: string };
+  vehicle: { company: string; type: string; imageUrl?: string | null };
   trip: { pickupDate: string; dropoffDate: string };
   receiptUrl?: string | null;
   /** Free-text cancellation/refund policy snapshot. Rendered as a paragraph
@@ -205,6 +205,32 @@ export function PaymentConfirmationEmail({
               appUrl={appUrl}
               eyebrow={`${BookingTypeLabel[bookingType]} booking`}
             />
+
+            {/* ───────── Vehicle hero image (optional) ─────────
+                If the operator captured a public car image at order
+                creation, show it edge-to-edge in a fixed-height frame so
+                wildly different aspect ratios still produce a clean
+                receipt. We render the absolute URL the operator supplied
+                — these are already publicly fetchable by design, no
+                proxying required. Falls back to nothing when absent. */}
+            {vehicle.imageUrl ? (
+              <Section style={{ padding: 0 }}>
+                <Img
+                  src={vehicle.imageUrl}
+                  alt={`${vehicle.company} ${vehicle.type}`}
+                  width="620"
+                  height="240"
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    height: "240px",
+                    objectFit: "cover",
+                    backgroundColor: TOKENS.surfaceMuted,
+                    borderBottom: `1px solid ${TOKENS.borderSoft}`,
+                  }}
+                />
+              </Section>
+            ) : null}
 
             {/* ───────── Confirmation copy ───────── */}
             <Section style={{ padding: "32px 32px 8px" }}>

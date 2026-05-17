@@ -38,6 +38,9 @@ export interface OrderCustomer {
 export interface OrderVehicle {
   company: string;
   type: string;
+  /** Public URL operator captured at creation time; surfaces on the order
+   *  detail page, Stripe checkout, and the confirmation email. */
+  imageUrl?: string | null;
 }
 
 export interface OrderTrip {
@@ -128,6 +131,21 @@ export interface ProviderDTO {
   tagline: string;
   status: RecordState;
   sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrderDraftDTO {
+  id: string;
+  ownerId: string;
+  data: Record<string, unknown>;
+  summary: {
+    customerName: string | null;
+    orderAmount: number | null;
+    currency: string | null;
+  };
+  revision: number;
+  lastEditedAt: string;
   createdAt: string;
   updatedAt: string;
 }

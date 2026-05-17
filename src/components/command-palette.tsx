@@ -8,10 +8,12 @@ import {
   HomeIcon,
   LogOutIcon,
   PlusIcon,
+  RotateCcwIcon,
   ScrollTextIcon,
   SettingsIcon,
   UserPlusIcon,
   UsersIcon,
+  XIcon,
 } from "lucide-react";
 
 import {
@@ -37,6 +39,8 @@ import {
 import { api } from "@/lib/api-client";
 import type { UserRole } from "@/lib/constants/enums";
 import { cn } from "@/lib/utils";
+import { useWorkspaceStore } from "@/workspace/store";
+import { WorkspaceTabType } from "@/workspace/types";
 
 interface CommandPaletteProps {
   role: UserRole;
@@ -50,6 +54,17 @@ interface CommandAction {
   shortcut?: string;
   permissions?: readonly Permission[];
   perform: (router: ReturnType<typeof useRouter>) => void | Promise<void>;
+}
+
+function TabIcon({ type }: { type: WorkspaceTabType }) {
+  switch (type) {
+    case WorkspaceTabType.ORDER_DETAILS:
+    case WorkspaceTabType.PAYMENT_REVIEW:
+      return <CreditCardIcon />;
+    case WorkspaceTabType.CREATE_ORDER:
+    case WorkspaceTabType.DRAFT_ORDER:
+      return <PlusIcon />;
+  }
 }
 
 const NAV_ACTIONS: CommandAction[] = [
@@ -140,6 +155,9 @@ const ACCOUNT_ACTIONS: CommandAction[] = [
 export function CommandPalette({ role }: CommandPaletteProps) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
+  const tabs = useWorkspaceStore((s) => s.tabs);
+  const activeTabId = useWorkspaceStore((s) => s.activeTabId);
+  const closedStack = useWorkspaceStore((s) => s.closedStack);
 
   React.useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -165,6 +183,22 @@ export function CommandPalette({ role }: CommandPaletteProps) {
     await action.perform(router);
   }
 
+  function switchToTab(id: string) {
+    setOpen(false);
+    useWorkspaceStore.getState().switchTab(id);
+  }
+
+  function reopenLastClosed() {
+    setOpen(false);
+    const id = useWorkspaceStore.getState().reopenLastClosed();
+    if (!id) toast.message("No recently-closed tabs to reopen");
+  }
+
+  function closeAllTabs() {
+    setOpen(false);
+    useWorkspaceStore.getState().closeAll();
+  }
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
@@ -177,6 +211,57 @@ export function CommandPalette({ role }: CommandPaletteProps) {
           <CommandInput placeholder="Search or run a command…" />
           <CommandList>
             <CommandEmpty>No matches.</CommandEmpty>
+
+            {tabs.length > 0 ? (
+              <>
+                <CommandGroup heading="Open tabs">
+                  {tabs.map((t) => (
+                    <CommandItem
+                      key={t.id}
+                      value={`tab ${t.label} ${t.subtitle ?? ""}`}
+                      onSelect={() => switchToTab(t.id)}
+                    >
+                      <TabIcon type={t.type} />
+                      <span
+                        className={cn(
+                          "flex-1 truncate",
+                          t.id === activeTabId && "font-medium",
+                        )}
+                      >
+                        {t.label}
+                      </span>
+                      {t.dirty ? (
+                        <span className="ml-1 size-1.5 shrink-0 rounded-full bg-warning" />
+                      ) : null}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+                <CommandSeparator />
+              </>
+            ) : null}
+
+            <CommandGroup heading="Workspace">
+              <CommandItem
+                value="reopen recently closed tab"
+                onSelect={reopenLastClosed}
+                disabled={closedStack.length === 0}
+              >
+                <RotateCcwIcon />
+                <span>Reopen recently-closed tab</span>
+                <CommandShortcut>⌘⇧T</CommandShortcut>
+              </CommandItem>
+              {tabs.length > 0 ? (
+                <CommandItem
+                  value="close all tabs workspace"
+                  onSelect={closeAllTabs}
+                >
+                  <XIcon />
+                  <span>Close all tabs (keep dirty)</span>
+                </CommandItem>
+              ) : null}
+            </CommandGroup>
+
+            <CommandSeparator />
 
             <CommandGroup heading="Navigate">
               {filteredNav.map((action) => (

@@ -17,7 +17,7 @@ import {
  * repeatedly without unique-key errors.
  */
 
-export interface SettingsSeed extends Partial<SettingDoc> {}
+export type SettingsSeed = Partial<SettingDoc>;
 
 export function buildSettings(seed: SettingsSeed = {}): SettingDoc {
   const now = new Date();

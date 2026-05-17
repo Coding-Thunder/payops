@@ -9,6 +9,7 @@ import { RouteTransitionLoader } from "@/components/common/route-transition-load
 import { RealtimeProvider } from "@/components/providers/realtime-provider";
 import { getCurrentUser } from "@/server/auth/session";
 import { env } from "@/lib/env";
+import { WorkspaceShell } from "@/workspace/components/workspace-shell";
 
 export const dynamic = "force-dynamic";
 
@@ -23,8 +24,6 @@ export default async function AuthenticatedLayout({
 
   return (
     <RealtimeProvider>
-      {/* useSearchParams suspends on initial page load; isolating the
-          transition loader keeps the rest of the shell from blocking. */}
       <Suspense fallback={null}>
         <RouteTransitionLoader />
       </Suspense>
@@ -33,9 +32,9 @@ export default async function AuthenticatedLayout({
         <div className="flex flex-1 flex-col min-w-0">
           <Topbar user={user} brand={brand} />
           <main className="flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-[1200px] px-4 py-6 sm:px-6 sm:py-8 md:px-8">
+            <WorkspaceShell user={{ id: user.id, role: user.role }}>
               {children}
-            </div>
+            </WorkspaceShell>
           </main>
         </div>
         <CommandPalette role={user.role} />

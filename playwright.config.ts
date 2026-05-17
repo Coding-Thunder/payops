@@ -70,7 +70,7 @@ export default defineConfig({
 });
 
 function loadEnvFile(file: string): Record<string, string> {
-
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- sync require avoids top-level await in this config file
   const fs = require("node:fs") as typeof import("node:fs");
   if (!fs.existsSync(file)) return {};
   const out: Record<string, string> = {};

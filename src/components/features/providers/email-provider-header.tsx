@@ -89,6 +89,10 @@ export function EmailProviderHeader({
 }
 
 function absoluteUrl(base: string, path: string): string {
+  // Inlined data URI (set by email.service when shipping confirmations) —
+  // pass through unmodified so Gmail / Outlook render it without
+  // proxy-fetching back to our server.
+  if (path.startsWith("data:")) return path;
   if (/^https?:\/\//i.test(path)) return path;
   const trimmedBase = base.replace(/\/+$/, "");
   const trimmedPath = path.startsWith("/") ? path : `/${path}`;

@@ -363,6 +363,14 @@ async function buildCheckoutSession(args: BuildSessionInput) {
             product_data: {
               name: productName,
               description,
+              // Stripe renders these in the Checkout summary alongside
+              // the price. Only forward when the operator captured a
+              // valid http(s) URL — anything else (data URI, localhost,
+              // empty) Stripe will reject.
+              ...(args.input.vehicle.imageUrl &&
+              /^https?:\/\//i.test(args.input.vehicle.imageUrl)
+                ? { images: [args.input.vehicle.imageUrl] }
+                : {}),
             },
           },
         },

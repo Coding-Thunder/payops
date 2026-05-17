@@ -41,6 +41,11 @@ export interface OrderDoc {
   vehicle: {
     company: string;
     type: string;
+    /** Optional public URL the operator provides at creation time so the
+     *  customer sees the car on the order detail page, the Stripe
+     *  checkout summary, and the payment-confirmation email. Stored
+     *  verbatim — we don't proxy, resize, or rehost it. */
+    imageUrl?: string | null;
   };
   trip: {
     pickupDate: Date;
@@ -115,6 +120,12 @@ const vehicleSchema = new Schema(
   {
     company: { type: String, required: true, trim: true, maxlength: 80 },
     type: { type: String, required: true, trim: true, maxlength: 80 },
+    imageUrl: {
+      type: String,
+      default: null,
+      maxlength: 2048,
+      trim: true,
+    },
   },
   { _id: false },
 );

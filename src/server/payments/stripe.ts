@@ -26,6 +26,7 @@ export function getStripe(): Stripe {
   if (testMode === "smoke" || testMode === "integration") {
     // Lazy-loaded so production bundles never include test code.
 
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional: lazy CJS require keeps test mocks out of prod bundle
     const { createStripeStub } = require("@/tests/mocks/stripe-stub") as
       typeof import("@/tests/mocks/stripe-stub");
     cached = createStripeStub({

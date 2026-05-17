@@ -15,3 +15,6 @@ export type { SettingDoc, SettingDocument } from "./setting.model";
 
 export { AuditLog } from "./audit-log.model";
 export type { AuditLogDoc, AuditLogDocument } from "./audit-log.model";
+
+export { OrderDraft } from "./order-draft.model";
+export type { OrderDraftDoc, OrderDraftDocument } from "./order-draft.model";

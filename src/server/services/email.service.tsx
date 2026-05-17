@@ -8,6 +8,7 @@ import { logger } from "@/lib/logger";
 import type { OrderDTO } from "@/types";
 
 import { getMailer } from "@/server/email/smtp";
+import { inlinePublicImage } from "@/server/email/inline-image";
 import {
   PaymentConfirmationEmail,
   type PaymentConfirmationEmailProps,
@@ -105,6 +106,16 @@ export async function sendPaymentConfirmationEmail(
   // the very next confirmation, no process restart required.
   const branding = await getBranding();
   const brandName = branding.brandName;
+  // Inline the provider logo as a data URI so Gmail / Outlook render it
+  // without proxying back to our server. Falls back to the original
+  // (absolute) URL if the file is missing or remote — same visual result
+  // wherever APP_URL is publicly reachable, no regression there.
+  const providerLogoInline = order.provider
+    ? await inlinePublicImage(order.provider.logo)
+    : null;
+  const providerForEmail = order.provider
+    ? { ...order.provider, logo: providerLogoInline ?? order.provider.logo }
+    : order.provider;
   const props: PaymentConfirmationEmailProps = {
     brandName,
     appUrl: env.server.APP_URL,
@@ -120,7 +131,7 @@ export async function sendPaymentConfirmationEmail(
     paidOn: order.payment.paidAt
       ? formatEmailDate(order.payment.paidAt)
       : formatEmailDate(new Date()),
-    provider: order.provider,
+    provider: providerForEmail,
     vehicle: order.vehicle,
     trip: {
       pickupDate: formatEmailDay(order.trip.pickupDate),

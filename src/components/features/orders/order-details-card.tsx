@@ -14,6 +14,7 @@ interface OrderDetailsCardProps {
 }
 
 export function OrderDetailsCard({ order }: OrderDetailsCardProps) {
+  const imageUrl = order.vehicle.imageUrl ?? null;
   return (
     <div className="space-y-4">
       <ProviderCard
@@ -28,6 +29,34 @@ export function OrderDetailsCard({ order }: OrderDetailsCardProps) {
           </>
         }
       />
+      {imageUrl ? (
+        <Card>
+          <CardContent className="p-0">
+            {/* Public car image captured at creation time. Rendered with
+                a fixed 16:9 frame and object-cover so wildly varying
+                source images still produce a clean card. The anchor lets
+                operators open the original for reference (right-click →
+                "Save image" too). */}
+            <a
+              href={imageUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={imageUrl}
+                alt={`${order.vehicle.company} ${order.vehicle.type}`}
+                className="aspect-[16/9] w-full rounded-t-lg object-cover bg-surface-1"
+                loading="lazy"
+              />
+            </a>
+            <div className="border-t border-border px-5 py-2.5 text-[11.5px] text-muted-foreground">
+              Public image used in the confirmation email and Stripe checkout.
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
       <Card>
         <CardHeader>
           <CardTitle>Booking details</CardTitle>

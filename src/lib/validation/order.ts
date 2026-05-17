@@ -39,6 +39,18 @@ export const createOrderSchema = z
         .min(2, "Car company is required")
         .max(80),
       type: z.string().trim().min(2, "Car type is required").max(80),
+      imageUrl: z
+        .string()
+        .trim()
+        .max(2048)
+        // Treat empty/whitespace as "no image" — Zod's url validator
+        // would otherwise reject "" and block the optional case.
+        .refine((v) => v === "" || /^https?:\/\//i.test(v), {
+          message: "Enter a valid http(s) image URL",
+        })
+        .optional()
+        .nullable()
+        .transform((v) => (v && v.length > 0 ? v : null)),
     }),
     trip: z
       .object({
