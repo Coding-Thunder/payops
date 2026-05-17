@@ -25,8 +25,6 @@ export default async function AdminSettingsPage() {
           orderPrefix: settings.orderPrefix,
           allowedBookingTypes: settings.allowedBookingTypes,
           defaultCurrency: settings.defaultCurrency,
-          supportEmail: settings.supportEmail,
-          supportPhone: settings.supportPhone,
           successRedirectUrl: settings.successRedirectUrl,
           cancelRedirectUrl: settings.cancelRedirectUrl,
           cancellationPolicy: settings.cancellationPolicy,

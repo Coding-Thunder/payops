@@ -8,6 +8,7 @@ import {
   type BookingType,
   type Currency,
 } from "@/lib/constants/enums";
+import { ValidationError } from "@/lib/errors";
 import { env } from "@/lib/env";
 import {
   Setting,
@@ -25,8 +26,6 @@ export interface OperationalSettings {
   orderPrefix: string;
   allowedBookingTypes: BookingType[];
   defaultCurrency: Currency;
-  supportEmail: string;
-  supportPhone: string;
   successRedirectUrl: string;
   cancelRedirectUrl: string;
   cancellationPolicy: string;
@@ -42,8 +41,6 @@ function toDTO(doc: SettingDoc | null): OperationalSettings {
       orderPrefix: e.DEFAULT_ORDER_PREFIX,
       allowedBookingTypes: ["NEW_BOOKING", "MODIFICATION", "CANCELLATION_CHARGE"],
       defaultCurrency: (e.DEFAULT_CURRENCY as Currency) || "USD",
-      supportEmail: e.SUPPORT_EMAIL,
-      supportPhone: e.SUPPORT_PHONE,
       successRedirectUrl: `${e.APP_URL}/pay/success`,
       cancelRedirectUrl: `${e.APP_URL}/pay/cancelled`,
       cancellationPolicy: DEFAULT_CANCELLATION_POLICY,
@@ -56,8 +53,6 @@ function toDTO(doc: SettingDoc | null): OperationalSettings {
     orderPrefix: doc.orderPrefix,
     allowedBookingTypes: doc.allowedBookingTypes,
     defaultCurrency: doc.defaultCurrency,
-    supportEmail: doc.supportEmail,
-    supportPhone: doc.supportPhone,
     // Redirect URLs are always derived from APP_URL so deploys / domain
     // changes propagate without a settings migration.
     successRedirectUrl: `${e.APP_URL}/pay/success`,
@@ -97,8 +92,6 @@ export async function ensureSettingsDocument(): Promise<SettingDoc> {
           "CANCELLATION_CHARGE",
         ],
         defaultCurrency: e.DEFAULT_CURRENCY,
-        supportEmail: e.SUPPORT_EMAIL,
-        supportPhone: e.SUPPORT_PHONE,
         successRedirectUrl: `${e.APP_URL}/pay/success`,
         cancelRedirectUrl: `${e.APP_URL}/pay/cancelled`,
       },
@@ -115,20 +108,46 @@ export async function updateSettings(
 ): Promise<OperationalSettings> {
   const existing = await ensureSettingsDocument();
 
-  const set: Record<string, unknown> = {
-    ...input,
-    updatedBy: new Types.ObjectId(ctx.actorId),
-  };
+  // Compute the actual diff so the audit row only carries fields that
+  // really changed (rather than the whole submitted body). Mirrors the
+  // pattern in user.service.updateUser.
+  const changes: Record<string, { from: unknown; to: unknown }> = {};
+  const set: Record<string, unknown> = {};
+
+  const fields: Array<keyof UpdateSettingsInput> = [
+    "paymentExpiryHours",
+    "orderPrefix",
+    "allowedBookingTypes",
+    "defaultCurrency",
+    "successRedirectUrl",
+    "cancelRedirectUrl",
+    "cancellationPolicy",
+  ];
+  for (const field of fields) {
+    if (!(field in input)) continue;
+    const next = input[field];
+    const prev = existing[field as keyof SettingDoc];
+    if (!isEqual(prev, next)) {
+      changes[field] = { from: prev, to: next };
+      set[field] = next;
+    }
+  }
+
+  if (Object.keys(set).length === 0) {
+    throw new ValidationError("No changes to apply");
+  }
+
+  set.updatedBy = new Types.ObjectId(ctx.actorId);
 
   // Auto-bump the policy version when the policy text changes. Old orders
   // keep their snapshot pointing at the old version string.
-  if (
-    typeof input.cancellationPolicy === "string" &&
-    input.cancellationPolicy.trim() !== (existing.cancellationPolicy ?? "").trim()
-  ) {
-    set.cancellationPolicyVersion = nextPolicyVersion(
-      existing.cancellationPolicyVersion ?? "v1",
-    );
+  if ("cancellationPolicy" in changes) {
+    const bumped = nextPolicyVersion(existing.cancellationPolicyVersion ?? "v1");
+    set.cancellationPolicyVersion = bumped;
+    changes.cancellationPolicyVersion = {
+      from: existing.cancellationPolicyVersion ?? "v1",
+      to: bumped,
+    };
   }
 
   const updated = await Setting.findOneAndUpdate(
@@ -148,10 +167,25 @@ export async function updateSettings(
       role: ctx.actorRole,
     },
     request: ctx.request ?? null,
-    metadata: { changes: input },
+    metadata: { changes },
   });
 
   return toDTO(updated);
+}
+
+/** Structural equality good enough for primitive fields + sorted arrays of
+ *  primitives. Order-sensitive on arrays (intentional — booking-type order
+ *  shouldn't matter today, but we surface re-ordering as a change anyway). */
+function isEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
+    return a.every((v, i) => v === b[i]);
+  }
+  if (typeof a === "string" && typeof b === "string") {
+    return a.trim() === b.trim();
+  }
+  return false;
 }
 
 /** "v3" → "v4". Falls back to "v1" if the previous label isn't parseable. */

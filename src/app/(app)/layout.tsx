@@ -1,8 +1,11 @@
 import { redirect } from "next/navigation";
 
+import { Suspense } from "react";
+
 import { Sidebar } from "@/components/app-shell/sidebar";
 import { Topbar } from "@/components/app-shell/topbar";
 import { CommandPalette } from "@/components/command-palette";
+import { RouteTransitionLoader } from "@/components/common/route-transition-loader";
 import { RealtimeProvider } from "@/components/providers/realtime-provider";
 import { getCurrentUser } from "@/server/auth/session";
 import { env } from "@/lib/env";
@@ -20,6 +23,11 @@ export default async function AuthenticatedLayout({
 
   return (
     <RealtimeProvider>
+      {/* useSearchParams suspends on initial page load; isolating the
+          transition loader keeps the rest of the shell from blocking. */}
+      <Suspense fallback={null}>
+        <RouteTransitionLoader />
+      </Suspense>
       <div className="flex min-h-screen bg-background">
         <Sidebar role={user.role} brand={brand} />
         <div className="flex flex-1 flex-col min-w-0">

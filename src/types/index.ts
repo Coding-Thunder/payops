@@ -132,6 +132,16 @@ export interface ProviderDTO {
   updatedAt: string;
 }
 
+export interface BrandingDTO {
+  brandName: string;
+  supportEmail: string;
+  supportPhone: string;
+  logo: string;
+  primaryColor: string;
+  footerTagline: string;
+  updatedAt: string;
+}
+
 export interface PaginatedResult<T> {
   items: T[];
   total: number;

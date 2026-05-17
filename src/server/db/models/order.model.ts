@@ -1,7 +1,5 @@
 import {
   Schema,
-  model,
-  models,
   type HydratedDocument,
   type Model,
   type Types,
@@ -302,5 +300,8 @@ orderSchema.pre("validate", function () {
   }
 });
 
-export const Order: Model<OrderDoc> =
-  (models.Order as Model<OrderDoc>) || model<OrderDoc>("Order", orderSchema);
+import { registerModel } from "./register";
+export const Order: Model<OrderDoc> = registerModel<OrderDoc>(
+  "Order",
+  orderSchema,
+);

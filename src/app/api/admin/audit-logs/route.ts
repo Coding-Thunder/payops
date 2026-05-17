@@ -6,9 +6,14 @@ import {
   AuditEntity,
 } from "@/lib/constants/enums";
 import { Permission } from "@/lib/constants/permissions";
+import { deleteByIdsSchema } from "@/lib/validation";
+import { getRequestContext } from "@/server/api/request-context";
 import { jsonOk, withApi } from "@/server/api/respond";
 import { requirePermission } from "@/server/auth/session";
-import { listAuditLogs } from "@/server/services/audit.service";
+import {
+  deleteAuditLogs,
+  listAuditLogs,
+} from "@/server/services/audit.service";
 
 const querySchema = z.object({
   entityType: z.enum(Object.values(AuditEntity) as [string, ...string[]]).optional(),
@@ -35,4 +40,13 @@ export const GET = withApi(async (req: NextRequest) => {
     pageSize: query.pageSize,
   });
   return jsonOk(data);
+});
+
+export const DELETE = withApi(async (req: NextRequest) => {
+  const actor = await requirePermission(Permission.AUDIT_DELETE);
+  const body = await req.json().catch(() => ({}));
+  const { ids } = deleteByIdsSchema.parse(body);
+  const ctx = await getRequestContext();
+  const result = await deleteAuditLogs(ids, { actor, request: ctx });
+  return jsonOk(result);
 });

@@ -7,6 +7,7 @@ import {
   CreditCardIcon,
   HomeIcon,
   PackageIcon,
+  PaletteIcon,
   ScrollTextIcon,
   SettingsIcon,
   ShieldAlertIcon,
@@ -66,6 +67,12 @@ const SECTIONS: NavSection[] = [
         label: "Providers",
         icon: PackageIcon,
         permissions: [Permission.PROVIDER_VIEW],
+      },
+      {
+        href: "/admin/branding",
+        label: "Branding",
+        icon: PaletteIcon,
+        permissions: [Permission.BRANDING_VIEW],
       },
       {
         href: "/admin/disputes",

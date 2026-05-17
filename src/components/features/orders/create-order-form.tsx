@@ -4,9 +4,9 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { LoaderIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DateTimePicker } from "@/components/common/date-time-picker";
 import {
@@ -431,12 +431,13 @@ export function CreateOrderForm({
           >
             Cancel
           </Button>
-          <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? (
-              <LoaderIcon className="size-4 animate-spin" />
-            ) : null}
-            {isSubmitting ? "Creating order" : "Create order & generate link"}
-          </Button>
+          <LoadingButton
+            type="submit"
+            loading={isSubmitting}
+            loadingText="Creating order"
+          >
+            Create order & generate link
+          </LoadingButton>
         </div>
       </form>
     </Form>

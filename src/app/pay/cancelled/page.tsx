@@ -1,11 +1,12 @@
-import { env } from "@/lib/env";
+import { getBranding } from "@/server/services/branding.service";
 
 export const metadata = { title: "Payment cancelled" };
 export const dynamic = "force-dynamic";
 
 export default async function PaymentCancelledPage() {
-  const brand = env.server.CUSTOMER_BRAND_NAME;
-  const supportEmail = env.server.SUPPORT_EMAIL;
+  const branding = await getBranding();
+  const brand = branding.brandName;
+  const supportEmail = branding.supportEmail;
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">

@@ -21,6 +21,7 @@ interface OrdersPageProps {
 export default async function OrdersPage({ searchParams }: OrdersPageProps) {
   const user = await requirePermission(Permission.ORDER_VIEW_OWN);
   const canSeeAll = roleHasPermission(user.role, Permission.ORDER_VIEW_ALL);
+  const canDelete = roleHasPermission(user.role, Permission.ORDER_DELETE);
 
   const sp = await searchParams;
   const params = listOrdersQuerySchema.parse(flatten(sp));
@@ -48,6 +49,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
       <OrderFilters canSeeAll={canSeeAll} />
       <OrderTable
         items={data.items}
+        canDelete={canDelete}
         emptyAction={
           <Button asChild>
             <Link href="/orders/create">

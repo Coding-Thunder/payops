@@ -22,6 +22,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { LogoLockup } from "@/components/brand/logo";
+import { RealtimeIndicator } from "@/components/common/realtime-indicator";
 import { initialsFromName } from "@/lib/format";
 import { UserRoleLabel } from "@/lib/constants/labels";
 import { toast } from "@/components/ui/sonner";
@@ -67,11 +68,14 @@ export function Topbar({ user, brand }: TopbarProps) {
         </SheetContent>
       </Sheet>
 
-      <div className="hidden md:flex items-center gap-2 text-[12.5px] text-muted-foreground">
+      <div className="hidden md:flex items-center gap-3 text-[12.5px] text-muted-foreground">
         <span className="font-medium text-foreground">Payment operations</span>
+        <span className="text-border" aria-hidden>·</span>
+        <RealtimeIndicator />
       </div>
 
       <div className="ml-auto flex items-center gap-2">
+        <RealtimeIndicator className="md:hidden" withLabel={false} />
         <button
           type="button"
           onClick={() => {

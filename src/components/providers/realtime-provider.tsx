@@ -14,26 +14,50 @@ import {
 } from "@/lib/constants/events";
 
 /**
+ * Connection lifecycle exposed to the UI so a small chrome indicator can
+ * surface what's happening without spamming toasts.
+ *  - "connecting": initial socket open, no events received yet
+ *  - "live":       socket is open and we've seen at least one ping/event
+ *  - "reconnecting": socket dropped, browser is retrying
+ *  - "offline":    user agent reports navigator.offline = true
+ */
+export type RealtimeStatus = "connecting" | "live" | "reconnecting" | "offline";
+
+const RealtimeStatusContext = React.createContext<RealtimeStatus>("connecting");
+
+export function useRealtimeStatus(): RealtimeStatus {
+  return React.useContext(RealtimeStatusContext);
+}
+
+/**
  * RealtimeProvider — wraps the authenticated layout with:
  *   1. An ActivityFeedProvider so any descendant can render the live feed.
  *   2. A single EventSource connection to /api/events.
  *   3. Side-effects per event: toast notifications + debounced
  *      router.refresh() so server components re-render with fresh data.
+ *   4. A connection status context for tiny chrome indicators.
  *
  * Database is still the source of truth — events are notifications only.
  * `router.refresh()` triggers a Next.js server render, which re-fetches
  * from Mongo through the service layer.
  */
 export function RealtimeProvider({ children }: { children: React.ReactNode }) {
+  const [status, setStatus] = React.useState<RealtimeStatus>("connecting");
   return (
     <ActivityFeedProvider>
-      <RealtimeBridge />
-      {children}
+      <RealtimeBridge onStatusChange={setStatus} />
+      <RealtimeStatusContext.Provider value={status}>
+        {children}
+      </RealtimeStatusContext.Provider>
     </ActivityFeedProvider>
   );
 }
 
-function RealtimeBridge() {
+function RealtimeBridge({
+  onStatusChange,
+}: {
+  onStatusChange: (s: RealtimeStatus) => void;
+}) {
   const router = useRouter();
   const { push } = useActivityFeed();
   const refreshTimer = React.useRef<number | null>(null);
@@ -41,13 +65,22 @@ function RealtimeBridge() {
   // Latest refs so the EventSource handler doesn't need to be reattached.
   const routerRef = React.useRef(router);
   const pushRef = React.useRef(push);
+  const statusRef = React.useRef(onStatusChange);
   React.useEffect(() => {
     routerRef.current = router;
     pushRef.current = push;
+    statusRef.current = onStatusChange;
   });
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
+
+    function syncOnline() {
+      if (!navigator.onLine) statusRef.current("offline");
+    }
+    window.addEventListener("online", syncOnline);
+    window.addEventListener("offline", syncOnline);
+
     const source = new EventSource("/api/events");
 
     const handle = (data: string) => {
@@ -72,18 +105,32 @@ function RealtimeBridge() {
       }, 350);
     }
 
-    const onEvent = (e: MessageEvent) => handle(e.data);
+    source.onopen = () => {
+      statusRef.current(navigator.onLine ? "live" : "offline");
+    };
+
+    const onEvent = (e: MessageEvent) => {
+      // Any inbound traffic means the socket is open and useful.
+      statusRef.current("live");
+      handle(e.data);
+    };
     source.addEventListener("payops", onEvent);
 
     source.onerror = () => {
-      // EventSource auto-reconnects; we just log noisily in dev.
+      // EventSource auto-reconnects; surface that state to the UI.
+      if (source.readyState === EventSource.CLOSED) {
+        statusRef.current("offline");
+      } else {
+        statusRef.current(navigator.onLine ? "reconnecting" : "offline");
+      }
       if (process.env.NODE_ENV !== "production") {
-         
         console.debug("[realtime] connection error - browser will reconnect");
       }
     };
 
     return () => {
+      window.removeEventListener("online", syncOnline);
+      window.removeEventListener("offline", syncOnline);
       source.removeEventListener("payops", onEvent);
       source.close();
       if (refreshTimer.current) window.clearTimeout(refreshTimer.current);

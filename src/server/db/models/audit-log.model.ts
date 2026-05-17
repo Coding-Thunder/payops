@@ -1,7 +1,5 @@
 import {
   Schema,
-  model,
-  models,
   type HydratedDocument,
   type Model,
   type Types,
@@ -86,6 +84,8 @@ auditLogSchema.index({ createdAt: -1 });
 auditLogSchema.index({ action: 1, createdAt: -1 });
 auditLogSchema.index({ entityType: 1, entityId: 1, createdAt: -1 });
 
-export const AuditLog: Model<AuditLogDoc> =
-  (models.AuditLog as Model<AuditLogDoc>) ||
-  model<AuditLogDoc>("AuditLog", auditLogSchema);
+import { registerModel } from "./register";
+export const AuditLog: Model<AuditLogDoc> = registerModel<AuditLogDoc>(
+  "AuditLog",
+  auditLogSchema,
+);

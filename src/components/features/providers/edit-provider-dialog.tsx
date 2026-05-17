@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { FormDialog } from "@/components/common/form-dialog";
+import { ColorInput, LogoPickerRow } from "@/components/common/logo-picker";
 import { toast } from "@/components/ui/sonner";
 import { api, ApiClientError } from "@/lib/api-client";
 import {
@@ -24,11 +25,6 @@ import {
   type UpdateProviderInput,
 } from "@/lib/validation";
 import type { ProviderDTO } from "@/types";
-
-import {
-  ColorInput,
-  LogoPickerRow,
-} from "./create-provider-dialog";
 
 interface EditProviderDialogProps {
   provider: ProviderDTO;
@@ -136,8 +132,8 @@ export function EditProviderDialog({
         <div className="space-y-4">
           <LogoPickerRow
             file={file}
-            previewName={form.watch("name") ?? provider.name}
-            previewLogo={provider.logo}
+            currentLogoSrc={provider.logo}
+            altText={form.watch("name") ?? provider.name}
             fileInputRef={fileInputRef}
             onPick={setFile}
           />

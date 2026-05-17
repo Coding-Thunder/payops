@@ -4,11 +4,11 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import {
   ExternalLinkIcon,
-  LoaderIcon,
   RefreshCwIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import {
   Card,
   CardContent,
@@ -143,38 +143,32 @@ export function OrderPaymentCard({
                 </a>
               </Button>
               {canRegenerate ? (
-                <Button
+                <LoadingButton
                   variant="ghost"
                   size="sm"
                   onClick={regenerate}
-                  disabled={submitting}
+                  loading={submitting}
+                  loadingText="Regenerating"
+                  icon={<RefreshCwIcon className="size-3.5" />}
                 >
-                  {submitting ? (
-                    <LoaderIcon className="size-3.5 animate-spin" />
-                  ) : (
-                    <RefreshCwIcon className="size-3.5" />
-                  )}
                   Regenerate link
-                </Button>
+                </LoadingButton>
               ) : null}
             </div>
           </div>
         ) : null}
 
         {isFailedOrExpired && canRegenerate ? (
-          <Button
+          <LoadingButton
             variant="outline"
             size="sm"
             onClick={regenerate}
-            disabled={submitting}
+            loading={submitting}
+            loadingText="Generating"
+            icon={<RefreshCwIcon className="size-3.5" />}
           >
-            {submitting ? (
-              <LoaderIcon className="size-3.5 animate-spin" />
-            ) : (
-              <RefreshCwIcon className="size-3.5" />
-            )}
             Generate a new payment link
-          </Button>
+          </LoadingButton>
         ) : null}
       </CardContent>
     </Card>

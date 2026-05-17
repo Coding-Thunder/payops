@@ -3,9 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { LoaderIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Form,
@@ -182,44 +182,10 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
           </Section>
 
           <Section
-            title="Customer-facing details"
-            description="Used in confirmation emails and redirect URLs after Stripe checkout."
+            title="Checkout redirects"
+            description="Where Stripe sends the customer after they complete or abandon checkout. Both URLs are computed from the APP_URL deploy variable."
           >
             <div className="grid gap-4 sm:grid-cols-2">
-              <FormField
-                control={form.control}
-                name="supportEmail"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Support email</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="email"
-                        disabled={!canEdit || isSubmitting}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="supportPhone"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Support phone</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="tel"
-                        disabled={!canEdit || isSubmitting}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
               <FormField
                 control={form.control}
                 name="successRedirectUrl"
@@ -315,12 +281,15 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
             >
               Discard
             </Button>
-            <Button type="submit" size="sm" disabled={!canEdit || isSubmitting}>
-              {isSubmitting ? (
-                <LoaderIcon className="size-3.5 animate-spin" />
-              ) : null}
+            <LoadingButton
+              type="submit"
+              size="sm"
+              disabled={!canEdit}
+              loading={isSubmitting}
+              loadingText="Saving"
+            >
               Save settings
-            </Button>
+            </LoadingButton>
           </div>
         </div>
       </form>

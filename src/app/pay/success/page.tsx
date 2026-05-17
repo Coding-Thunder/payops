@@ -1,4 +1,4 @@
-import { env } from "@/lib/env";
+import { getBranding } from "@/server/services/branding.service";
 import { getOrderByNumber } from "@/server/services/order.service";
 import { ProviderBadge } from "@/components/features/providers";
 import { resolveProvider } from "@/lib/constants/providers";
@@ -14,9 +14,12 @@ export default async function PaymentSuccessPage({
   searchParams,
 }: SuccessPageProps) {
   const { order: orderNumber } = await searchParams;
-  const order = orderNumber ? await getOrderByNumber(orderNumber) : null;
-  const brand = env.server.CUSTOMER_BRAND_NAME;
-  const supportEmail = env.server.SUPPORT_EMAIL;
+  const [order, branding] = await Promise.all([
+    orderNumber ? getOrderByNumber(orderNumber) : Promise.resolve(null),
+    getBranding(),
+  ]);
+  const brand = branding.brandName;
+  const supportEmail = branding.supportEmail;
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">

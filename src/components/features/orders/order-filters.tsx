@@ -5,6 +5,7 @@ import { SearchIcon } from "lucide-react";
 import { useState, useTransition } from "react";
 
 import { Input } from "@/components/ui/input";
+import { InlineSpinner } from "@/components/ui/spinner";
 import {
   Select,
   SelectContent,
@@ -112,9 +113,7 @@ export function OrderFilters({ canSeeAll }: OrderFiltersProps) {
           </SelectContent>
         </Select>
       ) : null}
-      {pending ? (
-        <span className="text-xs text-muted-foreground">Updating…</span>
-      ) : null}
+      {pending ? <InlineSpinner text="Updating" className="px-2" /> : null}
     </div>
   );
 }

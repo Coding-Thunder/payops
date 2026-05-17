@@ -16,6 +16,7 @@ export const Permission = {
   ORDER_CREATE: "order:create",
   ORDER_UPDATE: "order:update",
   ORDER_ARCHIVE: "order:archive",
+  ORDER_DELETE: "order:delete",
   ORDER_REGENERATE_LINK: "order:regenerate_link",
 
   ANALYTICS_VIEW: "analytics:view",
@@ -25,7 +26,11 @@ export const Permission = {
   PROVIDER_VIEW: "provider:view",
   PROVIDER_MANAGE: "provider:manage",
 
+  BRANDING_VIEW: "branding:view",
+  BRANDING_MANAGE: "branding:manage",
+
   AUDIT_VIEW: "audit:view",
+  AUDIT_DELETE: "audit:delete",
 } as const;
 export type Permission = (typeof Permission)[keyof typeof Permission];
 
@@ -51,12 +56,16 @@ const ADMIN_ONLY_PERMISSIONS: readonly Permission[] = [
   Permission.ORDER_VIEW_ALL,
   Permission.ORDER_UPDATE,
   Permission.ORDER_ARCHIVE,
+  Permission.ORDER_DELETE,
   Permission.ANALYTICS_VIEW,
   Permission.SETTINGS_VIEW,
   Permission.SETTINGS_UPDATE,
   Permission.PROVIDER_VIEW,
   Permission.PROVIDER_MANAGE,
+  Permission.BRANDING_VIEW,
+  Permission.BRANDING_MANAGE,
   Permission.AUDIT_VIEW,
+  Permission.AUDIT_DELETE,
 ];
 
 /** Role → permissions matrix. Single source of truth. */

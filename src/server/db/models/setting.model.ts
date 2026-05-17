@@ -1,7 +1,5 @@
 import {
   Schema,
-  model,
-  models,
   type HydratedDocument,
   type Model,
 } from "mongoose";
@@ -35,8 +33,11 @@ export interface SettingDoc {
   orderPrefix: string;
   allowedBookingTypes: BookingType[];
   defaultCurrency: Currency;
-  supportEmail: string;
-  supportPhone: string;
+  /** @deprecated support contact moved to the Branding doc. Field is kept
+   *  on the schema for read-back compat with old documents. */
+  supportEmail?: string;
+  /** @deprecated support contact moved to the Branding doc. */
+  supportPhone?: string;
   successRedirectUrl: string;
   cancelRedirectUrl: string;
   /** Free-form cancellation/refund policy text shown in confirmation emails
@@ -83,8 +84,11 @@ const settingSchema = new Schema<SettingDoc>(
       required: true,
       default: "USD",
     },
-    supportEmail: { type: String, required: true, lowercase: true },
-    supportPhone: { type: String, required: true },
+    // supportEmail / supportPhone were migrated to the Branding doc.
+    // Keep the columns nullable on the schema so we can still load old
+    // settings rows; reading happens via Branding now.
+    supportEmail: { type: String, required: false, lowercase: true },
+    supportPhone: { type: String, required: false },
     successRedirectUrl: { type: String, required: true },
     cancelRedirectUrl: { type: String, required: true },
     cancellationPolicy: {
@@ -116,6 +120,8 @@ const settingSchema = new Schema<SettingDoc>(
   },
 );
 
-export const Setting: Model<SettingDoc> =
-  (models.Setting as Model<SettingDoc>) ||
-  model<SettingDoc>("Setting", settingSchema);
+import { registerModel } from "./register";
+export const Setting: Model<SettingDoc> = registerModel<SettingDoc>(
+  "Setting",
+  settingSchema,
+);

@@ -87,6 +87,17 @@ export const archiveOrderSchema = z.object({
 
 export type ArchiveOrderInput = z.infer<typeof archiveOrderSchema>;
 
+const objectIdRegex = /^[a-f0-9]{24}$/i;
+
+export const deleteByIdsSchema = z.object({
+  ids: z
+    .array(z.string().regex(objectIdRegex, "Invalid id"))
+    .min(1, "Select at least one record")
+    .max(100, "Too many records selected"),
+});
+
+export type DeleteByIdsInput = z.infer<typeof deleteByIdsSchema>;
+
 export const analyticsQuerySchema = z.object({
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),

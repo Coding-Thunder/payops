@@ -72,6 +72,44 @@ interface ListAuditQuery {
   pageSize?: number;
 }
 
+interface DeleteAuditActor {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+}
+
+interface DeleteAuditContext {
+  actor: DeleteAuditActor;
+  request?: RequestContext | null;
+}
+
+/**
+ * Hard-deletes audit log entries by id. Records its own audit row capturing
+ * which entries were purged so the deletion itself is traceable.
+ */
+export async function deleteAuditLogs(
+  ids: string[],
+  ctx: DeleteAuditContext,
+): Promise<{ deleted: number }> {
+  await connectMongo();
+  const valid = ids.filter((id) => Types.ObjectId.isValid(id));
+  if (valid.length === 0) return { deleted: 0 };
+  const objectIds = valid.map((id) => new Types.ObjectId(id));
+  const res = await AuditLog.deleteMany({ _id: { $in: objectIds } });
+
+  await recordAudit({
+    action: AuditAction.AUDIT_LOG_DELETED,
+    entityType: AuditEntity.SYSTEM,
+    entityId: null,
+    actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+    request: ctx.request ?? null,
+    metadata: { deletedCount: res.deletedCount ?? 0, ids: valid },
+  });
+
+  return { deleted: res.deletedCount ?? 0 };
+}
+
 export async function listAuditLogs(query: ListAuditQuery = {}) {
   await connectMongo();
   const page = Math.max(1, query.page ?? 1);

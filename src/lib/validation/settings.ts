@@ -2,6 +2,9 @@ import { z } from "zod";
 
 import { BOOKING_TYPES, CURRENCIES } from "@/lib/constants/enums";
 
+// Support email/phone live on the Branding doc now (see /admin/branding).
+// Redirect URLs are computed from APP_URL — accepted but ignored by the
+// service mapper so the form's read-only display stays in sync.
 export const updateSettingsSchema = z.object({
   paymentExpiryHours: z.number().int().min(1).max(24 * 30),
   orderPrefix: z
@@ -13,8 +16,6 @@ export const updateSettingsSchema = z.object({
     .array(z.enum(BOOKING_TYPES))
     .min(1, "At least one booking type must be enabled"),
   defaultCurrency: z.enum(CURRENCIES),
-  supportEmail: z.string().email().toLowerCase(),
-  supportPhone: z.string().trim().min(5).max(32),
   successRedirectUrl: z.string().url(),
   cancelRedirectUrl: z.string().url(),
   cancellationPolicy: z

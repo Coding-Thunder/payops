@@ -39,6 +39,7 @@ import { recordAudit } from "./audit.service";
 import { getSettings } from "./settings.service";
 import { generateOrderNumber } from "./order-number";
 import { buildProviderSnapshotFromKey } from "./provider.service";
+import { getBranding } from "./branding.service";
 
 const ZERO_DECIMAL_CURRENCIES = new Set([
   "BIF",
@@ -339,6 +340,10 @@ async function buildCheckoutSession(args: BuildSessionInput) {
 
   const productName = describeProductName(args.input);
   const description = describeProductDescription(args.input);
+  // Stripe metadata strings show up on the Stripe dashboard and on the
+  // PaymentIntent description — admins can rebrand the workspace and the
+  // next checkout session reflects it without a redeploy.
+  const branding = await getBranding();
 
   return stripe.checkout.sessions.create(
     {
@@ -368,10 +373,10 @@ async function buildCheckoutSession(args: BuildSessionInput) {
         bookingType: args.input.bookingType,
         actorId: args.actor.id,
         actorEmail: args.actor.email,
-        appName: env.server.CUSTOMER_BRAND_NAME,
+        appName: branding.brandName,
       },
       payment_intent_data: {
-        description: `${env.server.CUSTOMER_BRAND_NAME} • ${args.orderNumber}`,
+        description: `${branding.brandName} • ${args.orderNumber}`,
         metadata: {
           orderId: args.orderId,
           orderNumber: args.orderNumber,
@@ -661,6 +666,56 @@ export async function regeneratePaymentLink(
   return {
     order: orderToDTO(doc.toObject() as OrderDoc & { _id: Types.ObjectId }),
     checkoutUrl: session.url,
+  };
+}
+
+/**
+ * Hard-deletes one or more orders. Paid orders are skipped — financial
+ * records must remain in the database for audit/refund purposes. Returns
+ * the count actually deleted plus the ids that were blocked.
+ */
+export async function deleteOrders(
+  ids: string[],
+  ctx: OrderContext,
+): Promise<{ deleted: number; blockedPaidIds: string[] }> {
+  await connectMongo();
+  const valid = ids.filter((id) => Types.ObjectId.isValid(id));
+  if (valid.length === 0) return { deleted: 0, blockedPaidIds: [] };
+
+  const objectIds = valid.map((id) => new Types.ObjectId(id));
+  const docs = await Order.find({ _id: { $in: objectIds } })
+    .select({ _id: 1, orderNumber: 1, status: 1 })
+    .lean<{ _id: Types.ObjectId; orderNumber: string; status: OrderStatus }[]>();
+
+  const paid = docs.filter((d) => d.status === OrderStatus.PAID);
+  const deletable = docs.filter((d) => d.status !== OrderStatus.PAID);
+
+  if (deletable.length === 0) {
+    throw new ConflictError(
+      "Paid orders cannot be deleted. Archive them instead to retain financial history.",
+    );
+  }
+
+  const deletableIds = deletable.map((d) => d._id);
+  const res = await Order.deleteMany({ _id: { $in: deletableIds } });
+
+  await recordAudit({
+    action: AuditAction.ORDER_DELETED,
+    entityType: AuditEntity.ORDER,
+    entityId: null,
+    actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+    request: ctx.request ?? null,
+    metadata: {
+      deletedCount: res.deletedCount ?? 0,
+      ids: deletable.map((d) => String(d._id)),
+      orderNumbers: deletable.map((d) => d.orderNumber),
+      blockedPaidIds: paid.map((d) => String(d._id)),
+    },
+  });
+
+  return {
+    deleted: res.deletedCount ?? 0,
+    blockedPaidIds: paid.map((d) => String(d._id)),
   };
 }
 

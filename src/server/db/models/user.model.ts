@@ -1,8 +1,6 @@
 import {
   Schema,
   Types,
-  model,
-  models,
   type HydratedDocument,
   type Model,
 } from "mongoose";
@@ -82,5 +80,5 @@ const userSchema = new Schema<UserDoc>(
 // warning at startup.
 userSchema.index({ status: 1, role: 1 });
 
-export const User: Model<UserDoc> =
-  (models.User as Model<UserDoc>) || model<UserDoc>("User", userSchema);
+import { registerModel } from "./register";
+export const User: Model<UserDoc> = registerModel<UserDoc>("User", userSchema);

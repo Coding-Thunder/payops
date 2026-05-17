@@ -116,8 +116,12 @@ export function DateTimePicker({
 
       <PopoverContent
         align="start"
-        sideOffset={6}
-        className="w-[280px] p-0 overflow-hidden"
+        sideOffset={8}
+        className={cn(
+          "w-[296px] p-0 overflow-hidden",
+          "rounded-xl border border-border/60",
+          "shadow-[0_8px_24px_-8px_rgba(15,23,42,0.18),0_2px_6px_-2px_rgba(15,23,42,0.08)]",
+        )}
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <Calendar
@@ -132,8 +136,8 @@ export function DateTimePicker({
           }}
         />
 
-        <div className="border-t border-border bg-muted/30 px-3 py-2.5 flex flex-col gap-2">
-          <div className="flex items-center gap-1.5 text-[10.5px] uppercase tracking-wider text-muted-foreground">
+        <div className="border-t border-border/50 px-3 py-2.5 flex flex-col gap-2">
+          <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.12em] text-muted-foreground/70 font-medium">
             <ClockIcon className="size-3" />
             Time
           </div>
@@ -144,16 +148,11 @@ export function DateTimePicker({
           />
         </div>
 
-        <div className="flex items-center justify-between border-t border-border px-3 py-2">
-          <span className="text-[11px] text-muted-foreground">
-            {parsed
-              ? format(parsed, "EEE, d MMM · HH:mm")
-              : "No date selected"}
-          </span>
+        <div className="flex items-center justify-end border-t border-border/50 px-2 py-1.5">
           <Button
             size="sm"
             variant="ghost"
-            className="h-7 text-[12px]"
+            className="h-7 px-2.5 text-[12px] font-medium text-foreground/70 hover:text-foreground"
             onClick={() => setOpen(false)}
           >
             Done

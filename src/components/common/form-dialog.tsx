@@ -1,9 +1,9 @@
 "use client";
 
-import { LoaderIcon } from "lucide-react";
 import * as React from "react";
 
 import { Button, type ButtonProps } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import {
   Dialog,
   DialogBody,
@@ -118,6 +118,7 @@ export function FormDialog({
           onSubmit={handleSubmit}
           noValidate
           className="flex flex-col min-h-0 flex-1"
+          aria-busy={isPending || undefined}
         >
           <DialogHeader icon={icon} tone={tone}>
             <DialogTitle>{title}</DialogTitle>
@@ -126,7 +127,9 @@ export function FormDialog({
             ) : null}
           </DialogHeader>
 
-          <DialogBody>{children}</DialogBody>
+          <DialogBody className={isPending ? "pointer-events-none opacity-80" : undefined}>
+            {children}
+          </DialogBody>
 
           <DialogFooter>
             {footerLeading ? (
@@ -148,10 +151,9 @@ export function FormDialog({
               variant={submitVariant}
               size="sm"
               disabled={isPending || submitDisabled}
+              aria-busy={isPending || undefined}
             >
-              {isPending ? (
-                <LoaderIcon className="size-3.5 animate-spin" />
-              ) : null}
+              {isPending ? <Spinner size="xs" tone="current" /> : null}
               {submitLabel}
             </Button>
           </DialogFooter>

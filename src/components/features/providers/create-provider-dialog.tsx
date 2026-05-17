@@ -1,10 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { PlusIcon, UploadIcon } from "lucide-react";
+import { PlusIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { FormDialog } from "@/components/common/form-dialog";
+import { ColorInput, LogoPickerRow } from "@/components/common/logo-picker";
 import { toast } from "@/components/ui/sonner";
 import { api, ApiClientError } from "@/lib/api-client";
 import {
@@ -25,8 +26,6 @@ import {
   type CreateProviderInput,
 } from "@/lib/validation";
 import type { ProviderDTO } from "@/types";
-
-import { ProviderLogo } from "./provider-logo";
 
 const PLACEHOLDER_LOGO = "/providers/_placeholder.svg";
 
@@ -136,8 +135,8 @@ export function CreateProviderDialog() {
           <div className="space-y-4">
             <LogoPickerRow
               file={file}
-              previewName={form.watch("name") || "Provider"}
-              previewLogo={PLACEHOLDER_LOGO}
+              currentLogoSrc={PLACEHOLDER_LOGO}
+              altText={form.watch("name") || "Provider"}
               fileInputRef={fileInputRef}
               onPick={(f) => setFile(f)}
             />
@@ -243,98 +242,3 @@ export function CreateProviderDialog() {
   );
 }
 
-interface LogoPickerRowProps {
-  file: File | null;
-  previewName: string;
-  previewLogo: string;
-  fileInputRef: React.RefObject<HTMLInputElement | null>;
-  onPick: (file: File | null) => void;
-}
-
-export function LogoPickerRow({
-  file,
-  previewName,
-  previewLogo,
-  fileInputRef,
-  onPick,
-}: LogoPickerRowProps) {
-  return (
-    <div className="flex items-center gap-4 rounded-lg border border-border bg-surface-1 p-3">
-      {file ? (
-        <LogoFilePreview file={file} />
-      ) : (
-        <ProviderLogo
-          provider={{ id: "_PREVIEW", name: previewName, logo: previewLogo }}
-          size="lg"
-          framed
-        />
-      )}
-      <div className="min-w-0 flex-1">
-        <p className="text-[12.5px] font-medium">Brand mark</p>
-        <p className="text-[11.5px] text-muted-foreground">
-          PNG, JPEG, WebP, GIF, or SVG · up to 512KB.
-        </p>
-      </div>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => fileInputRef.current?.click()}
-      >
-        <UploadIcon className="size-3.5" />
-        {file ? "Replace" : "Upload"}
-      </Button>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
-        className="hidden"
-        onChange={(e) => onPick(e.target.files?.[0] ?? null)}
-      />
-    </div>
-  );
-}
-
-function LogoFilePreview({ file }: { file: File }) {
-  const [src, setSrc] = useState<string | null>(null);
-  useEffect(() => {
-    const reader = new FileReader();
-    reader.onload = () => setSrc(reader.result as string);
-    reader.readAsDataURL(file);
-    return () => reader.abort();
-  }, [file]);
-  if (!src) return null;
-  return (
-    <span
-      className="inline-flex shrink-0 items-center justify-center overflow-hidden rounded-md bg-white ring-1 ring-black/10"
-      style={{ width: 56, height: 56 }}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={src} alt="" className="size-full object-contain" />
-    </span>
-  );
-}
-
-export function ColorInput({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (next: string) => void;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <input
-        type="color"
-        value={value}
-        onChange={(e) => onChange(e.target.value.toUpperCase())}
-        className="h-9 w-12 cursor-pointer rounded border border-input bg-background"
-      />
-      <Input
-        value={value}
-        onChange={(e) => onChange(e.target.value.toUpperCase())}
-        className="font-mono uppercase"
-      />
-    </div>
-  );
-}

@@ -7,6 +7,9 @@ export type { OrderDoc, OrderDocument } from "./order.model";
 export { Provider } from "./provider.model";
 export type { ProviderDoc, ProviderDocument } from "./provider.model";
 
+export { Branding, BRANDING_KEY } from "./branding.model";
+export type { BrandingDoc, BrandingDocument } from "./branding.model";
+
 export { Setting, SETTINGS_KEY } from "./setting.model";
 export type { SettingDoc, SettingDocument } from "./setting.model";
 

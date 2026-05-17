@@ -1,9 +1,10 @@
 "use client";
 
-import { AlertTriangleIcon, LoaderIcon } from "lucide-react";
+import { AlertTriangleIcon } from "lucide-react";
 import * as React from "react";
 
 import { Button, type ButtonProps } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import {
   Dialog,
   DialogBody,
@@ -140,10 +141,9 @@ export function ConfirmDialog({
             variant={toneToButtonVariant[tone]}
             onClick={handleConfirm}
             disabled={isPending}
+            aria-busy={isPending || undefined}
           >
-            {isPending ? (
-              <LoaderIcon className="size-3.5 animate-spin" />
-            ) : null}
+            {isPending ? <Spinner size="xs" tone="current" /> : null}
             {confirmLabel}
           </Button>
         </DialogFooter>

@@ -1,7 +1,5 @@
 import {
   Schema,
-  model,
-  models,
   type HydratedDocument,
   type Model,
   type Types,
@@ -95,6 +93,8 @@ const providerCatalogSchema = new Schema<ProviderDoc>(
 
 providerCatalogSchema.index({ status: 1, sortOrder: 1, name: 1 });
 
-export const Provider: Model<ProviderDoc> =
-  (models.Provider as Model<ProviderDoc>) ||
-  model<ProviderDoc>("Provider", providerCatalogSchema);
+import { registerModel } from "./register";
+export const Provider: Model<ProviderDoc> = registerModel<ProviderDoc>(
+  "Provider",
+  providerCatalogSchema,
+);

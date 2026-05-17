@@ -4,9 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { LoaderIcon } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import {
   Form,
   FormControl,
@@ -103,12 +102,14 @@ export function LoginForm({ nextPath }: LoginFormProps) {
           )}
         />
 
-        <Button type="submit" className="w-full" disabled={isSubmitting}>
-          {isSubmitting ? (
-            <LoaderIcon className="size-4 animate-spin" />
-          ) : null}
-          {isSubmitting ? "Signing in" : "Sign in"}
-        </Button>
+        <LoadingButton
+          type="submit"
+          className="w-full"
+          loading={isSubmitting}
+          loadingText="Signing in"
+        >
+          Sign in
+        </LoadingButton>
       </form>
     </Form>
   );

@@ -15,6 +15,7 @@ import {
 import { formatEmailDate, formatEmailDay, formatMoney } from "@/server/email/format";
 
 import { recordAudit } from "./audit.service";
+import { getBranding } from "./branding.service";
 
 interface SendArgs {
   to: string;
@@ -99,12 +100,16 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
 export async function sendPaymentConfirmationEmail(
   order: OrderDTO,
 ): Promise<{ id: string | null }> {
-  const brandName = env.server.CUSTOMER_BRAND_NAME;
+  // Branding is a single Mongo read per send. We deliberately don't cache
+  // it across sends so a brand-name / support-contact change propagates to
+  // the very next confirmation, no process restart required.
+  const branding = await getBranding();
+  const brandName = branding.brandName;
   const props: PaymentConfirmationEmailProps = {
     brandName,
     appUrl: env.server.APP_URL,
-    supportEmail: env.server.SUPPORT_EMAIL,
-    supportPhone: env.server.SUPPORT_PHONE,
+    supportEmail: branding.supportEmail,
+    supportPhone: branding.supportPhone,
     customerName: order.customer.name,
     orderNumber: order.orderNumber,
     bookingType: order.bookingType,
