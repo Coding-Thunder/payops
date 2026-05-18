@@ -90,6 +90,13 @@ export function FormDialog({
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // The dialog is rendered via Radix Portal, so its DOM lives in
+    // document.body — but the React tree still descends from whatever
+    // parent rendered the dialog. React synthetic events bubble through
+    // the React tree (not the DOM tree), which means a submit on this
+    // form would also trigger any ancestor <form>'s submit. Stop the
+    // event here so nested-form scenarios stay isolated.
+    event.stopPropagation();
     if (isPending) return;
     const result = onSubmit(event);
     if (result instanceof Promise) {

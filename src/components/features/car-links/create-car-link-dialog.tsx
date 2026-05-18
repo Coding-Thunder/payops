@@ -99,7 +99,17 @@ export function CreateCarLinkDialog({
       <DialogContent size="md">
         <Form {...form}>
           <form
-            onSubmit={form.handleSubmit(onSubmit)}
+            onSubmit={(event) => {
+              // The dialog is rendered via Radix Portal, so its DOM is in
+              // document.body — but the React tree still descends from the
+              // outer order-create <form>. React synthetic events bubble
+              // through the React tree, not the DOM tree, so without
+              // stopPropagation() the outer form would also submit and
+              // every untouched field would suddenly show its required
+              // validation error.
+              event.stopPropagation();
+              return form.handleSubmit(onSubmit)(event);
+            }}
             noValidate
             className="flex flex-col"
           >
