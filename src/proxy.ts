@@ -104,12 +104,18 @@ function redirectToLogin(req: NextRequest, next: string) {
 export const config = {
   matcher: [
     /*
-     * Match all request paths except the ones that should bypass middleware:
+     * Match all request paths except the ones that should bypass the
+     * proxy entirely:
      *   - _next internals
      *   - favicon.ico
-     *   - public assets folder
+     *   - /public asset folders we ship logos / images from:
+     *       /assets, /providers, /branding, /static
+     *     (Without this, customer-facing emails embed image URLs that
+     *      hit our auth gate and redirect to /login — Gmail then caches
+     *      that redirect via its /meips proxy and the inline logo
+     *      renders as a broken image.)
      *   - stripe webhook (must keep raw body)
      */
-    "/((?!_next/static|_next/image|favicon.ico|assets|api/webhooks/stripe).*)",
+    "/((?!_next/static|_next/image|favicon.ico|assets|providers|branding|static|api/webhooks/stripe).*)",
   ],
 };
