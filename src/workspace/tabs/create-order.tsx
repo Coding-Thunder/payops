@@ -627,8 +627,13 @@ function CreateOrderTabInner({
                           id="car-link"
                           value={field.value ?? null}
                           onSelect={handlePick}
-                          initialMake={form.getValues("vehicle.company")}
-                          initialType={form.getValues("vehicle.type")}
+                          // `form.watch` (not getValues) so the trigger
+                          // label refreshes whenever the agent edits
+                          // make/type directly after picking. getValues
+                          // is a snapshot and would stay stale until the
+                          // imageUrl field itself changed again.
+                          initialMake={form.watch("vehicle.company")}
+                          initialType={form.watch("vehicle.type")}
                           disabled={isSubmitting}
                         />
                       </FormControl>

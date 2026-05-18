@@ -35,8 +35,10 @@ interface CarLinkSelectorProps {
    *  matching library entry in the popover. */
   value: string | null | undefined;
   onSelect: (selection: CarLinkSelection) => void;
-  /** Called when the agent picks "Add new". The form passes back the
-   *  current make/type so the dialog can pre-fill them. */
+  /** Make + type the parent form already has. Drives BOTH the trigger
+   *  button display (so it always reads "Toyota Corolla SE", never the
+   *  raw URL) and the "Add new" dialog's pre-fill. Passed in so the
+   *  selector doesn't have to do its own lookup after every save. */
   initialMake?: string;
   initialType?: string;
   disabled?: boolean;
@@ -101,11 +103,18 @@ export function CarLinkSelector({
         ? "Couldn't load library"
         : null;
 
-  const selectedLabel = React.useMemo(() => {
+  // Trigger label resolution order:
+  //  1. The parent's make + type (always in sync with the form, doesn't
+  //     depend on the popover ever opening to fetch the catalog).
+  //  2. The matching row in `results` (covers the rare case where the
+  //     form value exists but make/type are blank — e.g. legacy drafts).
+  //  3. Nothing — the trigger falls back to the placeholder.
+  const triggerLabel = React.useMemo(() => {
+    const fromForm = `${initialMake ?? ""} ${initialType ?? ""}`.trim();
+    if (fromForm) return fromForm;
     if (!value) return null;
-    const match = results.find((r) => r.imageUrl === value);
-    return match?.label ?? null;
-  }, [value, results]);
+    return results.find((r) => r.imageUrl === value)?.label ?? null;
+  }, [value, results, initialMake, initialType]);
 
   function handleSelect(link: CarLinkDTO) {
     onSelect({
@@ -147,9 +156,7 @@ export function CarLinkSelector({
             )}
           >
             <span className="truncate text-[13px]">
-              {value
-                ? selectedLabel ?? truncate(value, 48)
-                : "Search the car library…"}
+              {triggerLabel ?? (value ? "Selected car" : "Search the car library…")}
             </span>
             <ChevronsUpDownIcon className="ml-2 size-3.5 shrink-0 text-muted-foreground" />
           </Button>
@@ -244,10 +251,6 @@ export function CarLinkSelector({
       />
     </>
   );
-}
-
-function truncate(s: string, n: number): string {
-  return s.length > n ? `${s.slice(0, n - 1)}…` : s;
 }
 
 function splitFirstWord(s: string): { first: string; rest: string } {
