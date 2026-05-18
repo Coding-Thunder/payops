@@ -19,10 +19,6 @@ interface ComposeTabContentProps {
   orderId: string;
 }
 
-interface FetchedOrder {
-  order: OrderDTO;
-}
-
 /**
  * Workspace-tab wrapper around the EmailComposer. Fetches the order
  * client-side via React Query and keeps the tab's label/subtitle in
@@ -33,9 +29,12 @@ interface FetchedOrder {
  * skeleton stands in for the iframe in the meantime.
  */
 export function ComposeTabContent({ tabId, orderId }: ComposeTabContentProps) {
-  const orderQuery = useQuery<FetchedOrder>({
+  // The /api/orders/[id] endpoint returns the OrderDTO directly (the
+  // ApiResponse envelope is unwrapped in api-client). No `{ order }`
+  // wrapper.
+  const orderQuery = useQuery<OrderDTO>({
     queryKey: ["order", orderId],
-    queryFn: () => api.get<FetchedOrder>(`/api/orders/${orderId}`),
+    queryFn: () => api.get<OrderDTO>(`/api/orders/${orderId}`),
     enabled: !!orderId,
     staleTime: 30_000,
   });
@@ -44,7 +43,7 @@ export function ComposeTabContent({ tabId, orderId }: ComposeTabContentProps) {
   // workspace tab so the tab strip reads "ORD-… · Email" instead of
   // "Order · Email".
   React.useEffect(() => {
-    const order = orderQuery.data?.order;
+    const order = orderQuery.data;
     if (!order) return;
     const store = useWorkspaceStore.getState();
     const tab = store.tabs.find((t) => t.id === tabId);
@@ -59,7 +58,7 @@ export function ComposeTabContent({ tabId, orderId }: ComposeTabContentProps) {
       label: `${order.orderNumber} · Email`,
       subtitle: order.customer.name,
     });
-  }, [orderQuery.data?.order, tabId]);
+  }, [orderQuery.data, tabId]);
 
   if (orderQuery.isLoading) {
     return (
@@ -86,7 +85,7 @@ export function ComposeTabContent({ tabId, orderId }: ComposeTabContentProps) {
     );
   }
 
-  const order = orderQuery.data?.order;
+  const order = orderQuery.data;
   if (!order) return null;
 
   // Default subject — same shape the server helper produces. Computed
