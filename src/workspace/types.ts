@@ -11,12 +11,10 @@ export const WorkspaceTabType = {
   CREATE_ORDER: "CREATE_ORDER",
   /** An autosaved partial create-order form, persisted to the drafts API. */
   DRAFT_ORDER: "DRAFT_ORDER",
-  /** Existing order — read/update + payment + risk. */
+  /** Existing order — read/update + payment + risk + inline composer. */
   ORDER_DETAILS: "ORDER_DETAILS",
   /** Same as ORDER_DETAILS but the payment / risk section is focused. */
   PAYMENT_REVIEW: "PAYMENT_REVIEW",
-  /** Payment-request email composer for an existing order. */
-  PAYMENT_COMPOSE: "PAYMENT_COMPOSE",
 } as const;
 
 export type WorkspaceTabType =
@@ -71,21 +69,11 @@ export interface PaymentReviewTab extends BaseTab {
   };
 }
 
-export interface PaymentComposeTab extends BaseTab {
-  type: typeof WorkspaceTabType.PAYMENT_COMPOSE;
-  payload: {
-    orderId: string;
-    orderNumber?: string;
-    customerName?: string;
-  };
-}
-
 export type WorkspaceTab =
   | CreateOrderTab
   | DraftOrderTab
   | OrderDetailsTab
-  | PaymentReviewTab
-  | PaymentComposeTab;
+  | PaymentReviewTab;
 
 /**
  * Input shape for openTab — everything the store needs to either reopen an
@@ -107,11 +95,6 @@ export type OpenTabInput =
   | {
       type: typeof WorkspaceTabType.PAYMENT_REVIEW;
       payload: PaymentReviewTab["payload"];
-      label?: string;
-    }
-  | {
-      type: typeof WorkspaceTabType.PAYMENT_COMPOSE;
-      payload: PaymentComposeTab["payload"];
       label?: string;
     };
 
@@ -136,8 +119,6 @@ export function tabUrlFor(tab: WorkspaceTab): string {
       return `/orders/${tab.payload.orderId}`;
     case WorkspaceTabType.PAYMENT_REVIEW:
       return `/orders/${tab.payload.orderId}?focus=payment`;
-    case WorkspaceTabType.PAYMENT_COMPOSE:
-      return `/orders/${tab.payload.orderId}/compose`;
     case WorkspaceTabType.CREATE_ORDER:
       return `/orders/create`;
     case WorkspaceTabType.DRAFT_ORDER:
@@ -165,8 +146,6 @@ export function tabMatchesUrl(
         pathname === `/orders/${tab.payload.orderId}` &&
         searchParams.get("focus") === "payment"
       );
-    case WorkspaceTabType.PAYMENT_COMPOSE:
-      return pathname === `/orders/${tab.payload.orderId}/compose`;
     case WorkspaceTabType.CREATE_ORDER:
       return (
         pathname === "/orders/create" && !searchParams.get("draft")
@@ -188,7 +167,5 @@ export function isWorkspaceRoute(pathname: string): boolean {
   if (pathname === "/orders/create") return true;
   // /orders/[id]  — but NOT /orders itself (the list view is not a tab).
   if (/^\/orders\/[^/]+$/.test(pathname) && pathname !== "/orders") return true;
-  // /orders/[id]/compose — the payment-request email composer.
-  if (/^\/orders\/[^/]+\/compose$/.test(pathname)) return true;
   return false;
 }

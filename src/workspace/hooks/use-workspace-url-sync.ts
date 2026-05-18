@@ -65,16 +65,6 @@ export function useWorkspaceUrlSync() {
       return;
     }
 
-    const composeMatch = pathname.match(/^\/orders\/([^/]+)\/compose$/);
-    if (composeMatch) {
-      const orderId = composeMatch[1];
-      store.openTab({
-        type: WorkspaceTabType.PAYMENT_COMPOSE,
-        payload: { orderId },
-      });
-      return;
-    }
-
     const orderMatch = pathname.match(/^\/orders\/([^/]+)$/);
     if (orderMatch) {
       const orderId = orderMatch[1];

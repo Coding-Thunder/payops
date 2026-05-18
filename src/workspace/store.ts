@@ -105,11 +105,6 @@ function defaultLabelFor(input: OpenTabInput): string {
         input.label ??
         `${input.payload.orderNumber ?? "Order"} · Payment`
       );
-    case WorkspaceTabType.PAYMENT_COMPOSE:
-      return (
-        input.label ??
-        `${input.payload.orderNumber ?? "Order"} · Email`
-      );
   }
 }
 
@@ -136,11 +131,6 @@ function findExisting(
       case WorkspaceTabType.PAYMENT_REVIEW:
         return (
           t.type === WorkspaceTabType.PAYMENT_REVIEW &&
-          t.payload.orderId === input.payload.orderId
-        );
-      case WorkspaceTabType.PAYMENT_COMPOSE:
-        return (
-          t.type === WorkspaceTabType.PAYMENT_COMPOSE &&
           t.payload.orderId === input.payload.orderId
         );
     }
@@ -173,12 +163,6 @@ function buildTab(input: OpenTabInput): WorkspaceTab {
       return {
         ...base,
         type: WorkspaceTabType.PAYMENT_REVIEW,
-        payload: input.payload,
-      };
-    case WorkspaceTabType.PAYMENT_COMPOSE:
-      return {
-        ...base,
-        type: WorkspaceTabType.PAYMENT_COMPOSE,
         payload: input.payload,
       };
   }
@@ -330,12 +314,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           existing = state.tabs.find(
             (t) =>
               t.type === WorkspaceTabType.PAYMENT_REVIEW &&
-              t.payload.orderId === top.tab.payload.orderId,
-          );
-        } else if (top.tab.type === WorkspaceTabType.PAYMENT_COMPOSE) {
-          existing = state.tabs.find(
-            (t) =>
-              t.type === WorkspaceTabType.PAYMENT_COMPOSE &&
               t.payload.orderId === top.tab.payload.orderId,
           );
         } else if (top.tab.type === WorkspaceTabType.DRAFT_ORDER) {

@@ -6,8 +6,10 @@ import * as React from "react";
 import { ArrowLeftIcon } from "lucide-react";
 
 import { ArchiveOrderButton } from "@/components/features/orders/archive-order-button";
+import { EmailComposer } from "@/components/features/orders/email-composer";
 import { OrderDetailsCard } from "@/components/features/orders/order-details-card";
 import { OrderPaymentCard } from "@/components/features/orders/order-payment-card";
+import { PaymentStatusFloater } from "@/components/features/orders/payment-status-floater";
 import { RiskFlagDialog } from "@/components/features/disputes/risk-flag-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -169,6 +171,10 @@ export function OrderDetailsTabContent({
           </div>
         }
       />
+      {/* Live payment status — sticks below the topbar and flips
+          colour the instant Stripe webhooks fire (via SSE). */}
+      <PaymentStatusFloater order={order} />
+
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
           <OrderDetailsCard order={order} />
@@ -177,6 +183,31 @@ export function OrderDetailsTabContent({
           <OrderPaymentCard order={order} canRegenerate={canRegenerate} />
         </div>
       </div>
+
+      {/* Inline email composer — no separate /compose route. Shown as
+          long as there's a Stripe link to send; once the order is paid,
+          the composer freezes itself into a sent / paid state. */}
+      {order.payment.checkoutUrl ? (
+        <section className="space-y-3">
+          <div className="border-t border-border pt-6">
+            <h2 className="text-[15px] font-semibold tracking-tight">
+              Payment-request email
+            </h2>
+            <p className="mt-1 text-[12.5px] text-muted-foreground">
+              Edit the customer-facing email and send. The preview reflects
+              exactly what will be delivered; payment status above updates
+              in real time once Stripe confirms.
+            </p>
+          </div>
+          <EmailComposer
+            order={order}
+            initialHtml=""
+            defaultSubject={`Complete your ${
+              order.provider?.name ?? "rental"
+            } payment • ${order.orderNumber}`}
+          />
+        </section>
+      ) : null}
     </div>
   );
 }

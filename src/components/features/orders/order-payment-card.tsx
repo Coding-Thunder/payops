@@ -2,10 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import Link from "next/link";
 import {
   ExternalLinkIcon,
-  MailIcon,
   RefreshCwIcon,
 } from "lucide-react";
 
@@ -143,12 +141,6 @@ export function OrderPaymentCard({
                   <ExternalLinkIcon className="size-3.5" />
                   Open in new tab
                 </a>
-              </Button>
-              <Button asChild variant="default" size="sm">
-                <Link href={`/orders/${order.id}/compose`}>
-                  <MailIcon className="size-3.5" />
-                  Send / re-send email
-                </Link>
               </Button>
               {canRegenerate ? (
                 <LoadingButton
