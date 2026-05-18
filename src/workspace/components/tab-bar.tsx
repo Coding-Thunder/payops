@@ -5,6 +5,7 @@ import {
   CreditCardIcon,
   FilePlus2Icon,
   FileTextIcon,
+  MailIcon,
   ShieldAlertIcon,
   XIcon,
   type LucideIcon,
@@ -32,6 +33,7 @@ const TAB_ICONS: Record<WorkspaceTabType, LucideIcon> = {
   [WorkspaceTabType.DRAFT_ORDER]: FileTextIcon,
   [WorkspaceTabType.ORDER_DETAILS]: CreditCardIcon,
   [WorkspaceTabType.PAYMENT_REVIEW]: ShieldAlertIcon,
+  [WorkspaceTabType.PAYMENT_COMPOSE]: MailIcon,
 };
 
 /**
