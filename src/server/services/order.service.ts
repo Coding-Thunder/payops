@@ -788,6 +788,69 @@ export async function setOrderRiskFlag(
 }
 
 /**
+ * Patch the customer details on an order. Used by the payment-request
+ * composer right before sending so an agent can fix a typo in the
+ * email / name / phone without leaving the workflow. Returns the
+ * updated order, and ALSO an `applied` map so the caller can decide
+ * what (if anything) to mention in the audit metadata.
+ */
+export async function updateOrderCustomer(
+  id: string,
+  patch: { name?: string; email?: string; phone?: string },
+  ctx: OrderContext,
+): Promise<{
+  order: OrderDTO;
+  applied: Partial<{ name: string; email: string; phone: string }>;
+}> {
+  await connectMongo();
+  if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
+  const doc = await Order.findById(id);
+  if (!doc) throw new NotFoundError("Order not found");
+
+  const canSeeAll = roleHasPermission(ctx.actor.role, Permission.ORDER_VIEW_ALL);
+  if (!canSeeAll && String(doc.createdBy.userId) !== ctx.actor.id) {
+    throw new ForbiddenError("You can only edit orders you created");
+  }
+
+  const applied: Partial<{ name: string; email: string; phone: string }> = {};
+  if (patch.name && patch.name !== doc.customer.name) {
+    applied.name = patch.name;
+    doc.customer.name = patch.name;
+  }
+  if (patch.email && patch.email !== doc.customer.email) {
+    applied.email = patch.email;
+    doc.customer.email = patch.email;
+  }
+  if (patch.phone && patch.phone !== doc.customer.phone) {
+    applied.phone = patch.phone;
+    doc.customer.phone = patch.phone;
+  }
+  if (Object.keys(applied).length === 0) {
+    return {
+      order: orderToDTO(doc.toObject() as OrderDoc & { _id: Types.ObjectId }),
+      applied,
+    };
+  }
+  await doc.save();
+  await recordAudit({
+    action: AuditAction.ORDER_UPDATED,
+    entityType: AuditEntity.ORDER,
+    entityId: String(doc._id),
+    actor: {
+      userId: ctx.actor.id,
+      name: ctx.actor.name,
+      role: ctx.actor.role,
+    },
+    request: ctx.request ?? null,
+    metadata: { action: "customer_patch", changed: applied },
+  });
+  return {
+    order: orderToDTO(doc.toObject() as OrderDoc & { _id: Types.ObjectId }),
+    applied,
+  };
+}
+
+/**
  * Lists orders that operators should review. "At risk" is anything that
  * matches at least one of:
  *   - manually flagged (`risk.flagged === true`)

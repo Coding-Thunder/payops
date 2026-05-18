@@ -10,6 +10,10 @@ import type { OrderDTO } from "@/types";
 import { getMailer } from "@/server/email/smtp";
 import { inlinePublicImage } from "@/server/email/inline-image";
 import {
+  PaymentRequestEmail,
+  type PaymentRequestEmailProps,
+} from "@/server/email/templates/payment-request";
+import {
   PaymentConfirmationEmail,
   type PaymentConfirmationEmailProps,
 } from "@/server/email/templates/payment-confirmation";
@@ -151,6 +155,110 @@ export async function sendPaymentConfirmationEmail(
     html,
     text,
     kind: EmailKind.PAYMENT_CONFIRMATION,
+    orderId: order.id,
+  });
+}
+
+/* ───────────────────────── Payment request ─────────────────────────── */
+
+export interface PaymentRequestOverrides {
+  /** Custom subject; falls back to a generated default. */
+  subject?: string | null;
+  /** Custom greeting line; falls back to "Hi {customerName},". */
+  greeting?: string | null;
+  /** Custom intro paragraph; falls back to a generated default. */
+  intro?: string | null;
+  /** Optional note rendered in a callout block. Empty = no callout. */
+  note?: string | null;
+  /** Optional override for the recipient address. Empty = use order's
+   *  customer email. */
+  toOverride?: string | null;
+}
+
+/**
+ * Build a payment-request email's render-ready props from an order +
+ * the agent's editable overrides. Exported separately from the send
+ * path so the composer's live preview API can call it cheaply without
+ * going through SMTP.
+ */
+export async function composePaymentRequestProps(
+  order: OrderDTO,
+  overrides: PaymentRequestOverrides = {},
+): Promise<PaymentRequestEmailProps> {
+  const branding = await getBranding();
+  const providerLogoInline = order.provider
+    ? await inlinePublicImage(order.provider.logo)
+    : null;
+  const providerForEmail = order.provider
+    ? { ...order.provider, logo: providerLogoInline ?? order.provider.logo }
+    : order.provider;
+  return {
+    brandName: branding.brandName,
+    appUrl: env.server.APP_URL,
+    supportEmail: branding.supportEmail,
+    supportPhone: branding.supportPhone,
+    customerName: order.customer.name,
+    orderNumber: order.orderNumber,
+    bookingType: order.bookingType,
+    amount: formatMoney(order.pricing.amount, order.pricing.currency),
+    dueBy: order.payment.expiresAt
+      ? formatEmailDate(order.payment.expiresAt)
+      : null,
+    provider: providerForEmail,
+    vehicle: order.vehicle,
+    trip: {
+      pickupDate: formatEmailDay(order.trip.pickupDate),
+      dropoffDate: formatEmailDay(order.trip.dropoffDate),
+    },
+    paymentUrl: order.payment.checkoutUrl ?? "",
+    greeting: overrides.greeting ?? null,
+    intro: overrides.intro ?? null,
+    note: overrides.note ?? null,
+    cancellationPolicy: order.policy?.text ?? "",
+    cancellationPolicyVersion: order.policy?.version ?? undefined,
+  };
+}
+
+export function defaultPaymentRequestSubject(
+  order: OrderDTO,
+  brandName: string,
+): string {
+  const providerName = order.provider?.name ?? brandName;
+  return `Complete your ${providerName} payment • ${order.orderNumber}`;
+}
+
+/**
+ * Render and send a payment-request email. The agent composes this in
+ * the workspace after creating an order; calling this twice on the same
+ * order is allowed (re-send), and each send produces an audit row so
+ * the order's history makes it clear how many times the customer was
+ * nudged.
+ */
+export async function sendPaymentRequestEmail(
+  order: OrderDTO,
+  overrides: PaymentRequestOverrides = {},
+): Promise<{ id: string | null }> {
+  if (!order.payment.checkoutUrl) {
+    throw new Error(
+      "Order has no Stripe checkout URL — cannot send a payment request without a link to point the customer at.",
+    );
+  }
+  const branding = await getBranding();
+  const props = await composePaymentRequestProps(order, overrides);
+  const subject =
+    overrides.subject?.trim() ||
+    defaultPaymentRequestSubject(order, branding.brandName);
+  const toAddress = overrides.toOverride?.trim() || order.customer.email;
+  const html = await render(<PaymentRequestEmail {...props} />);
+  const text = await render(<PaymentRequestEmail {...props} />, {
+    plainText: true,
+  });
+  return sendEmail({
+    to: toAddress,
+    subject,
+    html,
+    text,
+    kind: EmailKind.PAYMENT_LINK,
     orderId: order.id,
   });
 }

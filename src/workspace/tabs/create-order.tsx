@@ -167,7 +167,9 @@ export function CreateOrderTabContent({
           },
         });
         closeTab(tabId, { force: true });
-        router.push(`/orders/${order.id}`);
+        // Drop the agent straight into the payment-request composer.
+        // Order details remain one click away (the page links back).
+        router.push(`/orders/${order.id}/compose`);
         // Mark new tab active (openTab already does this, kept explicit).
         useWorkspaceStore.getState().switchTab(tab);
       }}
