@@ -564,42 +564,10 @@ function CreateOrderTabInner({
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name="vehicle.company"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Car make</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="e.g. Toyota"
-                        disabled={isSubmitting}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="vehicle.type"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Car model</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="e.g. Corolla SE"
-                        disabled={isSubmitting}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
+              {/* Car listing comes first — picking it pre-fills make +
+                  model. Make / model fields stay hidden until there's
+                  something to fill so the agent isn't asked to type
+                  data the library is about to supply. */}
               <FormField
                 control={form.control}
                 name="vehicle.imageUrl"
@@ -647,6 +615,51 @@ function CreateOrderTabInner({
                   );
                 }}
               />
+
+              {/* Make + Model: rendered only once a car is selected so
+                  Zod's "required" still triggers via the imageUrl field
+                  and we don't show empty inputs the agent hasn't earned
+                  yet. They're pre-filled but fully editable for the
+                  rare "rename after picking" case. */}
+              {(form.watch("vehicle.imageUrl") ?? "").trim().length > 0 ? (
+                <>
+                  <FormField
+                    control={form.control}
+                    name="vehicle.company"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Car make</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="e.g. Toyota"
+                            disabled={isSubmitting}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="vehicle.type"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Car model</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="e.g. Corolla SE"
+                            disabled={isSubmitting}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </>
+              ) : null}
             </CardContent>
           </Card>
 
