@@ -83,6 +83,11 @@ export const AuditAction = {
   BRANDING_UPDATED: "BRANDING_UPDATED",
   BRANDING_LOGO_REPLACED: "BRANDING_LOGO_REPLACED",
 
+  CAR_LINK_CREATED: "CAR_LINK_CREATED",
+  CAR_LINK_UPDATED: "CAR_LINK_UPDATED",
+  CAR_LINK_DEACTIVATED: "CAR_LINK_DEACTIVATED",
+  CAR_LINK_RESTORED: "CAR_LINK_RESTORED",
+
   AUDIT_LOG_DELETED: "AUDIT_LOG_DELETED",
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
@@ -96,6 +101,7 @@ export const AuditEntity = {
   SYSTEM: "SYSTEM",
   PROVIDER: "PROVIDER",
   BRANDING: "BRANDING",
+  CAR_LINK: "CAR_LINK",
 } as const;
 export type AuditEntity = (typeof AuditEntity)[keyof typeof AuditEntity];
 

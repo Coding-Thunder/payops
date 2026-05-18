@@ -36,6 +36,10 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
 import { ProviderSelector } from "@/components/features/providers";
+import {
+  CarLinkSelector,
+  type CarLinkSelection,
+} from "@/components/features/car-links";
 import { api, ApiClientError } from "@/lib/api-client";
 import { BookingTypeLabel } from "@/lib/constants/labels";
 import {
@@ -598,29 +602,44 @@ function CreateOrderTabInner({
               <FormField
                 control={form.control}
                 name="vehicle.imageUrl"
-                render={({ field }) => (
-                  <FormItem className="sm:col-span-2">
-                    <FormLabel>Car image URL (optional)</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="url"
-                        inputMode="url"
-                        placeholder="https://example.com/car.jpg"
-                        disabled={isSubmitting}
-                        {...field}
-                        value={field.value ?? ""}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      Surfaces on the order detail page, Stripe checkout
-                      summary, and the customer&apos;s confirmation email.
-                      Must be a public URL — internal or signed links
-                      won&apos;t load for the customer.
-                    </FormDescription>
-                    <VehicleImagePreview url={field.value} />
-                    <FormMessage />
-                  </FormItem>
-                )}
+                render={({ field }) => {
+                  const handlePick = (sel: CarLinkSelection) => {
+                    field.onChange(sel.imageUrl);
+                    // Overwrite make + type so the agent doesn't have to
+                    // re-type after picking. The selector itself surfaces
+                    // an "Add new" path when the library is missing the
+                    // car they need.
+                    form.setValue("vehicle.company", sel.carMake, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    });
+                    form.setValue("vehicle.type", sel.carType, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    });
+                  };
+                  return (
+                    <FormItem className="sm:col-span-2">
+                      <FormLabel>Car listing</FormLabel>
+                      <FormControl>
+                        <CarLinkSelector
+                          id="car-link"
+                          value={field.value ?? null}
+                          onSelect={handlePick}
+                          initialMake={form.getValues("vehicle.company")}
+                          initialType={form.getValues("vehicle.type")}
+                          disabled={isSubmitting}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Pick from the team library, or add a new entry inline.
+                        Selecting fills the make, model, and public link.
+                      </FormDescription>
+                      <VehicleImagePreview url={field.value} />
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
               />
             </CardContent>
           </Card>

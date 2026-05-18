@@ -11,3 +11,4 @@ export {
   type CreateDraftInput as CreateOrderDraftInput,
   type UpdateDraftInput as UpdateOrderDraftInput,
 } from "./draft";
+export * from "./car-link";

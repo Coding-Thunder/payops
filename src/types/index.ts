@@ -160,6 +160,21 @@ export interface BrandingDTO {
   updatedAt: string;
 }
 
+export interface CarLinkDTO {
+  id: string;
+  carMake: string;
+  carType: string;
+  /** The full display label — `${carMake} ${carType}`. Server-computed
+   *  so every consumer renders it identically. */
+  label: string;
+  imageUrl: string;
+  notes: string | null;
+  active: boolean;
+  createdBy: { userId: string | null; name: string };
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PaginatedResult<T> {
   items: T[];
   total: number;

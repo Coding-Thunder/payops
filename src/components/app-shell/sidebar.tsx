@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3Icon,
+  CarIcon,
   CreditCardIcon,
   HomeIcon,
   MailIcon,
@@ -68,6 +69,12 @@ const SECTIONS: NavSection[] = [
         label: "Providers",
         icon: PackageIcon,
         permissions: [Permission.PROVIDER_VIEW],
+      },
+      {
+        href: "/admin/car-links",
+        label: "Car library",
+        icon: CarIcon,
+        permissions: [Permission.CAR_LINK_MANAGE],
       },
       {
         href: "/admin/branding",

@@ -29,6 +29,10 @@ export const Permission = {
   BRANDING_VIEW: "branding:view",
   BRANDING_MANAGE: "branding:manage",
 
+  CAR_LINK_VIEW: "car_link:view",
+  CAR_LINK_CREATE: "car_link:create",
+  CAR_LINK_MANAGE: "car_link:manage",
+
   AUDIT_VIEW: "audit:view",
   AUDIT_DELETE: "audit:delete",
 } as const;
@@ -45,6 +49,10 @@ const STAFF_PERMISSIONS: readonly Permission[] = [
   Permission.ORDER_VIEW_OWN,
   Permission.ORDER_CREATE,
   Permission.ORDER_REGENERATE_LINK,
+  // Staff can browse + add new entries to the car-link library inline
+  // during order creation. Edits and deletes are admin-only.
+  Permission.CAR_LINK_VIEW,
+  Permission.CAR_LINK_CREATE,
 ];
 
 const ADMIN_ONLY_PERMISSIONS: readonly Permission[] = [
@@ -64,6 +72,7 @@ const ADMIN_ONLY_PERMISSIONS: readonly Permission[] = [
   Permission.PROVIDER_MANAGE,
   Permission.BRANDING_VIEW,
   Permission.BRANDING_MANAGE,
+  Permission.CAR_LINK_MANAGE,
   Permission.AUDIT_VIEW,
   Permission.AUDIT_DELETE,
 ];
