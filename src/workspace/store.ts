@@ -384,7 +384,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         activeTabId: state.activeTabId,
         closedStack: state.closedStack,
       }),
-      version: 1,
+      // v2 dropped the PAYMENT_COMPOSE tab type; bumping the version
+      // invalidates persisted v1 state so a refresh after deploy
+      // doesn't crash on a stale tab with an unknown type.
+      version: 2,
     },
   ),
 );

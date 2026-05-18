@@ -3,6 +3,7 @@
 import * as React from "react";
 import {
   CreditCardIcon,
+  FileIcon,
   FilePlus2Icon,
   FileTextIcon,
   ShieldAlertIcon,
@@ -113,7 +114,11 @@ interface TabItemProps {
 }
 
 function TabItem({ tab, active, activeRef, onActivate, onClose }: TabItemProps) {
-  const Icon = TAB_ICONS[tab.type];
+  // Defensive fallback: a stale persisted tab type from a previous app
+  // version would otherwise crash the strip with `Icon = undefined`.
+  // The persist `version` bump scrubs old state on deploy, but the
+  // fallback is the belt to that suspender.
+  const Icon = TAB_ICONS[tab.type] ?? FileIcon;
 
   function onMouseDown(e: React.MouseEvent) {
     // Middle click = close (VSCode/Chrome muscle memory).
@@ -256,7 +261,7 @@ function OverflowMenu({
 }
 
 function TabIconFor({ type }: { type: WorkspaceTabType }) {
-  const Icon = TAB_ICONS[type];
+  const Icon = TAB_ICONS[type] ?? FileIcon;
   return <Icon className="size-3.5" />;
 }
 
