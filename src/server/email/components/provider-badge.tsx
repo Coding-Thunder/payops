@@ -57,6 +57,9 @@ export function ProviderBadge({
               border: `1px solid ${COLOR.border}`,
               padding: 4,
               boxSizing: "border-box",
+              // Letter-box wide / tall logos inside the square frame so we
+              // never stretch a non-1:1 brand asset.
+              objectFit: "contain",
             }}
           />
         </Column>
