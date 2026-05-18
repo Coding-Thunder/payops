@@ -156,22 +156,20 @@ export function CreateOrderTabContent({
       serverError={serverError}
       setServerError={setServerError}
       onSubmitSuccess={(order) => {
-        // After successful submit: open the new order's details tab,
-        // close this create/draft tab, navigate.
-        const tab = openTab({
-          type: WorkspaceTabType.ORDER_DETAILS,
+        // Open the payment-compose tab directly. openTab activates it,
+        // and the store→URL sync hook then navigates to /compose in a
+        // single transition — no intermediate /orders/[id] flash.
+        openTab({
+          type: WorkspaceTabType.PAYMENT_COMPOSE,
           payload: {
             orderId: order.id,
             orderNumber: order.orderNumber,
             customerName: order.customer.name,
           },
         });
+        // Close the create/draft tab last so the activeTabId change
+        // from openTab() drives the only URL push for this transition.
         closeTab(tabId, { force: true });
-        // Drop the agent straight into the payment-request composer.
-        // Order details remain one click away (the page links back).
-        router.push(`/orders/${order.id}/compose`);
-        // Mark new tab active (openTab already does this, kept explicit).
-        useWorkspaceStore.getState().switchTab(tab);
       }}
       updateTabMeta={updateTabMeta}
       setDirty={setDirty}

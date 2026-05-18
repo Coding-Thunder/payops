@@ -7,6 +7,7 @@ import { WorkspaceTabType, type WorkspaceTab } from "../types";
 
 // Per-tab content components — kept as static imports rather than dynamic()
 // because the bundle is small and we want predictable hydration.
+import { ComposeTabContent } from "../tabs/compose";
 import { CreateOrderTabContent } from "../tabs/create-order";
 import { OrderDetailsTabContent } from "../tabs/order-details";
 
@@ -78,6 +79,10 @@ function TabSwitch({ tab }: { tab: WorkspaceTab }) {
           orderId={tab.payload.orderId}
           focus="payment"
         />
+      );
+    case WorkspaceTabType.PAYMENT_COMPOSE:
+      return (
+        <ComposeTabContent tabId={tab.id} orderId={tab.payload.orderId} />
       );
   }
 }
