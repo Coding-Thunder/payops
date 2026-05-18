@@ -24,6 +24,7 @@ import { LoadingButton } from "@/components/ui/loading-button";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { DateTimePicker } from "@/components/common/date-time-picker";
 import { FormSkeleton, PageHeaderSkeleton } from "@/components/common/skeletons";
+import { ImageUrlPreview } from "@/components/common/image-url-preview";
 import { PageHeader } from "@/components/common/page-header";
 import {
   Select,
@@ -820,75 +821,8 @@ function AutosaveBadge({
   );
 }
 
-/**
- * Live thumbnail for the car image URL. Loads the image in the
- * background and surfaces a "couldn't load" hint so the operator spots a
- * broken URL before submitting (without blocking submit).
- *
- * The "is this URL even worth loading?" check is derived from props —
- * only the async load result lives in state.
- */
+/** Thin wrapper so existing call sites keep working with the shared
+ *  ImageUrlPreview component. */
 function VehicleImagePreview({ url }: { url: string | null | undefined }) {
-  const trimmed = url?.trim() ?? "";
-  const isCandidate = trimmed.length > 0 && /^https?:\/\//i.test(trimmed);
-
-  // Only the async LOAD RESULT lives in state. "loading" is derived by
-  // comparing the stored result's URL with the current URL — when they
-  // don't match we know we're still waiting on the new load.
-  const [loadResult, setLoadResult] = React.useState<
-    { url: string; ok: boolean } | null
-  >(null);
-
-  React.useEffect(() => {
-    if (!isCandidate) return;
-    const img = new Image();
-    img.onload = () => setLoadResult({ url: trimmed, ok: true });
-    img.onerror = () => setLoadResult({ url: trimmed, ok: false });
-    img.src = trimmed;
-    return () => {
-      img.onload = null;
-      img.onerror = null;
-    };
-  }, [trimmed, isCandidate]);
-
-  if (!isCandidate) return null;
-  const status: "loading" | "ok" | "error" =
-    loadResult && loadResult.url === trimmed
-      ? loadResult.ok
-        ? "ok"
-        : "error"
-      : "loading";
-
-  return (
-    <div className="mt-2 flex items-center gap-3">
-      <div
-        className={cn(
-          "relative grid size-16 shrink-0 place-items-center overflow-hidden rounded-md border border-border bg-surface-1",
-          status === "error" && "border-destructive/40",
-        )}
-      >
-        {status === "ok" ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={trimmed}
-            alt="Vehicle preview"
-            className="size-full object-cover"
-          />
-        ) : status === "loading" ? (
-          <Spinner size="sm" tone="muted" />
-        ) : (
-          <span className="text-[10px] font-medium uppercase text-destructive">
-            404
-          </span>
-        )}
-      </div>
-      <p className="text-[11.5px] text-muted-foreground">
-        {status === "loading"
-          ? "Checking image…"
-          : status === "ok"
-            ? "Image looks good — this is what the customer will see."
-            : "We couldn’t load that URL. The customer will see a broken image — paste a different public link."}
-      </p>
-    </div>
-  );
+  return <ImageUrlPreview url={url} size={64} />;
 }

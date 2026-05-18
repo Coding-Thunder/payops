@@ -24,6 +24,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
+import { ImageUrlPreview } from "@/components/common/image-url-preview";
 import { api, ApiClientError } from "@/lib/api-client";
 import { createCarLinkSchema, type CreateCarLinkInput } from "@/lib/validation";
 import type { CarLinkDTO } from "@/types";
@@ -99,11 +100,11 @@ export function CreateCarLinkDialog({
         </DialogHeader>
         <Form {...form}>
           <form
-            className="space-y-4"
+            className="space-y-5 pt-2"
             onSubmit={form.handleSubmit(onSubmit)}
             noValidate
           >
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="carMake"
@@ -152,6 +153,7 @@ export function CreateCarLinkDialog({
                       {...field}
                     />
                   </FormControl>
+                  <ImageUrlPreview url={field.value} size={84} />
                   <FormMessage />
                 </FormItem>
               )}
@@ -180,7 +182,7 @@ export function CreateCarLinkDialog({
                 </FormItem>
               )}
             />
-            <DialogFooter className="gap-2">
+            <DialogFooter className="gap-2 pt-2">
               <Button
                 type="button"
                 variant="ghost"
