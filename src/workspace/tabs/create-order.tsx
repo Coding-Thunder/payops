@@ -156,11 +156,13 @@ export function CreateOrderTabContent({
       serverError={serverError}
       setServerError={setServerError}
       onSubmitSuccess={(order) => {
-        // Open the payment-compose tab directly. openTab activates it,
-        // and the store→URL sync hook then navigates to /compose in a
-        // single transition — no intermediate /orders/[id] flash.
+        // Land on the order-detail tab. That page shows the payment
+        // link card + SSE-driven payment status so the agent has a
+        // single surface to (a) share the link, (b) watch the live
+        // payment outcome, and (c) hand off to the email composer
+        // via its "Send / re-send email" button when they're ready.
         openTab({
-          type: WorkspaceTabType.PAYMENT_COMPOSE,
+          type: WorkspaceTabType.ORDER_DETAILS,
           payload: {
             orderId: order.id,
             orderNumber: order.orderNumber,
