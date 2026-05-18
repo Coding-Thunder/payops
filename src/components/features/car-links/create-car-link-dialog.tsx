@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -41,6 +42,12 @@ interface CreateCarLinkDialogProps {
  * Inline dialog for adding a new entry to the workspace car library.
  * Hands the freshly-created row back to the caller so the selector can
  * activate it immediately.
+ *
+ * Layout note: uses the DialogHeader / DialogBody / DialogFooter slots
+ * from the Dialog primitive so the horizontal rhythm (px-5 sm:px-6),
+ * footer divider, and surface tone match every other dialog in the app.
+ * Putting a `<form>` directly inside DialogContent skips the body
+ * padding and the content reads as edge-glued.
  */
 export function CreateCarLinkDialog({
   open,
@@ -58,7 +65,6 @@ export function CreateCarLinkDialog({
     },
   });
 
-  // Reset the form when the dialog re-opens with new initial values.
   React.useEffect(() => {
     if (open) {
       form.reset({
@@ -90,99 +96,104 @@ export function CreateCarLinkDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Add to car library</DialogTitle>
-          <DialogDescription>
-            Save a reusable car listing. Everyone on the team can pick it
-            next time.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent size="md">
         <Form {...form}>
           <form
-            className="space-y-5 pt-2"
             onSubmit={form.handleSubmit(onSubmit)}
             noValidate
+            className="flex flex-col"
           >
-            <div className="grid grid-cols-2 gap-4">
+            <DialogHeader>
+              <DialogTitle>Add to car library</DialogTitle>
+              <DialogDescription>
+                Save a reusable car listing. Everyone on the team can pick
+                it next time.
+              </DialogDescription>
+            </DialogHeader>
+
+            <DialogBody className="space-y-5">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="carMake"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Make</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Toyota"
+                          autoComplete="off"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="carType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Model</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Camry SE"
+                          autoComplete="off"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
               <FormField
                 control={form.control}
-                name="carMake"
+                name="imageUrl"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Make</FormLabel>
+                    <FormLabel>Public link</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="Toyota"
+                        placeholder="https://…"
                         autoComplete="off"
                         {...field}
                       />
                     </FormControl>
+                    <ImageUrlPreview url={field.value} size={84} />
                     <FormMessage />
                   </FormItem>
                 )}
               />
               <FormField
                 control={form.control}
-                name="carType"
+                name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Model</FormLabel>
+                    <FormLabel>
+                      Notes{" "}
+                      <span className="text-muted-foreground">(optional)</span>
+                    </FormLabel>
                     <FormControl>
-                      <Input
-                        placeholder="Camry SE"
-                        autoComplete="off"
-                        {...field}
+                      <Textarea
+                        placeholder="Internal note, e.g. interior color, license plate"
+                        rows={3}
+                        maxLength={500}
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        name={field.name}
+                        ref={field.ref}
                       />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-            </div>
-            <FormField
-              control={form.control}
-              name="imageUrl"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Public link</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="https://…"
-                      autoComplete="off"
-                      {...field}
-                    />
-                  </FormControl>
-                  <ImageUrlPreview url={field.value} size={84} />
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="notes"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    Notes <span className="text-muted-foreground">(optional)</span>
-                  </FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="Internal note, e.g. interior color, license plate"
-                      rows={2}
-                      maxLength={500}
-                      value={field.value ?? ""}
-                      onChange={field.onChange}
-                      onBlur={field.onBlur}
-                      name={field.name}
-                      ref={field.ref}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <DialogFooter className="gap-2 pt-2">
+            </DialogBody>
+
+            <DialogFooter>
               <Button
                 type="button"
                 variant="ghost"
