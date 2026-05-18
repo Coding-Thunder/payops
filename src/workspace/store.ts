@@ -384,10 +384,29 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         activeTabId: state.activeTabId,
         closedStack: state.closedStack,
       }),
-      // v2 dropped the PAYMENT_COMPOSE tab type; bumping the version
-      // invalidates persisted v1 state so a refresh after deploy
-      // doesn't crash on a stale tab with an unknown type.
+      // v2 dropped the PAYMENT_COMPOSE tab type; the migrate function
+      // filters those out of the persisted state so a refresh after
+      // deploy doesn't crash on a stale tab with an unknown type.
       version: 2,
+      migrate: (persisted, fromVersion) => {
+        if (!persisted || typeof persisted !== "object") return persisted;
+        if (fromVersion < 2) {
+          const s = persisted as Partial<WorkspaceState>;
+          const allowed = new Set(Object.values(WorkspaceTabType));
+          const tabs = (s.tabs ?? []).filter((t) =>
+            allowed.has(t.type as WorkspaceTabType),
+          ) as WorkspaceTab[];
+          const closedStack = (s.closedStack ?? []).filter((entry) =>
+            allowed.has(entry.tab.type as WorkspaceTabType),
+          );
+          const activeTabId =
+            s.activeTabId && tabs.some((t) => t.id === s.activeTabId)
+              ? s.activeTabId
+              : tabs[0]?.id ?? null;
+          return { tabs, closedStack, activeTabId } as Partial<WorkspaceState>;
+        }
+        return persisted;
+      },
     },
   ),
 );
