@@ -83,6 +83,12 @@ const SECTIONS: NavSection[] = [
         permissions: [Permission.BRANDING_VIEW],
       },
       {
+        href: "/admin/email-templates",
+        label: "Email templates",
+        icon: MailIcon,
+        permissions: [Permission.EMAIL_TEMPLATE_VIEW],
+      },
+      {
         href: "/admin/emails",
         label: "Email previews",
         icon: MailIcon,

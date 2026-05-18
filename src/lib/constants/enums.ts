@@ -88,6 +88,9 @@ export const AuditAction = {
   CAR_LINK_DEACTIVATED: "CAR_LINK_DEACTIVATED",
   CAR_LINK_RESTORED: "CAR_LINK_RESTORED",
 
+  EMAIL_TEMPLATE_VERSION_CREATED: "EMAIL_TEMPLATE_VERSION_CREATED",
+  EMAIL_TEMPLATE_VERSION_ACTIVATED: "EMAIL_TEMPLATE_VERSION_ACTIVATED",
+
   AUDIT_LOG_DELETED: "AUDIT_LOG_DELETED",
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
@@ -102,6 +105,7 @@ export const AuditEntity = {
   PROVIDER: "PROVIDER",
   BRANDING: "BRANDING",
   CAR_LINK: "CAR_LINK",
+  EMAIL_TEMPLATE: "EMAIL_TEMPLATE",
 } as const;
 export type AuditEntity = (typeof AuditEntity)[keyof typeof AuditEntity];
 

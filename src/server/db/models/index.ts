@@ -21,3 +21,14 @@ export type { OrderDraftDoc, OrderDraftDocument } from "./order-draft.model";
 
 export { CarLink } from "./car-link.model";
 export type { CarLinkDoc, CarLinkDocument } from "./car-link.model";
+
+export {
+  EmailTemplate,
+  EMAIL_TEMPLATE_KEYS,
+} from "./email-template.model";
+export type {
+  EmailTemplateContent,
+  EmailTemplateDoc,
+  EmailTemplateDocument,
+  EmailTemplateKey,
+} from "./email-template.model";

@@ -160,6 +160,25 @@ export interface BrandingDTO {
   updatedAt: string;
 }
 
+export interface EmailTemplateVersionDTO {
+  id: string;
+  templateKey: "payment-confirmation" | "payment-request";
+  version: number;
+  active: boolean;
+
+  subject: string | null;
+  greeting: string | null;
+  intro: string | null;
+  note: string | null;
+  supportHeadline: string | null;
+  supportDescription: string | null;
+  footerNote: string | null;
+
+  createdBy: { userId: string | null; name: string };
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CarLinkDTO {
   id: string;
   carMake: string;

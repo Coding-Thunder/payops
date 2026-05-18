@@ -13,3 +13,4 @@ export {
 } from "./draft";
 export * from "./car-link";
 export * from "./payment-request";
+export * from "./email-template";

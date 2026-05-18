@@ -21,6 +21,7 @@ import { formatEmailDate, formatEmailDay, formatMoney } from "@/server/email/for
 
 import { recordAudit } from "./audit.service";
 import { getBranding } from "./branding.service";
+import { getActiveTemplateContent } from "./email-template.service";
 
 interface SendArgs {
   to: string;
@@ -108,7 +109,10 @@ export async function sendPaymentConfirmationEmail(
   // Branding is a single Mongo read per send. We deliberately don't cache
   // it across sends so a brand-name / support-contact change propagates to
   // the very next confirmation, no process restart required.
-  const branding = await getBranding();
+  const [branding, tpl] = await Promise.all([
+    getBranding(),
+    getActiveTemplateContent("payment-confirmation"),
+  ]);
   const brandName = branding.brandName;
   // Inline the provider logo as a data URI so Gmail / Outlook render it
   // without proxying back to our server. Falls back to the original
@@ -151,7 +155,8 @@ export async function sendPaymentConfirmationEmail(
   });
   return sendEmail({
     to: order.customer.email,
-    subject: subjectForBookingType(order, brandName),
+    subject:
+      tpl?.subject?.trim() || subjectForBookingType(order, brandName),
     html,
     text,
     kind: EmailKind.PAYMENT_CONFIRMATION,
@@ -185,13 +190,20 @@ export async function composePaymentRequestProps(
   order: OrderDTO,
   overrides: PaymentRequestOverrides = {},
 ): Promise<PaymentRequestEmailProps> {
-  const branding = await getBranding();
+  const [branding, tpl] = await Promise.all([
+    getBranding(),
+    getActiveTemplateContent("payment-request"),
+  ]);
   const providerLogoInline = order.provider
     ? await inlinePublicImage(order.provider.logo)
     : null;
   const providerForEmail = order.provider
     ? { ...order.provider, logo: providerLogoInline ?? order.provider.logo }
     : order.provider;
+  // Layering: agent override → admin's active template override → null
+  // (template fallback to hardcoded copy). The composer's "leave blank
+  // to use defaults" hint covers BOTH the agent-side and template-side
+  // defaults without the agent having to know about templates.
   return {
     brandName: branding.brandName,
     appUrl: env.server.APP_URL,
@@ -211,9 +223,9 @@ export async function composePaymentRequestProps(
       dropoffDate: formatEmailDay(order.trip.dropoffDate),
     },
     paymentUrl: order.payment.checkoutUrl ?? "",
-    greeting: overrides.greeting ?? null,
-    intro: overrides.intro ?? null,
-    note: overrides.note ?? null,
+    greeting: overrides.greeting ?? tpl?.greeting ?? null,
+    intro: overrides.intro ?? tpl?.intro ?? null,
+    note: overrides.note ?? tpl?.note ?? null,
     cancellationPolicy: order.policy?.text ?? "",
     cancellationPolicyVersion: order.policy?.version ?? undefined,
   };
@@ -243,10 +255,14 @@ export async function sendPaymentRequestEmail(
       "Order has no Stripe checkout URL — cannot send a payment request without a link to point the customer at.",
     );
   }
-  const branding = await getBranding();
+  const [branding, tpl] = await Promise.all([
+    getBranding(),
+    getActiveTemplateContent("payment-request"),
+  ]);
   const props = await composePaymentRequestProps(order, overrides);
   const subject =
     overrides.subject?.trim() ||
+    tpl?.subject?.trim() ||
     defaultPaymentRequestSubject(order, branding.brandName);
   const toAddress = overrides.toOverride?.trim() || order.customer.email;
   const html = await render(<PaymentRequestEmail {...props} />);

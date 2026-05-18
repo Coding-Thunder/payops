@@ -33,6 +33,9 @@ export const Permission = {
   CAR_LINK_CREATE: "car_link:create",
   CAR_LINK_MANAGE: "car_link:manage",
 
+  EMAIL_TEMPLATE_VIEW: "email_template:view",
+  EMAIL_TEMPLATE_MANAGE: "email_template:manage",
+
   AUDIT_VIEW: "audit:view",
   AUDIT_DELETE: "audit:delete",
 } as const;
@@ -73,6 +76,8 @@ const ADMIN_ONLY_PERMISSIONS: readonly Permission[] = [
   Permission.BRANDING_VIEW,
   Permission.BRANDING_MANAGE,
   Permission.CAR_LINK_MANAGE,
+  Permission.EMAIL_TEMPLATE_VIEW,
+  Permission.EMAIL_TEMPLATE_MANAGE,
   Permission.AUDIT_VIEW,
   Permission.AUDIT_DELETE,
 ];
