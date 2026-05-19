@@ -19,27 +19,43 @@ interface Params {
  * `public/providers/` with a random suffix so previous receipts that
  * pointed at the prior file keep resolving.
  */
-export const POST = withApi(async (req: NextRequest, { params }: Params) => {
-  const actor = await requirePermission(Permission.PROVIDER_MANAGE);
-  const { id } = await params;
+export const POST = withApi(
+  async (req: NextRequest, { params }: Params) => {
+    const actor = await requirePermission(Permission.PROVIDER_MANAGE);
+    const { id } = await params;
 
-  const form = await req.formData().catch(() => {
-    throw new ValidationError("Expected a multipart/form-data body");
-  });
-  const file = form.get("file");
-  if (!(file instanceof Blob)) {
-    throw new ValidationError("Missing 'file' field");
-  }
+    // Pre-flight Content-Length cap: anything over 1 MB never reaches
+    // formData() — the service-level 512 KB cap is the hard ceiling.
+    const declared = req.headers.get("content-length");
+    if (declared) {
+      const n = Number.parseInt(declared, 10);
+      if (Number.isFinite(n) && n > 1024 * 1024) {
+        throw new ValidationError("Logo upload exceeds the 1 MB request cap");
+      }
+    }
 
-  const arrayBuffer = await file.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-  const mimeType = file.type;
+    const form = await req.formData().catch(() => {
+      throw new ValidationError("Expected a multipart/form-data body");
+    });
+    const file = form.get("file");
+    if (!(file instanceof Blob)) {
+      throw new ValidationError("Missing 'file' field");
+    }
 
-  const ctx = await getRequestContext();
-  const data = await replaceProviderLogo(
-    id,
-    { buffer, mimeType },
-    { actor, request: ctx },
-  );
-  return jsonOk(data);
-});
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const mimeType = file.type;
+
+    const ctx = await getRequestContext();
+    const data = await replaceProviderLogo(
+      id,
+      { buffer, mimeType },
+      { actor, request: ctx },
+    );
+    return jsonOk(data);
+  },
+  {
+    bodyLimitBytes: null,
+    rateLimit: { route: "provider-logo", max: 20, windowMs: 60_000 },
+  },
+);

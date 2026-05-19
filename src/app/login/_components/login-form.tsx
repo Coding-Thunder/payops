@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
+import { TurnstileWidget } from "@/components/common/turnstile-widget";
 import { LoadingButton } from "@/components/ui/loading-button";
 import {
   Form,
@@ -22,11 +23,16 @@ import type { SessionUser } from "@/types";
 
 interface LoginFormProps {
   nextPath?: string;
+  /** Cloudflare Turnstile site key. When null the widget is omitted
+   *  entirely and the form posts without a `cfToken` — server-side
+   *  verification is also disabled in that case, so dev keeps working. */
+  turnstileSiteKey?: string | null;
 }
 
-export function LoginForm({ nextPath }: LoginFormProps) {
+export function LoginForm({ nextPath, turnstileSiteKey }: LoginFormProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const [cfToken, setCfToken] = useState<string | null>(null);
 
   const form = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
@@ -35,14 +41,26 @@ export function LoginForm({ nextPath }: LoginFormProps) {
   });
 
   const isSubmitting = form.formState.isSubmitting;
+  const requiresToken = Boolean(turnstileSiteKey);
+  const canSubmit = !requiresToken || Boolean(cfToken);
 
   async function onSubmit(values: LoginInput) {
     setError(null);
+    if (requiresToken && !cfToken) {
+      setError("Please complete the verification challenge before signing in.");
+      return;
+    }
     try {
-      await api.post<SessionUser>("/api/auth/login", values);
+      await api.post<SessionUser>("/api/auth/login", {
+        ...values,
+        cfToken: cfToken ?? undefined,
+      });
       router.replace(safeNext(nextPath));
       router.refresh();
     } catch (err) {
+      // Reset the Turnstile widget so the user can retry; CF tokens are
+      // single-use and become invalid after the first verification call.
+      setCfToken(null);
       if (err instanceof ApiClientError) {
         setError(err.message);
       } else {
@@ -102,11 +120,22 @@ export function LoginForm({ nextPath }: LoginFormProps) {
           )}
         />
 
+        {requiresToken ? (
+          <TurnstileWidget
+            siteKey={turnstileSiteKey}
+            onVerify={(token) => setCfToken(token)}
+            onExpire={() => setCfToken(null)}
+            onError={() => setCfToken(null)}
+            className="flex justify-center"
+          />
+        ) : null}
+
         <LoadingButton
           type="submit"
           className="w-full"
           loading={isSubmitting}
           loadingText="Signing in"
+          disabled={!canSubmit}
         >
           Sign in
         </LoadingButton>
@@ -116,9 +145,9 @@ export function LoginForm({ nextPath }: LoginFormProps) {
 }
 
 function safeNext(value?: string): string {
-  if (!value) return "/dashboard";
-  if (!value.startsWith("/")) return "/dashboard";
-  if (value.startsWith("//")) return "/dashboard";
-  if (value.startsWith("/login")) return "/dashboard";
+  if (!value) return "/app/dashboard";
+  if (!value.startsWith("/")) return "/app/dashboard";
+  if (value.startsWith("//")) return "/app/dashboard";
+  if (value.startsWith("/login")) return "/app/dashboard";
   return value;
 }

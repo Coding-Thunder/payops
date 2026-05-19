@@ -9,7 +9,12 @@ import {
   CheckCircle2Icon,
   ClockIcon,
   CreditCardIcon,
+  HandshakeIcon,
   LinkIcon,
+  MailCheckIcon,
+  RefreshCcwIcon,
+  SendIcon,
+  ShieldAlertIcon,
   UserPlusIcon,
   UserCogIcon,
   type LucideIcon,
@@ -47,7 +52,25 @@ const VISUALS: Record<DomainEventType, EventVisual> = {
     description: (e) =>
       `${e.payload.orderNumber ?? ""} · ${e.payload.customerName ?? ""}`,
     href: (e) =>
-      e.payload.orderId ? `/orders/${e.payload.orderId}` : null,
+      e.payload.orderId ? `/app/orders/${e.payload.orderId}` : null,
+  },
+  [DomainEventType.ORDER_EMAIL_SENT]: {
+    icon: SendIcon,
+    tone: "bg-info-soft text-info ring-info-border/60",
+    title: "Payment request sent",
+    description: (e) =>
+      `${e.payload.orderNumber ?? ""} · ${e.payload.customerName ?? ""}`,
+    href: (e) =>
+      e.payload.orderId ? `/app/orders/${e.payload.orderId}` : null,
+  },
+  [DomainEventType.ORDER_CONSENT_RECEIVED]: {
+    icon: HandshakeIcon,
+    tone: "bg-success-soft text-success ring-success-border/60",
+    title: "Consent received",
+    description: (e) =>
+      `${e.payload.orderNumber ?? ""} · ${e.payload.customerName ?? ""}`,
+    href: (e) =>
+      e.payload.orderId ? `/app/orders/${e.payload.orderId}` : null,
   },
   [DomainEventType.ORDER_PAID]: {
     icon: CheckCircle2Icon,
@@ -56,7 +79,16 @@ const VISUALS: Record<DomainEventType, EventVisual> = {
     description: (e) =>
       `${e.payload.orderNumber ?? ""} · ${e.payload.customerName ?? ""}`,
     href: (e) =>
-      e.payload.orderId ? `/orders/${e.payload.orderId}` : null,
+      e.payload.orderId ? `/app/orders/${e.payload.orderId}` : null,
+  },
+  [DomainEventType.ORDER_CONFIRMATION_SENT]: {
+    icon: MailCheckIcon,
+    tone: "bg-success-soft text-success ring-success-border/60",
+    title: "Confirmation email sent",
+    description: (e) =>
+      `${e.payload.orderNumber ?? ""} · ${e.payload.customerName ?? ""}`,
+    href: (e) =>
+      e.payload.orderId ? `/app/orders/${e.payload.orderId}` : null,
   },
   [DomainEventType.ORDER_FAILED]: {
     icon: AlertCircleIcon,
@@ -65,7 +97,7 @@ const VISUALS: Record<DomainEventType, EventVisual> = {
     description: (e) =>
       `${e.payload.orderNumber ?? ""} · ${e.payload.customerName ?? ""}`,
     href: (e) =>
-      e.payload.orderId ? `/orders/${e.payload.orderId}` : null,
+      e.payload.orderId ? `/app/orders/${e.payload.orderId}` : null,
   },
   [DomainEventType.ORDER_EXPIRED]: {
     icon: ClockIcon,
@@ -74,7 +106,7 @@ const VISUALS: Record<DomainEventType, EventVisual> = {
     description: (e) =>
       `${e.payload.orderNumber ?? ""} · ${e.payload.customerName ?? ""}`,
     href: (e) =>
-      e.payload.orderId ? `/orders/${e.payload.orderId}` : null,
+      e.payload.orderId ? `/app/orders/${e.payload.orderId}` : null,
   },
   [DomainEventType.ORDER_ARCHIVED]: {
     icon: ArchiveIcon,
@@ -82,7 +114,7 @@ const VISUALS: Record<DomainEventType, EventVisual> = {
     title: "Order archived",
     description: (e) => `${e.payload.orderNumber ?? ""}`,
     href: (e) =>
-      e.payload.orderId ? `/orders/${e.payload.orderId}` : null,
+      e.payload.orderId ? `/app/orders/${e.payload.orderId}` : null,
   },
   [DomainEventType.ORDER_LINK_REGENERATED]: {
     icon: LinkIcon,
@@ -90,7 +122,39 @@ const VISUALS: Record<DomainEventType, EventVisual> = {
     title: "Payment link regenerated",
     description: (e) => `${e.payload.orderNumber ?? ""}`,
     href: (e) =>
-      e.payload.orderId ? `/orders/${e.payload.orderId}` : null,
+      e.payload.orderId ? `/app/orders/${e.payload.orderId}` : null,
+  },
+  [DomainEventType.ORDER_DISPUTE_CREATED]: {
+    icon: ShieldAlertIcon,
+    tone: "bg-destructive-soft text-destructive ring-destructive-border/60",
+    title: "Dispute opened",
+    description: (e) => `${e.payload.orderNumber ?? ""}`,
+    href: (e) =>
+      e.payload.orderId ? `/app/orders/${e.payload.orderId}/evidence` : null,
+  },
+  [DomainEventType.ORDER_DISPUTE_UPDATED]: {
+    icon: ShieldAlertIcon,
+    tone: "bg-warning-soft text-warning-foreground ring-warning-border/60",
+    title: "Dispute updated",
+    description: (e) => `${e.payload.orderNumber ?? ""}`,
+    href: (e) =>
+      e.payload.orderId ? `/app/orders/${e.payload.orderId}/evidence` : null,
+  },
+  [DomainEventType.ORDER_DISPUTE_CLOSED]: {
+    icon: CheckCircle2Icon,
+    tone: "bg-surface-1 text-muted-foreground ring-border",
+    title: "Dispute closed",
+    description: (e) => `${e.payload.orderNumber ?? ""}`,
+    href: (e) =>
+      e.payload.orderId ? `/app/orders/${e.payload.orderId}/evidence` : null,
+  },
+  [DomainEventType.ORDER_REFUNDED]: {
+    icon: RefreshCcwIcon,
+    tone: "bg-info-soft text-info ring-info-border/60",
+    title: "Order refunded",
+    description: (e) => `${e.payload.orderNumber ?? ""}`,
+    href: (e) =>
+      e.payload.orderId ? `/app/orders/${e.payload.orderId}` : null,
   },
   [DomainEventType.USER_CREATED]: {
     icon: UserPlusIcon,

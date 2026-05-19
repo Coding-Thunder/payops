@@ -14,3 +14,6 @@ export {
 export * from "./car-link";
 export * from "./payment-request";
 export * from "./email-template";
+export * from "./consent";
+export * from "./evidence";
+export * from "./quotation";

@@ -20,24 +20,37 @@ function key(): Uint8Array {
   return cachedKey;
 }
 
-/** Parse human friendly TTL ("12h", "30m") into seconds. */
+/** Hard upper bound: 7 days. Stops an env typo like `JWT_EXPIRES_IN=12d`
+ *  from turning every session into a near-permanent credential. */
+const MAX_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
+/** Sensible fallback when the env value is missing / malformed. */
+const DEFAULT_SESSION_TTL_SECONDS = 12 * 60 * 60;
+
+/** Parse human friendly TTL ("12h", "30m") into seconds, clamped to
+ *  [60s, 7d] so a misconfigured env can't ship long-lived sessions. */
 function parseTtlSeconds(input: string): number {
   const m = input.match(/^(\d+)([smhd])$/);
-  if (!m) return 60 * 60 * 12;
+  if (!m) return DEFAULT_SESSION_TTL_SECONDS;
   const value = Number(m[1]);
   const unit = m[2];
+  let seconds: number;
   switch (unit) {
     case "s":
-      return value;
+      seconds = value;
+      break;
     case "m":
-      return value * 60;
+      seconds = value * 60;
+      break;
     case "h":
-      return value * 60 * 60;
+      seconds = value * 60 * 60;
+      break;
     case "d":
-      return value * 60 * 60 * 24;
+      seconds = value * 60 * 60 * 24;
+      break;
     default:
-      return 60 * 60 * 12;
+      seconds = DEFAULT_SESSION_TTL_SECONDS;
   }
+  return Math.max(60, Math.min(seconds, MAX_SESSION_TTL_SECONDS));
 }
 
 export function getSessionTtlSeconds(): number {

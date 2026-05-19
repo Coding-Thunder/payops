@@ -2,9 +2,22 @@ import "server-only";
 
 import { render } from "@react-email/render";
 
-import { AuditAction, AuditEntity, EmailKind } from "@/lib/constants/enums";
+import {
+  AuditAction,
+  AuditEntity,
+  ConsentMode,
+  ConsentStatus,
+  EmailKind,
+  OrderEvidenceActorType,
+  OrderEvidenceEventType,
+  type PaymentGatewayKey,
+  type UserRole,
+} from "@/lib/constants/enums";
+import { PaymentGatewayLabel as PAYMENT_GATEWAY_LABELS } from "@/lib/constants/labels";
 import { env } from "@/lib/env";
+import { DomainEventType } from "@/lib/constants/events";
 import { logger } from "@/lib/logger";
+import { publishEvent } from "@/server/events/bus";
 import type { OrderDTO } from "@/types";
 
 import { getMailer } from "@/server/email/smtp";
@@ -18,10 +31,18 @@ import {
   type PaymentConfirmationEmailProps,
 } from "@/server/email/templates/payment-confirmation";
 import { formatEmailDate, formatEmailDay, formatMoney } from "@/server/email/format";
+import { buildConsentMailto } from "@/server/email/consent-mailto";
 
 import { recordAudit } from "./audit.service";
+import { captureEvidenceSafe } from "./evidence.service";
 import { getBranding } from "./branding.service";
 import { getActiveTemplateContent } from "./email-template.service";
+import { requestConsent } from "./consent.service";
+import {
+  buildConsentUrl,
+  generateConsentToken,
+} from "./consent-token";
+import { getSettings } from "./settings.service";
 
 interface SendArgs {
   to: string;
@@ -32,6 +53,19 @@ interface SendArgs {
   orderId?: string | null;
 }
 
+/** Reduce a full email to `a***@example.com` for logger output — keeps
+ *  ops-grade signal (domain, first char) while dropping the PII surface
+ *  on log spills. */
+function maskEmail(addr: string): string {
+  if (!addr) return "(empty)";
+  const at = addr.indexOf("@");
+  if (at <= 0) return "(masked)";
+  const local = addr.slice(0, at);
+  const domain = addr.slice(at);
+  const head = local.slice(0, 1);
+  return `${head}***${domain}`;
+}
+
 async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
   const mailer = getMailer();
   const fromAddress = env.server.EMAIL_FROM;
@@ -40,7 +74,7 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
   if (!mailer) {
     logger.warn("email.skipped_no_smtp_config", {
       kind: args.kind,
-      to: args.to,
+      toMasked: maskEmail(args.to),
       orderId: args.orderId ?? undefined,
     });
     await recordAudit({
@@ -80,7 +114,7 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
   } catch (err) {
     logger.error("email.send_failed", {
       kind: args.kind,
-      to: args.to,
+      toMasked: maskEmail(args.to),
       err: err instanceof Error ? err.message : String(err),
     });
     await recordAudit({
@@ -153,15 +187,52 @@ export async function sendPaymentConfirmationEmail(
   const text = await render(<PaymentConfirmationEmail {...props} />, {
     plainText: true,
   });
-  return sendEmail({
-    to: order.customer.email,
-    subject:
-      tpl?.subject?.trim() || subjectForBookingType(order, brandName),
+  const finalSubject =
+    tpl?.subject?.trim() || subjectForBookingType(order, brandName);
+  const fromAddress = env.server.EMAIL_FROM;
+  const replyTo = env.server.EMAIL_REPLY_TO || null;
+  const recipient = order.customer.email;
+  const sent = await sendEmail({
+    to: recipient,
+    subject: finalSubject,
     html,
     text,
     kind: EmailKind.PAYMENT_CONFIRMATION,
     orderId: order.id,
   });
+  // Evidence chain: capture the rendered confirmation HTML BEFORE the
+  // template can drift. Even if the send went out without an SMTP
+  // configured, we still want the exact bytes the customer would have
+  // seen so a future dispute can show what we promised.
+  await captureEvidenceSafe({
+    orderId: order.id,
+    orderNumber: order.orderNumber,
+    eventType: OrderEvidenceEventType.CONFIRMATION_EMAIL_SENT,
+    actor: { type: OrderEvidenceActorType.SYSTEM, name: "Payment webhook" },
+    payload: {
+      kind: EmailKind.PAYMENT_CONFIRMATION,
+      subject: finalSubject,
+      from: fromAddress,
+      replyTo,
+      to: recipient,
+      messageId: sent.id,
+      brand: {
+        name: brandName,
+        supportEmail: branding.supportEmail,
+        supportPhone: branding.supportPhone,
+      },
+      amount: props.amount,
+      paidOn: props.paidOn,
+      receiptUrl: props.receiptUrl ?? null,
+      html,
+      text,
+    },
+    refs: {
+      messageId: sent.id ?? null,
+      customerEmail: recipient,
+    },
+  });
+  return sent;
 }
 
 /* ───────────────────────── Payment request ─────────────────────────── */
@@ -185,14 +256,31 @@ export interface PaymentRequestOverrides {
  * the agent's editable overrides. Exported separately from the send
  * path so the composer's live preview API can call it cheaply without
  * going through SMTP.
+ *
+ * Consent-first single-CTA flow:
+ *   - if the order's consent has NOT been received yet → primary CTA
+ *     lands on the hosted consent page (and the page redirects to
+ *     Stripe after the customer confirms)
+ *   - if consent has already been received (re-send case) → primary
+ *     CTA goes straight to Stripe, no detour
+ *
+ * `consent` is OPTIONAL because the preview path needs to render
+ * without persisting a record. The send path always passes one (see
+ * `sendPaymentRequestEmail`).
  */
 export async function composePaymentRequestProps(
   order: OrderDTO,
   overrides: PaymentRequestOverrides = {},
+  consent?: {
+    consentUrl: string | null;
+    consentMessage: string;
+    consentRequired: boolean;
+  } | null,
 ): Promise<PaymentRequestEmailProps> {
-  const [branding, tpl] = await Promise.all([
+  const [branding, tpl, settings] = await Promise.all([
     getBranding(),
     getActiveTemplateContent("payment-request"),
+    getSettings(),
   ]);
   const providerLogoInline = order.provider
     ? await inlinePublicImage(order.provider.logo)
@@ -200,6 +288,70 @@ export async function composePaymentRequestProps(
   const providerForEmail = order.provider
     ? { ...order.provider, logo: providerLogoInline ?? order.provider.logo }
     : order.provider;
+  const effectiveConsentMessage =
+    consent?.consentMessage ?? settings.consentMessage;
+  const consentMailto = buildConsentMailto({
+    toEmail: branding.supportEmail,
+    brandName: branding.brandName,
+    order,
+    consentMessage: effectiveConsentMessage,
+  });
+
+  // Pick the single primary CTA. Consent-first by default; jump straight
+  // to Stripe only when the customer has already acknowledged a previous
+  // send (RECEIVED / VERIFIED).
+  const alreadyConsented =
+    order.consent?.status === ConsentStatus.RECEIVED ||
+    order.consent?.status === ConsentStatus.VERIFIED;
+  // Gateway-agnostic at the call site — `order.payment.paymentUrl` is
+  // whatever the chosen gateway returned. Variable kept generic.
+  const checkoutUrl = order.payment.paymentUrl ?? "";
+  const consentRequired =
+    consent?.consentRequired ?? settings.consentMode === ConsentMode.REQUIRED;
+
+  // Resolve the consent URL.
+  //   - Send path: caller passes `consent.consentUrl` from requestConsent.
+  //   - Preview path (no consent arg): if the order already has a consent
+  //     record (re-send case), sign its id so the preview shows the
+  //     real link the customer would receive. First-time preview falls
+  //     back to a clearly-labelled placeholder so the agent still sees
+  //     the correct CTA copy ("Review & Confirm Booking") — the actual
+  //     link is signed when they click Send.
+  let consentUrl: string | null = consent?.consentUrl ?? null;
+  if (!consentUrl && !alreadyConsented) {
+    const existingId = order.consent?.currentConsentId;
+    if (existingId) {
+      consentUrl = buildConsentUrl(
+        env.server.APP_URL,
+        generateConsentToken(existingId),
+      );
+    } else {
+      consentUrl = `${env.server.APP_URL.replace(/\/$/, "")}/consent/preview`;
+    }
+  }
+
+  const primaryCta = alreadyConsented && checkoutUrl
+    ? {
+        url: checkoutUrl,
+        label: `Pay ${formatMoney(order.pricing.amount, order.pricing.currency)} securely with Stripe →`,
+        helperText:
+          "You already confirmed this booking — this opens Stripe Checkout.",
+      }
+    : consentUrl
+      ? {
+          url: consentUrl,
+          label: consentRequired
+            ? "Agree & Continue to Payment"
+            : "Review & Confirm Booking",
+          helperText: effectiveConsentMessage,
+        }
+      : checkoutUrl
+        ? {
+            url: checkoutUrl,
+            label: `Pay ${formatMoney(order.pricing.amount, order.pricing.currency)} securely with Stripe →`,
+            helperText: null,
+          }
+        : null;
   // Layering: agent override → admin's active template override → null
   // (template fallback to hardcoded copy). The composer's "leave blank
   // to use defaults" hint covers BOTH the agent-side and template-side
@@ -222,12 +374,18 @@ export async function composePaymentRequestProps(
       pickupDate: formatEmailDay(order.trip.pickupDate),
       dropoffDate: formatEmailDay(order.trip.dropoffDate),
     },
-    paymentUrl: order.payment.checkoutUrl ?? "",
+    paymentUrl: checkoutUrl,
+    gatewayLabel: order.payment.gateway
+      ? PAYMENT_GATEWAY_LABELS[order.payment.gateway as PaymentGatewayKey]
+      : null,
     greeting: overrides.greeting ?? tpl?.greeting ?? null,
     intro: overrides.intro ?? tpl?.intro ?? null,
     note: overrides.note ?? tpl?.note ?? null,
     cancellationPolicy: order.policy?.text ?? "",
     cancellationPolicyVersion: order.policy?.version ?? undefined,
+    primaryCta: primaryCta ?? undefined,
+    consentMailto,
+    consentRequired,
   };
 }
 
@@ -239,37 +397,108 @@ export function defaultPaymentRequestSubject(
   return `Complete your ${providerName} payment • ${order.orderNumber}`;
 }
 
+export interface SendPaymentRequestContext {
+  /** Operator triggering the send. Recorded as the actor on the consent
+   *  request audit row so we can trace who asked the customer to
+   *  acknowledge. */
+  actor: {
+    id: string;
+    name: string;
+    email: string;
+    role: UserRole;
+  };
+  request?: {
+    ip: string | null;
+    userAgent: string | null;
+    requestId: string | null;
+  } | null;
+}
+
 /**
  * Render and send a payment-request email. The agent composes this in
  * the workspace after creating an order; calling this twice on the same
  * order is allowed (re-send), and each send produces an audit row so
  * the order's history makes it clear how many times the customer was
  * nudged.
+ *
+ * As of the consent layer (May 2026), each send also creates (or
+ * refreshes) a PaymentConsent record in REQUESTED state so the customer
+ * can click "I Agree" before paying. The consent URL is signed with the
+ * record's HMAC token; mailto fallback is generated locally and never
+ * persisted.
  */
 export async function sendPaymentRequestEmail(
   order: OrderDTO,
   overrides: PaymentRequestOverrides = {},
-): Promise<{ id: string | null }> {
-  if (!order.payment.checkoutUrl) {
+  context?: SendPaymentRequestContext,
+): Promise<{ id: string | null; consentToken: string | null }> {
+  if (!order.payment.paymentUrl) {
     throw new Error(
-      "Order has no Stripe checkout URL — cannot send a payment request without a link to point the customer at.",
+      "Order has no payment link yet — generate the link via the email composer before sending the request.",
     );
   }
-  const [branding, tpl] = await Promise.all([
+  const [branding, tpl, settings] = await Promise.all([
     getBranding(),
     getActiveTemplateContent("payment-request"),
+    getSettings(),
   ]);
-  const props = await composePaymentRequestProps(order, overrides);
+
+  let consentUrl: string | null = null;
+  let consentToken: string | null = null;
   const subject =
     overrides.subject?.trim() ||
     tpl?.subject?.trim() ||
     defaultPaymentRequestSubject(order, branding.brandName);
+
+  if (context?.actor) {
+    try {
+      const result = await requestConsent(
+        {
+          orderId: order.id,
+          customerEmail: overrides.toOverride?.trim() || order.customer.email,
+          customerName: order.customer.name,
+          consentMessage: settings.consentMessage,
+          consentEmailSubject: subject,
+          snapshot: {
+            bookingType: order.bookingType,
+            provider: order.provider?.name ?? "",
+            vehicle: `${order.vehicle.company} • ${order.vehicle.type}`,
+            pickupDate: order.trip.pickupDate,
+            dropoffDate: order.trip.dropoffDate,
+            amount: order.pricing.amount,
+            currency: order.pricing.currency,
+            paymentLinkRef: order.payment.paymentUrl,
+          },
+        },
+        {
+          actor: context.actor,
+          appUrl: env.server.APP_URL,
+          request: context.request ?? null,
+        },
+      );
+      consentUrl = result.consentUrl;
+      consentToken = result.token;
+    } catch (err) {
+      // Consent persistence should never block the email send — log and
+      // continue with no consentUrl (only the mailto fallback survives).
+      logger.error("email.consent_request_failed", {
+        orderId: order.id,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  const props = await composePaymentRequestProps(order, overrides, {
+    consentUrl,
+    consentMessage: settings.consentMessage,
+    consentRequired: settings.consentMode === ConsentMode.REQUIRED,
+  });
   const toAddress = overrides.toOverride?.trim() || order.customer.email;
   const html = await render(<PaymentRequestEmail {...props} />);
   const text = await render(<PaymentRequestEmail {...props} />, {
     plainText: true,
   });
-  return sendEmail({
+  const sent = await sendEmail({
     to: toAddress,
     subject,
     html,
@@ -277,6 +506,92 @@ export async function sendPaymentRequestEmail(
     kind: EmailKind.PAYMENT_LINK,
     orderId: order.id,
   });
+
+  // Evidence chain: capture the rendered payment-request HTML the customer
+  // received, including the consent CTA copy and the gateway label
+  // active at this send. Snapshots are append-only so re-sends each get
+  // their own evidence event.
+  await captureEvidenceSafe({
+    orderId: order.id,
+    orderNumber: order.orderNumber,
+    eventType: OrderEvidenceEventType.PAYMENT_REQUEST_EMAIL_SENT,
+    actor: context?.actor
+      ? {
+          type: OrderEvidenceActorType.AGENT,
+          userId: context.actor.id,
+          name: context.actor.name,
+          email: context.actor.email,
+          role: context.actor.role,
+        }
+      : { type: OrderEvidenceActorType.SYSTEM, name: "Email composer" },
+    request: context?.request ?? null,
+    payload: {
+      kind: EmailKind.PAYMENT_LINK,
+      subject,
+      from: env.server.EMAIL_FROM,
+      replyTo: env.server.EMAIL_REPLY_TO || null,
+      to: toAddress,
+      messageId: sent.id,
+      brand: {
+        name: props.brandName,
+        supportEmail: props.supportEmail,
+        supportPhone: props.supportPhone,
+      },
+      amount: props.amount,
+      gateway: order.payment.gateway ?? null,
+      gatewayLabel: props.gatewayLabel ?? null,
+      cta: props.primaryCta
+        ? {
+            url: props.primaryCta.url,
+            label: props.primaryCta.label,
+            helperText: props.primaryCta.helperText ?? null,
+          }
+        : null,
+      consentRequired: props.consentRequired ?? false,
+      cancellationPolicy: props.cancellationPolicy,
+      cancellationPolicyVersion: props.cancellationPolicyVersion ?? null,
+      html,
+      text,
+    },
+    refs: {
+      messageId: sent.id ?? null,
+      customerEmail: toAddress,
+      paymentSessionId: order.payment.paymentSessionId ?? null,
+      paymentIntentId: order.payment.paymentIntentId ?? null,
+    },
+  });
+
+  // Push the lifecycle-transition event so the timeline's "Email sent"
+  // node lights up the moment the send completes, instead of waiting for
+  // the next 5s poll or a manual refresh. The audit row was already
+  // written by `sendEmail`; this is purely the realtime push.
+  logger.info("order.lifecycle.transition", {
+    orderId: order.id,
+    orderNumber: order.orderNumber,
+    previousState: order.status,
+    nextState: order.status,
+    transition: "email_sent",
+    source: "service.email.payment_request",
+    actor: context?.actor?.id ?? null,
+  });
+  publishEvent({
+    type: DomainEventType.ORDER_EMAIL_SENT,
+    audience: { kind: "creator", userId: order.createdBy.userId },
+    actor: context?.actor
+      ? {
+          id: context.actor.id,
+          name: context.actor.name,
+          role: context.actor.role,
+        }
+      : undefined,
+    payload: {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      customerName: order.customer.name,
+      messageId: sent.id,
+    },
+  });
+  return { id: sent.id, consentToken };
 }
 
 function subjectForBookingType(order: OrderDTO, brand: string): string {

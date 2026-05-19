@@ -29,6 +29,18 @@ const badgeVariants = cva(
           "bg-destructive-soft text-destructive ring-destructive-border/60",
         info:
           "bg-info-soft text-info ring-info-border/60",
+        // ─── Marketing palette accents — for chromatic moments in the
+        // authed app (paid receipt, dispute opened, settled batch). The
+        // soft + ring colors lean on CSS color-mix against the
+        // marketing tokens so they stay perfectly tuned to the brand.
+        accent:
+          "[background:color-mix(in_oklch,var(--m-orange)_18%,transparent)] [color:var(--m-orange-deep)] [--tw-ring-color:color-mix(in_oklch,var(--m-orange)_35%,transparent)]",
+        sage:
+          "[background:color-mix(in_oklch,var(--m-sage)_22%,transparent)] [color:var(--m-sage-deep)] [--tw-ring-color:color-mix(in_oklch,var(--m-sage)_40%,transparent)]",
+        cobalt:
+          "[background:color-mix(in_oklch,var(--m-cobalt)_18%,transparent)] [color:var(--m-cobalt-deep)] [--tw-ring-color:color-mix(in_oklch,var(--m-cobalt)_35%,transparent)]",
+        ultraviolet:
+          "[background:color-mix(in_oklch,var(--m-ultraviolet)_18%,transparent)] [color:var(--m-ultraviolet-deep)] [--tw-ring-color:color-mix(in_oklch,var(--m-ultraviolet)_35%,transparent)]",
       },
     },
     defaultVariants: { variant: "default" },

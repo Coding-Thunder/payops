@@ -16,7 +16,7 @@ interface LoginPageProps {
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const user = await getCurrentUser();
-  if (user) redirect("/dashboard");
+  if (user) redirect("/app/dashboard");
   const { next } = await searchParams;
   const brand = env.server.APP_NAME;
 
@@ -40,12 +40,12 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           <h2 className="text-[28px] font-semibold tracking-tight leading-[1.15]">
             Reliable, auditable
             <br />
-            rental payments.
+            payment operations.
           </h2>
           <p className="text-[13px] leading-relaxed text-primary-foreground/75 max-w-sm">
-            Create payable orders, share secure Stripe checkout links with
-            customers, and stay in sync with every payment — all from one
-            console designed for operations teams.
+            Track the full payment lifecycle, capture dispute-grade
+            evidence, and orchestrate gateways — all from one console
+            built for operations, finance, and trust teams.
           </p>
         </div>
         <div className="relative text-[11px] tracking-wider uppercase text-primary-foreground/55">
@@ -66,7 +66,10 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               </p>
             </div>
           </div>
-          <LoginForm nextPath={next} />
+          <LoginForm
+            nextPath={next}
+            turnstileSiteKey={env.public.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null}
+          />
           <p className="text-[11px] text-muted-foreground/80 text-center leading-relaxed">
             Trouble signing in? Reach out to your administrator.
             <br />

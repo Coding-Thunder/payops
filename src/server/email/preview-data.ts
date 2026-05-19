@@ -68,7 +68,7 @@ export function buildPaymentRequestPreviewProps(
     amount: "$245.00",
     dueBy: "May 19, 2026 · 6:00 PM",
     provider: args.provider,
-    vehicle: { company: "Toyota", type: "Camry SE" },
+    vehicle: { company: "Toyota", type: "Camry SE", imageUrl: null },
     trip: {
       pickupDate: "Sun, May 17 · 10:00 AM",
       dropoffDate: "Wed, May 20 · 6:00 PM",
@@ -80,5 +80,14 @@ export function buildPaymentRequestPreviewProps(
     note: null,
     cancellationPolicy: args.cancellationPolicy,
     cancellationPolicyVersion: args.cancellationPolicyVersion,
+    primaryCta: {
+      url: `${args.appUrl.replace(/\/$/, "")}/consent/preview-token`,
+      label: "Review & Confirm Booking",
+      helperText:
+        "You'll see a one-screen summary, confirm, then continue to secure payment.",
+    },
+    gatewayLabel: "Stripe",
+    consentMailto: "mailto:support@example.com?subject=Order%20acknowledgement",
+    consentRequired: false,
   };
 }

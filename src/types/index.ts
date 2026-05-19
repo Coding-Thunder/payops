@@ -2,8 +2,16 @@ import type {
   AuditAction,
   AuditEntity,
   BookingType,
+  ConsentMethod,
+  ConsentMode,
+  ConsentStatus,
   Currency,
+  DisputeOutcome,
+  DisputeStatus,
+  OrderEvidenceActorType,
+  OrderEvidenceEventType,
   OrderStatus,
+  PaymentGatewayKey,
   RecordState,
   UserRole,
 } from "@/lib/constants/enums";
@@ -54,15 +62,32 @@ export interface OrderPricing {
 }
 
 export interface OrderPayment {
-  stripeSessionId?: string | null;
-  paymentIntentId?: string | null;
-  checkoutUrl?: string | null;
+  /** Gateway routing this payment. Null while NOT_INITIATED — no
+   *  gateway has been contacted. */
+  gateway: PaymentGatewayKey | null;
+  /** Provider-side session id. Generic name surfaced to callers — the
+   *  underlying schema field is `stripeSessionId` for historical
+   *  reasons but holds whatever the gateway returned. */
+  paymentSessionId: string | null;
+  /** Generic checkout URL. Renamed at the DTO boundary so UI / email
+   *  code never has to think about which gateway it points at. */
+  paymentUrl: string | null;
+  /** Provider's payment-intent id (or equivalent). Some gateways
+   *  don't expose this separately; null in that case. */
+  paymentIntentId: string | null;
   status: OrderStatus;
-  paidAt?: string | null;
-  expiresAt?: string | null;
-  amountReceived?: number | null;
-  receiptUrl?: string | null;
-  failureReason?: string | null;
+  paidAt: string | null;
+  expiresAt: string | null;
+  amountReceived: number | null;
+  receiptUrl: string | null;
+  failureReason: string | null;
+  /** When the post-payment confirmation email landed in SMTP (or got
+   *  claimed by the single-send guard). Powers the "Confirmation sent"
+   *  step in the order detail timeline. */
+  confirmationEmailSentAt: string | null;
+  /** When the gateway session was generated (NOT_INITIATED →
+   *  LINK_GENERATED). Null while the order is still in draft. */
+  initiatedAt: string | null;
 }
 
 export interface OrderCreator {
@@ -87,6 +112,26 @@ export interface OrderRisk {
   } | null;
 }
 
+export interface OrderConsentPointer {
+  status: ConsentStatus;
+  currentConsentId: string | null;
+  requestedAt: string | null;
+  receivedAt: string | null;
+  verifiedAt: string | null;
+  method: ConsentMethod | null;
+}
+
+export interface OrderDisputePointer {
+  status: DisputeStatus | null;
+  currentDisputeId: string | null;
+  openedAt: string | null;
+  closedAt: string | null;
+  outcome: DisputeOutcome | null;
+  reason: string | null;
+  amount: number | null;
+  currency: Currency | null;
+}
+
 export interface OrderDTO {
   id: string;
   orderNumber: string;
@@ -102,9 +147,98 @@ export interface OrderDTO {
   createdBy: OrderCreator;
   policy: OrderPolicy;
   risk: OrderRisk;
+  consent: OrderConsentPointer;
+  /** Null when no chargeback has ever been opened against this order's
+   *  payment. Once a dispute lands the pointer stays populated for the
+   *  audit trail, even if the dispute later closes. */
+  dispute: OrderDisputePointer | null;
+  /** Cumulative refunded amount in major units. 0 until the first
+   *  refund webhook lands. */
+  refundedAmount: number;
   notes?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Persisted Dispute record exposed to the admin UI. One per chargeback
+ * attempt — the order keeps a lightweight pointer (`OrderDisputePointer`)
+ * for list views and joins to the full record for detail pages.
+ */
+export interface DisputeDTO {
+  id: string;
+  orderId: string;
+  orderNumber: string;
+  gateway: PaymentGatewayKey;
+  gatewayDisputeId: string;
+  chargeId: string | null;
+  paymentIntentId: string | null;
+  status: DisputeStatus;
+  reason: string | null;
+  outcome: DisputeOutcome | null;
+  amount: number;
+  amountMinor: number;
+  currency: Currency;
+  evidenceDueAt: string | null;
+  openedAt: string;
+  closedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PaymentConsentSnapshot {
+  bookingType: BookingType;
+  provider: string;
+  vehicle: string;
+  pickupDate: string;
+  dropoffDate: string;
+  amount: number;
+  currency: Currency;
+  paymentLinkRef: string | null;
+}
+
+export interface PaymentConsentDTO {
+  id: string;
+  orderId: string;
+  orderNumber: string;
+  status: ConsentStatus;
+  method: ConsentMethod | null;
+  customerEmail: string;
+  customerName: string;
+  consentMessage: string;
+  consentEmailSubject: string | null;
+  signedName: string | null;
+  snapshot: PaymentConsentSnapshot;
+  requestedAt: string;
+  receivedAt: string | null;
+  verifiedAt: string | null;
+  verifiedBy: {
+    userId: string | null;
+    name: string | null;
+  } | null;
+  receiptIp: string | null;
+  receiptUserAgent: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Trimmed shape used by the unauthenticated hosted consent page — never
+ *  leaks IP / UA / verifier metadata to the customer. */
+export interface PublicConsentView {
+  status: ConsentStatus;
+  customerName: string;
+  customerEmail: string;
+  brandName: string;
+  consentMessage: string;
+  snapshot: PaymentConsentSnapshot;
+  paymentUrl: string | null;
+  alreadyConfirmedAt: string | null;
+}
+
+export interface ConsentSettings {
+  mode: ConsentMode;
+  message: string;
 }
 
 export interface AuditLogDTO {
@@ -119,6 +253,93 @@ export interface AuditLogDTO {
   userAgent?: string | null;
   metadata?: Record<string, unknown> | null;
   createdAt: string;
+}
+
+export interface OrderEvidenceActorDTO {
+  type: OrderEvidenceActorType;
+  userId: string | null;
+  name: string | null;
+  email: string | null;
+  role: UserRole | null;
+}
+
+export interface OrderEvidenceRequestDTO {
+  ip: string | null;
+  userAgent: string | null;
+  requestId: string | null;
+  geoCountry: string | null;
+}
+
+export interface OrderEvidenceRefsDTO {
+  paymentSessionId: string | null;
+  paymentIntentId: string | null;
+  transactionId: string | null;
+  gatewayEventId: string | null;
+  consentId: string | null;
+  consentTokenHash: string | null;
+  customerEmail: string | null;
+  signatureName: string | null;
+  messageId: string | null;
+}
+
+export interface OrderEvidenceEventDTO {
+  id: string;
+  orderId: string;
+  orderNumber: string;
+  sequence: number;
+  eventType: OrderEvidenceEventType;
+  occurredAt: string;
+  actor: OrderEvidenceActorDTO;
+  request: OrderEvidenceRequestDTO | null;
+  payload: Record<string, unknown>;
+  refs: OrderEvidenceRefsDTO | null;
+  snapshotHash: string;
+  previousHash: string | null;
+  hash: string;
+  createdAt: string;
+}
+
+export interface OrderEvidenceVerificationDTO {
+  valid: boolean;
+  eventCount: number;
+  /** 1-based sequence of the first broken event, when valid === false. */
+  brokenAtSequence: number | null;
+  /** Reason for the failure: helps surface the right message in the UI
+   *  ("payload tampered" vs "previousHash mismatch"). */
+  reason: string | null;
+  /** Hash of the latest event in the chain (useful for short-circuit
+   *  comparisons in the PDF summary). */
+  headHash: string | null;
+}
+
+export interface OrderEvidenceChainDTO {
+  events: OrderEvidenceEventDTO[];
+  verification: OrderEvidenceVerificationDTO;
+  order: {
+    id: string;
+    orderNumber: string;
+    customer: OrderCustomer;
+    pricing: OrderPricing;
+    status: OrderStatus;
+    state: RecordState;
+    provider: ProviderSnapshot;
+    /** Vehicle snapshot lifted to the chain order so the evidence
+     *  page + PDF can render the operator-captured car image
+     *  alongside the provider logo. */
+    vehicle: OrderVehicle;
+    createdAt: string;
+  };
+}
+
+export interface OrderEvidenceSearchResultDTO {
+  orderId: string;
+  orderNumber: string;
+  customerEmail: string | null;
+  eventType: OrderEvidenceEventType;
+  matchedField: string;
+  matchedValue: string;
+  occurredAt: string;
+  eventId: string;
 }
 
 export interface ProviderDTO {

@@ -1,6 +1,7 @@
 import {
   Column,
   Hr,
+  Img,
   Link,
   Row,
   Section,
@@ -41,11 +42,22 @@ export interface PaymentRequestEmailProps {
   dueBy?: string | null;
 
   provider: ProviderSnapshot;
-  vehicle: { company: string; type: string };
+  /** Image is rendered as a hero strip below the provider badge when
+   *  set — same treatment the post-payment confirmation email uses,
+   *  so the customer recognises the car they reserved as soon as they
+   *  open either email. */
+  vehicle: { company: string; type: string; imageUrl?: string | null };
   trip: { pickupDate: string; dropoffDate: string };
 
-  /** Hosted Stripe Checkout URL the customer clicks. */
-  paymentUrl: string;
+  /** Hosted-checkout URL — kept on the props for caller compat; the
+   *  template no longer renders it directly. The active CTA is
+   *  `primaryCta`. */
+  paymentUrl?: string;
+
+  /** Human label for the payment gateway routing this charge. Surfaces
+   *  in the trust line ("Payment processed securely via Stripe"). When
+   *  omitted, the trust line falls back to a gateway-agnostic phrasing. */
+  gatewayLabel?: string | null;
 
   /** All four are editable by the agent in the composer; if empty / null the
    *  template falls back to the code-default copy. */
@@ -55,6 +67,29 @@ export interface PaymentRequestEmailProps {
 
   cancellationPolicy?: string;
   cancellationPolicyVersion?: string;
+
+  /** Consent-first flow: callers compute the single primary CTA from the
+   *  order's consent state and pass it here.
+   *
+   *  - primaryCta.url       — where the button lands. Hosted consent page
+   *    when consent is still needed; Stripe checkout when consent has
+   *    already been received (re-send case) or skipped by policy.
+   *  - primaryCta.label     — button copy. "Review & Confirm Booking"
+   *    for the consent variant; "Pay {amount} securely with Stripe →"
+   *    for the post-consent variant.
+   *  - primaryCta.helperText— tiny line under the button (e.g. the
+   *    acknowledgement statement, or "Pays via Stripe").
+   *
+   *  Mailto remains, but only as a tertiary "Email us instead" link in
+   *  the support footer. The email no longer carries a second visible
+   *  CTA — single guided path. */
+  primaryCta?: {
+    url: string;
+    label: string;
+    helperText?: string | null;
+  };
+  consentMailto?: string | null;
+  consentRequired?: boolean;
 }
 
 /**
@@ -80,12 +115,15 @@ export function PaymentRequestEmail({
   provider,
   vehicle,
   trip,
-  paymentUrl,
   greeting,
   intro,
   note,
   cancellationPolicy,
   cancellationPolicyVersion,
+  primaryCta,
+  consentMailto,
+  consentRequired,
+  gatewayLabel,
 }: PaymentRequestEmailProps) {
   const preview = `Complete payment for ${orderNumber} — ${amount}`;
   const policyParagraphs = cancellationPolicy
@@ -182,55 +220,141 @@ export function PaymentRequestEmail({
         </Row>
       </Section>
 
-      {/* Primary CTA — the whole point of this email. Bulletproof <a>
-          styled as a button (clients strip <button>). The hosted Stripe
-          link handles the checkout flow end-to-end. */}
-      <Section style={{ padding: `${SPACE.lg}px ${SPACE.xxxl}px` }}>
-        <Link
-          href={paymentUrl}
-          style={{
-            display: "block",
-            backgroundColor: COLOR.textPrimary,
-            color: COLOR.textInverted,
-            fontSize: 14,
-            fontWeight: 600,
-            padding: "13px 20px",
-            borderRadius: RADIUS.md,
-            textDecoration: "none",
-            textAlign: "center",
-            letterSpacing: "-0.005em",
-          }}
-        >
-          Pay {amount} securely with Stripe →
-        </Link>
-        <Text
-          style={{
-            ...typeStyle("legal"),
-            margin: 0,
-            marginTop: SPACE.md,
-            color: COLOR.textMuted,
-            textAlign: "center",
-            lineHeight: "16px",
-          }}
-        >
-          Or paste this link into your browser:{" "}
+      {/* Single primary CTA — consent-first handoff.
+          - Default copy: "Review & Confirm Booking" → hosted consent page.
+            The page records acknowledgement + IP/UA, then auto-redirects
+            to Stripe Checkout. Stripe stays the payment processor; only
+            the entry point moves upstream.
+          - Re-send / RECEIVED case: caller swaps to the Stripe URL so a
+            customer who already acknowledged jumps straight to payment.
+
+          We deliberately ship one visible action. Splitting into "Pay
+          Now" and "I Agree" created the UX ambiguity we just removed. */}
+      {primaryCta ? (
+        <Section style={{ padding: `${SPACE.lg}px ${SPACE.xxxl}px` }}>
           <Link
-            href={paymentUrl}
+            href={primaryCta.url}
             style={{
-              color: COLOR.textMuted,
-              wordBreak: "break-all",
+              display: "block",
+              backgroundColor: COLOR.textPrimary,
+              color: COLOR.textInverted,
+              fontSize: 14,
+              fontWeight: 600,
+              padding: "13px 20px",
+              borderRadius: RADIUS.md,
+              textDecoration: "none",
+              textAlign: "center",
+              letterSpacing: "-0.005em",
             }}
           >
-            {paymentUrl}
+            {primaryCta.label}
           </Link>
-        </Text>
-      </Section>
+          {primaryCta.helperText ? (
+            <Text
+              style={{
+                ...typeStyle("legal"),
+                margin: 0,
+                marginTop: SPACE.sm,
+                color: COLOR.textMuted,
+                textAlign: "center",
+                lineHeight: "16px",
+                fontSize: 11,
+              }}
+            >
+              {primaryCta.helperText}
+            </Text>
+          ) : null}
+          <Text
+            style={{
+              ...typeStyle("legal"),
+              margin: 0,
+              marginTop: SPACE.md,
+              color: COLOR.textMuted,
+              textAlign: "center",
+              lineHeight: "16px",
+            }}
+          >
+            Or paste this link into your browser:{" "}
+            <Link
+              href={primaryCta.url}
+              style={{
+                color: COLOR.textMuted,
+                wordBreak: "break-all",
+              }}
+            >
+              {primaryCta.url}
+            </Link>
+          </Text>
+          {consentRequired ? (
+            <Text
+              style={{
+                ...typeStyle("legal"),
+                margin: 0,
+                marginTop: SPACE.sm,
+                color: COLOR.textMuted,
+                textAlign: "center",
+                lineHeight: "16px",
+                fontSize: 11,
+              }}
+            >
+              Confirmation is required before payment can be completed.
+            </Text>
+          ) : null}
+          {consentMailto ? (
+            <Text
+              style={{
+                ...typeStyle("legal"),
+                margin: 0,
+                marginTop: SPACE.sm,
+                color: COLOR.textFaint,
+                textAlign: "center",
+                lineHeight: "16px",
+                fontSize: 10,
+              }}
+            >
+              Trouble with the button?{" "}
+              <Link
+                href={consentMailto}
+                style={{
+                  color: COLOR.textMuted,
+                  textDecoration: "underline",
+                }}
+              >
+                Confirm by email
+              </Link>
+              .
+            </Text>
+          ) : null}
+        </Section>
+      ) : null}
 
       <ProviderBadge
         provider={provider}
         appUrl={appUrl}
         caption={BookingTypeLabel[bookingType]}
       />
+
+      {/* Car hero — same treatment the confirmation email uses, so the
+          customer immediately recognises the vehicle they reserved. Only
+          renders when the agent supplied an image URL at creation. */}
+      {vehicle.imageUrl ? (
+        <Section style={{ padding: 0 }}>
+          <Img
+            src={vehicle.imageUrl}
+            alt={`${vehicle.company} ${vehicle.type}`}
+            width="600"
+            height="220"
+            style={{
+              display: "block",
+              width: "100%",
+              height: "220px",
+              objectFit: "cover",
+              backgroundColor: COLOR.surfaceMuted,
+              borderBottom: `1px solid ${COLOR.borderSoft}`,
+            }}
+          />
+        </Section>
+      ) : null}
 
       <SummaryCard
         title="Booking details"
@@ -285,7 +409,9 @@ export function PaymentRequestEmail({
         </Section>
       ) : null}
 
-      {/* Stripe trust line */}
+      {/* Trust line — gateway-aware. The processor name is interpolated
+          from the gatewayLabel prop so adding Razorpay / PayPal etc.
+          doesn't require touching the template body. */}
       <Section style={{ padding: `${SPACE.xs}px ${SPACE.xxxl}px ${SPACE.xl}px` }}>
         <Text
           style={{
@@ -296,9 +422,9 @@ export function PaymentRequestEmail({
             lineHeight: "16px",
           }}
         >
-          Payment processed securely by Stripe — PCI-DSS Level 1 certified.
-          Your card details are encrypted end-to-end and never stored on our
-          servers.
+          {gatewayLabel
+            ? `Payment processed securely via ${gatewayLabel}. Your card details are encrypted end-to-end and never stored on our servers.`
+            : "Payment processed securely. Your card details are encrypted end-to-end and never stored on our servers."}
         </Text>
       </Section>
 

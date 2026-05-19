@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 
 import { toast } from "@/components/ui/sonner";
@@ -10,8 +11,10 @@ import {
 } from "@/hooks/use-activity-feed";
 import {
   DomainEventType,
+  ORDER_LIFECYCLE_EVENT_TYPES,
   type DomainEvent,
 } from "@/lib/constants/events";
+import { orderQueryKey } from "@/hooks/use-order-query";
 
 /**
  * Connection lifecycle exposed to the UI so a small chrome indicator can
@@ -59,15 +62,18 @@ function RealtimeBridge({
   onStatusChange: (s: RealtimeStatus) => void;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { push } = useActivityFeed();
   const refreshTimer = React.useRef<number | null>(null);
 
   // Latest refs so the EventSource handler doesn't need to be reattached.
   const routerRef = React.useRef(router);
+  const queryClientRef = React.useRef(queryClient);
   const pushRef = React.useRef(push);
   const statusRef = React.useRef(onStatusChange);
   React.useEffect(() => {
     routerRef.current = router;
+    queryClientRef.current = queryClient;
     pushRef.current = push;
     statusRef.current = onStatusChange;
   });
@@ -92,6 +98,26 @@ function RealtimeBridge({
       }
       pushRef.current(event);
       notifyForEvent(event);
+      // Per-order lifecycle events: invalidate the React Query cache for
+      // the specific orderId so any mounted <OrderDetail /> refetches
+      // immediately. router.refresh() below covers server components
+      // (orders list, etc.) — this covers the client-side cached query.
+      if (ORDER_LIFECYCLE_EVENT_TYPES.has(event.type)) {
+        const orderId =
+          (event.payload as { orderId?: string } | undefined)?.orderId ?? null;
+        if (orderId) {
+          queryClientRef.current.invalidateQueries({
+            queryKey: orderQueryKey(orderId),
+            exact: true,
+          });
+        }
+        // Listing endpoints (orders list, at-risk, activity feed) all
+        // pivot off the orders collection — drop any cached page so the
+        // table re-fetches on next mount/scroll.
+        queryClientRef.current.invalidateQueries({
+          queryKey: ["orders"],
+        });
+      }
       scheduleRefresh();
     };
 
@@ -150,6 +176,50 @@ function notifyForEvent(event: DomainEvent) {
     case DomainEventType.ORDER_PAID:
       toast.success("Payment received", {
         description: `${subject}${customerName ? ` · ${customerName}` : ""}`,
+      });
+      return;
+    case DomainEventType.ORDER_CONSENT_RECEIVED:
+      toast.success("Consent received", {
+        description: `${subject}${customerName ? ` · ${customerName}` : ""}`,
+      });
+      return;
+    case DomainEventType.ORDER_EMAIL_SENT:
+      // Quiet by default — the agent triggered this, they don't need a
+      // toast on top of the in-page success state. The cache invalidation
+      // alone is enough to flip the timeline.
+      return;
+    case DomainEventType.ORDER_CONFIRMATION_SENT:
+      toast.success("Confirmation email sent", { description: subject });
+      return;
+    case DomainEventType.ORDER_DISPUTE_CREATED:
+      toast.error("Chargeback opened", {
+        description: `${subject}${
+          p.reason ? ` · ${String(p.reason).slice(0, 80)}` : ""
+        }`,
+      });
+      return;
+    case DomainEventType.ORDER_DISPUTE_UPDATED:
+      // Quieter than created — only the at-risk dashboard cares about
+      // mid-life status changes. The cache invalidation handles the
+      // visible refresh.
+      return;
+    case DomainEventType.ORDER_DISPUTE_CLOSED:
+      toast(
+        p.outcome === "WON"
+          ? "Dispute won"
+          : p.outcome === "LOST"
+            ? "Dispute lost"
+            : "Dispute closed",
+        { description: subject },
+      );
+      return;
+    case DomainEventType.ORDER_REFUNDED:
+      toast("Refund processed", {
+        description: `${subject}${
+          typeof p.amount === "number"
+            ? ` · ${p.amount} ${p.currency ?? ""}`
+            : ""
+        }`,
       });
       return;
     case DomainEventType.ORDER_FAILED:

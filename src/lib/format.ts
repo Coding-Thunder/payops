@@ -48,6 +48,30 @@ export function formatRelative(value: string | Date | null | undefined): string 
   return rtf.format(Math.round(-diff / 86400), "day");
 }
 
+/**
+ * Renders an IP for an operator scanning evidence:
+ *   - "::1" / "127.0.0.1" → "localhost (…)" so loopback hits in dev /
+ *     staging don't look like missing data
+ *   - "::ffff:1.2.3.4" → "1.2.3.4" — strips the IPv4-mapped-IPv6 prefix
+ *     Node sometimes hands us behind dual-stack listeners
+ *   - otherwise passes through verbatim
+ */
+export function formatIp(value: string | null | undefined): string {
+  if (!value) return "—";
+  const trimmed = value.trim();
+  if (
+    trimmed === "::1" ||
+    trimmed === "127.0.0.1" ||
+    trimmed === "0:0:0:0:0:0:0:1"
+  ) {
+    return `localhost (${trimmed})`;
+  }
+  if (trimmed.toLowerCase().startsWith("::ffff:")) {
+    return trimmed.slice(7);
+  }
+  return trimmed;
+}
+
 export function initialsFromName(name: string): string {
   const parts = name.trim().split(/\s+/);
   if (parts.length === 0) return "?";

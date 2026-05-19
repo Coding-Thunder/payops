@@ -1,4 +1,4 @@
-import { Types } from "mongoose";
+import { type ClientSession, Types } from "mongoose";
 
 import {
   AuditAction,
@@ -8,6 +8,7 @@ import {
 import { logger } from "@/lib/logger";
 import { AuditLog } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
+import { sessionOpt } from "@/server/db/transaction";
 import type { AuditLogDTO } from "@/types";
 
 import type { RequestContext } from "@/server/api/request-context";
@@ -29,31 +30,29 @@ interface RecordAuditInput {
 }
 
 /**
- * Records an audit log entry. Failures are swallowed and logged - audit
- * persistence must never block the primary operation.
+ * Record an audit log entry.
+ *
+ * Two call shapes:
+ *   - Default (no `session`): failures are swallowed and logged — used
+ *     by best-effort audit hooks (e.g. login failures) that must never
+ *     block the caller.
+ *   - With `session`: the audit row joins the caller's mongoose
+ *     transaction. Failures BUBBLE so the transaction can roll back
+ *     atomically. This is the dispute-grade path used by webhook +
+ *     order-create flows.
  */
-export async function recordAudit(input: RecordAuditInput): Promise<void> {
+export async function recordAudit(
+  input: RecordAuditInput,
+  session: ClientSession | null = null,
+): Promise<void> {
+  if (session) {
+    await connectMongo();
+    await AuditLog.create([buildDoc(input)], sessionOpt(session));
+    return;
+  }
   try {
     await connectMongo();
-    await AuditLog.create({
-      action: input.action,
-      entityType: input.entityType,
-      entityId: input.entityId ?? null,
-      actor: {
-        userId: input.actor?.userId
-          ? new Types.ObjectId(input.actor.userId)
-          : null,
-        name: input.actor?.name ?? null,
-        email: input.actor?.email ?? null,
-        role: input.actor?.role ?? null,
-      },
-      request: {
-        ip: input.request?.ip ?? null,
-        userAgent: input.request?.userAgent ?? null,
-        requestId: input.request?.requestId ?? null,
-      },
-      metadata: input.metadata ?? null,
-    });
+    await AuditLog.create(buildDoc(input));
   } catch (err) {
     logger.error("audit.record_failed", {
       action: input.action,
@@ -62,6 +61,28 @@ export async function recordAudit(input: RecordAuditInput): Promise<void> {
       err: err instanceof Error ? err.message : String(err),
     });
   }
+}
+
+function buildDoc(input: RecordAuditInput) {
+  return {
+    action: input.action,
+    entityType: input.entityType,
+    entityId: input.entityId ?? null,
+    actor: {
+      userId: input.actor?.userId
+        ? new Types.ObjectId(input.actor.userId)
+        : null,
+      name: input.actor?.name ?? null,
+      email: input.actor?.email ?? null,
+      role: input.actor?.role ?? null,
+    },
+    request: {
+      ip: input.request?.ip ?? null,
+      userAgent: input.request?.userAgent ?? null,
+      requestId: input.request?.requestId ?? null,
+    },
+    metadata: input.metadata ?? null,
+  };
 }
 
 interface ListAuditQuery {

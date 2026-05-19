@@ -4,6 +4,173 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ──────────────────────────────────────────────────────────────────────────
+   Marketing color palette — Apple-iPhone-17-style section themes.
+   Each section "owns" one accent that washes the background, the
+   eyebrow, the accent word in the headline, and CTA hover states.
+   Tokens are global so the marketing-only `section[data-theme]`
+   selector can swap them in one place without per-component overrides.
+   ────────────────────────────────────────────────────────────────────────── */
+:root {
+  /* Hero — deep obsidian with hot accent (cosmic orange + ultraviolet) */
+  --m-obsidian: oklch(0.13 0.012 286);
+  --m-obsidian-soft: oklch(0.19 0.015 286);
+  --m-ink: oklch(0.08 0.01 286);
+
+  /* Per-section accent triplets {accent, soft-bg, deep-bg} */
+  --m-orange: oklch(0.74 0.18 50);
+  --m-orange-soft: oklch(0.965 0.06 60);
+  --m-orange-deep: oklch(0.55 0.21 38);
+
+  --m-sage: oklch(0.78 0.09 158);
+  --m-sage-soft: oklch(0.97 0.035 162);
+  --m-sage-deep: oklch(0.52 0.13 158);
+
+  --m-cobalt: oklch(0.55 0.21 256);
+  --m-cobalt-soft: oklch(0.965 0.055 258);
+  --m-cobalt-deep: oklch(0.36 0.18 258);
+
+  --m-cream: oklch(0.965 0.022 84);
+  --m-cream-fg: oklch(0.22 0.025 60);
+  --m-cream-accent: oklch(0.55 0.18 38);
+
+  --m-ultraviolet: oklch(0.58 0.22 302);
+  --m-ultraviolet-soft: oklch(0.965 0.055 302);
+  --m-ultraviolet-deep: oklch(0.36 0.22 302);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Section theme classes — applied via `data-theme` on the section root.
+   Each one paints its OWN background, foreground, eyebrow, accent word,
+   and outline tone. The body picks up no theming; the page composes
+   chapters by stacking themed sections.
+   ────────────────────────────────────────────────────────────────────────── */
+
+[data-theme="obsidian"] {
+  background: radial-gradient(
+    ellipse 80% 60% at 50% 0%,
+    var(--m-obsidian-soft) 0%,
+    var(--m-ink) 60%,
+    var(--m-ink) 100%
+  );
+  color: oklch(0.96 0 0);
+  --m-eyebrow: oklch(0.78 0.06 50);
+  --m-fg-soft: oklch(0.72 0.01 286);
+  --m-border: oklch(1 0 0 / 0.1);
+  --m-surface: oklch(1 0 0 / 0.04);
+  --m-surface-strong: oklch(1 0 0 / 0.08);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Post-hero palette is restricted to TWO backgrounds: pure white (snow)
+   and the warm cream tone. Per-section identity now lives ONLY in the
+   small stuff — eyebrow color, headline accent word, status dots,
+   embedded callouts — never the section background.
+   Rhythm runs:  HERO obsidian → SNOW → CREAM → SNOW → CREAM → SNOW → CREAM
+   ────────────────────────────────────────────────────────────────────────── */
+
+[data-theme="orange"] {
+  /* SNOW. Accent: orange. */
+  background: var(--background);
+  color: var(--foreground);
+  --m-eyebrow: var(--m-orange-deep);
+  --m-fg-soft: var(--muted-foreground);
+  --m-border: var(--border);
+  --m-surface: var(--surface-1);
+  --m-surface-strong: var(--background);
+}
+
+[data-theme="sage"] {
+  /* CREAM. Accent: sage. */
+  background: var(--m-cream);
+  color: var(--m-cream-fg);
+  --m-eyebrow: var(--m-sage-deep);
+  --m-fg-soft: oklch(0.4 0.025 60);
+  --m-border: color-mix(in oklch, var(--m-cream-accent) 22%, transparent);
+  --m-surface: oklch(1 0 0 / 0.65);
+  --m-surface-strong: oklch(1 0 0 / 0.9);
+}
+
+[data-theme="cobalt"] {
+  /* SNOW. Accent: cobalt. (Code block uses its own dark callout — see
+     multi-gateway.tsx — so the syntax colors still read against a
+     dark surface inside the white section.) */
+  background: var(--background);
+  color: var(--foreground);
+  --m-eyebrow: var(--m-cobalt-deep);
+  --m-fg-soft: var(--muted-foreground);
+  --m-border: var(--border);
+  --m-surface: var(--surface-1);
+  --m-surface-strong: var(--background);
+}
+
+[data-theme="cream"] {
+  /* CREAM. Accent: warm orange-red (the original cream-accent). */
+  background: var(--m-cream);
+  color: var(--m-cream-fg);
+  --m-eyebrow: var(--m-cream-accent);
+  --m-fg-soft: oklch(0.4 0.025 60);
+  --m-border: color-mix(in oklch, var(--m-cream-accent) 22%, transparent);
+  --m-surface: oklch(1 0 0 / 0.65);
+  --m-surface-strong: oklch(1 0 0 / 0.9);
+}
+
+[data-theme="ultraviolet"] {
+  /* SNOW. Accent: ultraviolet. */
+  background: var(--background);
+  color: var(--foreground);
+  --m-eyebrow: var(--m-ultraviolet-deep);
+  --m-fg-soft: var(--muted-foreground);
+  --m-border: var(--border);
+  --m-surface: var(--surface-1);
+  --m-surface-strong: var(--background);
+}
+
+[data-theme="closing"] {
+  /* CREAM. Accent: ultraviolet (matches the brand close-out). The
+     closing form lives on a cream background — light, calm, terminal
+     instead of dark mystique. */
+  background: var(--m-cream);
+  color: var(--m-cream-fg);
+  --m-eyebrow: var(--m-ultraviolet-deep);
+  --m-fg-soft: oklch(0.4 0.025 60);
+  --m-border: color-mix(in oklch, var(--m-ultraviolet) 22%, transparent);
+  --m-surface: oklch(1 0 0 / 0.7);
+  --m-surface-strong: oklch(1 0 0 / 0.92);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Marketing animation primitives — used by hero + sticky scroll moments.
+   ────────────────────────────────────────────────────────────────────────── */
+
+@keyframes aurora-drift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.55; }
+  50%      { transform: translate3d(2%, -4%, 0) scale(1.08); opacity: 0.75; }
+}
+
+@keyframes marquee-x {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(-50%, 0, 0); }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50%      { opacity: 1;    transform: scale(1.15); }
+}
+
+@keyframes gradient-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-aurora],
+  [data-marquee],
+  [data-pulse] {
+    animation: none !important;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
    PayOps design tokens
    Inspired by Stripe / Linear / Vercel - neutral palette, restrained accents,
    tight radius scale, near-zero shadows. Surfaces communicate trust by
@@ -82,13 +249,35 @@
   --sidebar-border: oklch(0.93 0.003 286);
   --sidebar-ring: oklch(0.62 0.012 286);
 
-  /* Shadow scale — Stripe-soft, no heavy drops ──────────────── */
-  --shadow-xs: 0 1px 0 0 oklch(0.158 0.005 286 / 0.04);
-  --shadow-sm: 0 1px 2px 0 oklch(0.158 0.005 286 / 0.05);
-  --shadow-md: 0 4px 12px -2px oklch(0.158 0.005 286 / 0.08),
-               0 2px 4px -1px oklch(0.158 0.005 286 / 0.04);
-  --shadow-lg: 0 12px 32px -8px oklch(0.158 0.005 286 / 0.14),
-               0 4px 8px -2px oklch(0.158 0.005 286 / 0.06);
+  /* Shadow scale — layered, restrained. Each step blends a hairline
+     contact-shadow (sharp, 1px) with a soft ambient halo. Avoids the
+     "single 0 4px 12px rgba/0.1" tell that screams generic Tailwind. */
+  --shadow-xs:
+    0 1px 0 0 oklch(0.158 0.005 286 / 0.04),
+    0 1px 2px -1px oklch(0.158 0.005 286 / 0.05);
+  --shadow-sm:
+    0 1px 0 0 oklch(0.158 0.005 286 / 0.05),
+    0 1px 3px -1px oklch(0.158 0.005 286 / 0.06),
+    0 2px 6px -2px oklch(0.158 0.005 286 / 0.04);
+  --shadow-md:
+    0 1px 0 0 oklch(0.158 0.005 286 / 0.05),
+    0 2px 4px -1px oklch(0.158 0.005 286 / 0.05),
+    0 8px 18px -6px oklch(0.158 0.005 286 / 0.08);
+  --shadow-lg:
+    0 1px 0 0 oklch(0.158 0.005 286 / 0.06),
+    0 4px 8px -2px oklch(0.158 0.005 286 / 0.06),
+    0 20px 40px -12px oklch(0.158 0.005 286 / 0.16);
+  /* Inset highlight — used inside primary buttons + accent cards for
+     a hint of dimensionality without "skeuomorph". */
+  --shadow-inset-hi: inset 0 1px 0 0 oklch(1 0 0 / 0.08);
+
+  /* Radius — explicit scale so buttons, inputs, cards, badges read
+     as distinct shapes. Differs intentionally; avoids the "all
+     rounded-md" template tell. */
+  --radius-input: 6px;
+  --radius-button: 8px;
+  --radius-card: 12px;
+  --radius-panel: 16px;
 }
 
 .dark {
@@ -241,6 +430,32 @@
     text-rendering: optimizeLegibility;
   }
 
+  /* Chrome/Safari paint a lavender/yellow background on autofilled
+     inputs. The fix is a 1000px inset box-shadow that masks it with
+     our own surface color. We also stack the Input component's own
+     subtle inset shadow first so we don't lose it on autofilled fields.
+     `!important` is needed because Tailwind utility shadows win
+     specificity otherwise. */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active,
+  textarea:-webkit-autofill,
+  textarea:-webkit-autofill:hover,
+  textarea:-webkit-autofill:focus,
+  textarea:-webkit-autofill:active,
+  select:-webkit-autofill {
+    box-shadow:
+      inset 0 1px 1px rgba(0, 0, 0, 0.02),
+      0 0 0 1000px var(--background) inset !important;
+    -webkit-box-shadow:
+      inset 0 1px 1px rgba(0, 0, 0, 0.02),
+      0 0 0 1000px var(--background) inset !important;
+    -webkit-text-fill-color: var(--foreground) !important;
+    caret-color: var(--foreground);
+    transition: background-color 9999s ease-in-out 0s;
+  }
+
   html,
   body {
     @apply h-full;
@@ -254,8 +469,37 @@
       "ss01" 1,
       "cv11" 1;
     font-size: 14px;
+    /* Slightly tighter line-height + a hair more negative tracking
+       reads less "default Tailwind body" and more "deliberately set
+       SaaS UI text". The values are conservative — they look the
+       same in a screenshot but feel quieter when you actually use
+       the app. */
     line-height: 1.5;
-    letter-spacing: -0.005em;
+    letter-spacing: -0.006em;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Heading rhythm — H1/H2/H3 each get their own tracking so they
+     don't all stack with the same body tracking. Subtle but matters
+     for hierarchy. */
+  h1, h2 {
+    letter-spacing: -0.022em;
+    line-height: 1.1;
+  }
+  h3 {
+    letter-spacing: -0.014em;
+    line-height: 1.2;
+  }
+  h4, h5, h6 {
+    letter-spacing: -0.01em;
+  }
+
+  /* Selection — branded, restrained. Default browser blue is one of
+     the strongest tells that a UI is unstyled. */
+  ::selection {
+    background-color: oklch(0.93 0.025 286 / 0.7);
+    color: var(--foreground);
   }
 
   /* Tabular numbers everywhere they appear in financial contexts. */

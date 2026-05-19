@@ -1,10 +1,12 @@
 import {
   BOOKING_TYPES,
+  ConsentMode,
   Currency,
   type BookingType,
 } from "@/lib/constants/enums";
 import {
   DEFAULT_CANCELLATION_POLICY,
+  DEFAULT_CONSENT_MESSAGE,
   Setting,
   SETTINGS_KEY,
   type SettingDoc,
@@ -36,6 +38,8 @@ export function buildSettings(seed: SettingsSeed = {}): SettingDoc {
       seed.cancelRedirectUrl ?? "http://localhost:3000/pay/cancelled",
     cancellationPolicy: seed.cancellationPolicy ?? DEFAULT_CANCELLATION_POLICY,
     cancellationPolicyVersion: seed.cancellationPolicyVersion ?? "v1",
+    consentMode: seed.consentMode ?? ConsentMode.ADVISORY,
+    consentMessage: seed.consentMessage ?? DEFAULT_CONSENT_MESSAGE,
     updatedBy: seed.updatedBy ?? null,
     createdAt: seed.createdAt ?? now,
     updatedAt: seed.updatedAt ?? now,
@@ -60,6 +64,8 @@ export async function createSettings(
         cancelRedirectUrl: data.cancelRedirectUrl,
         cancellationPolicy: data.cancellationPolicy,
         cancellationPolicyVersion: data.cancellationPolicyVersion,
+        consentMode: data.consentMode,
+        consentMessage: data.consentMessage,
         updatedBy: data.updatedBy ?? undefined,
       },
       $setOnInsert: { key: SETTINGS_KEY },

@@ -24,16 +24,17 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/sonner";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
-import { OrderStatusBadge } from "@/components/common/status-badges";
+import {
+  ConsentStatusBadge,
+  OrderStatusBadge,
+} from "@/components/common/status-badges";
 import { EmptyState } from "@/components/common/empty-state";
 import { ProviderBadge } from "@/components/features/providers";
 import { BookingTypeLabel } from "@/lib/constants/labels";
-import { OrderStatus } from "@/lib/constants/enums";
+import { ConsentStatus, OrderStatus } from "@/lib/constants/enums";
 import { api, ApiClientError } from "@/lib/api-client";
 import { formatCurrency, formatDate, formatRelative } from "@/lib/format";
 import type { OrderDTO } from "@/types";
-import { useWorkspaceStore } from "@/workspace/store";
-import { WorkspaceTabType } from "@/workspace/types";
 
 interface OrderTableProps {
   items: OrderDTO[];
@@ -180,27 +181,8 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
                 ) : null}
                 <TableCell>
                   <Link
-                    href={`/orders/${o.id}`}
+                    href={`/app/orders/${o.id}`}
                     className="font-mono text-[12px] font-medium text-foreground hover:underline"
-                    onAuxClick={(e) => {
-                      // Middle-click → open a workspace tab WITHOUT
-                      // navigating away from the list. Matches Chrome's
-                      // "open in new tab" muscle memory.
-                      if (e.button !== 1) return;
-                      e.preventDefault();
-                      useWorkspaceStore.getState().openTab(
-                        {
-                          type: WorkspaceTabType.ORDER_DETAILS,
-                          payload: {
-                            orderId: o.id,
-                            orderNumber: o.orderNumber,
-                            customerName: o.customer.name,
-                          },
-                        },
-                        { activate: false },
-                      );
-                      toast.success(`Opened ${o.orderNumber} in a tab`);
-                    }}
                   >
                     {o.orderNumber}
                   </Link>
@@ -238,7 +220,13 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
                   {formatCurrency(o.pricing.amount, o.pricing.currency)}
                 </TableCell>
                 <TableCell>
-                  <OrderStatusBadge status={o.status} />
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <OrderStatusBadge status={o.status} />
+                    {o.consent?.status &&
+                    o.consent.status !== ConsentStatus.NOT_REQUESTED ? (
+                      <ConsentStatusBadge status={o.consent.status} />
+                    ) : null}
+                  </div>
                 </TableCell>
                 <TableCell className="hidden md:table-cell text-[11.5px] text-muted-foreground">
                   <div>{formatDate(o.createdAt)}</div>
@@ -268,7 +256,7 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
                       </DropdownMenu>
                     ) : null}
                     <Button asChild variant="ghost" size="icon-sm">
-                      <Link href={`/orders/${o.id}`}>
+                      <Link href={`/app/orders/${o.id}`}>
                         <ChevronRightIcon className="size-3.5" />
                       </Link>
                     </Button>

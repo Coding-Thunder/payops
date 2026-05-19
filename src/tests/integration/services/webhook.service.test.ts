@@ -54,7 +54,7 @@ describe("checkout.session.completed", () => {
     expect(updated?.payment.status).toBe(OrderStatus.PAID);
     expect(updated?.payment.amountReceived).toBe(199.5);
     expect(updated?.payment.paidAt).toBeInstanceOf(Date);
-    expect(updated?.payment.processedWebhookEventIds).toContain(event.id);
+    expect(updated?.payment.processedWebhookEventIds).toContain(event.eventId);
   });
 
   it("is idempotent: the second delivery is a no-op duplicate", async () => {
@@ -71,7 +71,7 @@ describe("checkout.session.completed", () => {
     expect(second).toMatchObject({ handled: true, duplicate: true });
 
     const updated = await Order.findById(order._id);
-    expect(updated?.payment.processedWebhookEventIds).toEqual([event.id]);
+    expect(updated?.payment.processedWebhookEventIds).toEqual([event.eventId]);
     expect(
       await AuditLog.countDocuments({ action: AuditAction.PAYMENT_SUCCEEDED }),
     ).toBe(1);
@@ -120,7 +120,7 @@ describe("checkout.session.completed", () => {
       orderId: String(order._id),
       orderNumber: order.orderNumber,
     });
-    event.id = "evt_test_retry_email";
+    event.eventId = "evt_test_retry_email";
 
     const before = await AuditLog.countDocuments({
       action: AuditAction.EMAIL_FAILED,
@@ -174,9 +174,8 @@ describe("checkout.session.completed", () => {
       sessionId: "cs_test_lookup_by_session",
     });
 
-    // Strip the client_reference_id so the lookup must fall back to session id.
-    (event.data.object as { client_reference_id?: string | null }).client_reference_id = null;
-
+    // The normalised event has no client_reference_id field — the
+    // session id alone drives the lookup.
     const result = await processStripeEvent(event);
     expect(result).toMatchObject({
       handled: true,
@@ -268,13 +267,13 @@ describe("audit trail", () => {
     expect(
       await AuditLog.countDocuments({
         action: AuditAction.WEBHOOK_RECEIVED,
-        entityId: event.id,
+        entityId: event.eventId,
       }),
     ).toBe(2);
     expect(
       await AuditLog.countDocuments({
         action: AuditAction.WEBHOOK_DUPLICATE,
-        entityId: event.id,
+        entityId: event.eventId,
       }),
     ).toBe(1);
   });

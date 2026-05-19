@@ -23,6 +23,7 @@ import { toast } from "@/components/ui/sonner";
 import { api, ApiClientError } from "@/lib/api-client";
 import { formatCurrency, formatDateTime, formatRelative } from "@/lib/format";
 import { OrderStatus } from "@/lib/constants/enums";
+import { PaymentGatewayLabel } from "@/lib/constants/labels";
 import type { OrderDTO } from "@/types";
 
 interface OrderPaymentCardProps {
@@ -44,6 +45,7 @@ export function OrderPaymentCard({
 
   const isPaid = order.status === OrderStatus.PAID;
   const isPending = order.status === OrderStatus.PAYMENT_PENDING;
+  const isNotInitiated = order.status === OrderStatus.NOT_INITIATED;
   const isFailedOrExpired =
     order.status === OrderStatus.FAILED ||
     order.status === OrderStatus.EXPIRED;
@@ -82,7 +84,9 @@ export function OrderPaymentCard({
                 ? `Awaiting customer payment`
                 : isFailedOrExpired
                   ? `Payment ${order.status.toLowerCase()}`
-                  : null}
+                  : isNotInitiated
+                    ? `Payment link not generated yet`
+                    : null}
           </CardDescription>
         </div>
         <OrderStatusBadge status={order.status} />
@@ -107,34 +111,42 @@ export function OrderPaymentCard({
             }
           />
           <Field
-            label="Stripe session"
-            value={order.payment.stripeSessionId ?? "—"}
+            label="Gateway"
+            value={
+              order.payment.gateway
+                ? PaymentGatewayLabel[order.payment.gateway]
+                : "—"
+            }
+          />
+          <Field
+            label="Payment session"
+            value={order.payment.paymentSessionId ?? "—"}
             mono
           />
         </div>
 
         {order.payment.failureReason ? (
           <Alert variant="destructive">
-            <AlertTitle>Payment problem reported by Stripe</AlertTitle>
+            <AlertTitle>Payment problem reported by the gateway</AlertTitle>
             <AlertDescription>{order.payment.failureReason}</AlertDescription>
           </Alert>
         ) : null}
 
-        {isPending && order.payment.checkoutUrl ? (
+        {isPending && order.payment.paymentUrl ? (
           <div className="space-y-3">
             <div className="rounded-md border border-border bg-muted/40 p-3">
               <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                 Payment link to share with the customer
               </p>
               <p className="mt-1 font-mono text-xs break-all">
-                {order.payment.checkoutUrl}
+                {order.payment.paymentUrl}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <CopyButton value={order.payment.checkoutUrl} label="Copy link" />
+              <CopyButton value={order.payment.paymentUrl} label="Copy link" />
               <Button asChild variant="outline" size="sm">
                 <a
-                  href={order.payment.checkoutUrl}
+                  href={order.payment.paymentUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                 >

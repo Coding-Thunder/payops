@@ -38,6 +38,12 @@ export const Permission = {
 
   AUDIT_VIEW: "audit:view",
   AUDIT_DELETE: "audit:delete",
+
+  CONSENT_VIEW: "consent:view",
+  CONSENT_VERIFY: "consent:verify",
+
+  EVIDENCE_VIEW: "evidence:view",
+  EVIDENCE_EXPORT: "evidence:export",
 } as const;
 export type Permission = (typeof Permission)[keyof typeof Permission];
 
@@ -56,6 +62,9 @@ const STAFF_PERMISSIONS: readonly Permission[] = [
   // during order creation. Edits and deletes are admin-only.
   Permission.CAR_LINK_VIEW,
   Permission.CAR_LINK_CREATE,
+  // Agents need to see whether the customer they're chasing has already
+  // acknowledged the request — gates the "ready to charge" call.
+  Permission.CONSENT_VIEW,
 ];
 
 const ADMIN_ONLY_PERMISSIONS: readonly Permission[] = [
@@ -79,7 +88,19 @@ const ADMIN_ONLY_PERMISSIONS: readonly Permission[] = [
   Permission.EMAIL_TEMPLATE_VIEW,
   Permission.EMAIL_TEMPLATE_MANAGE,
   Permission.AUDIT_VIEW,
-  Permission.AUDIT_DELETE,
+  // AUDIT_DELETE intentionally NOT granted to ADMIN — the audit table
+  // is the dispute-defense system of record. Only SUPER_ADMIN can issue
+  // a destructive operation against it (and the route asks for a reason
+  // for the audit trail before the wipe).
+  // Verifying a consent record locks it for dispute evidence — admin-only
+  // so staff can't backdate or rubber-stamp records they collected.
+  Permission.CONSENT_VERIFY,
+  // The evidence chain page surfaces full email HTML, IP/UA/signature of
+  // the consenter, gateway refs, and per-event hashes. Restricted to the
+  // dispute team so customer-facing staff never see other customers'
+  // signed documents.
+  Permission.EVIDENCE_VIEW,
+  Permission.EVIDENCE_EXPORT,
 ];
 
 /** Role → permissions matrix. Single source of truth. */

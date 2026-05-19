@@ -52,7 +52,7 @@ interface LogoLockupProps {
 /** Logo mark + wordmark + optional subtitle. */
 export function LogoLockup({
   className,
-  brand = "PayOps Rentals",
+  brand = "PayOps",
   subtitle,
   size = "md",
   tone = "default",

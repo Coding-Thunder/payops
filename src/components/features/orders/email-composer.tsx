@@ -10,6 +10,8 @@ import {
   SendIcon,
 } from "lucide-react";
 
+import { useQueryClient } from "@tanstack/react-query";
+
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +25,7 @@ import { LoadingButton } from "@/components/ui/loading-button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
 import { useActivityFeed } from "@/hooks/use-activity-feed";
+import { orderQueryKey } from "@/hooks/use-order-query";
 import { api, ApiClientError } from "@/lib/api-client";
 import { DomainEventType } from "@/lib/constants/events";
 import { cn } from "@/lib/utils";
@@ -35,6 +38,10 @@ interface EmailComposerProps {
    *  preview. */
   initialHtml: string;
   defaultSubject: string;
+  /** Fired once when the send transitions from drafting → sent. Lets the
+   *  parent (the dedicated /email screen) surface a "Continue to Order"
+   *  CTA without lifting the entire send state out of the composer. */
+  onSent?: (sentAtIso: string) => void;
 }
 
 interface DraftState {
@@ -81,8 +88,10 @@ export function EmailComposer({
   order,
   initialHtml,
   defaultSubject,
+  onSent,
 }: EmailComposerProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [draft, setDraft] = React.useState<DraftState>(() =>
     buildDraft(order, defaultSubject),
   );
@@ -90,6 +99,7 @@ export function EmailComposer({
   const [previewLoading, setPreviewLoading] = React.useState(false);
   const [previewError, setPreviewError] = React.useState<string | null>(null);
   const [sending, setSending] = React.useState(false);
+  const [generating, setGenerating] = React.useState(false);
   const [sentAt, setSentAt] = React.useState<string | null>(null);
   const [paidAt, setPaidAt] = React.useState<string | null>(
     order.payment.paidAt ?? null,
@@ -159,10 +169,13 @@ export function EmailComposer({
     try {
       const body = buildPayload(draft, order);
       await api.post(`/api/orders/${order.id}/send-payment-request`, body);
-      setSentAt(new Date().toISOString());
+      const at = new Date().toISOString();
+      setSentAt(at);
+      onSent?.(at);
       toast.success("Email sent", {
         description: `Sent to ${body.customer?.email ?? order.customer.email}`,
       });
+      await queryClient.invalidateQueries({ queryKey: orderQueryKey(order.id) });
       router.refresh();
     } catch (err) {
       const msg =
@@ -173,16 +186,48 @@ export function EmailComposer({
     }
   }
 
+  /** Step 1 of the send flow when the order doesn't have a payment
+   *  link yet. The new linear architecture splits link generation from
+   *  email dispatch so the agent's gateway choice + intent are
+   *  unambiguous (and switching gateways later is just a dropdown). */
+  async function handleGenerateLink() {
+    setGenerating(true);
+    try {
+      await api.post(
+        `/api/orders/${order.id}/generate-payment-link`,
+        { gateway: "STRIPE" },
+      );
+      toast.success("Payment link generated", {
+        description: `Order ${order.orderNumber} is ready to send.`,
+      });
+      await queryClient.invalidateQueries({ queryKey: orderQueryKey(order.id) });
+      router.refresh();
+    } catch (err) {
+      const msg =
+        err instanceof ApiClientError
+          ? err.message
+          : "Could not generate payment link";
+      toast.error(msg);
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   function copyLink() {
-    if (!order.payment.checkoutUrl) return;
-    navigator.clipboard.writeText(order.payment.checkoutUrl).then(
+    if (!order.payment.paymentUrl) return;
+    navigator.clipboard.writeText(order.payment.paymentUrl).then(
       () => toast.success("Stripe link copied"),
       () => toast.error("Couldn't access clipboard"),
     );
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,420px)_1fr]">
+    // Two-column composer. Preview pane sticks to the viewport on lg+
+    // so the agent can scroll the editor (subject/greeting/intro/note +
+    // customer fields) without losing sight of what the customer will
+    // see. `items-start` is required for `position: sticky` to take
+    // effect inside a grid row.
+    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,420px)_1fr]">
       <aside className="space-y-4">
         <PaymentSummaryCard
           order={order}
@@ -316,23 +361,99 @@ export function EmailComposer({
             </CardContent>
           </Card>
         ) : (
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[11.5px] text-muted-foreground">
-              {previewLoading ? "Updating preview…" : "Preview updates as you type."}
-            </p>
-            <LoadingButton
-              onClick={handleSend}
-              loading={sending}
-              disabled={!order.payment.checkoutUrl}
-            >
-              <SendIcon className="size-3.5" />
-              Send email
-            </LoadingButton>
-          </div>
+          <Card>
+            <CardContent className="space-y-4 pt-4">
+              {/* Gateway selector. Stripe is the only enabled
+                  implementation today; Razorpay / Authorize.net / PayPal
+                  appear disabled so the agent can see the architecture
+                  is gateway-agnostic. Once the link is generated the
+                  selector locks. */}
+              <Field label="Payment gateway">
+                <select
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={Boolean(order.payment.paymentUrl)}
+                  defaultValue={order.payment.gateway ?? "STRIPE"}
+                  // No onChange — single enabled option means there's
+                  // nothing to track here. Wire useState when a second
+                  // gateway ships.
+                >
+                  <option value="STRIPE">Stripe (available)</option>
+                  <option value="RAZORPAY" disabled>
+                    Razorpay (coming soon)
+                  </option>
+                  <option value="AUTHORIZE_NET" disabled>
+                    Authorize.net (coming soon)
+                  </option>
+                  <option value="PAYPAL" disabled>
+                    PayPal (coming soon)
+                  </option>
+                  <option value="MANUAL" disabled>
+                    Manual invoice (future)
+                  </option>
+                </select>
+              </Field>
+
+              {/* Two-step CTA — generate link first, send second. Once a
+                  link exists the generate button flips to a disabled
+                  "Link generated" affordance (re-running would orphan
+                  the existing session on the gateway side) and the
+                  send button takes over as the primary action. */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11.5px] text-muted-foreground">
+                  {previewLoading
+                    ? "Updating preview…"
+                    : order.payment.paymentUrl
+                      ? "Link ready — send the email when you're done editing."
+                      : "Generate the payment link to enable sending."}
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {order.payment.paymentUrl ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled
+                      className="cursor-not-allowed border-emerald-200 bg-emerald-50 text-emerald-700 disabled:opacity-100"
+                    >
+                      <CheckCircle2Icon className="size-3.5" />
+                      Link generated
+                    </Button>
+                  ) : (
+                    <LoadingButton
+                      onClick={handleGenerateLink}
+                      loading={generating}
+                      loadingText="Generating"
+                      variant="outline"
+                    >
+                      Generate payment link
+                    </LoadingButton>
+                  )}
+                  <LoadingButton
+                    onClick={handleSend}
+                    loading={sending}
+                    loadingText="Sending"
+                    disabled={!order.payment.paymentUrl}
+                  >
+                    <SendIcon className="size-3.5" />
+                    Send payment request
+                  </LoadingButton>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         )}
       </aside>
 
-      <section className="space-y-3">
+      {/*
+        Preview pane.
+        - On lg+ it sticks below the chrome (topbar h-14 + tab bar h-9
+          + ~0.5rem gap ≈ 6rem). The iframe itself is height-capped to
+          the viewport so the user can scroll the form on the left
+          while the preview stays visible; overflow inside the iframe
+          is handled by the iframe's own scrollbar.
+        - On mobile the section stacks below the form at its natural
+          ~860 px so the email renders fully without cropping.
+      */}
+      <section className="space-y-3 lg:sticky lg:top-[6rem]">
         <div className="flex items-center justify-between">
           <h2 className="text-[13px] font-semibold tracking-tight">Preview</h2>
           <span
@@ -351,7 +472,7 @@ export function EmailComposer({
           <iframe
             title="Email preview"
             srcDoc={html}
-            className="block h-[860px] w-full border-0 bg-white"
+            className="block h-[860px] w-full border-0 bg-white lg:h-[calc(100vh-7.5rem)]"
             sandbox="allow-same-origin"
           />
         </div>
@@ -431,7 +552,7 @@ function PaymentSummaryCard({
             value={`${order.vehicle.company} · ${order.vehicle.type}`}
           />
         </dl>
-        {order.payment.checkoutUrl ? (
+        {order.payment.paymentUrl ? (
           <div className="flex items-center gap-2">
             <Button
               type="button"
@@ -449,7 +570,7 @@ function PaymentSummaryCard({
               size="sm"
               className="h-7 px-2 text-[12px]"
             >
-              <a href={order.payment.checkoutUrl} target="_blank" rel="noreferrer">
+              <a href={order.payment.paymentUrl} target="_blank" rel="noreferrer">
                 <ExternalLinkIcon className="size-3" />
                 Open
               </a>

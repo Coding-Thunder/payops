@@ -35,6 +35,7 @@ import type { ProviderDTO } from "@/types";
 
 import type { RequestContext } from "@/server/api/request-context";
 import { recordAudit } from "./audit.service";
+import { bytesMatchMime } from "./file-sniff";
 
 interface ProviderActor {
   id: string;
@@ -51,12 +52,14 @@ interface ProviderContext {
 // ─── Upload constraints ────────────────────────────────────────────────────
 
 const MAX_LOGO_BYTES = 512 * 1024; // 512KB
+// SVG intentionally NOT allowed: SVG can carry inline <script> and runs
+// same-origin when fetched directly, turning the public/providers folder
+// into a stored-XSS sink. Rasterise to PNG/WebP upstream if needed.
 const ALLOWED_MIME: ReadonlyMap<string, string> = new Map([
   ["image/png", "png"],
   ["image/jpeg", "jpg"],
   ["image/webp", "webp"],
   ["image/gif", "gif"],
-  ["image/svg+xml", "svg"],
 ]);
 
 const PUBLIC_DIR = path.join(process.cwd(), "public");
@@ -328,7 +331,7 @@ export async function saveProviderLogoFile(
 ): Promise<string> {
   if (!ALLOWED_MIME.has(input.mimeType)) {
     throw new ValidationError(
-      "Unsupported image type. Use PNG, JPEG, WebP, GIF, or SVG.",
+      "Unsupported image type. Use PNG, JPEG, WebP, or GIF.",
     );
   }
   if (input.buffer.byteLength === 0) {
@@ -337,6 +340,14 @@ export async function saveProviderLogoFile(
   if (input.buffer.byteLength > MAX_LOGO_BYTES) {
     throw new ValidationError(
       `Logo file is larger than ${Math.round(MAX_LOGO_BYTES / 1024)}KB`,
+    );
+  }
+  // Browser-supplied mime is attacker-controlled; sniff the bytes so
+  // a mislabelled HTML/SVG payload can't reach disk under an image
+  // extension and turn into stored XSS on the public path.
+  if (!bytesMatchMime(input.buffer, input.mimeType)) {
+    throw new ValidationError(
+      "Uploaded file does not match the declared image type",
     );
   }
   const ext = ALLOWED_MIME.get(input.mimeType)!;

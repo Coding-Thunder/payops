@@ -45,6 +45,11 @@ import {
 } from "@/lib/validation";
 import type { OrderDTO, ProviderDTO } from "@/types";
 import { ProviderSelector } from "@/components/features/providers";
+import {
+  CarLinkSelector,
+  type CarLinkSelection,
+} from "@/components/features/car-links";
+import { ImageUrlPreview } from "@/components/common/image-url-preview";
 
 // See note in create-car-link-dialog: the zod schema for vehicle.imageUrl
 // is `.optional().nullable().transform()`, so input ≠ output. We type
@@ -82,7 +87,7 @@ export function CreateOrderForm({
       bookingType: allowedBookingTypes[0] ?? BookingType.NEW_BOOKING,
       provider: providers[0]?.key ?? "",
       customer: { name: "", email: "", phone: "" },
-      vehicle: { company: "", type: "" },
+      vehicle: { company: "", type: "", imageUrl: "" },
       trip: { pickupDate: "", dropoffDate: "" },
       pricing: { amount: 0, currency: defaultCurrency },
       notes: "",
@@ -99,8 +104,9 @@ export function CreateOrderForm({
         "/api/orders",
         values,
       );
-      toast.success("Order created. Payment link is ready to share.");
-      router.replace(`/orders/${result.order.id}`);
+      toast.success("Order created. Send the payment request next.");
+      // Sequential workflow: step 2 is sending the request email.
+      router.replace(`/app/orders/${result.order.id}/email`);
       router.refresh();
     } catch (err) {
       const message =
@@ -309,6 +315,49 @@ export function CreateOrderForm({
               )}
             />
 
+            {/* Car library picker — populates make + model + imageUrl in
+                one shot. The make/model inputs below remain editable so
+                the agent can tweak after picking or skip the library
+                entirely and type manually. */}
+            <FormField
+              control={form.control}
+              name="vehicle.imageUrl"
+              render={({ field }) => (
+                <FormItem className="sm:col-span-2">
+                  <FormLabel>Car library</FormLabel>
+                  <FormControl>
+                    <CarLinkSelector
+                      id="order-car-link"
+                      value={field.value ?? null}
+                      initialMake={form.watch("vehicle.company")}
+                      initialType={form.watch("vehicle.type")}
+                      disabled={isSubmitting}
+                      onSelect={(selection: CarLinkSelection) => {
+                        form.setValue("vehicle.company", selection.carMake, {
+                          shouldDirty: true,
+                          shouldValidate: true,
+                        });
+                        form.setValue("vehicle.type", selection.carType, {
+                          shouldDirty: true,
+                          shouldValidate: true,
+                        });
+                        form.setValue("vehicle.imageUrl", selection.imageUrl, {
+                          shouldDirty: true,
+                          shouldValidate: true,
+                        });
+                      }}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Pick a saved vehicle from the library to pre-fill make,
+                    model, and the photo shown to the customer. Edits to
+                    the inputs below override the library values.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             <FormField
               control={form.control}
               name="vehicle.company"
@@ -344,6 +393,21 @@ export function CreateOrderForm({
                 </FormItem>
               )}
             />
+
+            {/* Image preview — only renders when the form holds a URL.
+                Probes the image off-DOM so a broken URL surfaces as a
+                "404" pill instead of a broken-image icon in the form. */}
+            {form.watch("vehicle.imageUrl") ? (
+              <div className="sm:col-span-2">
+                <ImageUrlPreview
+                  url={form.watch("vehicle.imageUrl")}
+                  size={72}
+                  label={{
+                    ok: "Image looks good — this is what the customer sees in the email and on checkout.",
+                  }}
+                />
+              </div>
+            ) : null}
           </CardContent>
         </Card>
 

@@ -460,7 +460,7 @@ function TemplateSwitcher({
               )}
             >
               <Link
-                href={`/admin/email-templates/${t.key}`}
+                href={`/app/admin/email-templates/${t.key}`}
                 className="flex items-center justify-between gap-3 px-4 py-3"
               >
                 <span className="font-medium text-foreground">{t.label}</span>

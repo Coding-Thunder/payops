@@ -10,7 +10,6 @@ import {
   ConflictError,
   ForbiddenError,
   NotFoundError,
-  PaymentError,
   ValidationError,
 } from "@/lib/errors";
 import { AuditLog, Order } from "@/server/db/models";
@@ -39,31 +38,29 @@ beforeEach(async () => {
 });
 
 describe("createOrder", () => {
-  it("persists an order, asks Stripe for a session, and snapshots the policy", async () => {
+  it("persists an order in NOT_INITIATED state without contacting Stripe", async () => {
     const actor = actorFor(UserRole.ADMIN);
     const stripe = getCurrentTestStripe();
 
     const result = await createOrder(validCreateOrderInput(), { actor });
 
     expect(result.order.id).toMatch(/^[a-f0-9]{24}$/);
-    expect(result.order.status).toBe(OrderStatus.PAYMENT_PENDING);
-    expect(result.checkoutUrl).toMatch(/^http/);
+    expect(result.order.status).toBe(OrderStatus.NOT_INITIATED);
+    expect(result.checkoutUrl).toBeNull();
 
-    // Persisted state
+    // Persisted state — no Stripe fields at all yet.
     const stored = await Order.findById(result.order.id).lean();
-    expect(stored?.payment.stripeSessionId).toMatch(/^cs_test_stub_/);
-    expect(stored?.payment.checkoutUrl).toBe(result.checkoutUrl);
+    expect(stored?.status).toBe(OrderStatus.NOT_INITIATED);
+    expect(stored?.payment.status).toBe(OrderStatus.NOT_INITIATED);
+    expect(stored?.payment.stripeSessionId ?? null).toBeNull();
+    expect(stored?.payment.checkoutUrl ?? null).toBeNull();
+    expect(stored?.payment.initiatedAt ?? null).toBeNull();
+    expect(stored?.payment.expiresAt ?? null).toBeNull();
     expect(stored?.policy.text.length).toBeGreaterThan(20);
     expect(stored?.policy.version).toBe("v1");
 
-    // Stripe was actually called with the expected payload
-    expect(stripe.sessionsCreated).toHaveLength(1);
-    const call = stripe.sessionsCreated[0];
-    expect(call.params.mode).toBe("payment");
-    expect(call.params.customer_email).toBe("ada@payops.test");
-    expect(call.params.line_items?.[0].price_data?.unit_amount).toBe(24999);
-    expect(call.params.metadata?.orderId).toBe(result.order.id);
-    expect(call.options?.idempotencyKey).toMatch(/^order:.*:checkout$/);
+    // Stripe was NOT called — the whole point of decoupling creation.
+    expect(stripe.sessionsCreated).toHaveLength(0);
   });
 
   it("emits an ORDER_CREATED audit row tagged with the actor", async () => {
@@ -87,27 +84,10 @@ describe("createOrder", () => {
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
-  it("marks the order FAILED and throws PaymentError if Stripe rejects", async () => {
-    const stripe = getCurrentTestStripe();
-    stripe.failNextCreate({ code: "card_error", message: "Boom" });
-
-    await expect(
-      createOrder(validCreateOrderInput(), {
-        actor: actorFor(UserRole.ADMIN),
-      }),
-    ).rejects.toBeInstanceOf(PaymentError);
-
-    const failed = await Order.findOne({
-      status: OrderStatus.FAILED,
-    }).lean();
-    expect(failed).not.toBeNull();
-    expect(failed?.payment.failureReason).toMatch(/Boom/);
-  });
-
-  it("rejects amounts below Stripe's 50-cent floor", async () => {
-    // The Mongoose model's `min: 0.5` validator fires first and surfaces
-    // a generic error before the Stripe boundary is reached. Either way
-    // the order is not created — assert on that strong invariant.
+  it("rejects amounts below the model's 50-cent floor at creation", async () => {
+    // Mongoose `min: 0.5` validator fires synchronously inside create().
+    // Stripe is no longer involved here — order persistence simply
+    // refuses to save.
     await expect(
       createOrder(
         validCreateOrderInput({ pricing: { amount: 0.4, currency: "USD" } }),
@@ -115,7 +95,6 @@ describe("createOrder", () => {
       ),
     ).rejects.toThrow();
 
-    // No PENDING/PAID order should have been created for that amount.
     const stranded = await Order.findOne({ "pricing.amount": 0.4 });
     expect(stranded).toBeNull();
   });

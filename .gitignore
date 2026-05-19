@@ -15,6 +15,7 @@
 /reports
 /test-results
 /playwright-report
+testcards.txt
 
 # next.js
 /.next/

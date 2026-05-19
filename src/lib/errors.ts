@@ -13,7 +13,8 @@ export type ErrorCode =
   | "RATE_LIMITED"
   | "INTERNAL_ERROR"
   | "PAYMENT_ERROR"
-  | "EXTERNAL_SERVICE_ERROR";
+  | "EXTERNAL_SERVICE_ERROR"
+  | "BOT_CHECK_FAILED";
 
 export class AppError extends Error {
   readonly code: ErrorCode;

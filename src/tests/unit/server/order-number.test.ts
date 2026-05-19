@@ -9,7 +9,9 @@ describe("generateOrderNumber", () => {
     const yy = String(d.getUTCFullYear()).slice(-2);
     const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
     const dd = String(d.getUTCDate()).padStart(2, "0");
-    expect(out).toMatch(new RegExp(`^ABC-${yy}${mm}${dd}-[A-Z2-9]{6}$`));
+    // Suffix bumped to 10 chars (crypto.randomBytes, 50 bits of entropy)
+    // so the daily order-number space isn't brute-forceable.
+    expect(out).toMatch(new RegExp(`^ABC-${yy}${mm}${dd}-[A-Z2-9]{10}$`));
   });
 
   it("strips non-alpha characters from the prefix", () => {
@@ -28,7 +30,7 @@ describe("generateOrderNumber", () => {
     for (let i = 0; i < 500; i += 1) {
       const out = generateOrderNumber("ORD");
       const suffix = out.split("-")[2];
-      expect(suffix).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/);
+      expect(suffix).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{10}$/);
     }
   });
 
@@ -37,7 +39,8 @@ describe("generateOrderNumber", () => {
     for (let i = 0; i < 200; i += 1) {
       set.add(generateOrderNumber("ORD"));
     }
-    // Collisions in 200 draws would be a real concern given 32^6 ≈ 1.07B.
+    // Collisions in 200 draws would be vanishingly unlikely given
+    // 32^10 ≈ 1.1×10^15 of suffix space + crypto-grade RNG.
     expect(set.size).toBe(200);
   });
 });

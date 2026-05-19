@@ -3,10 +3,17 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Table — Linear / Stripe style: dense rows, no heavy separators, soft
- * hover, single hairline border between rows. Use TableHead for column
- * labels — they're uppercase-tracked and muted so data reads as the
- * dominant element on the screen.
+ * Table — refined polish.
+ *
+ *   - Header row gets a 1px hairline AND a tiny `pb` so the column
+ *     labels lift off the data slightly. Previous version had only
+ *     a border, which collapsed into the first row.
+ *   - Cell vertical padding bumped 0.5 → keeps density but stops
+ *     long-line text from feeling crammed.
+ *   - Row hover transition tightened (100ms, was the default 150) so
+ *     scanning down a long table feels responsive, not laggy.
+ *   - First/last cells get slightly more horizontal padding so the
+ *     table doesn't visually hug the card border — a subtle gutter.
  */
 function Table({
   className,
@@ -76,8 +83,8 @@ function TableRow({
     <tr
       data-slot="table-row"
       className={cn(
-        "border-b border-border transition-colors",
-        "hover:bg-surface-1 data-[state=selected]:bg-muted",
+        "border-b border-border transition-colors duration-100",
+        "hover:bg-surface-1/60 data-[state=selected]:bg-muted",
         "last:border-b-0",
         className,
       )}
@@ -94,8 +101,9 @@ function TableHead({
     <th
       data-slot="table-head"
       className={cn(
-        "h-9 px-3 text-left align-middle font-medium",
-        "text-[10.5px] uppercase tracking-wider text-muted-foreground",
+        "h-9 px-3 pb-2 text-left align-bottom font-semibold",
+        "text-[10.5px] uppercase tracking-[0.06em] text-muted-foreground",
+        "first:pl-5 last:pr-5",
         "[&:has([role=checkbox])]:pr-0",
         className,
       )}
@@ -112,7 +120,8 @@ function TableCell({
     <td
       data-slot="table-cell"
       className={cn(
-        "px-3 py-2.5 align-middle text-[13px] text-foreground",
+        "px-3 py-3 align-middle text-[13px] text-foreground",
+        "first:pl-5 last:pr-5",
         "[&:has([role=checkbox])]:pr-0",
         className,
       )}

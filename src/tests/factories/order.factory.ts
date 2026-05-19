@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 
 import {
   BookingType,
+  ConsentStatus,
   Currency,
   OrderStatus,
   RecordState,
@@ -98,6 +99,14 @@ export function buildOrder(seed: OrderSeed = {}): OrderDoc & { _id: Types.Object
       flaggedAt: seed.risk?.flaggedAt ?? null,
       flaggedBy: seed.risk?.flaggedBy ?? null,
     },
+    consent: {
+      status: seed.consent?.status ?? ConsentStatus.NOT_REQUESTED,
+      currentConsentId: seed.consent?.currentConsentId ?? null,
+      requestedAt: seed.consent?.requestedAt ?? null,
+      receivedAt: seed.consent?.receivedAt ?? null,
+      verifiedAt: seed.consent?.verifiedAt ?? null,
+      method: seed.consent?.method ?? null,
+    },
     notes: seed.notes ?? null,
     createdAt: seed.createdAt ?? now,
     updatedAt: seed.updatedAt ?? now,
@@ -132,6 +141,7 @@ export async function createOrder(seed: OrderSeed = {}): Promise<OrderDocument> 
     createdBy: data.createdBy,
     policy: data.policy,
     risk: data.risk,
+    consent: data.consent,
     notes: data.notes,
   })) as OrderDocument;
 }

@@ -4,19 +4,43 @@ import { jwtVerify } from "jose";
 const ISSUER = "payops";
 const AUDIENCE = "payops:web";
 
-/** Public routes that never require auth. */
+/**
+ * Route taxonomy
+ * ──────────────
+ *  /              → marketing landing (public)
+ *  /login         → sign-in (public, redirects to /app/dashboard once authed)
+ *  /pay/*         → customer-facing payment surfaces (public, gateway-bound)
+ *  /consent/*     → hosted consent confirmation (public, HMAC-token bound)
+ *  /api/*         → API routes — auth applied selectively below
+ *  /app/*         → the entire authed product
+ *
+ * The authed product moved from a `(app)` route group to a literal
+ * `/app` URL prefix so the root path can serve the marketing site.
+ */
+
+/** Public exact paths that never require auth. */
 const PUBLIC_PATHS = [
+  "/",
   "/login",
   "/api/auth/login",
   "/api/webhooks/stripe",
   "/api/health",
+  "/api/quotations",
 ];
 
-/** Public path prefixes for customer-facing pages (no auth). */
-const PUBLIC_PREFIXES = ["/pay/"];
+/** Public path prefixes for marketing + customer-facing flows. */
+const PUBLIC_PREFIXES = [
+  "/pay/",
+  // Hosted consent flow is the customer's first stop after they click
+  // the email's primary CTA. They have no session — the HMAC token in
+  // the URL is the credential. Both the page and the JSON endpoint are
+  // whitelisted; consent.service verifies the token before touching DB.
+  "/consent/",
+  "/api/consent/",
+];
 
 /** Admin-only path prefixes (super_admin + admin). */
-const ADMIN_PATH_PREFIXES = ["/admin", "/api/admin"];
+const ADMIN_PATH_PREFIXES = ["/app/admin", "/api/admin"];
 
 function isPublic(pathname: string): boolean {
   if (PUBLIC_PATHS.includes(pathname)) return true;
@@ -25,6 +49,12 @@ function isPublic(pathname: string): boolean {
   if (pathname.startsWith("/favicon")) return true;
   if (pathname.startsWith("/static")) return true;
   if (pathname.startsWith("/assets")) return true;
+  // Marketing screenshots + any landing imagery served from
+  // public/marketing/. Without this they'd 307 through proxy → /login
+  // and the landing page would render broken images.
+  if (pathname.startsWith("/marketing/")) return true;
+  // Marketing surface only lives at "/"; everything else routed through
+  // here gets evaluated normally.
   return false;
 }
 
@@ -82,11 +112,15 @@ export async function proxy(req: NextRequest) {
         { status: 403 },
       );
     }
-    return NextResponse.redirect(new URL("/dashboard", req.url));
+    return NextResponse.redirect(new URL("/app/dashboard", req.url));
   }
 
-  if (pathname === "/" || pathname === "/login") {
-    return NextResponse.redirect(new URL("/dashboard", req.url));
+  // Already-authed users hitting the login page bounce into the app.
+  // Note we deliberately do NOT bounce them off the marketing root —
+  // operators sometimes link to it from external docs and the public
+  // surface should always render.
+  if (pathname === "/login") {
+    return NextResponse.redirect(new URL("/app/dashboard", req.url));
   }
 
   const res = NextResponse.next();
@@ -116,6 +150,6 @@ export const config = {
      *      renders as a broken image.)
      *   - stripe webhook (must keep raw body)
      */
-    "/((?!_next/static|_next/image|favicon.ico|assets|providers|branding|static|api/webhooks/stripe).*)",
+    "/((?!_next/static|_next/image|favicon.ico|assets|providers|branding|marketing|static|api/webhooks/stripe).*)",
   ],
 };

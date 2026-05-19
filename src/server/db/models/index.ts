@@ -32,3 +32,36 @@ export type {
   EmailTemplateDocument,
   EmailTemplateKey,
 } from "./email-template.model";
+
+export { PaymentConsent } from "./payment-consent.model";
+export type {
+  PaymentConsentDoc,
+  PaymentConsentDocument,
+} from "./payment-consent.model";
+
+export { OrderEvidence } from "./order-evidence.model";
+export type {
+  OrderEvidenceActor,
+  OrderEvidenceDoc,
+  OrderEvidenceDocument,
+  OrderEvidenceRefs,
+  OrderEvidenceRequest,
+} from "./order-evidence.model";
+
+export { Dispute } from "./dispute.model";
+export type { DisputeDoc, DisputeDocument } from "./dispute.model";
+
+export { Quotation } from "./quotation.model";
+export type { QuotationDoc, QuotationDocument } from "./quotation.model";
+
+export {
+  ProcessedWebhookEvent,
+  PendingEmail,
+  PendingEmailStatus,
+} from "./outbox.model";
+export type {
+  ProcessedWebhookEventDoc,
+  ProcessedWebhookEventDocument,
+  PendingEmailDoc,
+  PendingEmailDocument,
+} from "./outbox.model";

@@ -4,7 +4,13 @@ import { getBranding } from "@/server/services/branding.service";
 
 import "../globals.css";
 
-export const metadata = { title: "Rental Confirmation" };
+// Token-bound customer surface — never index. Single-use URLs, no
+// SEO value, and `session_id` query params would otherwise leak into
+// Google's index.
+export const metadata = {
+  title: "Rental Confirmation",
+  robots: { index: false, follow: false, nocache: true },
+};
 export const dynamic = "force-dynamic";
 
 export default async function PayLayout({

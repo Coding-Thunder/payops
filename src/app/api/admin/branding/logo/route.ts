@@ -16,23 +16,41 @@ export const dynamic = "force-dynamic";
  * keeps the previous file in place so any cached page reference still
  * resolves until the next deploy / cleanup.
  */
-export const POST = withApi(async (req: NextRequest) => {
-  const actor = await requirePermission(Permission.BRANDING_MANAGE);
+export const POST = withApi(
+  async (req: NextRequest) => {
+    const actor = await requirePermission(Permission.BRANDING_MANAGE);
 
-  const form = await req.formData().catch(() => {
-    throw new ValidationError("Expected a multipart/form-data body");
-  });
-  const file = form.get("file");
-  if (!(file instanceof Blob)) {
-    throw new ValidationError("Missing 'file' field");
-  }
+    // Pre-flight Content-Length cap: anything over 1 MB never reaches
+    // formData() — the service-level 512 KB cap is the hard ceiling.
+    const declared = req.headers.get("content-length");
+    if (declared) {
+      const n = Number.parseInt(declared, 10);
+      if (Number.isFinite(n) && n > 1024 * 1024) {
+        throw new ValidationError("Logo upload exceeds the 1 MB request cap");
+      }
+    }
 
-  const arrayBuffer = await file.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-  const ctx = await getRequestContext();
-  const data = await replaceBrandingLogo(
-    { buffer, mimeType: file.type },
-    { actor, request: ctx },
-  );
-  return jsonOk(data);
-});
+    const form = await req.formData().catch(() => {
+      throw new ValidationError("Expected a multipart/form-data body");
+    });
+    const file = form.get("file");
+    if (!(file instanceof Blob)) {
+      throw new ValidationError("Missing 'file' field");
+    }
+
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const ctx = await getRequestContext();
+    const data = await replaceBrandingLogo(
+      { buffer, mimeType: file.type },
+      { actor, request: ctx },
+    );
+    return jsonOk(data);
+  },
+  {
+    // Multipart payloads exceed the default 32 KB JSON cap; the route
+    // imposes its own 1 MB pre-flight + 512 KB service-level cap.
+    bodyLimitBytes: null,
+    rateLimit: { route: "branding-logo", max: 20, windowMs: 60_000 },
+  },
+);

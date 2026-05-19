@@ -8,10 +8,18 @@ import {
 import {
   BOOKING_TYPES,
   BookingType,
+  CONSENT_STATUSES,
+  ConsentStatus,
   CURRENCIES,
   Currency,
+  DISPUTE_OUTCOMES,
+  DISPUTE_STATUSES,
+  DisputeOutcome,
+  DisputeStatus,
   ORDER_STATUSES,
   OrderStatus,
+  PAYMENT_GATEWAY_KEYS,
+  PaymentGatewayKey,
   RECORD_STATES,
   RecordState,
 } from "@/lib/constants/enums";
@@ -57,12 +65,24 @@ export interface OrderDoc {
     currency: Currency;
   };
   payment: {
+    /** Which gateway routes this payment. Null while NOT_INITIATED —
+     *  no gateway has been contacted yet. Stamped at LINK_GENERATED
+     *  and frozen for the lifetime of the order. */
+    gateway?: PaymentGatewayKey | null;
+    /** Provider-side session id. Field name predates the multi-gateway
+     *  refactor — under non-Stripe gateways this holds whatever the
+     *  gateway returns as its session identifier. DTO surfaces it
+     *  as the generic `paymentSessionId`. */
     stripeSessionId?: string | null;
     paymentIntentId?: string | null;
     checkoutUrl?: string | null;
     status: OrderStatus;
     paidAt?: Date | null;
     expiresAt?: Date | null;
+    /** When the gateway session was created — order moves NOT_INITIATED
+     *  → LINK_GENERATED at this point via the agent's explicit
+     *  "Generate Payment Link" action. */
+    initiatedAt?: Date | null;
     amountReceived?: number | null;
     receiptUrl?: string | null;
     failureReason?: string | null;
@@ -94,6 +114,34 @@ export interface OrderDoc {
       name?: string | null;
     } | null;
   };
+  /** Denormalised pointer to the latest PaymentConsent. Keeps the order
+   *  list query single-collection — the full audit trail lives in the
+   *  payment_consents collection (multiple docs per order allowed). */
+  consent: {
+    status: ConsentStatus;
+    currentConsentId?: Types.ObjectId | null;
+    requestedAt?: Date | null;
+    receivedAt?: Date | null;
+    verifiedAt?: Date | null;
+    method?: string | null;
+  };
+  /** Denormalised pointer to the latest Dispute. Null until the first
+   *  chargeback lands. The full dispute history lives in the `disputes`
+   *  collection — this pointer keeps order list views single-collection
+   *  for the at-risk dashboard. */
+  dispute?: {
+    status: DisputeStatus | null;
+    currentDisputeId?: Types.ObjectId | null;
+    openedAt?: Date | null;
+    closedAt?: Date | null;
+    outcome?: DisputeOutcome | null;
+    reason?: string | null;
+    amount?: number | null;
+    currency?: Currency | null;
+  } | null;
+  /** Cumulative refunded amount across all `refund.created` events the
+   *  gateway delivered. Major units. Stays at 0 until the first refund. */
+  refundedAmount?: number;
   notes?: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -175,12 +223,18 @@ const pricingSchema = new Schema(
 
 const paymentSchema = new Schema(
   {
+    gateway: {
+      type: String,
+      enum: PAYMENT_GATEWAY_KEYS,
+      default: null,
+    },
     stripeSessionId: { type: String, default: null, index: true, sparse: true },
     paymentIntentId: { type: String, default: null, index: true, sparse: true },
     checkoutUrl: { type: String, default: null },
     status: { type: String, enum: ORDER_STATUSES, required: true },
     paidAt: { type: Date, default: null },
     expiresAt: { type: Date, default: null },
+    initiatedAt: { type: Date, default: null },
     amountReceived: { type: Number, default: null },
     receiptUrl: { type: String, default: null },
     failureReason: { type: String, default: null },
@@ -231,6 +285,51 @@ const riskSchema = new Schema(
   { _id: false },
 );
 
+const consentPointerSchema = new Schema(
+  {
+    status: {
+      type: String,
+      enum: CONSENT_STATUSES,
+      required: true,
+      default: "NOT_REQUESTED",
+      index: true,
+    },
+    currentConsentId: {
+      type: Schema.Types.ObjectId,
+      ref: "PaymentConsent",
+      default: null,
+    },
+    requestedAt: { type: Date, default: null },
+    receivedAt: { type: Date, default: null },
+    verifiedAt: { type: Date, default: null },
+    method: { type: String, default: null, maxlength: 24 },
+  },
+  { _id: false },
+);
+
+const disputePointerSchema = new Schema(
+  {
+    status: {
+      type: String,
+      enum: DISPUTE_STATUSES,
+      default: null,
+      index: true,
+    },
+    currentDisputeId: {
+      type: Schema.Types.ObjectId,
+      ref: "Dispute",
+      default: null,
+    },
+    openedAt: { type: Date, default: null },
+    closedAt: { type: Date, default: null },
+    outcome: { type: String, enum: DISPUTE_OUTCOMES, default: null },
+    reason: { type: String, default: null, maxlength: 80 },
+    amount: { type: Number, default: null },
+    currency: { type: String, enum: CURRENCIES, default: null },
+  },
+  { _id: false },
+);
+
 const orderSchema = new Schema<OrderDoc>(
   {
     orderNumber: {
@@ -277,6 +376,16 @@ const orderSchema = new Schema<OrderDoc>(
       required: true,
       default: () => ({ flagged: false }),
     },
+    consent: {
+      type: consentPointerSchema,
+      required: true,
+      default: () => ({ status: "NOT_REQUESTED" }),
+    },
+    dispute: {
+      type: disputePointerSchema,
+      default: null,
+    },
+    refundedAmount: { type: Number, default: 0, min: 0 },
     notes: { type: String, default: null, maxlength: 2000 },
   },
   {
@@ -299,6 +408,8 @@ orderSchema.index({ "createdBy.userId": 1, createdAt: -1 });
 orderSchema.index({ "customer.email": 1, createdAt: -1 });
 orderSchema.index({ state: 1, createdAt: -1 });
 orderSchema.index({ "provider.id": 1, createdAt: -1 });
+orderSchema.index({ "consent.status": 1, createdAt: -1 });
+orderSchema.index({ "dispute.status": 1, "dispute.openedAt": -1 });
 // `payment.stripeSessionId` already has `index: true, sparse: true` on the
 // field definition — declaring it again here triggers a duplicate-index
 // warning at startup. Keep it on the field, drop the schema-level call.

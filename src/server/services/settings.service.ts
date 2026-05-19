@@ -6,6 +6,7 @@ import {
   AuditAction,
   AuditEntity,
   type BookingType,
+  type ConsentMode,
   type Currency,
 } from "@/lib/constants/enums";
 import { ValidationError } from "@/lib/errors";
@@ -15,7 +16,10 @@ import {
   SETTINGS_KEY,
   type SettingDoc,
 } from "@/server/db/models";
-import { DEFAULT_CANCELLATION_POLICY } from "@/server/db/models/setting.model";
+import {
+  DEFAULT_CANCELLATION_POLICY,
+  DEFAULT_CONSENT_MESSAGE,
+} from "@/server/db/models/setting.model";
 import { connectMongo } from "@/server/db/mongoose";
 import type { UpdateSettingsInput } from "@/lib/validation";
 
@@ -30,6 +34,8 @@ export interface OperationalSettings {
   cancelRedirectUrl: string;
   cancellationPolicy: string;
   cancellationPolicyVersion: string;
+  consentMode: ConsentMode;
+  consentMessage: string;
   updatedAt: string;
 }
 
@@ -45,6 +51,8 @@ function toDTO(doc: SettingDoc | null): OperationalSettings {
       cancelRedirectUrl: `${e.APP_URL}/pay/cancelled`,
       cancellationPolicy: DEFAULT_CANCELLATION_POLICY,
       cancellationPolicyVersion: "v1",
+      consentMode: "ADVISORY",
+      consentMessage: DEFAULT_CONSENT_MESSAGE,
       updatedAt: new Date(0).toISOString(),
     };
   }
@@ -59,6 +67,8 @@ function toDTO(doc: SettingDoc | null): OperationalSettings {
     cancelRedirectUrl: `${e.APP_URL}/pay/cancelled`,
     cancellationPolicy: doc.cancellationPolicy ?? DEFAULT_CANCELLATION_POLICY,
     cancellationPolicyVersion: doc.cancellationPolicyVersion ?? "v1",
+    consentMode: doc.consentMode ?? "ADVISORY",
+    consentMessage: doc.consentMessage ?? DEFAULT_CONSENT_MESSAGE,
     updatedAt: doc.updatedAt.toISOString(),
   };
 }
@@ -122,6 +132,8 @@ export async function updateSettings(
     "successRedirectUrl",
     "cancelRedirectUrl",
     "cancellationPolicy",
+    "consentMode",
+    "consentMessage",
   ];
   for (const field of fields) {
     if (!(field in input)) continue;

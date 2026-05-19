@@ -17,7 +17,11 @@ export async function setSessionCookie(
     name: COOKIE_NAME,
     value: token,
     httpOnly: true,
-    sameSite: "lax",
+    // SameSite=strict pairs with the `withApi` Origin check as the CSRF
+    // defense. PayOps has no cross-site auth requirement; agents
+    // browse from bookmarks / internal nav. Customer-facing pages
+    // (`/pay/*`, `/consent/*`) don't read this cookie at all.
+    sameSite: "strict",
     secure: COOKIE_SECURE || NODE_ENV === "production",
     path: "/",
     domain: COOKIE_DOMAIN || undefined,
@@ -32,7 +36,7 @@ export async function clearSessionCookie() {
     name: COOKIE_NAME,
     value: "",
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: "strict",
     secure: COOKIE_SECURE || NODE_ENV === "production",
     path: "/",
     domain: COOKIE_DOMAIN || undefined,

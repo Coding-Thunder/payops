@@ -131,7 +131,7 @@ export function BrandingForm({ initial, canEdit }: BrandingFormProps) {
                     <FormLabel>Brand name</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="e.g. PayOps Rentals"
+                        placeholder="e.g. PayOps"
                         disabled={!canEdit || isSubmitting}
                         {...field}
                       />

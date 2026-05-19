@@ -69,10 +69,13 @@ export async function listUsers(query: ListUsersQuery) {
   if (query.role) filter.role = query.role;
   if (query.status) filter.status = query.status;
   if (query.q) {
-    const q = query.q.trim();
+    // Cap + escape regex metacharacters to neutralise ReDoS payloads
+    // (Mongo's regex engine is vulnerable to catastrophic backtracking).
+    const raw = query.q.trim().slice(0, 60);
+    const escaped = raw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     filter.$or = [
-      { name: { $regex: q, $options: "i" } },
-      { email: { $regex: q, $options: "i" } },
+      { name: { $regex: escaped, $options: "i" } },
+      { email: { $regex: escaped, $options: "i" } },
     ];
   }
 

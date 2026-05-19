@@ -62,11 +62,14 @@ describe("JWT session", () => {
   });
 
   describe("getSessionTtlSeconds", () => {
+    // Inputs are clamped to [60s, 7d] so a misconfigured env can't ship
+    // ultra-short or ultra-long sessions.
     it.each([
       ["12h", 12 * 60 * 60],
       ["30m", 30 * 60],
       ["7d", 7 * 24 * 60 * 60],
-      ["45s", 45],
+      ["45s", 60], // below the 60s floor → clamped up
+      ["30d", 7 * 24 * 60 * 60], // above the 7d ceiling → clamped down
     ])("parses %s as %i seconds", async (value, expected) => {
       const stash = process.env.JWT_EXPIRES_IN;
       try {

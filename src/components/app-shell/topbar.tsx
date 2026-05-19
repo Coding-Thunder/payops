@@ -50,8 +50,12 @@ export function Topbar({ user, brand }: TopbarProps) {
     }
   }
 
+  // Slim 48px chrome that defers to the telemetry strip above.
+  // SSE indicator removed (lives in the strip now); search + user
+  // menu are the only chrome surfaces here, plus the page-context
+  // label on the left.
   return (
-    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/80 backdrop-blur-md px-4 md:px-6">
+    <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-3 border-b border-border bg-background/85 backdrop-blur-md px-4 md:px-6">
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetTrigger asChild>
           <Button variant="ghost" size="icon-sm" className="md:hidden">
@@ -68,10 +72,16 @@ export function Topbar({ user, brand }: TopbarProps) {
         </SheetContent>
       </Sheet>
 
-      <div className="hidden md:flex items-center gap-3 text-[12.5px] text-muted-foreground">
-        <span className="font-medium text-foreground">Payment operations</span>
-        <span className="text-border" aria-hidden>·</span>
-        <RealtimeIndicator />
+      <div className="hidden md:flex items-center gap-2.5 text-[12.5px]">
+        <span className="font-semibold tracking-[-0.005em] text-foreground">
+          Payment operations
+        </span>
+        <span className="text-border/70" aria-hidden>
+          /
+        </span>
+        <span className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground">
+          control tower
+        </span>
       </div>
 
       <div className="ml-auto flex items-center gap-2">
@@ -83,10 +93,10 @@ export function Topbar({ user, brand }: TopbarProps) {
               new KeyboardEvent("keydown", { key: "k", metaKey: true }),
             );
           }}
-          className="hidden md:inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-1 px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted transition-colors"
+          className="hidden md:inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-1 px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <span>Search</span>
-          <kbd className="rounded bg-background px-1 text-[10px] font-medium text-foreground tabular-nums">
+          <kbd className="rounded bg-background px-1 text-[10px] font-semibold text-foreground tabular-nums shadow-xs">
             ⌘K
           </kbd>
         </button>

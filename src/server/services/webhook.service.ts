@@ -1,29 +1,40 @@
 import "server-only";
 
-import type Stripe from "stripe";
-import { Types } from "mongoose";
+import { type ClientSession, Types } from "mongoose";
 
 import {
   AuditAction,
   AuditEntity,
+  type DisputeStatus,
+  EmailKind,
+  OrderEvidenceActorType,
+  OrderEvidenceEventType,
   OrderStatus,
 } from "@/lib/constants/enums";
-import {
-  ProviderId,
-  UNKNOWN_PROVIDER,
-} from "@/lib/constants/providers";
 import { DomainEventType } from "@/lib/constants/events";
 import { logger } from "@/lib/logger";
 import {
+  Dispute,
+  type DisputeDoc,
   Order,
   type OrderDoc,
   type OrderDocument,
 } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 import { publishEvent } from "@/server/events/bus";
+import type { VerifiedPaymentEvent } from "@/server/payments/gateway";
+import {
+  sessionOpt,
+  tryClaimGatewayEvent,
+  withTx,
+} from "@/server/db/transaction";
 
 import { recordAudit } from "./audit.service";
-import { sendPaymentConfirmationEmail } from "./email.service";
+import {
+  enqueueEmail,
+  kickPostCommitDrain,
+} from "./email-outbox.service";
+import { captureEvidenceSafe } from "./evidence.service";
 
 interface ProcessEventResult {
   handled: boolean;
@@ -33,414 +44,1270 @@ interface ProcessEventResult {
 }
 
 /**
- * Idempotently process a Stripe event. Repeated calls with the same event id
- * are no-ops. Database mutations are atomic. Email sends are also gated by
- * the order's `confirmationEmailSentAt` so we never double-mail.
+ * Idempotently process a gateway-verified event. Repeated calls with the
+ * same event id are no-ops. Database mutations are atomic. Email sends
+ * are also gated by the order's `confirmationEmailSentAt` so we never
+ * double-mail.
+ *
+ * Accepts a normalised `VerifiedPaymentEvent` produced by any gateway's
+ * `verifyWebhook` — the webhook route owns the gateway selection (per
+ * route prefix), and this service stays gateway-agnostic.
  */
-export async function processStripeEvent(
-  event: Stripe.Event,
+export async function processGatewayEvent(
+  event: VerifiedPaymentEvent,
 ): Promise<ProcessEventResult> {
   await connectMongo();
-  logger.info("stripe.event", { id: event.id, type: event.type });
+  logger.info("payments.event", { id: event.eventId, type: event.type });
 
+  // Best-effort: WEBHOOK_RECEIVED is non-transactional — observability
+  // only. The dedupe-claim inside each handler is the real guard.
   await recordAudit({
     action: AuditAction.WEBHOOK_RECEIVED,
     entityType: AuditEntity.WEBHOOK,
-    entityId: event.id,
+    entityId: event.eventId,
     metadata: { type: event.type },
   });
 
   switch (event.type) {
-    case "checkout.session.completed":
+    case "checkout.completed":
       return handleCheckoutCompleted(event);
-    case "checkout.session.expired":
+    case "checkout.expired":
       return handleCheckoutExpired(event);
-    case "checkout.session.async_payment_succeeded":
-      return handleCheckoutCompleted(event);
-    case "checkout.session.async_payment_failed":
+    case "checkout.failed":
       return handleCheckoutFailed(event);
-    case "payment_intent.payment_failed":
-      return handlePaymentIntentFailed(event);
+    case "payment.failed":
+      return handlePaymentFailed(event);
+    case "dispute.created":
+      return handleDisputeCreated(event);
+    case "dispute.updated":
+      return handleDisputeUpdated(event);
+    case "dispute.closed":
+      return handleDisputeClosed(event);
+    case "dispute.funds_withdrawn":
+      return handleDisputeFundsWithdrawn(event);
+    case "refund.created":
+      return handleRefundCreated(event);
+    case "unhandled":
     default:
       return { handled: false, duplicate: false, reason: "unhandled_event" };
   }
 }
 
-async function findOrderForSession(
-  session: Stripe.Checkout.Session,
+/** Back-compat re-export for any caller still on the old name. New code
+ *  should import `processGatewayEvent`. */
+export const processStripeEvent = processGatewayEvent;
+
+async function findOrderForEvent(
+  event: VerifiedPaymentEvent,
 ): Promise<OrderDocument | null> {
-  const orderId = session.client_reference_id || session.metadata?.orderId;
-  if (orderId && Types.ObjectId.isValid(orderId)) {
-    const direct = await Order.findById(orderId);
+  // Order id round-tripped via the gateway's metadata is the most
+  // reliable identifier — it survives session-id rotation and works
+  // for events that don't carry a session id.
+  if (event.orderId && Types.ObjectId.isValid(event.orderId)) {
+    const direct = await Order.findById(event.orderId);
     if (direct) return direct;
   }
-  if (session.id) {
-    return Order.findOne({ "payment.stripeSessionId": session.id });
+  if (event.sessionId) {
+    const bySession = await Order.findOne({
+      "payment.stripeSessionId": event.sessionId,
+    });
+    if (bySession) return bySession;
+  }
+  if (event.paymentIntentId) {
+    const byIntent = await Order.findOne({
+      "payment.paymentIntentId": event.paymentIntentId,
+    });
+    if (byIntent) return byIntent;
   }
   return null;
 }
 
 async function handleCheckoutCompleted(
-  event: Stripe.Event,
+  event: VerifiedPaymentEvent,
 ): Promise<ProcessEventResult> {
-  const session = event.data.object as Stripe.Checkout.Session;
-  const order = await findOrderForSession(session);
+  const order = await findOrderForEvent(event);
   if (!order) {
-    logger.warn("stripe.order_not_found_for_session", {
-      sessionId: session.id,
+    logger.warn("payments.order_not_found_for_session", {
+      sessionId: event.sessionId,
     });
     return { handled: false, duplicate: false, reason: "order_not_found" };
   }
-
-  if (order.payment.processedWebhookEventIds.includes(event.id)) {
-    await recordAudit({
-      action: AuditAction.WEBHOOK_DUPLICATE,
-      entityType: AuditEntity.WEBHOOK,
-      entityId: event.id,
-      metadata: { orderId: String(order._id) },
-    });
-    // Re-attempt the confirmation email if the payment was recorded but
-    // a previous delivery's email send failed. `sendConfirmationOnce`
-    // re-throws so Stripe will retry this delivery again — without this
-    // branch the order would stay PAID-without-email forever once Stripe
-    // saw our initial 2xx.
-    if (
-      order.status === OrderStatus.PAID &&
-      !order.payment.confirmationEmailSentAt
-    ) {
-      await sendConfirmationOnce(String(order._id));
-    }
-    return { handled: true, duplicate: true, orderId: String(order._id) };
-  }
-
-  const isAlreadyPaid = order.status === OrderStatus.PAID;
-
-  const amountReceived =
-    typeof session.amount_total === "number"
-      ? session.amount_total / 100
-      : order.pricing.amount;
-
-  // Atomic conditional update: only flip to PAID if not paid yet, and only
-  // append the event id if not present. Multiple concurrent webhooks for the
-  // same order collapse to a single state transition.
-  const updated = await Order.findOneAndUpdate(
-    {
-      _id: order._id,
-      "payment.processedWebhookEventIds": { $ne: event.id },
-    },
-    {
-      $set: {
-        status: OrderStatus.PAID,
-        "payment.status": OrderStatus.PAID,
-        "payment.paidAt": new Date(
-          (event.created ?? Math.floor(Date.now() / 1000)) * 1000,
-        ),
-        "payment.amountReceived": amountReceived,
-        "payment.paymentIntentId":
-          typeof session.payment_intent === "string"
-            ? session.payment_intent
-            : (order.payment.paymentIntentId ?? null),
-        "payment.failureReason": null,
-      },
-      $push: { "payment.processedWebhookEventIds": event.id },
-    },
-    { returnDocument: "after" },
-  ).lean<OrderDoc & { _id: Types.ObjectId }>();
-
-  if (!updated) {
-    // Conflict: another concurrent webhook already processed this event id.
-    await recordAudit({
-      action: AuditAction.WEBHOOK_DUPLICATE,
-      entityType: AuditEntity.WEBHOOK,
-      entityId: event.id,
-      metadata: { orderId: String(order._id) },
-    });
-    return { handled: true, duplicate: true, orderId: String(order._id) };
-  }
-
-  await recordAudit({
-    action: AuditAction.PAYMENT_SUCCEEDED,
-    entityType: AuditEntity.PAYMENT,
-    entityId: String(updated._id),
-    metadata: {
-      orderNumber: updated.orderNumber,
-      sessionId: session.id,
-      amountReceived,
-      currency: updated.pricing.currency,
-      eventId: event.id,
-    },
+  return applyCheckoutPaid(order, {
+    eventId: event.eventId,
+    sessionId: event.sessionId ?? order.payment.stripeSessionId ?? "",
+    paymentIntentId: event.paymentIntentId,
+    amountTotal: event.amountTotalMinor,
+    paidAtMs: event.occurredAtMs,
+    source: "webhook",
   });
+}
 
-  if (!isAlreadyPaid) {
-    publishEvent({
-      type: DomainEventType.ORDER_PAID,
-      audience: { kind: "creator", userId: String(updated.createdBy.userId) },
-      payload: {
+interface PaidTransitionInput {
+  /** Idempotency key appended to the order's processed-events list.
+   *  Webhook supplies the Stripe event id; reconciliation synthesizes
+   *  one from the session + a timestamp. Same key applied twice is a
+   *  no-op. */
+  eventId: string;
+  sessionId: string;
+  paymentIntentId: string | null;
+  /** Stripe minor-unit amount. When null we fall back to the order's
+   *  pricing.amount — same defensive default the original webhook used. */
+  amountTotal: number | null;
+  paidAtMs: number;
+  source: "webhook" | "reconcile";
+}
+
+/**
+ * Drives a PENDING order to PAID and emits side-effects.
+ *
+ * Shared by:
+ *  - the Stripe webhook handler (default path)
+ *  - the reconcile endpoint when a customer reports they paid but the
+ *    webhook never landed (local dev without `stripe listen`, dropped
+ *    delivery, throttled retry)
+ *
+ * Idempotent on three axes:
+ *  1. `processedWebhookEventIds` — same event id is never applied twice
+ *  2. `confirmationEmailSentAt`  — single confirmation send (see
+ *     sendConfirmationOnce)
+ *  3. `isAlreadyPaid` snapshot   — domain event + email skipped when
+ *     the order was already PAID prior to this call
+ */
+export async function applyCheckoutPaid(
+  order: OrderDocument,
+  input: PaidTransitionInput,
+): Promise<ProcessEventResult> {
+  const gatewayKey = order.payment.gateway ?? "STRIPE";
+
+  type TxOutcome =
+    | { duplicate: true }
+    | {
+        duplicate: false;
+        didTransition: boolean;
+        previousStatus: OrderStatus;
+        updated: OrderDoc & { _id: Types.ObjectId };
+        amountReceived: number;
+      };
+
+  const outcome: TxOutcome = await withTx(async (session) => {
+    // 1. Durable dedupe — the unique index on `gatewayEventId` is the
+    // real idempotency primitive. Webhook + reconcile races collapse
+    // here. The Order array push below is defense-in-depth.
+    const claimed = await tryClaimGatewayEvent(
+      {
+        gatewayEventId: input.eventId,
+        gateway: gatewayKey,
+        orderId: String(order._id),
+      },
+      session,
+    );
+    if (!claimed) {
+      return { duplicate: true };
+    }
+
+    const isAlreadyPaid = order.status === OrderStatus.PAID;
+    const amountReceived =
+      typeof input.amountTotal === "number"
+        ? input.amountTotal / 100
+        : order.pricing.amount;
+
+    // 2. Conditional update — flips PENDING/LINK_GENERATED → PAID
+    // exactly once. The `status: { $ne: PAID }` guard is the
+    // serialization point against webhook-vs-reconcile races that
+    // synthesize DIFFERENT dedupe keys (`evt_xyz` vs `reconcile:cs_xyz`)
+    // — both pass the ProcessedWebhookEvent claim, but only one can
+    // flip the status. The loser falls through to the duplicate branch
+    // and never enqueues a second confirmation email.
+    //
+    // The $push is capped at -50 via $slice so the legacy array stays
+    // bounded over the order lifetime.
+    const updated = await Order.findOneAndUpdate(
+      {
+        _id: order._id,
+        status: { $ne: OrderStatus.PAID },
+        "payment.processedWebhookEventIds": { $ne: input.eventId },
+      },
+      {
+        $set: {
+          status: OrderStatus.PAID,
+          "payment.status": OrderStatus.PAID,
+          "payment.paidAt": new Date(input.paidAtMs),
+          "payment.amountReceived": amountReceived,
+          "payment.paymentIntentId":
+            input.paymentIntentId ?? (order.payment.paymentIntentId ?? null),
+          "payment.failureReason": null,
+        },
+        $push: {
+          "payment.processedWebhookEventIds": {
+            $each: [input.eventId],
+            $slice: -50,
+          },
+        },
+      },
+      { ...sessionOpt(session), returnDocument: "after" },
+    ).lean<OrderDoc & { _id: Types.ObjectId }>();
+
+    if (!updated) {
+      // Order is already PAID (another transition won the race).
+      // No audit, no evidence, no outbox enqueue — exactly one
+      // confirmation email lifecycle per order.
+      return { duplicate: true };
+    }
+
+    // 3. Audit + evidence (in-tx; failure aborts everything).
+    await recordAudit(
+      {
+        action: AuditAction.PAYMENT_SUCCEEDED,
+        entityType: AuditEntity.PAYMENT,
+        entityId: String(updated._id),
+        metadata: {
+          orderNumber: updated.orderNumber,
+          sessionId: input.sessionId,
+          amountReceived,
+          currency: updated.pricing.currency,
+          eventId: input.eventId,
+          source: input.source,
+          consentStatus: updated.consent?.status ?? "NOT_REQUESTED",
+          consentId: updated.consent?.currentConsentId
+            ? String(updated.consent.currentConsentId)
+            : null,
+        },
+      },
+      session,
+    );
+
+    await captureEvidenceSafe(
+      {
         orderId: String(updated._id),
         orderNumber: updated.orderNumber,
-        amountReceived,
-        currency: updated.pricing.currency,
-        customerName: updated.customer.name,
+        eventType: OrderEvidenceEventType.PAYMENT_COMPLETED,
+        occurredAt: new Date(input.paidAtMs),
+        actor: { type: OrderEvidenceActorType.GATEWAY, name: input.source },
+        payload: {
+          gateway: updated.payment.gateway ?? null,
+          gatewayEventId: input.eventId,
+          paymentSessionId: input.sessionId,
+          paymentIntentId: input.paymentIntentId ?? null,
+          amountReceived,
+          currency: updated.pricing.currency,
+          paidAt: new Date(input.paidAtMs).toISOString(),
+          source: input.source,
+          consentStatus: updated.consent?.status ?? "NOT_REQUESTED",
+          consentId: updated.consent?.currentConsentId
+            ? String(updated.consent.currentConsentId)
+            : null,
+        },
+        refs: {
+          gatewayEventId: input.eventId,
+          paymentSessionId: input.sessionId,
+          paymentIntentId: input.paymentIntentId ?? null,
+          transactionId: input.paymentIntentId ?? null,
+          customerEmail: updated.customer.email,
+        },
+      },
+      session,
+    );
+
+    // 4. Enqueue confirmation email — in-tx so the row never lands
+    // if the order update aborts. `isAlreadyPaid` only fires for the
+    // edge case where the in-memory order doc passed in was already
+    // PAID before this call (would have been caught above by the
+    // `status: { $ne: PAID }` filter), but the guard is kept for
+    // defensive symmetry.
+    if (!isAlreadyPaid) {
+      await enqueueEmail(
+        {
+          orderId: String(updated._id),
+          kind: EmailKind.PAYMENT_CONFIRMATION,
+          recipient: updated.customer.email,
+        },
+        session,
+      );
+    }
+
+    return {
+      duplicate: false,
+      didTransition: !isAlreadyPaid,
+      previousStatus: order.status,
+      updated,
+      amountReceived,
+    };
+  });
+
+  // 5. After commit: lifecycle log + domain-event publish + fast-path
+  // drain. Side effects run only when we actually transitioned the
+  // order (not on duplicate replays).
+  if (outcome.duplicate) {
+    await recordAudit({
+      action: AuditAction.WEBHOOK_DUPLICATE,
+      entityType: AuditEntity.WEBHOOK,
+      entityId: input.eventId,
+      metadata: { orderId: String(order._id), source: input.source },
+    });
+    return { handled: true, duplicate: true, orderId: String(order._id) };
+  }
+
+  if (outcome.didTransition) {
+    logger.info("order.lifecycle.transition", {
+      orderId: String(outcome.updated._id),
+      orderNumber: outcome.updated.orderNumber,
+      previousState: outcome.previousStatus,
+      nextState: OrderStatus.PAID,
+      transition: "paid",
+      source: `service.webhook.${input.source}`,
+      eventId: input.eventId,
+    });
+    publishEvent({
+      type: DomainEventType.ORDER_PAID,
+      audience: {
+        kind: "creator",
+        userId: String(outcome.updated.createdBy.userId),
+      },
+      payload: {
+        orderId: String(outcome.updated._id),
+        orderNumber: outcome.updated.orderNumber,
+        amountReceived: outcome.amountReceived,
+        currency: outcome.updated.pricing.currency,
+        customerName: outcome.updated.customer.name,
       },
     });
-    await sendConfirmationOnce(String(updated._id));
+    // Fast-path: try to deliver the confirmation email immediately so
+    // the customer sees it sub-second. If this fails or the process
+    // dies before it finishes, the 60s in-process drainer (or a
+    // restart) picks the row up.
+    kickPostCommitDrain();
   }
 
   return {
     handled: true,
     duplicate: false,
-    orderId: String(updated._id),
+    orderId: String(outcome.updated._id),
   };
 }
 
-/**
- * Sends the confirmation email iff it hasn't already been sent. The Mongo
- * claim is conditional, so even if two concurrent handlers race only one
- * wins.
- *
- * On send failure the claim is rolled back and the error is re-thrown so
- * the caller (the webhook route) can respond with 5xx and let Stripe
- * retry. Without the re-throw, a transient SMTP outage would leave the
- * order PAID-without-email permanently, since Stripe stops retrying once
- * it sees a 2xx.
- */
-async function sendConfirmationOnce(orderId: string): Promise<void> {
-  const claimed = await Order.findOneAndUpdate(
-    { _id: orderId, "payment.confirmationEmailSentAt": null },
-    { $set: { "payment.confirmationEmailSentAt": new Date() } },
-    { returnDocument: "after" },
-  ).lean<OrderDoc & { _id: Types.ObjectId }>();
-
-  if (!claimed) return; // Already sent by another worker.
-
-  try {
-    const dto = orderDocToDTO(claimed);
-    await sendPaymentConfirmationEmail(dto);
-  } catch (err) {
-    // Roll the claim back so the next webhook delivery (or the duplicate
-    // re-attempt branch) can try again.
-    await Order.updateOne(
-      { _id: claimed._id },
-      { $set: { "payment.confirmationEmailSentAt": null } },
-    );
-    logger.error("webhook.email_send_failed", {
-      orderId,
-      err: err instanceof Error ? err.message : String(err),
-    });
-    throw err;
-  }
-}
-
-function orderDocToDTO(
-  doc: OrderDoc & { _id: Types.ObjectId },
-): import("@/types").OrderDTO {
-  return {
-    id: String(doc._id),
-    orderNumber: doc.orderNumber,
-    bookingType: doc.bookingType,
-    status: doc.status,
-    state: doc.state,
-    customer: { ...doc.customer },
-    provider: doc.provider
-      ? {
-          id: doc.provider.id,
-          name: doc.provider.name,
-          logo: doc.provider.logo,
-          primaryColor: doc.provider.primaryColor ?? undefined,
-          onPrimaryColor: doc.provider.onPrimaryColor ?? undefined,
-        }
-      : {
-          id: ProviderId.BUDGET,
-          name: UNKNOWN_PROVIDER.name,
-          logo: UNKNOWN_PROVIDER.logo,
-          primaryColor: UNKNOWN_PROVIDER.primaryColor,
-          onPrimaryColor: UNKNOWN_PROVIDER.onPrimaryColor,
-        },
-    vehicle: { ...doc.vehicle },
-    trip: {
-      pickupDate: doc.trip.pickupDate.toISOString(),
-      dropoffDate: doc.trip.dropoffDate.toISOString(),
-    },
-    pricing: { amount: doc.pricing.amount, currency: doc.pricing.currency },
-    payment: {
-      stripeSessionId: doc.payment.stripeSessionId ?? null,
-      paymentIntentId: doc.payment.paymentIntentId ?? null,
-      checkoutUrl: doc.payment.checkoutUrl ?? null,
-      status: doc.payment.status,
-      paidAt: doc.payment.paidAt ? doc.payment.paidAt.toISOString() : null,
-      expiresAt: doc.payment.expiresAt
-        ? doc.payment.expiresAt.toISOString()
-        : null,
-      amountReceived: doc.payment.amountReceived ?? null,
-      receiptUrl: doc.payment.receiptUrl ?? null,
-      failureReason: doc.payment.failureReason ?? null,
-    },
-    createdBy: {
-      userId: String(doc.createdBy.userId),
-      name: doc.createdBy.name,
-      email: doc.createdBy.email,
-    },
-    policy: {
-      acceptedAt:
-        doc.policy?.acceptedAt?.toISOString() ?? doc.createdAt.toISOString(),
-      version: doc.policy?.version ?? "v1",
-      text: doc.policy?.text ?? "",
-    },
-    risk: {
-      flagged: doc.risk?.flagged ?? false,
-      flaggedNote: doc.risk?.flaggedNote ?? null,
-      flaggedAt: doc.risk?.flaggedAt
-        ? doc.risk.flaggedAt.toISOString()
-        : null,
-      flaggedBy: doc.risk?.flaggedBy
-        ? {
-            userId: doc.risk.flaggedBy.userId
-              ? String(doc.risk.flaggedBy.userId)
-              : null,
-            name: doc.risk.flaggedBy.name ?? null,
-          }
-        : null,
-    },
-    notes: doc.notes ?? null,
-    createdAt: doc.createdAt.toISOString(),
-    updatedAt: doc.updatedAt.toISOString(),
-  };
-}
+// `sendConfirmationOnce` and `orderDocToDTO` are gone. The confirmation
+// email now lands in the `PendingEmail` outbox inside the same
+// transaction that flips the order to PAID — the post-commit
+// `kickPostCommitDrain` ships it sub-second on the happy path, and a
+// 60s in-process drainer (plus restarts) retries on transient SMTP
+// failures. No more inline retry-on-duplicate-webhook footgun.
 
 async function handleCheckoutExpired(
-  event: Stripe.Event,
+  event: VerifiedPaymentEvent,
 ): Promise<ProcessEventResult> {
-  const session = event.data.object as Stripe.Checkout.Session;
-  const order = await findOrderForSession(session);
+  const order = await findOrderForEvent(event);
   if (!order) {
     return { handled: false, duplicate: false, reason: "order_not_found" };
   }
   if (order.status === OrderStatus.PAID) {
     return { handled: true, duplicate: true, orderId: String(order._id) };
   }
-  if (order.payment.processedWebhookEventIds.includes(event.id)) {
-    return { handled: true, duplicate: true, orderId: String(order._id) };
-  }
 
-  const updated = await Order.findOneAndUpdate(
-    {
-      _id: order._id,
-      status: { $ne: OrderStatus.PAID },
-      "payment.processedWebhookEventIds": { $ne: event.id },
-    },
-    {
-      $set: {
-        status: OrderStatus.EXPIRED,
-        "payment.status": OrderStatus.EXPIRED,
+  const gatewayKey = order.payment.gateway ?? "STRIPE";
+
+  type Outcome =
+    | { duplicate: true }
+    | { duplicate: false; updated: OrderDoc & { _id: Types.ObjectId } };
+
+  const outcome: Outcome = await withTx(async (session) => {
+    const claimed = await tryClaimGatewayEvent(
+      {
+        gatewayEventId: event.eventId,
+        gateway: gatewayKey,
+        orderId: String(order._id),
       },
-      $push: { "payment.processedWebhookEventIds": event.id },
-    },
-    { returnDocument: "after" },
-  ).lean<OrderDoc & { _id: Types.ObjectId }>();
+      session,
+    );
+    if (!claimed) return { duplicate: true };
 
-  if (!updated) {
-    return { handled: true, duplicate: true, orderId: String(order._id) };
-  }
+    const updated = await Order.findOneAndUpdate(
+      {
+        _id: order._id,
+        status: { $ne: OrderStatus.PAID },
+        "payment.processedWebhookEventIds": { $ne: event.eventId },
+      },
+      {
+        $set: {
+          status: OrderStatus.EXPIRED,
+          "payment.status": OrderStatus.EXPIRED,
+        },
+        $push: {
+          "payment.processedWebhookEventIds": {
+            $each: [event.eventId],
+            $slice: -50,
+          },
+        },
+      },
+      { ...sessionOpt(session), returnDocument: "after" },
+    ).lean<OrderDoc & { _id: Types.ObjectId }>();
 
-  await recordAudit({
-    action: AuditAction.PAYMENT_EXPIRED,
-    entityType: AuditEntity.PAYMENT,
-    entityId: String(updated._id),
-    metadata: { sessionId: session.id, eventId: event.id },
+    if (!updated) return { duplicate: true };
+
+    await recordAudit(
+      {
+        action: AuditAction.PAYMENT_EXPIRED,
+        entityType: AuditEntity.PAYMENT,
+        entityId: String(updated._id),
+        metadata: { sessionId: event.sessionId, eventId: event.eventId },
+      },
+      session,
+    );
+
+    await captureEvidenceSafe(
+      {
+        orderId: String(updated._id),
+        orderNumber: updated.orderNumber,
+        eventType: OrderEvidenceEventType.PAYMENT_EXPIRED,
+        occurredAt: new Date(event.occurredAtMs),
+        actor: { type: OrderEvidenceActorType.GATEWAY, name: "webhook" },
+        payload: {
+          gateway: updated.payment.gateway ?? null,
+          gatewayEventId: event.eventId,
+          paymentSessionId: event.sessionId ?? null,
+          reason: event.reason ?? null,
+        },
+        refs: {
+          gatewayEventId: event.eventId,
+          paymentSessionId: event.sessionId ?? null,
+          customerEmail: updated.customer.email,
+        },
+      },
+      session,
+    );
+
+    return { duplicate: false, updated };
   });
 
+  if (outcome.duplicate) {
+    return { handled: true, duplicate: true, orderId: String(order._id) };
+  }
+
+  logger.info("order.lifecycle.transition", {
+    orderId: String(outcome.updated._id),
+    orderNumber: outcome.updated.orderNumber,
+    previousState: order.status,
+    nextState: OrderStatus.EXPIRED,
+    transition: "expired",
+    source: "service.webhook.checkout_expired",
+    eventId: event.eventId,
+  });
   publishEvent({
     type: DomainEventType.ORDER_EXPIRED,
-    audience: { kind: "creator", userId: String(updated.createdBy.userId) },
+    audience: {
+      kind: "creator",
+      userId: String(outcome.updated.createdBy.userId),
+    },
     payload: {
-      orderId: String(updated._id),
-      orderNumber: updated.orderNumber,
-      customerName: updated.customer.name,
+      orderId: String(outcome.updated._id),
+      orderNumber: outcome.updated.orderNumber,
+      customerName: outcome.updated.customer.name,
     },
   });
 
-  return { handled: true, duplicate: false, orderId: String(updated._id) };
+  return {
+    handled: true,
+    duplicate: false,
+    orderId: String(outcome.updated._id),
+  };
 }
 
 async function handleCheckoutFailed(
-  event: Stripe.Event,
+  event: VerifiedPaymentEvent,
 ): Promise<ProcessEventResult> {
-  const session = event.data.object as Stripe.Checkout.Session;
-  const order = await findOrderForSession(session);
+  const order = await findOrderForEvent(event);
   if (!order) {
     return { handled: false, duplicate: false, reason: "order_not_found" };
   }
   return failOrder(
     order,
     event,
-    `Async payment failed for session ${session.id}`,
+    event.reason ?? `Async payment failed for session ${event.sessionId}`,
   );
 }
 
-async function handlePaymentIntentFailed(
-  event: Stripe.Event,
+async function handlePaymentFailed(
+  event: VerifiedPaymentEvent,
 ): Promise<ProcessEventResult> {
-  const pi = event.data.object as Stripe.PaymentIntent;
-  const order = await Order.findOne({
-    "payment.paymentIntentId": pi.id,
-  });
+  const order = await findOrderForEvent(event);
   if (!order) {
     return { handled: false, duplicate: false, reason: "order_not_found" };
   }
   const reason =
-    pi.last_payment_error?.message ?? `Payment intent ${pi.id} failed`;
+    event.reason ??
+    `Payment intent ${event.paymentIntentId ?? "?"} failed`;
   return failOrder(order, event, reason);
 }
 
 async function failOrder(
   order: OrderDocument,
-  event: Stripe.Event,
+  event: VerifiedPaymentEvent,
   reason: string,
 ): Promise<ProcessEventResult> {
-  if (order.payment.processedWebhookEventIds.includes(event.id)) {
-    return { handled: true, duplicate: true, orderId: String(order._id) };
-  }
   if (order.status === OrderStatus.PAID) {
     return { handled: true, duplicate: true, orderId: String(order._id) };
   }
-  const updated = await Order.findOneAndUpdate(
-    {
-      _id: order._id,
-      status: { $ne: OrderStatus.PAID },
-      "payment.processedWebhookEventIds": { $ne: event.id },
-    },
-    {
-      $set: {
-        status: OrderStatus.FAILED,
-        "payment.status": OrderStatus.FAILED,
-        "payment.failureReason": reason,
-      },
-      $push: { "payment.processedWebhookEventIds": event.id },
-    },
-    { returnDocument: "after" },
-  ).lean<OrderDoc & { _id: Types.ObjectId }>();
 
-  if (!updated) {
+  const gatewayKey = order.payment.gateway ?? "STRIPE";
+
+  type Outcome =
+    | { duplicate: true }
+    | { duplicate: false; updated: OrderDoc & { _id: Types.ObjectId } };
+
+  const outcome: Outcome = await withTx(async (session) => {
+    const claimed = await tryClaimGatewayEvent(
+      {
+        gatewayEventId: event.eventId,
+        gateway: gatewayKey,
+        orderId: String(order._id),
+      },
+      session,
+    );
+    if (!claimed) return { duplicate: true };
+
+    const updated = await Order.findOneAndUpdate(
+      {
+        _id: order._id,
+        status: { $ne: OrderStatus.PAID },
+        "payment.processedWebhookEventIds": { $ne: event.eventId },
+      },
+      {
+        $set: {
+          status: OrderStatus.FAILED,
+          "payment.status": OrderStatus.FAILED,
+          "payment.failureReason": reason,
+        },
+        $push: {
+          "payment.processedWebhookEventIds": {
+            $each: [event.eventId],
+            $slice: -50,
+          },
+        },
+      },
+      { ...sessionOpt(session), returnDocument: "after" },
+    ).lean<OrderDoc & { _id: Types.ObjectId }>();
+
+    if (!updated) return { duplicate: true };
+
+    await recordAudit(
+      {
+        action: AuditAction.PAYMENT_FAILED,
+        entityType: AuditEntity.PAYMENT,
+        entityId: String(updated._id),
+        metadata: { reason, eventId: event.eventId },
+      },
+      session,
+    );
+
+    await captureEvidenceSafe(
+      {
+        orderId: String(updated._id),
+        orderNumber: updated.orderNumber,
+        eventType: OrderEvidenceEventType.PAYMENT_FAILED,
+        occurredAt: new Date(event.occurredAtMs),
+        actor: { type: OrderEvidenceActorType.GATEWAY, name: "webhook" },
+        payload: {
+          gateway: updated.payment.gateway ?? null,
+          gatewayEventId: event.eventId,
+          paymentSessionId: event.sessionId ?? null,
+          paymentIntentId: event.paymentIntentId ?? null,
+          reason,
+        },
+        refs: {
+          gatewayEventId: event.eventId,
+          paymentSessionId: event.sessionId ?? null,
+          paymentIntentId: event.paymentIntentId ?? null,
+          customerEmail: updated.customer.email,
+        },
+      },
+      session,
+    );
+
+    return { duplicate: false, updated };
+  });
+
+  if (outcome.duplicate) {
     return { handled: true, duplicate: true, orderId: String(order._id) };
   }
 
-  await recordAudit({
-    action: AuditAction.PAYMENT_FAILED,
-    entityType: AuditEntity.PAYMENT,
-    entityId: String(updated._id),
-    metadata: { reason, eventId: event.id },
+  logger.info("order.lifecycle.transition", {
+    orderId: String(outcome.updated._id),
+    orderNumber: outcome.updated.orderNumber,
+    previousState: order.status,
+    nextState: OrderStatus.FAILED,
+    transition: "failed",
+    source: "service.webhook.payment_failed",
+    eventId: event.eventId,
+    reason,
   });
-
   publishEvent({
     type: DomainEventType.ORDER_FAILED,
-    audience: { kind: "creator", userId: String(updated.createdBy.userId) },
+    audience: {
+      kind: "creator",
+      userId: String(outcome.updated.createdBy.userId),
+    },
     payload: {
-      orderId: String(updated._id),
-      orderNumber: updated.orderNumber,
-      customerName: updated.customer.name,
+      orderId: String(outcome.updated._id),
+      orderNumber: outcome.updated.orderNumber,
+      customerName: outcome.updated.customer.name,
       reason,
     },
   });
 
-  return { handled: true, duplicate: false, orderId: String(updated._id) };
+  return {
+    handled: true,
+    duplicate: false,
+    orderId: String(outcome.updated._id),
+  };
+}
+
+/* ──────────────────────── Dispute + refund handlers ────────────────────── */
+
+/**
+ * Find the order targeted by a dispute / refund event. We never receive
+ * `client_reference_id` on these — the lookup chain is:
+ *   1. metadata.orderId (charge metadata, if the gateway forwarded it)
+ *   2. payment.paymentIntentId — both Dispute and Charge carry the PI id
+ *
+ * Returns null if neither match (e.g. dispute on a charge created
+ * outside this platform, or before we stored the PI id).
+ */
+async function findOrderByPaymentIntent(
+  event: VerifiedPaymentEvent,
+): Promise<OrderDocument | null> {
+  if (event.orderId && Types.ObjectId.isValid(event.orderId)) {
+    const direct = await Order.findById(event.orderId);
+    if (direct) return direct;
+  }
+  if (event.paymentIntentId) {
+    const byIntent = await Order.findOne({
+      "payment.paymentIntentId": event.paymentIntentId,
+    });
+    if (byIntent) return byIntent;
+  }
+  return null;
+}
+
+async function handleDisputeCreated(
+  event: VerifiedPaymentEvent,
+): Promise<ProcessEventResult> {
+  const d = event.dispute;
+  if (!d) {
+    return { handled: false, duplicate: false, reason: "missing_dispute_payload" };
+  }
+  const order = await findOrderByPaymentIntent(event);
+  if (!order) {
+    logger.warn("payments.dispute.order_not_found", {
+      disputeId: d.gatewayDisputeId,
+      paymentIntentId: event.paymentIntentId,
+    });
+    return { handled: false, duplicate: false, reason: "order_not_found" };
+  }
+
+  const gatewayKey = order.payment.gateway ?? "STRIPE";
+
+  type Outcome =
+    | { duplicate: true }
+    | {
+        duplicate: false;
+        dispute: DisputeDoc & { _id: Types.ObjectId };
+      };
+
+  const outcome: Outcome = await withTx(async (session) => {
+    // Primary dedupe — durable, collection-backed.
+    const claimed = await tryClaimGatewayEvent(
+      {
+        gatewayEventId: event.eventId,
+        gateway: gatewayKey,
+        orderId: String(order._id),
+      },
+      session,
+    );
+    if (!claimed) return { duplicate: true };
+
+    // Defensive: still check the per-dispute eventId array for in-flight
+    // races against pre-tx code paths.
+    const existingQuery = Dispute.findOne({
+      gatewayDisputeId: d.gatewayDisputeId,
+    });
+    const existing = await (session
+      ? existingQuery.session(session)
+      : existingQuery);
+
+    const amountMinor = d.amountMinor ?? 0;
+    const amount =
+      amountMinor > 0 ? amountMinor / 100 : order.pricing.amount;
+    const currency = (d.currency ?? order.pricing.currency) as
+      OrderDoc["pricing"]["currency"];
+
+    let dispute: DisputeDoc & { _id: Types.ObjectId };
+    if (existing) {
+      existing.status = d.status as DisputeStatus;
+      existing.reason = d.reason ?? existing.reason;
+      existing.evidenceDueAt = d.evidenceDueByMs
+        ? new Date(d.evidenceDueByMs)
+        : existing.evidenceDueAt;
+      existing.amount = amount;
+      existing.amountMinor = amountMinor;
+      existing.processedWebhookEventIds.push(event.eventId);
+      await existing.save(sessionOpt(session));
+      dispute = existing.toObject({ getters: false }) as DisputeDoc & {
+        _id: Types.ObjectId;
+      };
+    } else {
+      const created = await Dispute.create(
+        [
+          {
+            orderId: order._id,
+            orderNumber: order.orderNumber,
+            gateway: gatewayKey,
+            gatewayDisputeId: d.gatewayDisputeId,
+            chargeId: d.chargeId,
+            paymentIntentId: event.paymentIntentId,
+            status: d.status as DisputeStatus,
+            reason: d.reason,
+            outcome: null,
+            amount,
+            amountMinor,
+            currency,
+            evidenceDueAt: d.evidenceDueByMs ? new Date(d.evidenceDueByMs) : null,
+            openedAt: new Date(event.occurredAtMs),
+            processedWebhookEventIds: [event.eventId],
+          },
+        ],
+        sessionOpt(session),
+      );
+      dispute = (created[0] as unknown as {
+        toObject: (opts?: { getters?: boolean }) => DisputeDoc & {
+          _id: Types.ObjectId;
+        };
+      }).toObject({ getters: false });
+    }
+
+    await Order.updateOne(
+      { _id: order._id },
+      {
+        $set: {
+          dispute: {
+            status: dispute.status,
+            currentDisputeId: dispute._id,
+            openedAt: dispute.openedAt,
+            closedAt: null,
+            outcome: null,
+            reason: dispute.reason,
+            amount: dispute.amount,
+            currency: dispute.currency,
+          },
+          "risk.flagged": true,
+          "risk.flaggedAt": new Date(event.occurredAtMs),
+          "risk.flaggedNote": dispute.reason
+            ? `Chargeback opened: ${dispute.reason}`
+            : "Chargeback opened",
+          "risk.flaggedBy": {
+            userId: null,
+            name: `${gatewayKey} webhook`,
+          },
+        },
+      },
+      sessionOpt(session),
+    );
+
+    await recordAudit(
+      {
+        action: AuditAction.DISPUTE_CREATED,
+        entityType: AuditEntity.DISPUTE,
+        entityId: String(dispute._id),
+        metadata: {
+          orderId: String(order._id),
+          orderNumber: order.orderNumber,
+          gatewayDisputeId: dispute.gatewayDisputeId,
+          reason: dispute.reason,
+          amount: dispute.amount,
+          currency: dispute.currency,
+          eventId: event.eventId,
+        },
+      },
+      session,
+    );
+
+    await captureEvidenceSafe(
+      {
+        orderId: String(order._id),
+        orderNumber: order.orderNumber,
+        eventType: OrderEvidenceEventType.PAYMENT_FAILED,
+        occurredAt: new Date(event.occurredAtMs),
+        actor: { type: OrderEvidenceActorType.GATEWAY, name: "stripe.webhook" },
+        payload: {
+          kind: "dispute_created",
+          disputeId: String(dispute._id),
+          gatewayDisputeId: dispute.gatewayDisputeId,
+          status: dispute.status,
+          reason: dispute.reason,
+          amount: dispute.amount,
+          currency: dispute.currency,
+        },
+      },
+      session,
+    );
+
+    return { duplicate: false, dispute };
+  });
+
+  if (outcome.duplicate) {
+    await recordAudit({
+      action: AuditAction.WEBHOOK_DUPLICATE,
+      entityType: AuditEntity.WEBHOOK,
+      entityId: event.eventId,
+      metadata: { source: "dispute.created" },
+    });
+    return { handled: true, duplicate: true, orderId: String(order._id) };
+  }
+
+  logger.info("order.lifecycle.transition", {
+    orderId: String(order._id),
+    orderNumber: order.orderNumber,
+    previousState: order.status,
+    nextState: order.status,
+    transition: "dispute_created",
+    source: "service.webhook.dispute_created",
+    eventId: event.eventId,
+    disputeId: String(outcome.dispute._id),
+  });
+  publishEvent({
+    type: DomainEventType.ORDER_DISPUTE_CREATED,
+    audience: { kind: "creator", userId: String(order.createdBy.userId) },
+    payload: {
+      orderId: String(order._id),
+      orderNumber: order.orderNumber,
+      customerName: order.customer.name,
+      disputeId: String(outcome.dispute._id),
+      status: outcome.dispute.status,
+      reason: outcome.dispute.reason,
+      amount: outcome.dispute.amount,
+      currency: outcome.dispute.currency,
+    },
+  });
+
+  return { handled: true, duplicate: false, orderId: String(order._id) };
+}
+
+async function handleDisputeUpdated(
+  event: VerifiedPaymentEvent,
+): Promise<ProcessEventResult> {
+  const d = event.dispute;
+  if (!d) {
+    return { handled: false, duplicate: false, reason: "missing_dispute_payload" };
+  }
+  const dispute = await Dispute.findOne({
+    gatewayDisputeId: d.gatewayDisputeId,
+  });
+  if (!dispute) {
+    // Update arrived before created — rare but possible if Stripe retried
+    // out of order. Treat as a create and let that handler reconcile.
+    return handleDisputeCreated(event);
+  }
+
+  type Outcome =
+    | { duplicate: true }
+    | { duplicate: false; status: DisputeStatus };
+
+  const outcome: Outcome = await withTx(async (session) => {
+    const claimed = await tryClaimGatewayEvent(
+      {
+        gatewayEventId: event.eventId,
+        gateway: dispute.gateway ?? "STRIPE",
+        orderId: String(dispute.orderId),
+      },
+      session,
+    );
+    if (!claimed) return { duplicate: true };
+
+    dispute.status = d.status as DisputeStatus;
+    dispute.reason = d.reason ?? dispute.reason;
+    dispute.evidenceDueAt = d.evidenceDueByMs
+      ? new Date(d.evidenceDueByMs)
+      : dispute.evidenceDueAt;
+    dispute.processedWebhookEventIds.push(event.eventId);
+    await dispute.save(sessionOpt(session));
+
+    await Order.updateOne(
+      { _id: dispute.orderId },
+      {
+        $set: {
+          "dispute.status": dispute.status,
+          "dispute.reason": dispute.reason,
+        },
+      },
+      sessionOpt(session),
+    );
+
+    await recordAudit(
+      {
+        action: AuditAction.DISPUTE_UPDATED,
+        entityType: AuditEntity.DISPUTE,
+        entityId: String(dispute._id),
+        metadata: {
+          orderId: String(dispute.orderId),
+          orderNumber: dispute.orderNumber,
+          status: dispute.status,
+          eventId: event.eventId,
+        },
+      },
+      session,
+    );
+
+    return { duplicate: false, status: dispute.status as DisputeStatus };
+  });
+
+  if (outcome.duplicate) {
+    return {
+      handled: true,
+      duplicate: true,
+      orderId: String(dispute.orderId),
+    };
+  }
+
+  publishEvent({
+    type: DomainEventType.ORDER_DISPUTE_UPDATED,
+    audience: { kind: "admins" },
+    payload: {
+      orderId: String(dispute.orderId),
+      orderNumber: dispute.orderNumber,
+      disputeId: String(dispute._id),
+      status: outcome.status,
+    },
+  });
+
+  return {
+    handled: true,
+    duplicate: false,
+    orderId: String(dispute.orderId),
+  };
+}
+
+async function handleDisputeClosed(
+  event: VerifiedPaymentEvent,
+): Promise<ProcessEventResult> {
+  const d = event.dispute;
+  if (!d) {
+    return { handled: false, duplicate: false, reason: "missing_dispute_payload" };
+  }
+  let dispute = await Dispute.findOne({
+    gatewayDisputeId: d.gatewayDisputeId,
+  });
+  let materialisedDuringClose = false;
+  if (!dispute) {
+    // Closed before we saw created. Materialise it now so the audit
+    // trail isn't lost — then apply the close on top. The created
+    // handler will register this event-id on the new dispute; we strip
+    // it back off so the close transition below isn't treated as a
+    // duplicate of itself.
+    await handleDisputeCreated(event);
+    dispute = await Dispute.findOne({
+      gatewayDisputeId: d.gatewayDisputeId,
+    });
+    if (!dispute) {
+      return { handled: false, duplicate: false, reason: "order_not_found" };
+    }
+    materialisedDuringClose = true;
+    dispute.processedWebhookEventIds = dispute.processedWebhookEventIds.filter(
+      (id) => id !== event.eventId,
+    );
+  }
+  if (
+    !materialisedDuringClose &&
+    dispute.processedWebhookEventIds.includes(event.eventId)
+  ) {
+    return {
+      handled: true,
+      duplicate: true,
+      orderId: String(dispute.orderId),
+    };
+  }
+
+  const closedAt = new Date(event.occurredAtMs);
+
+  type Outcome =
+    | { duplicate: true }
+    | { duplicate: false };
+
+  const outcome: Outcome = await withTx(async (session) => {
+    // When `materialisedDuringClose` is true the `handleDisputeCreated`
+    // call above already inserted a ProcessedWebhookEvent row for this
+    // event id — that's the "we created the dispute from a close" race.
+    // Try-claim is idempotent (returns false if already claimed) so this
+    // branch correctly falls through without re-applying anything new.
+    if (!materialisedDuringClose) {
+      const claimed = await tryClaimGatewayEvent(
+        {
+          gatewayEventId: event.eventId,
+          gateway: dispute.gateway ?? "STRIPE",
+          orderId: String(dispute.orderId),
+        },
+        session,
+      );
+      if (!claimed) return { duplicate: true };
+    }
+
+    dispute.status = d.status as DisputeStatus;
+    dispute.outcome = (d.outcome ?? null) as DisputeDoc["outcome"];
+    dispute.closedAt = closedAt;
+    dispute.processedWebhookEventIds.push(event.eventId);
+    await dispute.save(sessionOpt(session));
+
+    await Order.updateOne(
+      { _id: dispute.orderId },
+      {
+        $set: {
+          "dispute.status": dispute.status,
+          "dispute.closedAt": closedAt,
+          "dispute.outcome": dispute.outcome,
+        },
+      },
+      sessionOpt(session),
+    );
+
+    await recordAudit(
+      {
+        action: AuditAction.DISPUTE_CLOSED,
+        entityType: AuditEntity.DISPUTE,
+        entityId: String(dispute._id),
+        metadata: {
+          orderId: String(dispute.orderId),
+          orderNumber: dispute.orderNumber,
+          outcome: dispute.outcome,
+          status: dispute.status,
+          eventId: event.eventId,
+        },
+      },
+      session,
+    );
+
+    return { duplicate: false };
+  });
+
+  if (outcome.duplicate) {
+    return {
+      handled: true,
+      duplicate: true,
+      orderId: String(dispute.orderId),
+    };
+  }
+
+  publishEvent({
+    type: DomainEventType.ORDER_DISPUTE_CLOSED,
+    audience: { kind: "admins" },
+    payload: {
+      orderId: String(dispute.orderId),
+      orderNumber: dispute.orderNumber,
+      disputeId: String(dispute._id),
+      outcome: dispute.outcome,
+      status: dispute.status,
+    },
+  });
+
+  return {
+    handled: true,
+    duplicate: false,
+    orderId: String(dispute.orderId),
+  };
+}
+
+async function handleDisputeFundsWithdrawn(
+  event: VerifiedPaymentEvent,
+): Promise<ProcessEventResult> {
+  const d = event.dispute;
+  if (!d) {
+    return { handled: false, duplicate: false, reason: "missing_dispute_payload" };
+  }
+  const dispute = await Dispute.findOne({
+    gatewayDisputeId: d.gatewayDisputeId,
+  });
+  if (!dispute) {
+    return { handled: false, duplicate: false, reason: "dispute_not_found" };
+  }
+  const fwOutcome: { duplicate: boolean } = await withTx(async (session) => {
+    const claimed = await tryClaimGatewayEvent(
+      {
+        gatewayEventId: event.eventId,
+        gateway: dispute.gateway ?? "STRIPE",
+        orderId: String(dispute.orderId),
+      },
+      session,
+    );
+    if (!claimed) return { duplicate: true };
+
+    dispute.processedWebhookEventIds.push(event.eventId);
+    await dispute.save(sessionOpt(session));
+
+    await recordAudit(
+      {
+        action: AuditAction.DISPUTE_FUNDS_WITHDRAWN,
+        entityType: AuditEntity.DISPUTE,
+        entityId: String(dispute._id),
+        metadata: {
+          orderId: String(dispute.orderId),
+          orderNumber: dispute.orderNumber,
+          amount: dispute.amount,
+          currency: dispute.currency,
+          eventId: event.eventId,
+        },
+      },
+      session,
+    );
+
+    return { duplicate: false };
+  });
+
+  if (fwOutcome.duplicate) {
+    return {
+      handled: true,
+      duplicate: true,
+      orderId: String(dispute.orderId),
+    };
+  }
+
+  // Re-use the dispute_updated push so the UI invalidates and surfaces
+  // any balance-impact copy. No separate domain event type for now —
+  // operators care more about created/closed.
+  publishEvent({
+    type: DomainEventType.ORDER_DISPUTE_UPDATED,
+    audience: { kind: "admins" },
+    payload: {
+      orderId: String(dispute.orderId),
+      orderNumber: dispute.orderNumber,
+      disputeId: String(dispute._id),
+      status: dispute.status,
+      fundsWithdrawn: true,
+    },
+  });
+
+  return {
+    handled: true,
+    duplicate: false,
+    orderId: String(dispute.orderId),
+  };
+}
+
+async function handleRefundCreated(
+  event: VerifiedPaymentEvent,
+): Promise<ProcessEventResult> {
+  const r = event.refund;
+  if (!r) {
+    return { handled: false, duplicate: false, reason: "missing_refund_payload" };
+  }
+  const order = await findOrderByPaymentIntent(event);
+  if (!order) {
+    logger.warn("payments.refund.order_not_found", {
+      refundId: r.gatewayRefundId,
+      paymentIntentId: event.paymentIntentId,
+    });
+    return { handled: false, duplicate: false, reason: "order_not_found" };
+  }
+
+  const gatewayKey = order.payment.gateway ?? "STRIPE";
+  const totalRefundedMinor = r.amountRefundedTotalMinor ?? r.amountMinor ?? 0;
+  const totalRefunded = totalRefundedMinor / 100;
+  const eventAmount = (r.amountMinor ?? 0) / 100;
+
+  type Outcome =
+    | { duplicate: true }
+    | { duplicate: false; updated: OrderDoc & { _id: Types.ObjectId } };
+
+  const outcome: Outcome = await withTx(async (session) => {
+    const claimed = await tryClaimGatewayEvent(
+      {
+        gatewayEventId: event.eventId,
+        gateway: gatewayKey,
+        orderId: String(order._id),
+      },
+      session,
+    );
+    if (!claimed) return { duplicate: true };
+
+    const updated = await Order.findOneAndUpdate(
+      {
+        _id: order._id,
+        "payment.processedWebhookEventIds": { $ne: event.eventId },
+      },
+      {
+        $set: {
+          refundedAmount: Math.max(
+            order.refundedAmount ?? 0,
+            totalRefunded,
+          ),
+        },
+        $push: {
+          "payment.processedWebhookEventIds": {
+            $each: [event.eventId],
+            $slice: -50,
+          },
+        },
+      },
+      { ...sessionOpt(session), returnDocument: "after" },
+    ).lean<OrderDoc & { _id: Types.ObjectId }>();
+    if (!updated) return { duplicate: true };
+
+    await recordAudit(
+      {
+        action: AuditAction.REFUND_CREATED,
+        entityType: AuditEntity.PAYMENT,
+        entityId: String(updated._id),
+        metadata: {
+          orderId: String(updated._id),
+          orderNumber: updated.orderNumber,
+          gatewayRefundId: r.gatewayRefundId,
+          amount: eventAmount,
+          totalRefunded,
+          currency: updated.pricing.currency,
+          eventId: event.eventId,
+        },
+      },
+      session,
+    );
+
+    await captureEvidenceSafe(
+      {
+        orderId: String(updated._id),
+        orderNumber: updated.orderNumber,
+        eventType: OrderEvidenceEventType.REFUND_ISSUED,
+        occurredAt: new Date(event.occurredAtMs),
+        actor: { type: OrderEvidenceActorType.GATEWAY, name: "stripe.webhook" },
+        payload: {
+          gatewayRefundId: r.gatewayRefundId,
+          amount: eventAmount,
+          totalRefunded,
+          currency: updated.pricing.currency,
+        },
+      },
+      session,
+    );
+
+    return { duplicate: false, updated };
+  });
+
+  if (outcome.duplicate) {
+    return { handled: true, duplicate: true, orderId: String(order._id) };
+  }
+
+  publishEvent({
+    type: DomainEventType.ORDER_REFUNDED,
+    audience: {
+      kind: "creator",
+      userId: String(outcome.updated.createdBy.userId),
+    },
+    payload: {
+      orderId: String(outcome.updated._id),
+      orderNumber: outcome.updated.orderNumber,
+      customerName: outcome.updated.customer.name,
+      amount: eventAmount,
+      totalRefunded,
+      currency: outcome.updated.pricing.currency,
+    },
+  });
+
+  return {
+    handled: true,
+    duplicate: false,
+    orderId: String(outcome.updated._id),
+  };
 }

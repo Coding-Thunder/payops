@@ -3,6 +3,11 @@ import { z } from "zod";
 export const loginSchema = z.object({
   email: z.string().email("Enter a valid email"),
   password: z.string().min(8, "Password must be at least 8 characters"),
+  /** Cloudflare Turnstile token. Optional in the schema so non-browser
+   *  clients (and local dev where Turnstile isn't configured) can still
+   *  hit the endpoint — the server-side verifier no-ops when the
+   *  TURNSTILE_SECRET_KEY env is unset. */
+  cfToken: z.string().max(2048).optional(),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;

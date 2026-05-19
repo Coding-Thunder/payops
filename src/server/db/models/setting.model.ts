@@ -7,6 +7,8 @@ import {
 import {
   BOOKING_TYPES,
   BookingType,
+  CONSENT_MODES,
+  ConsentMode,
   CURRENCIES,
   Currency,
 } from "@/lib/constants/enums";
@@ -26,6 +28,14 @@ export const DEFAULT_CANCELLATION_POLICY = [
   "Refunds are processed within 5-10 business days to the original payment method.",
   "To request a refund, reply to this email or contact our support team using the details below.",
 ].join("\n");
+
+/**
+ * Default copy for the customer acknowledgement statement. Intentionally
+ * short, calm, and free of legalese — this is operational evidence, not
+ * an enterprise contract.
+ */
+export const DEFAULT_CONSENT_MESSAGE =
+  "I confirm that I understand and agree to proceed with this payment and booking.";
 
 export interface SettingDoc {
   key: string;
@@ -47,6 +57,13 @@ export interface SettingDoc {
    *  the policy text changes. Snapshotted onto the order so disputes can
    *  point to the exact policy version the customer paid against. */
   cancellationPolicyVersion: string;
+  /** Operational policy for pre-payment consent. ADVISORY is the safe
+   *  default — we capture consent but never block payment. Tighten only
+   *  when ops/legal explicitly opt in. */
+  consentMode: ConsentMode;
+  /** Customer-facing acknowledgement copy. Editable by admins; rendered
+   *  verbatim into emails and the hosted consent page. */
+  consentMessage: string;
   updatedBy?: Schema.Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
@@ -102,6 +119,18 @@ const settingSchema = new Schema<SettingDoc>(
       required: true,
       default: "v1",
       maxlength: 16,
+    },
+    consentMode: {
+      type: String,
+      enum: CONSENT_MODES,
+      required: true,
+      default: "ADVISORY",
+    },
+    consentMessage: {
+      type: String,
+      required: true,
+      default: DEFAULT_CONSENT_MESSAGE,
+      maxlength: 1000,
     },
     updatedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
   },

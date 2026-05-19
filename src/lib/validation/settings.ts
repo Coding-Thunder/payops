@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import { BOOKING_TYPES, CURRENCIES } from "@/lib/constants/enums";
+import {
+  BOOKING_TYPES,
+  CONSENT_MODES,
+  CURRENCIES,
+} from "@/lib/constants/enums";
 
 // Support email/phone live on the Branding doc now (see /admin/branding).
 // Redirect URLs are computed from APP_URL — accepted but ignored by the
@@ -23,6 +27,13 @@ export const updateSettingsSchema = z.object({
     .trim()
     .min(20, "Policy must be at least 20 characters")
     .max(4000, "Policy must be 4000 characters or fewer"),
+  consentMode: z.enum(CONSENT_MODES).optional(),
+  consentMessage: z
+    .string()
+    .trim()
+    .min(20, "Acknowledgement must be at least 20 characters")
+    .max(1000, "Acknowledgement must be 1000 characters or fewer")
+    .optional(),
 });
 
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;

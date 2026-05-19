@@ -223,7 +223,7 @@ async function ensureSettingsDocument() {
         ],
         defaultCurrency: process.env.DEFAULT_CURRENCY ?? "USD",
         supportEmail:
-          process.env.SUPPORT_EMAIL ?? "support@payops.example.com",
+          process.env.SUPPORT_EMAIL ?? "vinaymaheshwari35@gmail.com",
         supportPhone: process.env.SUPPORT_PHONE ?? "+1-555-0100",
         successRedirectUrl: `${appUrl}/pay/success`,
         cancelRedirectUrl: `${appUrl}/pay/cancelled`,

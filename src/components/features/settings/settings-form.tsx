@@ -28,8 +28,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
 import { Section, SectionStack } from "@/components/common/section";
 import { api, ApiClientError } from "@/lib/api-client";
-import { BOOKING_TYPES, CURRENCIES } from "@/lib/constants/enums";
-import { BookingTypeLabel } from "@/lib/constants/labels";
+import {
+  BOOKING_TYPES,
+  CONSENT_MODES,
+  CURRENCIES,
+} from "@/lib/constants/enums";
+import { BookingTypeLabel, ConsentModeLabel } from "@/lib/constants/labels";
 import {
   updateSettingsSchema,
   type UpdateSettingsInput,
@@ -235,6 +239,71 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
                 )}
               />
             </div>
+          </Section>
+
+          <Section
+            title="Customer consent"
+            description="Lightweight pre-payment acknowledgement layer. Mode controls whether the email surfaces the consent block as advisory, recommended, or required. The acknowledgement copy is shown verbatim in the email and on the hosted consent page."
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="consentMode"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Consent mode</FormLabel>
+                    <Select
+                      value={field.value ?? "ADVISORY"}
+                      onValueChange={field.onChange}
+                      disabled={!canEdit || isSubmitting}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {CONSENT_MODES.map((m) => (
+                          <SelectItem key={m} value={m}>
+                            {ConsentModeLabel[m]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Advisory records consent but never blocks payment.
+                      Required tightens the customer-facing copy — payment
+                      itself remains driven by Stripe.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <FormField
+              control={form.control}
+              name="consentMessage"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Acknowledgement statement</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      rows={3}
+                      placeholder="I confirm that I understand and agree to proceed with this payment and booking."
+                      disabled={!canEdit || isSubmitting}
+                      {...field}
+                      value={field.value ?? ""}
+                    />
+                  </FormControl>
+                  <p className="text-[11.5px] text-muted-foreground">
+                    Keep it short, calm, and free of legalese. 20–1,000
+                    characters.
+                  </p>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </Section>
 
           <Section

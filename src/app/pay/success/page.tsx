@@ -1,26 +1,68 @@
 import Image from "next/image";
 
 import { getBranding } from "@/server/services/branding.service";
-import { getOrderByNumber } from "@/server/services/order.service";
+import {
+  getOrderByNumber,
+  reconcileOrderPayment,
+} from "@/server/services/order.service";
 import { BookingTypeLabel } from "@/lib/constants/labels";
 import { resolveProvider } from "@/lib/constants/providers";
+import { OrderStatus } from "@/lib/constants/enums";
 import { formatCurrency, formatDateTime } from "@/lib/format";
+import { logger } from "@/lib/logger";
+
+import { PaymentSuccessAutoRefresh } from "./auto-refresh";
 
 export const metadata = { title: "Payment received" };
 export const dynamic = "force-dynamic";
 
 interface SuccessPageProps {
-  searchParams: Promise<{ order?: string }>;
+  searchParams: Promise<{ order?: string; session_id?: string }>;
 }
 
 export default async function PaymentSuccessPage({
   searchParams,
 }: SuccessPageProps) {
-  const { order: orderNumber } = await searchParams;
-  const [order, branding] = await Promise.all([
-    orderNumber ? getOrderByNumber(orderNumber) : Promise.resolve(null),
-    getBranding(),
-  ]);
+  const { order: orderNumber, session_id: sessionId } = await searchParams;
+  const branding = await getBranding();
+
+  // Defensive: require BOTH order and Stripe session id, and verify the
+  // pair matches before rendering anything. The session id is server-
+  // rendered into the success URL by Stripe via the {CHECKOUT_SESSION_ID}
+  // placeholder, so anyone arriving here legitimately has it. Without
+  // this pairing check, a curl loop over order-number space pulls full
+  // PII for every paid order on the platform.
+  let order = orderNumber ? await getOrderByNumber(orderNumber) : null;
+  if (order && order.payment.paymentSessionId !== (sessionId ?? null)) {
+    order = null;
+  }
+
+  // Self-heal the local-dev / dropped-webhook case at first render.
+  // Stripe just sent the customer here, which means the session SHOULD
+  // be paid. Ask Stripe directly; if confirmed, drive the same atomic
+  // transition the webhook uses. By the time the page paints, the
+  // order reflects Stripe's truth even if the webhook never reached us.
+  if (
+    order &&
+    order.status === OrderStatus.PAYMENT_PENDING &&
+    order.payment.paymentSessionId &&
+    sessionId
+  ) {
+    try {
+      const result = await reconcileOrderPayment(order.id, undefined, {
+        sessionId,
+      });
+      order = result.order;
+    } catch (err) {
+      logger.warn("pay_success.reconcile_failed", {
+        orderId: order.id,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  const stillPending =
+    order?.status === OrderStatus.PAYMENT_PENDING &&
+    Boolean(order?.payment.paymentSessionId);
   const brand = branding.brandName;
   const supportEmail = branding.supportEmail;
   const supportPhone = branding.supportPhone;
@@ -39,29 +81,59 @@ export default async function PaymentSuccessPage({
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       {/* ─── Hero ─── */}
       <div className="bg-gradient-to-br from-emerald-50 via-white to-white px-8 pt-10 pb-8 text-center">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="h-7 w-7"
-          >
-            <path d="M20 6 9 17l-5-5" />
-          </svg>
+        <div
+          className={
+            stillPending
+              ? "mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700"
+              : "mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"
+          }
+        >
+          {stillPending ? (
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-7 w-7 animate-spin"
+              aria-hidden
+            >
+              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+            </svg>
+          ) : (
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-7 w-7"
+              aria-hidden
+            >
+              <path d="M20 6 9 17l-5-5" />
+            </svg>
+          )}
         </div>
-        <p className="mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
-          Payment confirmed
+        <p
+          className={
+            stillPending
+              ? "mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700"
+              : "mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700"
+          }
+        >
+          {stillPending ? "Confirming with Stripe" : "Payment confirmed"}
         </p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
-          Payment received
+          {stillPending ? "We’re confirming your payment" : "Payment received"}
         </h1>
         <p className="mt-2 text-sm text-slate-600">
-          Thank you. {brand} has confirmed your payment and a receipt is on
-          its way to your inbox.
+          {stillPending
+            ? `${brand} is waiting for Stripe to finalise this charge. This page refreshes automatically.`
+            : `Thank you. ${brand} has confirmed your payment and a receipt is on its way to your inbox.`}
         </p>
+        {stillPending ? <PaymentSuccessAutoRefresh /> : null}
       </div>
 
       {order && providerMeta && amount ? (

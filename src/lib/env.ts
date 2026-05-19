@@ -7,7 +7,7 @@ const serverSchema = z.object({
     .enum(["development", "test", "production"])
     .default("development"),
 
-  APP_NAME: z.string().min(1).default("PayOps Rentals"),
+  APP_NAME: z.string().min(1).default("PayOps"),
   CUSTOMER_BRAND_NAME: z.string().min(1).default("Rental Confirmation"),
   APP_URL: z.string().url().default("http://localhost:3000"),
 
@@ -17,13 +17,22 @@ const serverSchema = z.object({
   JWT_SECRET: z
     .string()
     .min(32, "JWT_SECRET must be at least 32 chars"),
+  /** Hard ceiling on session lifetime is enforced separately in the JWT
+   *  helper (7d). Keep this string parseable as `<num><s|m|h|d>`. */
   JWT_EXPIRES_IN: z.string().default("12h"),
+  /** Optional. Defaults to JWT_SECRET when unset so existing deploys
+   *  keep working, but encouraged to rotate to a dedicated secret so a
+   *  leak of session material doesn't also forge consent tokens. */
+  CONSENT_TOKEN_SECRET: z.string().min(32).optional(),
   COOKIE_NAME: z.string().default("payops_session"),
   COOKIE_DOMAIN: z.string().optional(),
   COOKIE_SECURE: z
     .union([z.string(), z.boolean()])
     .transform((v) => (typeof v === "boolean" ? v : v === "true"))
-    .default(false),
+    // Default true so a missing env in prod can't ship Secure-less
+    // cookies. Local dev that uses plain HTTP can set COOKIE_SECURE=false
+    // explicitly.
+    .default(true),
 
   STRIPE_SECRET_KEY: z.string().min(1, "STRIPE_SECRET_KEY is required"),
   STRIPE_WEBHOOK_SECRET: z
@@ -44,20 +53,34 @@ const serverSchema = z.object({
   SMTP_PASS: z.string().optional(),
   EMAIL_FROM: z
     .string()
-    .default("PayOps Rentals <no-reply@payops.example.com>"),
+    .default("PayOps <no-reply@payops.example.com>"),
   EMAIL_REPLY_TO: z.string().optional(),
-  SUPPORT_EMAIL: z.string().default("support@payops.example.com"),
+  SUPPORT_EMAIL: z.string().default("vinaymaheshwari35@gmail.com"),
   SUPPORT_PHONE: z.string().default("+1-555-0100"),
 
   DEFAULT_CURRENCY: z.string().default("USD"),
   DEFAULT_PAYMENT_EXPIRY_HOURS: z.coerce.number().int().positive().default(24),
   DEFAULT_ORDER_PREFIX: z.string().default("ORD"),
+
+  /**
+   * Cloudflare Turnstile — server-side secret used to verify client
+   * tokens against challenges.cloudflare.com. Leave empty to disable
+   * the bot-check pre-flight on /api/auth/login and /api/quotations:
+   * routes still serve, the verifier just no-ops. Pair with the public
+   * NEXT_PUBLIC_TURNSTILE_SITE_KEY below — both must be set for the
+   * widget to render AND the server to validate.
+   */
+  TURNSTILE_SECRET_KEY: z.string().optional(),
 });
 
 const clientSchema = z.object({
-  NEXT_PUBLIC_APP_NAME: z.string().default("PayOps Rentals"),
+  NEXT_PUBLIC_APP_NAME: z.string().default("PayOps"),
   NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().optional(),
+  /** Cloudflare Turnstile public site key. When set, the login + sales
+   *  forms render the Turnstile widget and pass its token through to
+   *  the API. Server verification lives behind TURNSTILE_SECRET_KEY. */
+  NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().optional(),
 });
 
 type ServerEnv = z.infer<typeof serverSchema>;
@@ -86,6 +109,7 @@ function parseClient(): ClientEnv {
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:
       process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
+    NEXT_PUBLIC_TURNSTILE_SITE_KEY: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
   });
   if (!parsed.success) {
     const formatted = parsed.error.issues

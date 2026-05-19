@@ -1,13 +1,20 @@
 import "server-only";
 
-import { Types } from "mongoose";
+import { type ClientSession, Types } from "mongoose";
 import type Stripe from "stripe";
+
+import { sessionOpt, withTx } from "@/server/db/transaction";
 
 import {
   AuditAction,
   AuditEntity,
   BookingType,
+  ConsentMethod,
+  ConsentStatus,
+  OrderEvidenceActorType,
+  OrderEvidenceEventType,
   OrderStatus,
+  type PaymentGatewayKey,
   RecordState,
   UserRole,
 } from "@/lib/constants/enums";
@@ -34,11 +41,21 @@ import type { OrderDTO, PaginatedResult } from "@/types";
 
 import type { RequestContext } from "@/server/api/request-context";
 import { getStripe } from "@/server/payments/stripe";
+import type {
+  CreatedPaymentSession,
+  SessionStatus,
+} from "@/server/payments/gateway";
+import {
+  getDefaultGateway,
+  getGateway,
+} from "@/server/payments/gateways";
 import { recordAudit } from "./audit.service";
+import { captureEvidenceSafe } from "./evidence.service";
 import { getSettings } from "./settings.service";
 import { generateOrderNumber } from "./order-number";
 import { buildProviderSnapshotFromKey } from "./provider.service";
 import { getBranding } from "./branding.service";
+import { applyCheckoutPaid } from "./webhook.service";
 
 const ZERO_DECIMAL_CURRENCIES = new Set([
   "BIF",
@@ -111,9 +128,13 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
     },
     pricing: { amount: doc.pricing.amount, currency: doc.pricing.currency },
     payment: {
-      stripeSessionId: doc.payment.stripeSessionId ?? null,
+      gateway: (doc.payment.gateway ?? null) as PaymentGatewayKey | null,
+      // Schema fields keep their legacy names (Stripe-era); the DTO
+      // re-exposes them under generic names so UI / email / external
+      // callers never spell "Stripe" outside the gateway adapter.
+      paymentSessionId: doc.payment.stripeSessionId ?? null,
       paymentIntentId: doc.payment.paymentIntentId ?? null,
-      checkoutUrl: doc.payment.checkoutUrl ?? null,
+      paymentUrl: doc.payment.checkoutUrl ?? null,
       status: doc.payment.status as OrderStatus,
       paidAt: doc.payment.paidAt ? doc.payment.paidAt.toISOString() : null,
       expiresAt: doc.payment.expiresAt
@@ -122,6 +143,12 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
       amountReceived: doc.payment.amountReceived ?? null,
       receiptUrl: doc.payment.receiptUrl ?? null,
       failureReason: doc.payment.failureReason ?? null,
+      confirmationEmailSentAt: doc.payment.confirmationEmailSentAt
+        ? doc.payment.confirmationEmailSentAt.toISOString()
+        : null,
+      initiatedAt: doc.payment.initiatedAt
+        ? doc.payment.initiatedAt.toISOString()
+        : null,
     },
     createdBy: {
       userId: String(doc.createdBy.userId),
@@ -149,6 +176,50 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
           }
         : null,
     },
+    consent: {
+      status: (doc.consent?.status ?? ConsentStatus.NOT_REQUESTED) as ConsentStatus,
+      currentConsentId: doc.consent?.currentConsentId
+        ? String(doc.consent.currentConsentId)
+        : null,
+      requestedAt: doc.consent?.requestedAt
+        ? doc.consent.requestedAt.toISOString()
+        : null,
+      receivedAt: doc.consent?.receivedAt
+        ? doc.consent.receivedAt.toISOString()
+        : null,
+      verifiedAt: doc.consent?.verifiedAt
+        ? doc.consent.verifiedAt.toISOString()
+        : null,
+      method: (doc.consent?.method as ConsentMethod | null | undefined) ?? null,
+    },
+    dispute: doc.dispute
+      ? {
+          status: (doc.dispute.status ?? null) as
+            | import("@/lib/constants/enums").DisputeStatus
+            | null,
+          currentDisputeId: doc.dispute.currentDisputeId
+            ? String(doc.dispute.currentDisputeId)
+            : null,
+          openedAt: doc.dispute.openedAt
+            ? doc.dispute.openedAt.toISOString()
+            : null,
+          closedAt: doc.dispute.closedAt
+            ? doc.dispute.closedAt.toISOString()
+            : null,
+          outcome: (doc.dispute.outcome ?? null) as
+            | import("@/lib/constants/enums").DisputeOutcome
+            | null,
+          reason: doc.dispute.reason ?? null,
+          amount:
+            typeof doc.dispute.amount === "number"
+              ? doc.dispute.amount
+              : null,
+          currency: (doc.dispute.currency ?? null) as
+            | import("@/lib/constants/enums").Currency
+            | null,
+        }
+      : null,
+    refundedAmount: doc.refundedAmount ?? 0,
     notes: doc.notes ?? null,
     createdAt: doc.createdAt.toISOString(),
     updatedAt: doc.updatedAt.toISOString(),
@@ -157,9 +228,26 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
 
 interface CreateOrderResult {
   order: OrderDTO;
-  checkoutUrl: string;
+  /** Always null on creation now — Stripe is no longer contacted until
+   *  the agent explicitly triggers payment initiation via the email
+   *  composer. Kept on the result for caller compat. */
+  checkoutUrl: string | null;
 }
 
+/**
+ * Persist a business order. NO Stripe side-effects.
+ *
+ * The order starts in NOT_INITIATED state — checkoutUrl, sessionId,
+ * paymentIntentId, expiresAt all remain null. The agent transitions
+ * the order to PAYMENT_PENDING by calling `initiatePayment` from the
+ * email composer (which also dispatches the request email and creates
+ * the consent record in one atomic call).
+ *
+ * Separating creation from payment lets the agent:
+ *   - draft / preview an order without burning a Stripe session
+ *   - edit booking details before payment kicks off
+ *   - keep Stripe rate-limit + idempotency surface tight
+ */
 export async function createOrder(
   input: CreateOrderInput,
   ctx: OrderContext,
@@ -174,148 +262,452 @@ export async function createOrder(
   }
 
   const currency = input.pricing.currency ?? settings.defaultCurrency;
-  const expiresAt = new Date(
-    Date.now() + settings.paymentExpiryHours * 60 * 60 * 1000,
-  );
-
   const orderId = new Types.ObjectId();
   const orderNumber = generateOrderNumber(settings.orderPrefix);
-
   const providerSnapshot = await buildProviderSnapshotFromKey(input.provider);
 
-  const created = await Order.create({
-    _id: orderId,
-    orderNumber,
-    bookingType: input.bookingType,
-    status: OrderStatus.PAYMENT_PENDING,
-    state: RecordState.ACTIVE,
-    customer: input.customer,
-    provider: providerSnapshot,
-    vehicle: input.vehicle,
-    trip: {
-      pickupDate: new Date(input.trip.pickupDate),
-      dropoffDate: new Date(input.trip.dropoffDate),
-    },
-    pricing: { amount: input.pricing.amount, currency },
-    payment: {
-      status: OrderStatus.PAYMENT_PENDING,
-      expiresAt,
-      processedWebhookEventIds: [],
-    },
-    createdBy: {
-      userId: new Types.ObjectId(ctx.actor.id),
-      name: ctx.actor.name,
-      email: ctx.actor.email,
-    },
-    policy: {
-      acceptedAt: new Date(),
-      version: settings.cancellationPolicyVersion,
-      text: settings.cancellationPolicy,
-    },
-    risk: { flagged: false },
-    notes: input.notes ?? null,
-  });
+  // Transactional: Order doc + audit row + genesis evidence row are
+  // written together. A failure on evidence aborts the order create —
+  // disputes never face a chain with a missing sequence 1.
+  const created = await withTx(async (session) => {
+    const inserted = await Order.create(
+      [
+        {
+          _id: orderId,
+          orderNumber,
+          bookingType: input.bookingType,
+          status: OrderStatus.NOT_INITIATED,
+          state: RecordState.ACTIVE,
+          customer: input.customer,
+          provider: providerSnapshot,
+          vehicle: input.vehicle,
+          trip: {
+            pickupDate: new Date(input.trip.pickupDate),
+            dropoffDate: new Date(input.trip.dropoffDate),
+          },
+          pricing: { amount: input.pricing.amount, currency },
+          payment: {
+            status: OrderStatus.NOT_INITIATED,
+            processedWebhookEventIds: [],
+          },
+          createdBy: {
+            userId: new Types.ObjectId(ctx.actor.id),
+            name: ctx.actor.name,
+            email: ctx.actor.email,
+          },
+          policy: {
+            acceptedAt: new Date(),
+            version: settings.cancellationPolicyVersion,
+            text: settings.cancellationPolicy,
+          },
+          risk: { flagged: false },
+          consent: { status: ConsentStatus.NOT_REQUESTED },
+          notes: input.notes ?? null,
+        },
+      ],
+      sessionOpt(session),
+    );
+    const orderDoc = inserted[0];
 
-  let session: Stripe.Checkout.Session;
-  try {
-    session = await buildCheckoutSession({
-      orderId: String(created._id),
-      orderNumber,
-      input,
-      currency,
-      successUrl: settings.successRedirectUrl,
-      cancelUrl: settings.cancelRedirectUrl,
-      expiresAt,
-      actor: ctx.actor,
-    });
-  } catch (err) {
-    await Order.updateOne(
-      { _id: created._id },
+    await recordAudit(
       {
-        $set: {
-          status: OrderStatus.FAILED,
-          "payment.status": OrderStatus.FAILED,
-          "payment.failureReason":
-            err instanceof Error ? err.message : "Stripe error",
+        action: AuditAction.ORDER_CREATED,
+        entityType: AuditEntity.ORDER,
+        entityId: String(orderDoc._id),
+        actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+        request: ctx.request ?? null,
+        metadata: {
+          orderNumber: orderDoc.orderNumber,
+          amount: orderDoc.pricing.amount,
+          currency: orderDoc.pricing.currency,
+          bookingType: orderDoc.bookingType,
         },
       },
+      session,
     );
-    logger.error("orders.stripe_session_failed", {
-      orderId: String(created._id),
-      err: err instanceof Error ? err.message : String(err),
-    });
-    throw new PaymentError(
-      "Could not create the Stripe checkout session for this order",
-      err,
-    );
-  }
 
-  if (!session.url) {
-    await Order.updateOne(
-      { _id: created._id },
+    await captureEvidenceSafe(
       {
-        $set: {
-          status: OrderStatus.FAILED,
-          "payment.status": OrderStatus.FAILED,
-          "payment.failureReason": "Stripe did not return a checkout URL",
+        orderId: String(orderDoc._id),
+        orderNumber: orderDoc.orderNumber,
+        eventType: OrderEvidenceEventType.ORDER_CREATED,
+        occurredAt: orderDoc.createdAt,
+        actor: {
+          type: OrderEvidenceActorType.AGENT,
+          userId: ctx.actor.id,
+          name: ctx.actor.name,
+          email: ctx.actor.email,
+          role: ctx.actor.role,
         },
-      },
-    );
-    throw new PaymentError("Stripe did not return a checkout URL");
-  }
-
-  const updated = await Order.findOneAndUpdate(
-    { _id: created._id },
-    {
-      $set: {
-        "payment.stripeSessionId": session.id,
-        "payment.checkoutUrl": session.url,
-        "payment.expiresAt": new Date(
-          (session.expires_at ?? Math.floor(expiresAt.getTime() / 1000)) * 1000,
-        ),
-        "payment.paymentIntentId":
-          typeof session.payment_intent === "string"
-            ? session.payment_intent
+        request: ctx.request ?? null,
+        payload: {
+          orderNumber: orderDoc.orderNumber,
+          bookingType: orderDoc.bookingType,
+          customer: {
+            name: orderDoc.customer.name,
+            email: orderDoc.customer.email,
+            phone: orderDoc.customer.phone,
+          },
+          provider: orderDoc.provider
+            ? {
+                id: orderDoc.provider.id,
+                name: orderDoc.provider.name,
+                logo: orderDoc.provider.logo,
+                primaryColor: orderDoc.provider.primaryColor ?? null,
+                onPrimaryColor: orderDoc.provider.onPrimaryColor ?? null,
+              }
             : null,
+          vehicle: {
+            company: orderDoc.vehicle.company,
+            type: orderDoc.vehicle.type,
+            imageUrl: orderDoc.vehicle.imageUrl ?? null,
+          },
+          trip: {
+            pickupDate: orderDoc.trip.pickupDate.toISOString(),
+            dropoffDate: orderDoc.trip.dropoffDate.toISOString(),
+          },
+          pricing: {
+            amount: orderDoc.pricing.amount,
+            currency: orderDoc.pricing.currency,
+          },
+          policy: {
+            acceptedAt: orderDoc.policy.acceptedAt.toISOString(),
+            version: orderDoc.policy.version,
+            text: orderDoc.policy.text,
+          },
+          createdBy: {
+            userId: String(orderDoc.createdBy.userId),
+            name: orderDoc.createdBy.name,
+            email: orderDoc.createdBy.email,
+          },
+          notes: orderDoc.notes ?? null,
+        },
+        refs: {
+          customerEmail: orderDoc.customer.email,
+        },
       },
-    },
-    { returnDocument: "after" },
-  ).lean<OrderDoc & { _id: Types.ObjectId }>();
+      session,
+    );
 
-  if (!updated) throw new NotFoundError("Order vanished during creation");
-
-  await recordAudit({
-    action: AuditAction.ORDER_CREATED,
-    entityType: AuditEntity.ORDER,
-    entityId: String(updated._id),
-    actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
-    request: ctx.request ?? null,
-    metadata: {
-      orderNumber: updated.orderNumber,
-      amount: updated.pricing.amount,
-      currency: updated.pricing.currency,
-      bookingType: updated.bookingType,
-      stripeSessionId: session.id,
-    },
+    return orderDoc;
   });
 
+  // After commit: in-memory event bus. Lives outside the tx because
+  // event delivery is best-effort and a tx abort shouldn't have to roll
+  // back an in-memory queue entry.
   publishEvent({
     type: DomainEventType.ORDER_CREATED,
     audience: { kind: "creator", userId: ctx.actor.id },
     actor: { id: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
     payload: {
+      orderId: String(created._id),
+      orderNumber: created.orderNumber,
+      amount: created.pricing.amount,
+      currency: created.pricing.currency,
+      customerName: created.customer.name,
+      bookingType: created.bookingType,
+    },
+  });
+
+  return {
+    order: orderToDTO(
+      created.toObject({ getters: false }) as OrderDoc & { _id: Types.ObjectId },
+    ),
+    checkoutUrl: null,
+  };
+}
+
+interface InitiatePaymentResult {
+  order: OrderDTO;
+  checkoutUrl: string;
+  alreadyInitiated: boolean;
+}
+
+/**
+ * Transition an order from NOT_INITIATED → LINK_GENERATED by creating
+ * a gateway-hosted payment session.
+ *
+ * Gateway-agnostic: routes through the `PaymentGateway` interface so the
+ * call site doesn't know Stripe from Razorpay from PayPal. The
+ * implementation is chosen at runtime from the order's `payment.gateway`
+ * (or `getDefaultGateway()` on the first call).
+ *
+ * Idempotent on the gateway side (the session id is recorded; a second
+ * call returns the existing one). Refuses to initiate when:
+ *   - order is already PAID / FAILED / EXPIRED (terminal)
+ *   - order is ARCHIVED (lifecycle violation)
+ *   - selected gateway is not enabled (no creds configured)
+ *
+ * Side-effects:
+ *   - gateway session created
+ *   - payment.{gateway, stripeSessionId, checkoutUrl, expiresAt,
+ *     paymentIntentId, initiatedAt} persisted atomically
+ *   - status flipped to LINK_GENERATED
+ *   - audit row written
+ */
+export interface InitiatePaymentOptions {
+  /** Which gateway to route this payment through. Defaults to the
+   *  registry's default (Stripe today). The agent picks this from the
+   *  composer's gateway dropdown; once set on the order it sticks. */
+  gateway?: PaymentGatewayKey;
+}
+
+export async function initiatePayment(
+  id: string,
+  ctx: OrderContext,
+  options: InitiatePaymentOptions = {},
+): Promise<InitiatePaymentResult> {
+  await connectMongo();
+  if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
+  const doc = await Order.findById(id);
+  if (!doc) throw new NotFoundError("Order not found");
+
+  const canSeeAll = roleHasPermission(ctx.actor.role, Permission.ORDER_VIEW_ALL);
+  if (!canSeeAll && String(doc.createdBy.userId) !== ctx.actor.id) {
+    throw new ForbiddenError(
+      "You can only initiate payment on orders you created",
+    );
+  }
+  if (doc.state === RecordState.ARCHIVED) {
+    throw new ConflictError("Cannot initiate payment on an archived order");
+  }
+  if (
+    doc.status === OrderStatus.PAID ||
+    doc.status === OrderStatus.FAILED ||
+    doc.status === OrderStatus.EXPIRED
+  ) {
+    throw new ConflictError(
+      `Cannot initiate payment — order is ${doc.status.toLowerCase()}`,
+    );
+  }
+
+  // Idempotent: if a session is already created, return what we have.
+  // Re-clicks from the composer hit this path; they should NOT create a
+  // second gateway session — that would orphan the first one.
+  if (
+    (doc.status === OrderStatus.LINK_GENERATED ||
+      doc.status === OrderStatus.PAYMENT_PENDING) &&
+    doc.payment.stripeSessionId &&
+    doc.payment.checkoutUrl
+  ) {
+    return {
+      order: orderToDTO(
+        doc.toObject({ getters: false }) as OrderDoc & { _id: Types.ObjectId },
+      ),
+      checkoutUrl: doc.payment.checkoutUrl,
+      alreadyInitiated: true,
+    };
+  }
+
+  // Resolve gateway: explicit option > existing pinned > registry default.
+  const gatewayKey: PaymentGatewayKey =
+    options.gateway ??
+    (doc.payment.gateway as PaymentGatewayKey | null) ??
+    getDefaultGateway().key;
+  const gateway = getGateway(gatewayKey);
+  if (!gateway.enabled) {
+    throw new ConflictError(
+      `${gateway.label} is not available. Configure credentials in admin settings or pick another gateway.`,
+    );
+  }
+
+  const settings = await getSettings();
+  const expiresAt = new Date(
+    Date.now() + settings.paymentExpiryHours * 60 * 60 * 1000,
+  );
+  const branding = await getBranding();
+  const productName = describeProductName({
+    bookingType: doc.bookingType,
+    provider: doc.provider?.id ?? resolveProvider(undefined).id,
+    vehicle: { company: doc.vehicle.company, type: doc.vehicle.type },
+  });
+  const description = describeProductDescription({
+    trip: {
+      pickupDate: doc.trip.pickupDate.toISOString(),
+      dropoffDate: doc.trip.dropoffDate.toISOString(),
+    },
+  });
+
+  let session: CreatedPaymentSession;
+  try {
+    session = await gateway.createSession({
+      orderId: String(doc._id),
+      orderNumber: doc.orderNumber,
+      amount: doc.pricing.amount,
+      currency: doc.pricing.currency,
+      customer: doc.customer,
+      productName,
+      description,
+      imageUrls: doc.vehicle.imageUrl ? [doc.vehicle.imageUrl] : undefined,
+      successUrl: settings.successRedirectUrl,
+      cancelUrl: settings.cancelRedirectUrl,
+      expiresAt,
+      metadata: {
+        orderId: String(doc._id),
+        orderNumber: doc.orderNumber,
+        bookingType: doc.bookingType,
+        actorId: ctx.actor.id,
+        actorEmail: ctx.actor.email,
+        appName: branding.brandName,
+      },
+    });
+  } catch (err) {
+    logger.error("orders.initiate_payment_failed", {
+      orderId: String(doc._id),
+      gateway: gatewayKey,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    throw new PaymentError(
+      `Could not create the ${gateway.label} payment session for this order`,
+      err,
+    );
+  }
+
+  const initiatedAt = new Date();
+
+  // Transactional DB writes: Order flip + audit + 2× evidence (gateway
+  // selected + link generated). Stripe API call already happened above
+  // — its session id is the source of truth even if the tx aborts; the
+  // orphan-expire compensation lives in the !updated branch below.
+  type TxOut =
+    | { kind: "applied"; updated: OrderDoc & { _id: Types.ObjectId } }
+    | { kind: "raced" };
+
+  const result: TxOut = await withTx(async (txSession) => {
+    const updated = await Order.findOneAndUpdate(
+      { _id: doc._id, status: OrderStatus.NOT_INITIATED },
+      {
+        $set: {
+          status: OrderStatus.LINK_GENERATED,
+          "payment.status": OrderStatus.LINK_GENERATED,
+          "payment.gateway": gatewayKey,
+          "payment.stripeSessionId": session.sessionId,
+          "payment.checkoutUrl": session.url,
+          "payment.expiresAt": session.expiresAt,
+          "payment.paymentIntentId": session.paymentIntentId,
+          "payment.initiatedAt": initiatedAt,
+        },
+      },
+      { ...sessionOpt(txSession), returnDocument: "after" },
+    ).lean<OrderDoc & { _id: Types.ObjectId }>();
+
+    if (!updated) {
+      return { kind: "raced" } as TxOut;
+    }
+
+    await recordAudit(
+      {
+        action: AuditAction.ORDER_PAYMENT_LINK_REGENERATED,
+        entityType: AuditEntity.ORDER,
+        entityId: String(updated._id),
+        actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+        request: ctx.request ?? null,
+        metadata: {
+          orderNumber: updated.orderNumber,
+          gateway: gatewayKey,
+          paymentSessionId: session.sessionId,
+          note: "initial_payment_initiation",
+        },
+      },
+      txSession,
+    );
+
+    const evidenceActor = {
+      type: OrderEvidenceActorType.AGENT,
+      userId: ctx.actor.id,
+      name: ctx.actor.name,
+      email: ctx.actor.email,
+      role: ctx.actor.role,
+    };
+    await captureEvidenceSafe(
+      {
+        orderId: String(updated._id),
+        orderNumber: updated.orderNumber,
+        eventType: OrderEvidenceEventType.GATEWAY_SELECTED,
+        actor: evidenceActor,
+        request: ctx.request ?? null,
+        payload: {
+          gateway: gatewayKey,
+          gatewayLabel: gateway.label,
+          orderNumber: updated.orderNumber,
+        },
+      },
+      txSession,
+    );
+    await captureEvidenceSafe(
+      {
+        orderId: String(updated._id),
+        orderNumber: updated.orderNumber,
+        eventType: OrderEvidenceEventType.PAYMENT_LINK_GENERATED,
+        occurredAt: initiatedAt,
+        actor: evidenceActor,
+        request: ctx.request ?? null,
+        payload: {
+          gateway: gatewayKey,
+          paymentSessionId: session.sessionId,
+          paymentIntentId: session.paymentIntentId,
+          checkoutUrl: session.url,
+          amount: updated.pricing.amount,
+          currency: updated.pricing.currency,
+          expiresAt: session.expiresAt.toISOString(),
+          productName,
+          description,
+        },
+        refs: {
+          paymentSessionId: session.sessionId,
+          paymentIntentId: session.paymentIntentId,
+          customerEmail: updated.customer.email,
+        },
+      },
+      txSession,
+    );
+
+    return { kind: "applied", updated } as TxOut;
+  });
+
+  if (result.kind === "raced") {
+    // Another concurrent call flipped us out of NOT_INITIATED. Bin the
+    // brand-new orphan gateway session and return the existing state.
+    void gateway.expireSession(session.sessionId);
+    const racedDoc = await Order.findById(id).lean<
+      OrderDoc & { _id: Types.ObjectId }
+    >();
+    if (!racedDoc?.payment.checkoutUrl) {
+      throw new ConflictError("Payment initiation collided — try again");
+    }
+    return {
+      order: orderToDTO(racedDoc),
+      checkoutUrl: racedDoc.payment.checkoutUrl,
+      alreadyInitiated: true,
+    };
+  }
+  const updated = result.updated;
+
+  logger.info("order.lifecycle.transition", {
+    orderId: String(updated._id),
+    orderNumber: updated.orderNumber,
+    previousState: OrderStatus.NOT_INITIATED,
+    nextState: OrderStatus.LINK_GENERATED,
+    transition: "link_generated",
+    source: "service.order.initiate_payment",
+    actor: ctx.actor.id,
+  });
+  publishEvent({
+    type: DomainEventType.ORDER_LINK_REGENERATED,
+    audience: { kind: "creator", userId: String(updated.createdBy.userId) },
+    actor: { id: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+    payload: {
       orderId: String(updated._id),
       orderNumber: updated.orderNumber,
-      amount: updated.pricing.amount,
-      currency: updated.pricing.currency,
       customerName: updated.customer.name,
-      bookingType: updated.bookingType,
+      gateway: gatewayKey,
     },
   });
 
   return {
     order: orderToDTO(updated),
     checkoutUrl: session.url,
+    alreadyInitiated: false,
   };
 }
 
@@ -409,7 +801,13 @@ function clampStripeExpiry(date: Date): number {
   return Math.floor(clamped / 1000);
 }
 
-function describeProductName(input: CreateOrderInput): string {
+interface ProductNameInput {
+  bookingType: BookingType;
+  provider: string;
+  vehicle: { company: string; type: string };
+}
+
+function describeProductName(input: ProductNameInput): string {
   const providerName = resolveProvider({ id: input.provider }).name;
   const vehicle = `${input.vehicle.company} ${input.vehicle.type}`;
   switch (input.bookingType) {
@@ -424,7 +822,11 @@ function describeProductName(input: CreateOrderInput): string {
   }
 }
 
-function describeProductDescription(input: CreateOrderInput): string {
+interface ProductDescriptionInput {
+  trip: { pickupDate: string; dropoffDate: string };
+}
+
+function describeProductDescription(input: ProductDescriptionInput): string {
   const pickup = new Date(input.trip.pickupDate).toISOString().slice(0, 10);
   const drop = new Date(input.trip.dropoffDate).toISOString().slice(0, 10);
   return `Pick-up: ${pickup} • Drop-off: ${drop}`;
@@ -448,14 +850,18 @@ export async function listOrders(
     filter["createdBy.userId"] = new Types.ObjectId(ctx.actor.id);
   }
   if (query.q) {
-    const q = query.q.trim();
+    // Cap input length and escape regex metacharacters so a STAFF user
+    // can't trigger catastrophic backtracking on Mongo's regex engine
+    // by submitting `(a+)+$` style payloads through the search box.
+    const raw = query.q.trim().slice(0, 60);
+    const escaped = raw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     filter.$or = [
-      { orderNumber: { $regex: q, $options: "i" } },
-      { "customer.name": { $regex: q, $options: "i" } },
-      { "customer.email": { $regex: q, $options: "i" } },
-      { "customer.phone": { $regex: q, $options: "i" } },
-      { "vehicle.company": { $regex: q, $options: "i" } },
-      { "vehicle.type": { $regex: q, $options: "i" } },
+      { orderNumber: { $regex: escaped, $options: "i" } },
+      { "customer.name": { $regex: escaped, $options: "i" } },
+      { "customer.email": { $regex: escaped, $options: "i" } },
+      { "customer.phone": { $regex: escaped, $options: "i" } },
+      { "vehicle.company": { $regex: escaped, $options: "i" } },
+      { "vehicle.type": { $regex: escaped, $options: "i" } },
     ];
   }
   if (query.from || query.to) {
@@ -653,17 +1059,73 @@ export async function regeneratePaymentLink(
     typeof session.payment_intent === "string" ? session.payment_intent : null;
   doc.status = OrderStatus.PAYMENT_PENDING;
   doc.payment.status = OrderStatus.PAYMENT_PENDING;
-  await doc.save();
 
-  await recordAudit({
-    action: AuditAction.ORDER_PAYMENT_LINK_REGENERATED,
-    entityType: AuditEntity.ORDER,
-    entityId: String(doc._id),
-    actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
-    request: ctx.request ?? null,
-    metadata: { stripeSessionId: session.id },
+  // Transactional: order save + audit + evidence. The Stripe session
+  // is already created above — if the tx aborts we don't roll it back
+  // but the next regenerate call will expire-and-replace it.
+  await withTx(async (txSession) => {
+    await doc.save(sessionOpt(txSession));
+
+    await recordAudit(
+      {
+        action: AuditAction.ORDER_PAYMENT_LINK_REGENERATED,
+        entityType: AuditEntity.ORDER,
+        entityId: String(doc._id),
+        actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+        request: ctx.request ?? null,
+        metadata: { stripeSessionId: session.id },
+      },
+      txSession,
+    );
+
+    await captureEvidenceSafe(
+      {
+        orderId: String(doc._id),
+        orderNumber: doc.orderNumber,
+        eventType: OrderEvidenceEventType.PAYMENT_LINK_REGENERATED,
+        actor: {
+          type: OrderEvidenceActorType.AGENT,
+          userId: ctx.actor.id,
+          name: ctx.actor.name,
+          email: ctx.actor.email,
+          role: ctx.actor.role,
+        },
+        request: ctx.request ?? null,
+        payload: {
+          paymentSessionId: session.id,
+          paymentIntentId:
+            typeof session.payment_intent === "string"
+              ? session.payment_intent
+              : null,
+          checkoutUrl: session.url,
+          amount: doc.pricing.amount,
+          currency: doc.pricing.currency,
+          expiresAt: doc.payment.expiresAt
+            ? doc.payment.expiresAt.toISOString()
+            : null,
+        },
+        refs: {
+          paymentSessionId: session.id,
+          paymentIntentId:
+            typeof session.payment_intent === "string"
+              ? session.payment_intent
+              : null,
+          customerEmail: doc.customer.email,
+        },
+      },
+      txSession,
+    );
   });
 
+  logger.info("order.lifecycle.transition", {
+    orderId: String(doc._id),
+    orderNumber: doc.orderNumber,
+    previousState: doc.status,
+    nextState: OrderStatus.PAYMENT_PENDING,
+    transition: "link_regenerated",
+    source: "service.order.regenerate_link",
+    actor: ctx.actor.id,
+  });
   publishEvent({
     type: DomainEventType.ORDER_LINK_REGENERATED,
     audience: { kind: "creator", userId: String(doc.createdBy.userId) },
@@ -671,6 +1133,7 @@ export async function regeneratePaymentLink(
     payload: {
       orderId: String(doc._id),
       orderNumber: doc.orderNumber,
+      customerName: doc.customer.name,
     },
   });
 
@@ -862,6 +1325,204 @@ export async function updateOrderCustomer(
  *
  * Results are sorted with flagged orders first, then most-recent.
  */
+export interface ReconcileResult {
+  /** Final order DTO after any state change. */
+  order: OrderDTO;
+  /** Did the order's status actually move during this reconcile call?
+   *  Tells the UI whether to show a "now paid" toast or stay quiet. */
+  changed: boolean;
+  /** Whether Stripe reports this session as paid. Used by the UI to
+   *  decide whether to keep polling or stop. */
+  stripeStatus:
+    | "paid"
+    | "unpaid"
+    | "no_payment_required"
+    | "expired"
+    | "open"
+    | "unknown";
+}
+
+/**
+ * Reconcile an order's payment state against Stripe.
+ *
+ * Why this exists: the webhook is best-effort. In local dev it doesn't
+ * reach `localhost` without `stripe listen` forwarding; in prod it can
+ * be delayed or dropped. Without a fallback the order stays
+ * PAYMENT_PENDING even though the customer paid.
+ *
+ * The reconcile call asks Stripe directly. If the session shows
+ * complete + paid it drives the SAME atomic transition the webhook
+ * uses (`applyCheckoutPaid`), so the audit row, domain event, and
+ * confirmation email all fire exactly like the live path. If the
+ * session is open / unpaid / expired we surface that state so the
+ * caller can either keep waiting or show "expired".
+ *
+ * Two call sites:
+ *   - the authed agent endpoint (`/api/orders/[id]/reconcile`)
+ *   - the customer-facing `/pay/success` server render — there is no
+ *     session there; ctx is omitted. RBAC is skipped because the
+ *     customer is already showing up with the orderNumber they got
+ *     via email, exactly like `getOrderByNumber` on the same page.
+ *
+ * Idempotent: the synthesized event id is unique per call but the
+ * shared helper's `processedWebhookEventIds` and `isAlreadyPaid` gates
+ * stop us from double-emailing on repeat reconciles.
+ */
+interface ReconcileCustomerProof {
+  /** Gateway session id the unauth caller showed up with (came from
+   *  Stripe via the success-URL substitution). MUST equal the order's
+   *  stored session id or we refuse — otherwise this endpoint becomes
+   *  a no-auth way to trigger Stripe API calls for arbitrary orders. */
+  sessionId: string;
+}
+
+export async function reconcileOrderPayment(
+  id: string,
+  ctx?: OrderContext,
+  customer?: ReconcileCustomerProof,
+): Promise<ReconcileResult> {
+  await connectMongo();
+  if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
+  const doc = await Order.findById(id);
+  if (!doc) throw new NotFoundError("Order not found");
+
+  if (ctx?.actor) {
+    const canSeeAll = roleHasPermission(
+      ctx.actor.role,
+      Permission.ORDER_VIEW_ALL,
+    );
+    if (!canSeeAll && String(doc.createdBy.userId) !== ctx.actor.id) {
+      throw new ForbiddenError(
+        "You can only reconcile payment for orders you created",
+      );
+    }
+  } else {
+    // Unauthenticated caller (customer on /pay/success). Require the
+    // gateway session id from the URL and match it against the stored
+    // one — without this anyone with a guessed orderId could DOS Stripe.
+    if (
+      !customer?.sessionId ||
+      !doc.payment.stripeSessionId ||
+      customer.sessionId !== doc.payment.stripeSessionId
+    ) {
+      throw new ForbiddenError("Invalid session for this order");
+    }
+  }
+
+  if (!doc.payment.stripeSessionId) {
+    // No session to ask the gateway about — nothing to reconcile.
+    return {
+      order: orderToDTO(doc.toObject({ getters: false }) as OrderDoc & { _id: Types.ObjectId }),
+      changed: false,
+      stripeStatus: "unknown",
+    };
+  }
+
+  // Already terminal — short-circuit so a reconcile spam-click after
+  // PAID doesn't re-hit the gateway.
+  if (doc.status === OrderStatus.PAID) {
+    return {
+      order: orderToDTO(doc.toObject({ getters: false }) as OrderDoc & { _id: Types.ObjectId }),
+      changed: false,
+      stripeStatus: "paid",
+    };
+  }
+
+  const wasPending =
+    doc.status === OrderStatus.PAYMENT_PENDING ||
+    doc.status === OrderStatus.LINK_GENERATED;
+  const gateway = getGateway(
+    (doc.payment.gateway as PaymentGatewayKey | null) ?? getDefaultGateway().key,
+  );
+  if (!gateway.enabled) {
+    return {
+      order: orderToDTO(doc.toObject({ getters: false }) as OrderDoc & { _id: Types.ObjectId }),
+      changed: false,
+      stripeStatus: "unknown",
+    };
+  }
+
+  let status: SessionStatus;
+  try {
+    status = await gateway.getSessionStatus(doc.payment.stripeSessionId);
+  } catch (err) {
+    logger.error("orders.reconcile_gateway_lookup_failed", {
+      orderId: id,
+      gateway: gateway.key,
+      sessionId: doc.payment.stripeSessionId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    throw new PaymentError(
+      `Could not verify payment with ${gateway.label}`,
+      err,
+    );
+  }
+
+  // Happy path: gateway says paid. Drive the same atomic transition the
+  // webhook handler uses, so audit + event + email all fire identically.
+  //
+  // Dedupe key is STABLE (`reconcile:<sessionId>`) — repeat reconcile
+  // calls share the same key and collapse to a single applied transition
+  // via the durable `ProcessedWebhookEvent` collection. The key namespace
+  // is disjoint from gateway event ids (`evt_...`) so a real webhook
+  // claim and a reconcile claim race independently; whichever wins flips
+  // the order, the other lands as duplicate inside `applyCheckoutPaid`.
+  if (status.paymentStatus === "paid" || status.status === "complete") {
+    const eventId = `reconcile:${doc.payment.stripeSessionId}`;
+    await applyCheckoutPaid(doc, {
+      eventId,
+      sessionId: doc.payment.stripeSessionId,
+      paymentIntentId: status.paymentIntentId,
+      amountTotal: status.amountTotalMinor,
+      paidAtMs: Date.now(),
+      source: "reconcile",
+    });
+    const refreshed = await Order.findById(id).lean<
+      OrderDoc & { _id: Types.ObjectId }
+    >();
+    if (!refreshed) throw new NotFoundError("Order not found");
+    return {
+      order: orderToDTO(refreshed),
+      changed: wasPending,
+      stripeStatus: "paid",
+    };
+  }
+
+  // Gateway says the session expired before the customer finished.
+  if (status.status === "expired") {
+    if (
+      doc.status === OrderStatus.PAYMENT_PENDING ||
+      doc.status === OrderStatus.LINK_GENERATED
+    ) {
+      doc.status = OrderStatus.EXPIRED;
+      doc.payment.status = OrderStatus.EXPIRED;
+      await doc.save();
+    }
+    const refreshed = await Order.findById(id).lean<
+      OrderDoc & { _id: Types.ObjectId }
+    >();
+    return {
+      order: orderToDTO(refreshed!),
+      changed: wasPending,
+      stripeStatus: "expired",
+    };
+  }
+
+  // Still pending on the gateway's side — caller (UI poll) keeps waiting.
+  const normalisedStatus: ReconcileResult["stripeStatus"] =
+    status.paymentStatus === "unpaid" ||
+    status.paymentStatus === "no_payment_required"
+      ? (status.paymentStatus as ReconcileResult["stripeStatus"])
+      : status.status === "open"
+        ? "open"
+        : "unknown";
+  return {
+    order: orderToDTO(doc.toObject({ getters: false }) as OrderDoc & { _id: Types.ObjectId }),
+    changed: false,
+    stripeStatus: normalisedStatus,
+  };
+}
+
 export async function listAtRiskOrders(): Promise<OrderDTO[]> {
   await connectMongo();
   const docs = await Order.find({
