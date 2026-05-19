@@ -10,4 +10,8 @@
  * environments stay scoped instead of fighting for the same top-level
  * surface.
  */
-export default ["./vitest.unit.config.mts", "./vitest.integration.config.mts"];
+const projects = [
+  "./vitest.unit.config.mts",
+  "./vitest.integration.config.mts",
+];
+export default projects;

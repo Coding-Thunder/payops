@@ -99,6 +99,53 @@ describe("checkout.session.completed", () => {
     ).toBe(1);
   });
 
+  it("retries the confirmation email when a duplicate event arrives but the previous send failed", async () => {
+    // Simulate the state we'd reach if delivery #1 marked the order PAID
+    // but the SMTP send failed and rolled back the email claim. Delivery
+    // #2 should detect the gap and re-attempt the send rather than
+    // silently no-op.
+    const order = await factoryCreateOrder({
+      status: OrderStatus.PAID,
+      payment: {
+        status: OrderStatus.PAID,
+        paidAt: new Date(),
+        amountReceived: 100,
+        // The event id is already in the array from delivery #1.
+        processedWebhookEventIds: ["evt_test_retry_email"],
+        confirmationEmailSentAt: null,
+      },
+    });
+
+    const event = completedWebhook({
+      orderId: String(order._id),
+      orderNumber: order.orderNumber,
+    });
+    event.id = "evt_test_retry_email";
+
+    const before = await AuditLog.countDocuments({
+      action: AuditAction.EMAIL_FAILED,
+    });
+    const result = await processStripeEvent(event);
+
+    expect(result).toMatchObject({
+      handled: true,
+      duplicate: true,
+      orderId: String(order._id),
+    });
+
+    // No SMTP configured → another EMAIL_FAILED row was written (rather
+    // than silently skipping the retry).
+    const after = await AuditLog.countDocuments({
+      action: AuditAction.EMAIL_FAILED,
+    });
+    expect(after - before).toBe(1);
+
+    // The order's confirmationEmailSentAt is now stamped (claimed) so a
+    // subsequent duplicate won't re-attempt.
+    const updated = await Order.findById(order._id);
+    expect(updated?.payment.confirmationEmailSentAt).toBeInstanceOf(Date);
+  });
+
   it("returns order_not_found when no matching order exists", async () => {
     const event = completedWebhook({
       orderId: "507f1f77bcf86cd799439099",

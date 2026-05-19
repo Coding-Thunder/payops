@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import type { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import { LoadingButton } from "@/components/ui/loading-button";
@@ -45,6 +46,13 @@ import {
 import type { OrderDTO, ProviderDTO } from "@/types";
 import { ProviderSelector } from "@/components/features/providers";
 
+// See note in create-car-link-dialog: the zod schema for vehicle.imageUrl
+// is `.optional().nullable().transform()`, so input ≠ output. We type
+// `useForm` with the schema's *input* shape for the field state and the
+// *output* shape for what `handleSubmit` produces — matching the
+// resolver's signature in RHF v7.
+type CreateOrderFormValues = z.input<typeof createOrderSchema>;
+
 interface CreateOrderFormProps {
   allowedBookingTypes: readonly BookingTypeT[];
   defaultCurrency: Currency;
@@ -68,7 +76,7 @@ export function CreateOrderForm({
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
 
-  const form = useForm<CreateOrderInput>({
+  const form = useForm<CreateOrderFormValues, unknown, CreateOrderInput>({
     resolver: zodResolver(createOrderSchema),
     defaultValues: {
       bookingType: allowedBookingTypes[0] ?? BookingType.NEW_BOOKING,

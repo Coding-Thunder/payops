@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -58,6 +57,14 @@ import type {
   OrderDraftDTO,
   ProviderDTO,
 } from "@/types";
+import type { z } from "zod";
+
+// Zod schema input ≠ output (`.optional().nullable().transform()` on
+// `vehicle.imageUrl`). RHF v7 takes `<TFieldValues, TContext,
+// TTransformedValues>`, so feed the schema's input shape as the
+// in-form state and the inferred output as the post-handleSubmit
+// payload — keeps the resolver / submit types aligned.
+type CreateOrderFormValues = z.input<typeof createOrderSchema>;
 
 import { useAutosave } from "../hooks/use-autosave";
 import { useWorkspaceStore } from "../store";
@@ -85,7 +92,6 @@ export function CreateOrderTabContent({
   tabId,
   draftId: initialDraftId,
 }: CreateOrderTabContentProps) {
-  const router = useRouter();
   const updateTabMeta = useWorkspaceStore((s) => s.updateTabMeta);
   const setDirty = useWorkspaceStore((s) => s.setDirty);
   const closeTab = useWorkspaceStore((s) => s.closeTab);
@@ -248,7 +254,7 @@ function CreateOrderTabInner({
     };
   }, [config, initialDraft]);
 
-  const form = useForm<CreateOrderInput>({
+  const form = useForm<CreateOrderFormValues, unknown, CreateOrderInput>({
     resolver: zodResolver(createOrderSchema),
     defaultValues: defaults,
     mode: "onTouched",

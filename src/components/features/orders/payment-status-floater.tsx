@@ -105,7 +105,6 @@ export function PaymentStatusFloater({ order }: PaymentStatusFloaterProps) {
         return;
       }
       if (event.type === DomainEventType.ORDER_FAILED) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setOverride({
           tone: "failed",
           label: "Payment failed",
@@ -116,7 +115,6 @@ export function PaymentStatusFloater({ order }: PaymentStatusFloaterProps) {
         return;
       }
       if (event.type === DomainEventType.ORDER_EXPIRED) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setOverride({
           tone: "expired",
           label: "Payment link expired",

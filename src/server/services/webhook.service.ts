@@ -99,6 +99,17 @@ async function handleCheckoutCompleted(
       entityId: event.id,
       metadata: { orderId: String(order._id) },
     });
+    // Re-attempt the confirmation email if the payment was recorded but
+    // a previous delivery's email send failed. `sendConfirmationOnce`
+    // re-throws so Stripe will retry this delivery again — without this
+    // branch the order would stay PAID-without-email forever once Stripe
+    // saw our initial 2xx.
+    if (
+      order.status === OrderStatus.PAID &&
+      !order.payment.confirmationEmailSentAt
+    ) {
+      await sendConfirmationOnce(String(order._id));
+    }
     return { handled: true, duplicate: true, orderId: String(order._id) };
   }
 
@@ -183,8 +194,15 @@ async function handleCheckoutCompleted(
 }
 
 /**
- * Sends confirmation email iff it hasn't already been sent. The Mongo update
- * is conditional, so even if two concurrent handlers race, only one wins.
+ * Sends the confirmation email iff it hasn't already been sent. The Mongo
+ * claim is conditional, so even if two concurrent handlers race only one
+ * wins.
+ *
+ * On send failure the claim is rolled back and the error is re-thrown so
+ * the caller (the webhook route) can respond with 5xx and let Stripe
+ * retry. Without the re-throw, a transient SMTP outage would leave the
+ * order PAID-without-email permanently, since Stripe stops retrying once
+ * it sees a 2xx.
  */
 async function sendConfirmationOnce(orderId: string): Promise<void> {
   const claimed = await Order.findOneAndUpdate(
@@ -199,7 +217,8 @@ async function sendConfirmationOnce(orderId: string): Promise<void> {
     const dto = orderDocToDTO(claimed);
     await sendPaymentConfirmationEmail(dto);
   } catch (err) {
-    // Roll back the claim so a retry can send it.
+    // Roll the claim back so the next webhook delivery (or the duplicate
+    // re-attempt branch) can try again.
     await Order.updateOne(
       { _id: claimed._id },
       { $set: { "payment.confirmationEmailSentAt": null } },
@@ -208,6 +227,7 @@ async function sendConfirmationOnce(orderId: string): Promise<void> {
       orderId,
       err: err instanceof Error ? err.message : String(err),
     });
+    throw err;
   }
 }
 

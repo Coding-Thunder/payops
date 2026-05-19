@@ -3,6 +3,7 @@
 import * as React from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
+import type { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -30,6 +31,13 @@ import { api, ApiClientError } from "@/lib/api-client";
 import { createCarLinkSchema, type CreateCarLinkInput } from "@/lib/validation";
 import type { CarLinkDTO } from "@/types";
 
+// Zod's `.optional().nullable().transform()` chain on `notes` makes the
+// schema's input and output shapes asymmetric (`string|null|undefined`
+// vs `string|null`). RHF v7 separates `TFieldValues` (the in-form shape)
+// from `TTransformedValues` (what `handleSubmit` yields) — we feed both
+// so the resolver and submit handler line up at the type level.
+type CreateCarLinkFormValues = z.input<typeof createCarLinkSchema>;
+
 interface CreateCarLinkDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -55,7 +63,7 @@ export function CreateCarLinkDialog({
   initial,
   onCreated,
 }: CreateCarLinkDialogProps) {
-  const form = useForm<CreateCarLinkInput>({
+  const form = useForm<CreateCarLinkFormValues, unknown, CreateCarLinkInput>({
     resolver: zodResolver(createCarLinkSchema),
     defaultValues: {
       carMake: initial?.carMake ?? "",

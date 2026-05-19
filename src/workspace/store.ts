@@ -302,27 +302,34 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         const state = get();
         const top = state.closedStack[0];
         if (!top) return null;
-        // Don't duplicate if the same workflow is already open.
+        // Don't duplicate if the same workflow is already open. The
+        // discriminated payload is captured into a local so the closure
+        // sees the narrowed value (TS won't carry the outer narrowing
+        // into a `.find` callback).
+        const closedTab = top.tab;
         let existing: WorkspaceTab | undefined;
-        if (top.tab.type === WorkspaceTabType.ORDER_DETAILS) {
+        if (closedTab.type === WorkspaceTabType.ORDER_DETAILS) {
+          const orderId = closedTab.payload.orderId;
           existing = state.tabs.find(
             (t) =>
               t.type === WorkspaceTabType.ORDER_DETAILS &&
-              t.payload.orderId === top.tab.payload.orderId,
+              t.payload.orderId === orderId,
           );
-        } else if (top.tab.type === WorkspaceTabType.PAYMENT_REVIEW) {
+        } else if (closedTab.type === WorkspaceTabType.PAYMENT_REVIEW) {
+          const orderId = closedTab.payload.orderId;
           existing = state.tabs.find(
             (t) =>
               t.type === WorkspaceTabType.PAYMENT_REVIEW &&
-              t.payload.orderId === top.tab.payload.orderId,
+              t.payload.orderId === orderId,
           );
-        } else if (top.tab.type === WorkspaceTabType.DRAFT_ORDER) {
+        } else if (closedTab.type === WorkspaceTabType.DRAFT_ORDER) {
+          const draftId = closedTab.payload.draftId;
           existing = state.tabs.find(
             (t) =>
               t.type === WorkspaceTabType.DRAFT_ORDER &&
-              t.payload.draftId === top.tab.payload.draftId,
+              t.payload.draftId === draftId,
           );
-        } else if (top.tab.type === WorkspaceTabType.CREATE_ORDER) {
+        } else if (closedTab.type === WorkspaceTabType.CREATE_ORDER) {
           existing = state.tabs.find(
             (t) => t.type === WorkspaceTabType.CREATE_ORDER,
           );

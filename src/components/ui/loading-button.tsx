@@ -54,7 +54,10 @@ export const LoadingButton = React.forwardRef<
       return;
     }
     if (!onClick) return;
-    const result = onClick(e);
+    // React's MouseEventHandler is typed `void`, but consumers commonly
+    // return a Promise from async click handlers. Coerce to `unknown` so
+    // the instanceof check type-checks without losing the runtime guard.
+    const result = onClick(e) as unknown;
     if (autoBusyOnClick && result instanceof Promise) {
       setInternalBusy(true);
       try {

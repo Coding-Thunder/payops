@@ -92,7 +92,7 @@ export function EmailComposer({
   const [sending, setSending] = React.useState(false);
   const [sentAt, setSentAt] = React.useState<string | null>(null);
   const [paidAt, setPaidAt] = React.useState<string | null>(
-    order.payment.paidAt,
+    order.payment.paidAt ?? null,
   );
 
   const { events } = useActivityFeed();

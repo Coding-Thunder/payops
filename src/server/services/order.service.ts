@@ -21,7 +21,6 @@ import {
 import { roleHasPermission, Permission } from "@/lib/constants/permissions";
 import { DomainEventType } from "@/lib/constants/events";
 import { resolveProvider } from "@/lib/constants/providers";
-import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { publishEvent } from "@/server/events/bus";
 import { Order, type OrderDoc } from "@/server/db/models";
@@ -611,7 +610,11 @@ export async function regeneratePaymentLink(
         // can still have outstanding payment links refreshed.
         provider: doc.provider?.id ?? resolveProvider(undefined).id,
         customer: doc.customer,
-        vehicle: doc.vehicle,
+        vehicle: {
+          company: doc.vehicle.company,
+          type: doc.vehicle.type,
+          imageUrl: doc.vehicle.imageUrl ?? null,
+        },
         trip: {
           pickupDate: doc.trip.pickupDate.toISOString(),
           dropoffDate: doc.trip.dropoffDate.toISOString(),
