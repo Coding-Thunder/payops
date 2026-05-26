@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit",
     "seed": "tsx --env-file=.env.local scripts/seed.ts",
     "seed:prod": "tsx scripts/seed.ts",
+    "seed:aurora": "tsx --env-file=.env.prod scripts/seed-aurora.ts",
+    "cleanup:aurora": "tsx --env-file=.env.prod scripts/cleanup-aurora.ts",
     "capture:marketing": "tsx --env-file=.env.local scripts/capture-marketing-screenshots.ts",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -45,7 +45,11 @@ export function EvidenceChainView({
   canExport,
 }: EvidenceChainViewProps) {
   const { events, verification, order } = chain;
-  const exportHref = `/orders/${order.id}/evidence/export`;
+  // Authed app surfaces live under `/app/*` (the route folder is `app`,
+  // not the `(app)` route-group that would have been URL-transparent).
+  // Anchor + back-to-order link must carry the same prefix or every
+  // click 404s.
+  const exportHref = `/app/orders/${order.id}/evidence/export`;
   return (
     <div className="space-y-6 print:space-y-4">
       <Button
@@ -54,7 +58,7 @@ export function EvidenceChainView({
         size="sm"
         className="w-fit print:hidden"
       >
-        <Link href={`/orders/${order.id}`}>
+        <Link href={`/app/orders/${order.id}`}>
           <ArrowLeftIcon className="size-3.5" />
           Back to order
         </Link>
