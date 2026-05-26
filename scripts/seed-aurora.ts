@@ -80,9 +80,10 @@ console.log(`\n› Seed target: db=${targetDb}`);
 
 /* ───────────────────────────── Scenario data ───────────────────────────── */
 
-// Anchor the scenario to "47 days ago" so the timeline reads as a
-// recently-resolved dispute.
-const DAY_0 = new Date(Date.now() - 47 * 24 * 60 * 60 * 1000);
+// Anchor the scenario so it reads as a *live* chargeback: order
+// placed ~35 days ago, paid + delivered cleanly, customer disputed
+// 3 days ago, evidence window still open (~11 days remaining).
+const DAY_0 = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000);
 const at = (dayOffset: number, hour: number, minute = 0, second = 0) =>
   new Date(
     DAY_0.getTime() +
@@ -159,13 +160,12 @@ const SCENARIO = {
   dispute: {
     gatewayDisputeId: "du_1Q9PqRsTuVwXyZ1A2B3C4D",
     reason: "product_not_received",
-    openedAt: at(33, 11, 8),
-    updatedAt: at(38, 4, 51),
-    closedAt: at(41, 9, 17),
-    evidenceDueAt: at(47, 23, 59),
+    // Opened 3 days ago. Evidence due 14 days from opening (Stripe's
+    // standard window) → ~11 days from "now". Dispute is live and
+    // unresolved; outcome + closedAt stay null.
+    openedAt: at(32, 11, 8),
+    evidenceDueAt: at(46, 23, 59),
     gatewayEventId_created: "evt_4S8mq9PA7nQ2DEF5678GhIj",
-    gatewayEventId_updated: "evt_5T9np0QB8oR3GHI9012KlMn",
-    gatewayEventId_closed: "evt_6U0op1RC9pS4JKL3456OpQr",
   },
   operator: {
     name: "Mira Holst",
@@ -173,7 +173,7 @@ const SCENARIO = {
     role: "ADMIN" as const,
   },
   operatorNote:
-    "First-time customer. Confirmed pick-up window 14:00–16:00 PT via email follow-up. Insurance + GPS add-ons included.",
+    "Chargeback received — investigating. Customer confirmed consent on hosted page (signed name + IP captured); vehicle was returned on time per WMS. Preparing evidence packet for bank response by EOD.",
 };
 
 /* ───────────────────────────── Seed runner ─────────────────────────────── */
@@ -394,10 +394,15 @@ async function main() {
     },
     policy: { ...SCENARIO.order.policy },
     risk: {
-      flagged: false,
-      flaggedNote: null,
-      flaggedAt: null,
-      flaggedBy: null,
+      // Dispute webhook auto-flags risk. Stays flagged until ops
+      // explicitly clears it — even after dispute resolution.
+      flagged: true,
+      flaggedNote: `Chargeback opened: ${SCENARIO.dispute.reason}`,
+      flaggedAt: SCENARIO.dispute.openedAt,
+      flaggedBy: {
+        userId: null,
+        name: "STRIPE webhook",
+      },
     },
     consent: {
       status: ConsentStatus.VERIFIED,
@@ -408,11 +413,13 @@ async function main() {
       method: ConsentMethod.HOSTED_PAGE,
     },
     dispute: {
-      status: DisputeStatus.WON,
+      // Live dispute — action required. Outcome + closedAt null
+      // because the bank hasn't decided yet.
+      status: DisputeStatus.NEEDS_RESPONSE,
       currentDisputeId: null,
       openedAt: SCENARIO.dispute.openedAt,
-      closedAt: SCENARIO.dispute.closedAt,
-      outcome: DisputeOutcome.WON,
+      closedAt: null,
+      outcome: null,
       reason: SCENARIO.dispute.reason,
       amount: SCENARIO.order.amount,
       currency: SCENARIO.order.currency,
@@ -420,7 +427,7 @@ async function main() {
     refundedAmount: 0,
     notes: SCENARIO.operatorNote,
     createdAt: at(0, 14, 2),
-    updatedAt: at(41, 9, 32),
+    updatedAt: SCENARIO.dispute.openedAt,
   });
   console.log(`  ✓ Created order: ${FIXTURE_ORDER_NUMBER} (${orderId})`);
 
@@ -470,28 +477,27 @@ async function main() {
     gatewayDisputeId: SCENARIO.dispute.gatewayDisputeId,
     chargeId: SCENARIO.payment.chargeId,
     paymentIntentId: SCENARIO.payment.paymentIntentId,
-    status: DisputeStatus.WON,
+    status: DisputeStatus.NEEDS_RESPONSE,
     reason: SCENARIO.dispute.reason,
-    outcome: DisputeOutcome.WON,
+    outcome: null,
     amount: SCENARIO.order.amount,
     amountMinor: SCENARIO.order.amount * 100,
     currency: SCENARIO.order.currency,
     evidenceDueAt: SCENARIO.dispute.evidenceDueAt,
     openedAt: SCENARIO.dispute.openedAt,
-    closedAt: SCENARIO.dispute.closedAt,
-    processedWebhookEventIds: [
-      SCENARIO.dispute.gatewayEventId_created,
-      SCENARIO.dispute.gatewayEventId_updated,
-      SCENARIO.dispute.gatewayEventId_closed,
-    ],
+    closedAt: null,
+    processedWebhookEventIds: [SCENARIO.dispute.gatewayEventId_created],
     createdAt: SCENARIO.dispute.openedAt,
-    updatedAt: SCENARIO.dispute.closedAt,
+    updatedAt: SCENARIO.dispute.openedAt,
   });
   await Order.collection.updateOne(
     { _id: orderId },
     { $set: { "dispute.currentDisputeId": disputeDoc._id } },
   );
-  console.log(`  ✓ Created dispute: WON, opened day 33, closed day 41`);
+  console.log(
+    `  ✓ Created dispute: NEEDS_RESPONSE — opened 3 days ago, evidence due ~11d`,
+  );
+  void DisputeOutcome;
 
   /* ── 5. Hash-chained OrderEvidence (9 events) ───────────────────────── */
 
@@ -792,56 +798,6 @@ async function main() {
       createdAt: SCENARIO.dispute.openedAt,
       updatedAt: SCENARIO.dispute.openedAt,
     },
-    {
-      action: AuditAction.DISPUTE_UPDATED,
-      entityType: AuditEntity.DISPUTE,
-      entityId: String(disputeDoc._id),
-      actor: { userId: null, name: "stripe.webhook", email: null, role: null },
-      request: { ip: null, userAgent: null, requestId: null },
-      metadata: {
-        orderId: orderIdStr,
-        orderNumber: FIXTURE_ORDER_NUMBER,
-        status: DisputeStatus.UNDER_REVIEW,
-        eventId: SCENARIO.dispute.gatewayEventId_updated,
-      },
-      createdAt: SCENARIO.dispute.updatedAt,
-      updatedAt: SCENARIO.dispute.updatedAt,
-    },
-    {
-      action: AuditAction.DISPUTE_CLOSED,
-      entityType: AuditEntity.DISPUTE,
-      entityId: String(disputeDoc._id),
-      actor: { userId: null, name: "stripe.webhook", email: null, role: null },
-      request: { ip: null, userAgent: null, requestId: null },
-      metadata: {
-        orderId: orderIdStr,
-        orderNumber: FIXTURE_ORDER_NUMBER,
-        outcome: DisputeOutcome.WON,
-        status: DisputeStatus.WON,
-        eventId: SCENARIO.dispute.gatewayEventId_closed,
-      },
-      createdAt: SCENARIO.dispute.closedAt,
-      updatedAt: SCENARIO.dispute.closedAt,
-    },
-    {
-      action: AuditAction.EVIDENCE_EXPORTED,
-      entityType: AuditEntity.ORDER_EVIDENCE,
-      entityId: orderIdStr,
-      actor: {
-        userId: mira._id,
-        name: mira.name,
-        email: mira.email,
-        role: UserRole.ADMIN,
-      },
-      request: { ip: null, userAgent: null, requestId: null },
-      metadata: {
-        orderNumber: FIXTURE_ORDER_NUMBER,
-        eventCount: 9,
-        integrityValid: true,
-      },
-      createdAt: at(33, 11, 38),
-      updatedAt: at(33, 11, 38),
-    },
   ];
   await AuditLog.collection.insertMany(auditRows);
   console.log(`  ✓ Created ${auditRows.length} audit log entries`);
@@ -887,7 +843,7 @@ async function main() {
   Order number:    ${FIXTURE_ORDER_NUMBER}
   Customer:        ${SCENARIO.order.customer.name} <${SCENARIO.order.customer.email}>
   Amount:          $${SCENARIO.order.amount.toLocaleString()} ${SCENARIO.order.currency}
-  Final status:    PAID · Dispute WON
+  Status:          PAID · Dispute NEEDS_RESPONSE · risk-flagged · evidence due ~11d
 
   Operator login is intentionally unguessable:
     email:    ${SCENARIO.operator.email}

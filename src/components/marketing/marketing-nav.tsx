@@ -21,8 +21,10 @@ const SECTIONS: Array<{ href: string; label: string }> = [
  *     translucent dark with white text.
  *   - On light themes it stays neutral / cream.
  *
- * Sign-in is gone — PayOps is privately deployed, so there is no
- * shared-tenant login from the marketing site.
+ * Even though PayOps is privately deployed, operators still need a
+ * way to reach `/login` from the public surface — the Sign in link
+ * sits left of the primary CTA so the quotation button stays visually
+ * dominant.
  */
 export function MarketingNav() {
   const [scrolled, setScrolled] = React.useState(false);
@@ -122,7 +124,18 @@ export function MarketingNav() {
           ))}
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
+          <Link
+            href="/login"
+            className={cn(
+              "inline-flex h-9 items-center rounded-full px-3 text-[13px] font-medium transition-colors",
+              dark
+                ? "text-white/75 hover:text-white"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            Sign in
+          </Link>
           <a
             href="#quote"
             className={cn(
