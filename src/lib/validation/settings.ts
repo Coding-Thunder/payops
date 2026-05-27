@@ -1,10 +1,6 @@
 import { z } from "zod";
 
-import {
-  BOOKING_TYPES,
-  CONSENT_MODES,
-  CURRENCIES,
-} from "@/lib/constants/enums";
+import { CONSENT_MODES, CURRENCIES } from "@/lib/constants/enums";
 
 // Support email/phone live on the Branding doc now (see /admin/branding).
 // Redirect URLs are computed from APP_URL — accepted but ignored by the
@@ -16,9 +12,6 @@ export const updateSettingsSchema = z.object({
     .trim()
     .toUpperCase()
     .regex(/^[A-Z]{2,6}$/, "Use 2-6 uppercase letters"),
-  allowedBookingTypes: z
-    .array(z.enum(BOOKING_TYPES))
-    .min(1, "At least one booking type must be enabled"),
   defaultCurrency: z.enum(CURRENCIES),
   successRedirectUrl: z.string().url(),
   cancelRedirectUrl: z.string().url(),

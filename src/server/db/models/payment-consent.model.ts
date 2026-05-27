@@ -6,8 +6,6 @@ import {
 } from "mongoose";
 
 import {
-  BOOKING_TYPES,
-  BookingType,
   CONSENT_METHODS,
   CONSENT_STATUSES,
   ConsentMethod,
@@ -62,14 +60,18 @@ export interface PaymentConsentDoc {
   signedName?: string | null;
 
   /** Snapshot of order facts at consent-request time. Stripe-style: if
-   *  the agent later edits the amount or the provider, the consent still
-   *  shows what the customer saw when they confirmed. */
+   *  the agent later edits the amount, the consent still shows what the
+   *  customer saw when they confirmed.
+   *
+   *  Pass 5h: rental-specific fields removed entirely. Universal-shape
+   *  orders fill `summary` (line items recap) + `startsAt/endsAt`
+   *  (from order.scheduling). Existing records with the old fields are
+   *  read transparently — Mongoose just ignores fields not declared in
+   *  the schema. */
   snapshot: {
-    bookingType: BookingType;
-    provider: string;
-    vehicle: string;
-    pickupDate: Date;
-    dropoffDate: Date;
+    summary?: string | null;
+    startsAt?: Date | null;
+    endsAt?: Date | null;
     amount: number;
     currency: Currency;
     paymentLinkRef?: string | null;
@@ -103,11 +105,9 @@ export type PaymentConsentDocument = HydratedDocument<PaymentConsentDoc>;
 
 const snapshotSchema = new Schema(
   {
-    bookingType: { type: String, enum: BOOKING_TYPES, required: true },
-    provider: { type: String, required: true, trim: true, maxlength: 120 },
-    vehicle: { type: String, required: true, trim: true, maxlength: 160 },
-    pickupDate: { type: Date, required: true },
-    dropoffDate: { type: Date, required: true },
+    summary: { type: String, default: null, trim: true, maxlength: 320 },
+    startsAt: { type: Date, default: null },
+    endsAt: { type: Date, default: null },
     amount: { type: Number, required: true, min: 0 },
     currency: { type: String, enum: CURRENCIES, required: true },
     paymentLinkRef: { type: String, default: null, maxlength: 2048 },

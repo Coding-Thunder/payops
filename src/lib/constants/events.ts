@@ -72,6 +72,16 @@ export interface DomainEvent<TPayload = Record<string, unknown>> {
     name: string | null;
     role: "SUPER_ADMIN" | "ADMIN" | "STAFF" | null;
   };
+  /** Tenant boundary on the event. Required for any event scoped to a
+   *  business record; nullable only for system-wide events that have
+   *  no tenant context (rare — at the time of writing, none).
+   *
+   *  The SSE filter (`isEventVisibleToUser`) gates delivery on this:
+   *  viewers only see events whose `orgId` matches their own active
+   *  org. An event with no `orgId` (legacy + system) is treated as
+   *  "scope unknown" and delivered ONLY when the audience-kind filter
+   *  also passes — see the comment in `bus.ts` for the truth table. */
+  orgId: string | null;
   audience: DomainEventAudience;
   payload: TPayload;
 }

@@ -6,7 +6,7 @@ import {
   RecordState,
 } from "@/lib/constants/enums";
 import { UnauthorizedError } from "@/lib/errors";
-import { User, type UserDoc } from "@/server/db/models";
+import { OrgMember, User, type UserDoc } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 import type { LoginInput } from "@/lib/validation";
 
@@ -30,7 +30,7 @@ export async function authenticate(
   const email = input.email.toLowerCase().trim();
 
   const user = await User.findOne({ email }).select(
-    "+passwordHash name email role status",
+    "+passwordHash name email role status primaryOrgId",
   );
   const passwordOk = user
     ? await verifyPassword(input.password, user.passwordHash)
@@ -68,11 +68,41 @@ export async function authenticate(
     role: user.role,
   };
 
+  // Resolve the user's active org for the new token. Order of precedence:
+  //   1. `User.primaryOrgId` — set by the migration script and by future
+  //      signup. The authoritative pointer.
+  //   2. First ACTIVE OrgMember row — defensive fallback for accounts
+  //      created before the migration script populated primaryOrgId.
+  //   3. None — caller has no org. The token is still issued (no orgId
+  //      claim); downstream callers will hit `requireOrgUser` and bounce
+  //      the operator to a "contact support" path.
+  //
+  // We deliberately do NOT fail-closed on a missing org here — that
+  // would lock the legacy super-admin out of their own console during
+  // the migration window. Fail-closed lands once the migration is
+  // verified and `primaryOrgId` becomes required on User.
+  let activeOrgId: string | null = user.primaryOrgId
+    ? String(user.primaryOrgId)
+    : null;
+  let orgIds: string[] = [];
+  const memberships = await OrgMember.find({
+    userId: user._id,
+    status: RecordState.ACTIVE,
+  })
+    .select({ orgId: 1 })
+    .lean<{ orgId: unknown }[]>();
+  orgIds = memberships.map((m) => String(m.orgId));
+  if (!activeOrgId && orgIds.length > 0) {
+    activeOrgId = orgIds[0]!;
+  }
+
   const token = await signSession({
     sub: session.id,
     email: session.email,
     name: session.name,
     role: session.role,
+    orgId: activeOrgId ?? undefined,
+    orgIds: orgIds.length > 0 ? orgIds : undefined,
   });
 
   await touchLastLogin(session.id);

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ActivityFeed } from "@/components/features/activity/activity-feed";
 import { OrderTable } from "@/components/features/orders/order-table";
-import { ProviderBadge } from "@/components/features/providers";
+import { SetupChecklist } from "@/components/features/onboarding/setup-checklist";
 import { Aurora } from "@/components/brand/aurora";
 import { FadeIn } from "@/components/motion/fade-in";
 import { PageHeader } from "@/components/common/page-header";
@@ -16,6 +16,7 @@ import { formatCurrency } from "@/lib/format";
 import { requireUser } from "@/server/auth/session";
 import { listOrders } from "@/server/services/order.service";
 import { getAnalyticsSummary } from "@/server/services/analytics.service";
+import { getOnboardingState } from "@/server/services/onboarding-state.service";
 
 export const metadata = { title: "Dashboard" };
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ export default async function DashboardPage() {
   const canSeeAll = roleHasPermission(user.role, Permission.ORDER_VIEW_ALL);
   const canSeeAnalytics = roleHasPermission(user.role, Permission.ANALYTICS_VIEW);
 
-  const [recent, analytics] = await Promise.all([
+  const [recent, analytics, onboarding] = await Promise.all([
     listOrders(
       {
         state: RecordState.ACTIVE,
@@ -33,9 +34,12 @@ export default async function DashboardPage() {
         pageSize: 5,
         mine: !canSeeAll ? true : undefined,
       },
-      { actor: user },
+      { actor: user, orgId: user.orgId },
     ),
     canSeeAnalytics ? getAnalyticsSummary() : null,
+    // Cheap projection-only queries — see onboarding-state.service.
+    // Hides itself when the org has finished setup or is legacy.
+    getOnboardingState(user.orgId),
   ]);
 
   const firstName = user.name.split(" ")[0];
@@ -61,6 +65,12 @@ export default async function DashboardPage() {
           />
         </div>
       </div>
+
+      {!onboarding.complete ? (
+        <FadeIn>
+          <SetupChecklist state={onboarding} />
+        </FadeIn>
+      ) : null}
 
       {canSeeAnalytics && analytics ? (
         <FadeIn>
@@ -146,11 +156,6 @@ export default async function DashboardPage() {
                         href={`/app/orders/${o.id}`}
                         className="flex min-w-0 flex-1 items-center gap-3 text-muted-foreground transition-colors hover:text-foreground"
                       >
-                        <ProviderBadge
-                          provider={o.provider}
-                          showName={false}
-                          size="sm"
-                        />
                         <span className="flex min-w-0 flex-col leading-tight">
                           <span className="truncate text-[13px] text-foreground">
                             {o.customer.name}

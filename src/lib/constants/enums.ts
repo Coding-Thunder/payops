@@ -20,13 +20,8 @@ export const RecordState = {
 export type RecordState = (typeof RecordState)[keyof typeof RecordState];
 export const RECORD_STATES = Object.values(RecordState) as RecordState[];
 
-export const BookingType = {
-  NEW_BOOKING: "NEW_BOOKING",
-  MODIFICATION: "MODIFICATION",
-  CANCELLATION_CHARGE: "CANCELLATION_CHARGE",
-} as const;
-export type BookingType = (typeof BookingType)[keyof typeof BookingType];
-export const BOOKING_TYPES = Object.values(BookingType) as BookingType[];
+// Pass 5h: rental-only `BookingType` enum removed. Order shape lives in
+// `lineItems[].itemTypeKey` against the per-tenant ItemType catalog.
 
 export const OrderStatus = {
   /** Order has been created but no payment session exists yet. Default

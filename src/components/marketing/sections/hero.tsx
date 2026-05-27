@@ -117,10 +117,10 @@ export function Hero() {
             className="mt-10 flex flex-wrap items-center justify-center gap-3"
           >
             <a
-              href="#quote"
+              href="/signup"
               className="group inline-flex h-12 items-center gap-2 rounded-full bg-white px-6 text-[14px] font-semibold text-[color:var(--m-ink)] transition-all hover:-translate-y-px hover:shadow-[0_8px_32px_-8px_rgba(255,255,255,0.6)]"
             >
-              Request a quotation
+              Sign up free
               <span
                 aria-hidden
                 className="transition-transform group-hover:translate-x-0.5"
@@ -129,10 +129,10 @@ export function Hero() {
               </span>
             </a>
             <a
-              href="#disputes"
+              href="#quote"
               className="inline-flex h-12 items-center px-4 text-[13.5px] text-white/65 transition-colors hover:text-white"
             >
-              See the dispute pack ↓
+              Or talk to sales ↓
             </a>
           </div>
         </div>

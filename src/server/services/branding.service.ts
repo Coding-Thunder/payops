@@ -15,6 +15,8 @@ import { ValidationError } from "@/lib/errors";
 import { env } from "@/lib/env";
 import { Branding, BRANDING_KEY, type BrandingDoc } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
+import { loadScopedSingleton } from "@/server/db/org/scoped-singleton";
+import { orgIdFilter } from "@/server/db/org/org-context";
 import type { UpdateBrandingInput } from "@/lib/validation";
 import type { BrandingDTO } from "@/types";
 
@@ -30,6 +32,11 @@ interface BrandingActor {
 
 interface BrandingContext {
   actor: BrandingActor;
+  /** Active organization. When supplied, reads/writes target the
+   *  per-org branding row (lazy-provisioned on first access). When
+   *  omitted, the legacy `{ key: "default" }` singleton is used —
+   *  preserved for back-compat with un-migrated callers. */
+  orgId?: string | null;
   request?: RequestContext | null;
 }
 
@@ -77,14 +84,54 @@ function envDefaults(): Omit<BrandingDTO, "updatedAt"> {
   };
 }
 
+/** Build the seed payload that lazy-provisioning passes into a fresh
+ *  per-org branding row. MUST NOT include `key`. */
+function seedBrandingFields(
+  legacy: Pick<
+    BrandingDoc,
+    | "brandName"
+    | "supportEmail"
+    | "supportPhone"
+    | "primaryColor"
+    | "logo"
+    | "footerTagline"
+  > | null,
+): Record<string, unknown> {
+  const defaults = envDefaults();
+  return {
+    brandName: legacy?.brandName ?? defaults.brandName,
+    supportEmail: legacy?.supportEmail ?? defaults.supportEmail,
+    supportPhone: legacy?.supportPhone ?? defaults.supportPhone,
+    primaryColor: legacy?.primaryColor ?? defaults.primaryColor,
+    logo: legacy?.logo ?? "",
+    footerTagline: legacy?.footerTagline ?? "",
+  };
+}
+
 /**
  * Idempotent upsert. On first run, attempts to migrate any
  * `supportEmail`/`supportPhone` already saved on the legacy Settings doc
  * so admins who edited those (and silently lost them) don't have to
  * re-enter on the new screen.
+ *
+ * When `orgId` is supplied the per-org row is lazy-provisioned; when
+ * omitted the legacy `{ key: "default" }` singleton is upserted —
+ * preserved for back-compat through the multi-tenant migration window.
  */
-export async function ensureBrandingDocument(): Promise<BrandingDoc> {
+export async function ensureBrandingDocument(
+  orgId?: string | null,
+): Promise<BrandingDoc> {
   await connectMongo();
+  if (orgId) {
+    const doc = await loadScopedSingleton<BrandingDoc>(Branding, {
+      orgId,
+      legacyKeyField: "key",
+      legacyKeyValue: BRANDING_KEY,
+      seedFor: (legacy) => seedBrandingFields(legacy),
+    });
+    if (!doc) throw new Error("Failed to load branding document for org");
+    return doc;
+  }
   // Late import keeps this service stand-alone for tests that don't load
   // the Settings model.
   const { Setting, SETTINGS_KEY } = await import("@/server/db/models");
@@ -118,8 +165,8 @@ export async function ensureBrandingDocument(): Promise<BrandingDoc> {
 
 // ─── Read ──────────────────────────────────────────────────────────────────
 
-export async function getBranding(): Promise<BrandingDTO> {
-  const doc = await ensureBrandingDocument();
+export async function getBranding(orgId?: string | null): Promise<BrandingDTO> {
+  const doc = await ensureBrandingDocument(orgId);
   return toDTO(doc);
 }
 
@@ -129,7 +176,7 @@ export async function updateBranding(
   input: UpdateBrandingInput,
   ctx: BrandingContext,
 ): Promise<BrandingDTO> {
-  const existing = await ensureBrandingDocument();
+  const existing = await ensureBrandingDocument(ctx.orgId ?? null);
 
   // Diff against current so the audit row carries actual changes only.
   // Empty input or a no-op (all values match) errors out, mirroring the
@@ -153,8 +200,12 @@ export async function updateBranding(
     throw new ValidationError("No changes to apply");
   }
 
+  // Per-org row when ctx carries orgId; legacy singleton otherwise.
+  const updateFilter = ctx.orgId
+    ? { orgId: orgIdFilter(ctx.orgId) }
+    : { key: BRANDING_KEY };
   const updated = await Branding.findOneAndUpdate(
-    { key: BRANDING_KEY },
+    updateFilter,
     {
       $set: { ...changes, updatedBy: new Types.ObjectId(ctx.actor.id) },
     },
@@ -165,7 +216,8 @@ export async function updateBranding(
   await recordAudit({
     action: AuditAction.BRANDING_UPDATED,
     entityType: AuditEntity.BRANDING,
-    entityId: BRANDING_KEY,
+    entityId: ctx.orgId ?? BRANDING_KEY,
+    orgId: ctx.orgId ?? null,
     actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
     request: ctx.request ?? null,
     metadata: { changes },
@@ -222,12 +274,15 @@ export async function replaceBrandingLogo(
   file: { buffer: Buffer; mimeType: string },
   ctx: BrandingContext,
 ): Promise<BrandingDTO> {
-  const existing = await ensureBrandingDocument();
+  const existing = await ensureBrandingDocument(ctx.orgId ?? null);
   const previousLogo = existing.logo;
   const nextLogo = await saveBrandingLogoFile(file);
 
+  const updateFilter = ctx.orgId
+    ? { orgId: orgIdFilter(ctx.orgId) }
+    : { key: BRANDING_KEY };
   const updated = await Branding.findOneAndUpdate(
-    { key: BRANDING_KEY },
+    updateFilter,
     {
       $set: { logo: nextLogo, updatedBy: new Types.ObjectId(ctx.actor.id) },
     },
@@ -238,7 +293,8 @@ export async function replaceBrandingLogo(
   await recordAudit({
     action: AuditAction.BRANDING_LOGO_REPLACED,
     entityType: AuditEntity.BRANDING,
-    entityId: BRANDING_KEY,
+    entityId: ctx.orgId ?? BRANDING_KEY,
+    orgId: ctx.orgId ?? null,
     actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
     request: ctx.request ?? null,
     metadata: { previousLogo, nextLogo },

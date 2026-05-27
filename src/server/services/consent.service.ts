@@ -5,7 +5,6 @@ import { Types } from "mongoose";
 import {
   AuditAction,
   AuditEntity,
-  type BookingType,
   ConsentMethod,
   ConsentStatus,
   type Currency,
@@ -53,6 +52,50 @@ interface ConsentActor {
   role: UserRole;
 }
 
+/**
+ * Pass 5h: snapshot helpers — universal shape only. Translate between
+ * input (ISO strings), Mongoose doc (Date instances), and evidence
+ * payloads (ISO strings).
+ */
+function snapshotInputToDoc(
+  input: PaymentConsentSnapshot,
+): PaymentConsentDoc["snapshot"] {
+  return {
+    summary: input.summary ?? null,
+    startsAt: input.startsAt ? new Date(input.startsAt) : null,
+    endsAt: input.endsAt ? new Date(input.endsAt) : null,
+    amount: input.amount,
+    currency: input.currency,
+    paymentLinkRef: input.paymentLinkRef ?? null,
+  };
+}
+
+function snapshotInputToEvidence(
+  input: PaymentConsentSnapshot,
+): Record<string, unknown> {
+  return {
+    summary: input.summary ?? null,
+    startsAt: input.startsAt ? new Date(input.startsAt).toISOString() : null,
+    endsAt: input.endsAt ? new Date(input.endsAt).toISOString() : null,
+    amount: input.amount,
+    currency: input.currency,
+    paymentLinkRef: input.paymentLinkRef ?? null,
+  };
+}
+
+function snapshotDocToEvidence(
+  s: PaymentConsentDoc["snapshot"],
+): Record<string, unknown> {
+  return {
+    summary: s.summary ?? null,
+    startsAt: s.startsAt ? s.startsAt.toISOString() : null,
+    endsAt: s.endsAt ? s.endsAt.toISOString() : null,
+    amount: s.amount,
+    currency: s.currency,
+    paymentLinkRef: s.paymentLinkRef ?? null,
+  };
+}
+
 function consentToDTO(doc: PaymentConsentDoc & { _id: Types.ObjectId | string }): PaymentConsentDTO {
   return {
     id: String(doc._id),
@@ -66,11 +109,13 @@ function consentToDTO(doc: PaymentConsentDoc & { _id: Types.ObjectId | string })
     consentEmailSubject: doc.consentEmailSubject ?? null,
     signedName: doc.signedName ?? null,
     snapshot: {
-      bookingType: doc.snapshot.bookingType as BookingType,
-      provider: doc.snapshot.provider,
-      vehicle: doc.snapshot.vehicle,
-      pickupDate: doc.snapshot.pickupDate.toISOString(),
-      dropoffDate: doc.snapshot.dropoffDate.toISOString(),
+      summary: doc.snapshot.summary ?? null,
+      startsAt: doc.snapshot.startsAt
+        ? doc.snapshot.startsAt.toISOString()
+        : null,
+      endsAt: doc.snapshot.endsAt
+        ? doc.snapshot.endsAt.toISOString()
+        : null,
       amount: doc.snapshot.amount,
       currency: doc.snapshot.currency as Currency,
       paymentLinkRef: doc.snapshot.paymentLinkRef ?? null,
@@ -117,7 +162,15 @@ export interface RequestConsentResult {
  */
 export async function requestConsent(
   input: RequestConsentInput,
-  ctx: { actor: ConsentActor; appUrl: string; request?: RequestContext | null },
+  ctx: {
+    actor: ConsentActor;
+    /** Active organization. Pass 5a pin to prevent a Tenant A agent
+     *  from requesting consent against a Tenant B order id. Optional
+     *  during the cutover for back-compat with un-migrated callers. */
+    orgId?: string | null;
+    appUrl: string;
+    request?: RequestContext | null;
+  },
 ): Promise<RequestConsentResult> {
   await connectMongo();
 
@@ -126,7 +179,9 @@ export async function requestConsent(
   }
   const orderObjectId = new Types.ObjectId(input.orderId);
 
-  const order = await Order.findById(orderObjectId);
+  const orderFilter: Record<string, unknown> = { _id: orderObjectId };
+  if (ctx.orgId) orderFilter.orgId = new Types.ObjectId(ctx.orgId);
+  const order = await Order.findOne(orderFilter);
   if (!order) throw new NotFoundError("Order not found");
 
   const existing =
@@ -143,16 +198,7 @@ export async function requestConsent(
     existing.customerName = input.customerName;
     existing.consentMessage = input.consentMessage;
     existing.consentEmailSubject = input.consentEmailSubject;
-    existing.snapshot = {
-      bookingType: input.snapshot.bookingType,
-      provider: input.snapshot.provider,
-      vehicle: input.snapshot.vehicle,
-      pickupDate: new Date(input.snapshot.pickupDate),
-      dropoffDate: new Date(input.snapshot.dropoffDate),
-      amount: input.snapshot.amount,
-      currency: input.snapshot.currency,
-      paymentLinkRef: input.snapshot.paymentLinkRef ?? null,
-    };
+    existing.snapshot = snapshotInputToDoc(input.snapshot);
     existing.requestedAt = new Date();
     await existing.save();
     doc = existing as unknown as PaymentConsentDoc & { _id: Types.ObjectId };
@@ -165,16 +211,7 @@ export async function requestConsent(
       customerName: input.customerName,
       consentMessage: input.consentMessage,
       consentEmailSubject: input.consentEmailSubject,
-      snapshot: {
-        bookingType: input.snapshot.bookingType,
-        provider: input.snapshot.provider,
-        vehicle: input.snapshot.vehicle,
-        pickupDate: new Date(input.snapshot.pickupDate),
-        dropoffDate: new Date(input.snapshot.dropoffDate),
-        amount: input.snapshot.amount,
-        currency: input.snapshot.currency,
-        paymentLinkRef: input.snapshot.paymentLinkRef ?? null,
-      },
+      snapshot: snapshotInputToDoc(input.snapshot),
       requestedAt: new Date(),
     });
     doc = created as unknown as PaymentConsentDoc & { _id: Types.ObjectId };
@@ -243,16 +280,7 @@ export async function requestConsent(
       consentMessage: input.consentMessage,
       method: ConsentMethod.HOSTED_PAGE,
       resend: Boolean(existing),
-      snapshot: {
-        bookingType: input.snapshot.bookingType,
-        provider: input.snapshot.provider,
-        vehicle: input.snapshot.vehicle,
-        pickupDate: new Date(input.snapshot.pickupDate).toISOString(),
-        dropoffDate: new Date(input.snapshot.dropoffDate).toISOString(),
-        amount: input.snapshot.amount,
-        currency: input.snapshot.currency,
-        paymentLinkRef: input.snapshot.paymentLinkRef ?? null,
-      },
+      snapshot: snapshotInputToEvidence(input.snapshot),
     },
     refs: {
       consentId: String(doc._id),
@@ -286,6 +314,11 @@ export async function getPublicConsentView(
 ): Promise<PublicConsentView> {
   const doc = await loadConsentByTokenOrThrow(token);
   await connectMongo();
+  // SCOPE_OK: public hosted-consent view. Authn is the HMAC-signed
+  // token (verified above) which is cryptographically bound to the
+  // consent record id, which carries the orderId. The trust chain
+  // means we don't need a separate orgId pin — the customer holds a
+  // capability token issued specifically for this order.
   const order = await Order.findById(doc.orderId).lean();
   return {
     status: doc.status as ConsentStatus,
@@ -294,11 +327,13 @@ export async function getPublicConsentView(
     brandName: branding.brandName,
     consentMessage: doc.consentMessage,
     snapshot: {
-      bookingType: doc.snapshot.bookingType as BookingType,
-      provider: doc.snapshot.provider,
-      vehicle: doc.snapshot.vehicle,
-      pickupDate: doc.snapshot.pickupDate.toISOString(),
-      dropoffDate: doc.snapshot.dropoffDate.toISOString(),
+      summary: doc.snapshot.summary ?? null,
+      startsAt: doc.snapshot.startsAt
+        ? doc.snapshot.startsAt.toISOString()
+        : null,
+      endsAt: doc.snapshot.endsAt
+        ? doc.snapshot.endsAt.toISOString()
+        : null,
       amount: doc.snapshot.amount,
       currency: doc.snapshot.currency as Currency,
       paymentLinkRef: doc.snapshot.paymentLinkRef ?? null,
@@ -424,16 +459,7 @@ export async function recordConsentFromToken(
       signedName: doc.signedName,
       acknowledgement: input.acknowledgement,
       consentMessage: doc.consentMessage,
-      snapshot: {
-        bookingType: doc.snapshot.bookingType,
-        provider: doc.snapshot.provider,
-        vehicle: doc.snapshot.vehicle,
-        pickupDate: doc.snapshot.pickupDate.toISOString(),
-        dropoffDate: doc.snapshot.dropoffDate.toISOString(),
-        amount: doc.snapshot.amount,
-        currency: doc.snapshot.currency,
-        paymentLinkRef: doc.snapshot.paymentLinkRef ?? null,
-      },
+      snapshot: snapshotDocToEvidence(doc.snapshot),
       receivedAt: (doc.receivedAt ?? now).toISOString(),
       verifiedAt: (doc.verifiedAt ?? now).toISOString(),
     },
@@ -447,10 +473,14 @@ export async function recordConsentFromToken(
 
   // Realtime push so the agent's order detail page flips the "Consent
   // received" timeline node instantly. Audience is the order creator —
-  // the SSE filter widens it to admins.
+  // the SSE filter widens it to admins of the same org. The orgId
+  // projection below pins delivery to the correct tenant.
   const owner = await Order.findById(doc.orderId)
-    .select({ "createdBy.userId": 1, orderNumber: 1 })
-    .lean<{ createdBy: { userId: Types.ObjectId } }>();
+    .select({ "createdBy.userId": 1, orderNumber: 1, orgId: 1 })
+    .lean<{
+      createdBy: { userId: Types.ObjectId };
+      orgId?: Types.ObjectId | null;
+    }>();
   if (owner?.createdBy?.userId) {
     logger.info("order.lifecycle.transition", {
       orderId: String(doc.orderId),
@@ -463,6 +493,7 @@ export async function recordConsentFromToken(
     publishEvent({
       type: DomainEventType.ORDER_CONSENT_RECEIVED,
       audience: { kind: "creator", userId: String(owner.createdBy.userId) },
+      orgId: owner.orgId ? String(owner.orgId) : null,
       payload: {
         orderId: String(doc.orderId),
         orderNumber: doc.orderNumber,

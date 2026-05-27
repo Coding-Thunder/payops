@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   archiveOrderSchema,
   changePasswordSchema,
-  createOrderSchema,
+  createOrderUniversalSchema,
   createUserSchema,
   flagOrderSchema,
   loginSchema,
@@ -12,7 +12,7 @@ import {
 } from "@/lib/validation";
 import {
   belowMinimumAmountInput,
-  invalidTripDatesInput,
+  invalidSchedulingInput,
   validCreateOrderInput,
 } from "@/tests/fixtures/order-input.fixture";
 
@@ -91,41 +91,45 @@ describe("createUserSchema", () => {
   });
 });
 
-describe("createOrderSchema", () => {
+describe("createOrderUniversalSchema", () => {
   it("accepts the canonical valid input fixture", () => {
-    const r = createOrderSchema.safeParse(validCreateOrderInput());
+    const r = createOrderUniversalSchema.safeParse(validCreateOrderInput());
     expect(r.success).toBe(true);
   });
 
-  it("rejects trips where dropoff is not after pickup", () => {
-    const r = createOrderSchema.safeParse(invalidTripDatesInput());
+  it("rejects scheduling windows where end is not after start", () => {
+    const r = createOrderUniversalSchema.safeParse(invalidSchedulingInput());
     expect(r.success).toBe(false);
     if (!r.success) {
-      const messages = r.error.issues.map((i) => i.message);
-      expect(messages.some((m) => /Drop-off must be after pick-up/.test(m))).toBe(
-        true,
+      const messages = r.error.issues.map(
+        (i: { message: string }) => i.message,
       );
+      expect(
+        messages.some((m: string) =>
+          /Scheduling end must be after start/.test(m),
+        ),
+      ).toBe(true);
     }
   });
 
   it("rejects amounts <= 0", () => {
-    const r = createOrderSchema.safeParse(
+    const r = createOrderUniversalSchema.safeParse(
       validCreateOrderInput({ pricing: { amount: 0, currency: "USD" } }),
     );
     expect(r.success).toBe(false);
   });
 
   it("rejects unrealistically large amounts", () => {
-    const r = createOrderSchema.safeParse(
+    const r = createOrderUniversalSchema.safeParse(
       validCreateOrderInput({
-        pricing: { amount: 5_000_000, currency: "USD" },
+        pricing: { amount: 50_000_000, currency: "USD" },
       }),
     );
     expect(r.success).toBe(false);
   });
 
-  it("trims customer + vehicle names", () => {
-    const r = createOrderSchema.safeParse(
+  it("trims customer names", () => {
+    const r = createOrderUniversalSchema.safeParse(
       validCreateOrderInput({
         customer: {
           name: "   Ada   ",
@@ -138,33 +142,16 @@ describe("createOrderSchema", () => {
     if (r.success) expect(r.data.customer.name).toBe("Ada");
   });
 
-  it("accepts a near-floor amount (>= $0.50) that still has cents", () => {
-    // Sub-50¢ inputs fail at the Stripe boundary, not the schema —
-    // the schema only enforces > 0, so this stays here as a guard.
-    const r = createOrderSchema.safeParse(belowMinimumAmountInput());
+  it("accepts a near-floor amount that still has cents", () => {
+    const r = createOrderUniversalSchema.safeParse(belowMinimumAmountInput());
     expect(r.success).toBe(true);
   });
 
-  it("requires a well-formed rental provider key (existence is enforced server-side)", () => {
-    const { provider: _drop, ...rest } = validCreateOrderInput();
-    void _drop;
-    // Missing → reject
-    expect(createOrderSchema.safeParse(rest).success).toBe(false);
-    // Malformed (lowercase / starts with digit / too short) → reject
-    expect(
-      createOrderSchema.safeParse({ ...rest, provider: "h" }).success,
-    ).toBe(false);
-    expect(
-      createOrderSchema.safeParse({ ...rest, provider: "9ABC" }).success,
-    ).toBe(false);
-    // Well-formed (whether or not the DB knows about it) → accept;
-    // the order service rejects unknown keys at runtime.
-    expect(
-      createOrderSchema.safeParse({ ...rest, provider: "HERTZ" }).success,
-    ).toBe(true);
-    expect(
-      createOrderSchema.safeParse({ ...rest, provider: "SIXT" }).success,
-    ).toBe(true);
+  it("requires at least one line item", () => {
+    const r = createOrderUniversalSchema.safeParse(
+      validCreateOrderInput({ lineItems: [] }),
+    );
+    expect(r.success).toBe(false);
   });
 });
 
@@ -173,7 +160,6 @@ describe("updateSettingsSchema", () => {
     const r = updateSettingsSchema.safeParse({
       paymentExpiryHours: 12,
       orderPrefix: "ord",
-      allowedBookingTypes: ["NEW_BOOKING"],
       defaultCurrency: "USD",
       successRedirectUrl: "https://example.com/s",
       cancelRedirectUrl: "https://example.com/c",
@@ -187,20 +173,6 @@ describe("updateSettingsSchema", () => {
     const r = updateSettingsSchema.safeParse({
       paymentExpiryHours: 12,
       orderPrefix: "OR1",
-      allowedBookingTypes: ["NEW_BOOKING"],
-      defaultCurrency: "USD",
-      successRedirectUrl: "https://example.com/s",
-      cancelRedirectUrl: "https://example.com/c",
-      cancellationPolicy: "x".repeat(100),
-    });
-    expect(r.success).toBe(false);
-  });
-
-  it("requires a non-empty allowedBookingTypes list", () => {
-    const r = updateSettingsSchema.safeParse({
-      paymentExpiryHours: 12,
-      orderPrefix: "ORD",
-      allowedBookingTypes: [],
       defaultCurrency: "USD",
       successRedirectUrl: "https://example.com/s",
       cancelRedirectUrl: "https://example.com/c",

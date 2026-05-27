@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Aurora } from "@/components/brand/aurora";
@@ -71,9 +72,14 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             turnstileSiteKey={env.public.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null}
           />
           <p className="text-[11px] text-muted-foreground/80 text-center leading-relaxed">
-            Trouble signing in? Reach out to your administrator.
-            <br />
-            Public sign-ups are disabled.
+            Don't have an account yet?{" "}
+            <Link
+              href="/signup"
+              className="text-foreground underline-offset-4 hover:underline"
+            >
+              Create your workspace
+            </Link>
+            .
           </p>
         </div>
       </section>

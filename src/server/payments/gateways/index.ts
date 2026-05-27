@@ -2,7 +2,8 @@ import "server-only";
 
 import type { PaymentGateway, PaymentGatewayKey } from "../gateway";
 
-import { stripeGateway } from "./stripe";
+import { stripeGateway, buildStripeGateway } from "./stripe";
+import { loadGatewayCredential } from "../gateway-credentials.service";
 
 /**
  * Payment-gateway registry.
@@ -82,4 +83,43 @@ export function listGateways(): PaymentGateway[] {
  *  to for new orders". Stripe today; pivot here if that changes. */
 export function getDefaultGateway(): PaymentGateway {
   return REGISTRY.STRIPE;
+}
+
+/**
+ * Per-org gateway lookup.
+ *
+ * Resolves credentials from `GatewayCredential` (encrypted at rest);
+ * falls back to env vars when no per-org row exists AND the gateway is
+ * Stripe. This is the "no breaking production behavior" seam — Tenant
+ * #1 (no GatewayCredential row) keeps using the env-backed flow; new
+ * tenants land on a per-org client built from their own row.
+ *
+ * Returns `null` only when:
+ *   - The gateway is non-Stripe AND no per-org row exists, OR
+ *   - The row exists but `enabled: false`.
+ *
+ * Callers should treat null as "this org hasn't configured this
+ * gateway yet" and surface a user-facing configure-now prompt rather
+ * than crashing.
+ *
+ * NB: This returns a FRESH `PaymentGateway` per call when the source
+ * is a per-org row. Don't cache the result at module scope — see
+ * `getStripeForSecret` for the rationale.
+ */
+export async function getGatewayForOrg(
+  orgId: string | null,
+  key: PaymentGatewayKey,
+): Promise<PaymentGateway | null> {
+  const creds = await loadGatewayCredential(orgId, key);
+  if (!creds) return null;
+
+  // Stripe is the only gateway with a real adapter today. The
+  // placeholders in REGISTRY throw on call; we don't try to resolve
+  // per-org credentials for them.
+  if (key !== "STRIPE") return null;
+
+  return buildStripeGateway({
+    secretKey: creds.secretKey,
+    webhookSecret: creds.webhookSecret,
+  });
 }

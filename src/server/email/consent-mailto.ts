@@ -2,7 +2,7 @@ import "server-only";
 
 import type { OrderDTO } from "@/types";
 
-import { formatEmailDay } from "./format";
+import { formatEmailDate } from "./format";
 
 /**
  * Build the mailto: URL used by the "Email us instead" fallback link in
@@ -11,11 +11,13 @@ import { formatEmailDay } from "./format";
  *   - subject line tied to the order number
  *   - body: order facts + acknowledgement statement
  *
- * The customer's mail client opens with a draft ready to send — they
- * just hit "Send" to give us a paper trail.
+ * Pass 5h: rental-specific (vehicle / trip / provider) lines removed.
+ * The summary lists the order's line items + the scheduling window
+ * (when present) so the customer's email-of-record matches whatever
+ * universal-shape order they're acknowledging.
  *
- * Why we keep it short: some clients (especially iOS Mail) truncate
- * mailto: bodies past ~1500 chars. Keep this under 600 chars.
+ * Why short: some clients (especially iOS Mail) truncate mailto: bodies
+ * past ~1500 chars. Keep this under 600 chars.
  */
 export function buildConsentMailto(args: {
   toEmail: string;
@@ -25,6 +27,12 @@ export function buildConsentMailto(args: {
 }): string {
   const { order } = args;
   const subject = `Acknowledgement • Order ${order.orderNumber}`;
+  const itemsLine =
+    order.lineItems.length > 0
+      ? `Items: ${order.lineItems
+          .map((l) => (l.quantity > 1 ? `${l.quantity}× ${l.name}` : l.name))
+          .join(", ")}`
+      : "";
   const lines = [
     `Hi ${args.brandName} team,`,
     "",
@@ -32,10 +40,13 @@ export function buildConsentMailto(args: {
     "",
     `Customer: ${order.customer.name}`,
     `Order: ${order.orderNumber}`,
-    `Provider: ${order.provider?.name ?? "—"}`,
-    `Vehicle: ${order.vehicle.company} • ${order.vehicle.type}`,
-    `Pick-up: ${formatEmailDay(order.trip.pickupDate)}`,
-    `Drop-off: ${formatEmailDay(order.trip.dropoffDate)}`,
+    itemsLine,
+    order.scheduling
+      ? `Starts: ${formatEmailDate(order.scheduling.startsAt)}`
+      : "",
+    order.scheduling?.endsAt
+      ? `Ends: ${formatEmailDate(order.scheduling.endsAt)}`
+      : "",
     `Amount: ${order.pricing.amount.toFixed(2)} ${order.pricing.currency}`,
     order.payment.paymentUrl
       ? `Payment link: ${order.payment.paymentUrl}`

@@ -136,8 +136,8 @@ export function MarketingNav() {
           >
             Sign in
           </Link>
-          <a
-            href="#quote"
+          <Link
+            href="/signup"
             className={cn(
               "inline-flex h-9 items-center rounded-full px-4 text-[13px] font-semibold transition-all hover:-translate-y-px",
               dark
@@ -145,8 +145,8 @@ export function MarketingNav() {
                 : "bg-foreground text-background hover:opacity-90",
             )}
           >
-            Request quotation
-          </a>
+            Sign up free
+          </Link>
         </div>
       </div>
     </header>

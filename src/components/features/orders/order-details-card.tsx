@@ -4,8 +4,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { ProviderCard } from "@/components/features/providers";
-import { BookingTypeLabel } from "@/lib/constants/labels";
 import { formatDateTime } from "@/lib/format";
 import type { OrderDTO } from "@/types";
 
@@ -14,58 +12,14 @@ interface OrderDetailsCardProps {
 }
 
 export function OrderDetailsCard({ order }: OrderDetailsCardProps) {
-  const imageUrl = order.vehicle.imageUrl ?? null;
   return (
     <div className="space-y-4">
-      <ProviderCard
-        provider={order.provider}
-        description={`${order.vehicle.company} ${order.vehicle.type}`}
-        meta={
-          <>
-            <div className="font-mono text-[12px] text-foreground">
-              {order.orderNumber}
-            </div>
-            <div className="mt-0.5">{BookingTypeLabel[order.bookingType]}</div>
-          </>
-        }
-      />
-      {imageUrl ? (
-        <Card>
-          <CardContent className="p-0">
-            {/* Public car image captured at creation time. Rendered with
-                a fixed 16:9 frame and object-cover so wildly varying
-                source images still produce a clean card. The anchor lets
-                operators open the original for reference (right-click →
-                "Save image" too). */}
-            <a
-              href={imageUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={imageUrl}
-                alt={`${order.vehicle.company} ${order.vehicle.type}`}
-                className="aspect-[16/9] w-full rounded-t-lg object-cover bg-surface-1"
-                loading="lazy"
-              />
-            </a>
-            <div className="border-t border-border px-5 py-2.5 text-[11.5px] text-muted-foreground">
-              Public image used in the confirmation email and Stripe checkout.
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
       <Card>
         <CardHeader>
-          <CardTitle>Booking details</CardTitle>
+          <CardTitle>Order details</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-y-4 gap-x-6 text-sm sm:grid-cols-2">
-          <Detail
-            label="Booking type"
-            value={BookingTypeLabel[order.bookingType]}
-          />
+          <Detail label="Order" value={order.orderNumber} />
           <Detail label="Created" value={formatDateTime(order.createdAt)} />
           <Detail
             label="Customer"
@@ -81,25 +35,37 @@ export function OrderDetailsCard({ order }: OrderDetailsCardProps) {
               </>
             }
           />
-          <Detail
-            label="Vehicle"
-            value={
-              <>
-                <div className="font-medium">{order.vehicle.company}</div>
-                <div className="text-xs text-muted-foreground">
-                  {order.vehicle.type}
+          {order.lineItems.length > 0 ? (
+            <Detail
+              label={order.lineItems.length === 1 ? "Item" : "Items"}
+              value={
+                <div className="space-y-1">
+                  {order.lineItems.map((li, idx) => (
+                    <div key={idx}>
+                      <div className="font-medium">{li.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {li.quantity} × {li.unitPrice} = {li.total}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </>
-            }
-          />
-          <Detail
-            label="Pick-up"
-            value={formatDateTime(order.trip.pickupDate)}
-          />
-          <Detail
-            label="Drop-off"
-            value={formatDateTime(order.trip.dropoffDate)}
-          />
+              }
+            />
+          ) : null}
+          {order.scheduling ? (
+            <>
+              <Detail
+                label="Starts"
+                value={formatDateTime(order.scheduling.startsAt)}
+              />
+              {order.scheduling.endsAt ? (
+                <Detail
+                  label="Ends"
+                  value={formatDateTime(order.scheduling.endsAt)}
+                />
+              ) : null}
+            </>
+          ) : null}
           <Detail
             label="Created by"
             value={

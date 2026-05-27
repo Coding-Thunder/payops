@@ -29,8 +29,6 @@ import {
   OrderStatusBadge,
 } from "@/components/common/status-badges";
 import { EmptyState } from "@/components/common/empty-state";
-import { ProviderBadge } from "@/components/features/providers";
-import { BookingTypeLabel } from "@/lib/constants/labels";
 import { ConsentStatus, OrderStatus } from "@/lib/constants/enums";
 import { api, ApiClientError } from "@/lib/api-client";
 import { formatCurrency, formatDate, formatRelative } from "@/lib/format";
@@ -154,9 +152,7 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
             ) : null}
             <TableHead className="w-[180px]">Order</TableHead>
             <TableHead>Customer</TableHead>
-            <TableHead className="hidden md:table-cell">Type</TableHead>
-            <TableHead className="hidden lg:table-cell">Provider</TableHead>
-            <TableHead className="hidden xl:table-cell">Vehicle</TableHead>
+            <TableHead className="hidden lg:table-cell">Items</TableHead>
             <TableHead className="text-right">Amount</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="hidden md:table-cell">Created</TableHead>
@@ -200,21 +196,15 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
                     {o.customer.email}
                   </div>
                 </TableCell>
-                <TableCell className="hidden md:table-cell">
-                  <Badge variant="secondary">
-                    {BookingTypeLabel[o.bookingType]}
-                  </Badge>
-                </TableCell>
                 <TableCell className="hidden lg:table-cell">
-                  <ProviderBadge provider={o.provider} size="sm" />
-                </TableCell>
-                <TableCell className="hidden xl:table-cell">
                   <div className="text-[13px] font-medium leading-tight">
-                    {o.vehicle.company}
+                    {o.lineItems[0]?.name ?? "—"}
                   </div>
-                  <div className="text-[11.5px] text-muted-foreground leading-tight mt-0.5">
-                    {o.vehicle.type}
-                  </div>
+                  {o.lineItems.length > 1 ? (
+                    <div className="text-[11.5px] text-muted-foreground leading-tight mt-0.5">
+                      +{o.lineItems.length - 1} more
+                    </div>
+                  ) : null}
                 </TableCell>
                 <TableCell className="text-right font-medium tabular-nums">
                   {formatCurrency(o.pricing.amount, o.pricing.currency)}

@@ -1,12 +1,8 @@
-import Image from "next/image";
-
 import { getBranding } from "@/server/services/branding.service";
 import {
   getOrderByNumber,
   reconcileOrderPayment,
 } from "@/server/services/order.service";
-import { BookingTypeLabel } from "@/lib/constants/labels";
-import { resolveProvider } from "@/lib/constants/providers";
 import { OrderStatus } from "@/lib/constants/enums";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { logger } from "@/lib/logger";
@@ -66,7 +62,6 @@ export default async function PaymentSuccessPage({
   const brand = branding.brandName;
   const supportEmail = branding.supportEmail;
   const supportPhone = branding.supportPhone;
-  const providerMeta = order ? resolveProvider(order.provider) : null;
   const amount = order
     ? formatCurrency(
         order.payment.amountReceived ?? order.pricing.amount,
@@ -76,6 +71,9 @@ export default async function PaymentSuccessPage({
   const paidOn = order?.payment.paidAt
     ? formatDateTime(order.payment.paidAt)
     : null;
+  // Pass 5h: universal-shape rendering. Provider/booking-type metadata
+  // is gone; line items + scheduling carry whatever the order needs.
+  const typeLabel = "Order";
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -136,7 +134,7 @@ export default async function PaymentSuccessPage({
         {stillPending ? <PaymentSuccessAutoRefresh /> : null}
       </div>
 
-      {order && providerMeta && amount ? (
+      {order && amount ? (
         <>
           {/* ─── Amount + Order ─── */}
           <div className="grid grid-cols-2 gap-4 border-t border-slate-100 px-8 py-6">
@@ -161,58 +159,38 @@ export default async function PaymentSuccessPage({
             </div>
           </div>
 
-          {/* ─── Provider strip ─── */}
-          <div className="flex items-center gap-3 border-t border-slate-100 bg-slate-50/60 px-8 py-4">
-            <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-white p-1.5">
-              <Image
-                src={providerMeta.logo}
-                alt={providerMeta.name}
-                width={40}
-                height={40}
-                unoptimized
-                className="max-h-full max-w-full object-contain"
-              />
-            </span>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-slate-900">
-                {providerMeta.name}
-              </p>
-              <p className="truncate text-xs text-slate-500">
-                {BookingTypeLabel[order.bookingType]}
-              </p>
-            </div>
-          </div>
-
-          {/* ─── Booking details ─── */}
+          {/* ─── Order details (universal) ─── */}
           <div className="border-t border-slate-100 px-8 py-6">
             <p className="text-[11px] font-semibold uppercase tracking-[0.10em] text-slate-500">
-              Booking details
+              Order details
             </p>
             <dl className="mt-3 divide-y divide-slate-100 text-sm">
-              <DetailRow
-                label="Customer"
-                value={order.customer.name}
-              />
-              <DetailRow
-                label="Type"
-                value={BookingTypeLabel[order.bookingType]}
-              />
-              <DetailRow
-                label="Provider"
-                value={providerMeta.name}
-              />
-              <DetailRow
-                label="Vehicle"
-                value={`${order.vehicle.company} · ${order.vehicle.type}`}
-              />
-              <DetailRow
-                label="Pick-up"
-                value={formatDateTime(order.trip.pickupDate)}
-              />
-              <DetailRow
-                label="Drop-off"
-                value={formatDateTime(order.trip.dropoffDate)}
-              />
+              <DetailRow label="Customer" value={order.customer.name} />
+              <DetailRow label="Type" value={typeLabel} />
+              {order.lineItems.length > 0 ? (
+                <DetailRow
+                  label={order.lineItems.length === 1 ? "Item" : "Items"}
+                  value={order.lineItems
+                    .map((l) =>
+                      l.quantity > 1 ? `${l.quantity}× ${l.name}` : l.name,
+                    )
+                    .join(", ")}
+                />
+              ) : null}
+              {order.scheduling ? (
+                <>
+                  <DetailRow
+                    label="Starts"
+                    value={formatDateTime(order.scheduling.startsAt)}
+                  />
+                  {order.scheduling.endsAt ? (
+                    <DetailRow
+                      label="Ends"
+                      value={formatDateTime(order.scheduling.endsAt)}
+                    />
+                  ) : null}
+                </>
+              ) : null}
               {order.payment.receiptUrl ? (
                 <DetailRow
                   label="Stripe receipt"

@@ -17,6 +17,10 @@ export const POST = withApi(async (_req: NextRequest, { params }: Params) => {
   const actor = await requirePermission(Permission.ORDER_REGENERATE_LINK);
   const { id } = await params;
   const ctx = await getRequestContext();
-  const result = await regeneratePaymentLink(id, { actor, request: ctx });
+  const result = await regeneratePaymentLink(id, {
+    actor,
+    orgId: actor.orgId,
+    request: ctx,
+  });
   return jsonOk(result);
 });

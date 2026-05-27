@@ -107,7 +107,16 @@ export async function GET(req: NextRequest) {
       send(`retry: 5000\n\n`);
 
       unsubscribe = subscribeEvents((event) => {
-        if (!isEventVisibleToUser(event, { userId: user.id, role: user.role })) {
+        // Pass orgId so the bus filters cross-tenant events out of
+        // this connection — Pass 5a closes the SSE bleed flagged in
+        // the Phase-A audit risk #4.2.
+        if (
+          !isEventVisibleToUser(event, {
+            userId: user.id,
+            role: user.role,
+            orgId: user.orgId,
+          })
+        ) {
           return;
         }
         send(`event: payops\ndata: ${JSON.stringify(event)}\n\n`);

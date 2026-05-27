@@ -43,7 +43,7 @@ export const POST = withApi(
     const ctx = await getRequestContext();
     const data = await replaceBrandingLogo(
       { buffer, mimeType: file.type },
-      { actor, request: ctx },
+      { actor, orgId: actor.orgId, request: ctx },
     );
     return jsonOk(data);
   },

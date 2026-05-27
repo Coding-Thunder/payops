@@ -25,6 +25,7 @@ export const POST = withApi(async (_req: NextRequest, { params }: Params) => {
   const ctx = await getRequestContext();
   const version = await activateTemplateVersion(templateKey, versionId, {
     actor,
+    orgId: actor.orgId,
     request: ctx,
   });
   return jsonOk(version);

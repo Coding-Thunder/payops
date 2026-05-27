@@ -24,6 +24,12 @@ interface RecordAuditInput {
   action: AuditAction;
   entityType: AuditEntity;
   entityId?: string | null;
+  /** Active organization. Optional during the multi-tenant migration —
+   *  callers that haven't been org-aware-ified yet pass nothing, the
+   *  row lands with `orgId: null`, and per-tenant audit views ignore
+   *  it. New code paths (and refactors of touched code) MUST pass
+   *  `orgId` so the audit trail is tenant-isolated end-to-end. */
+  orgId?: string | null;
   actor?: AuditActor | null;
   request?: RequestContext | null;
   metadata?: Record<string, unknown> | null;
@@ -68,6 +74,10 @@ function buildDoc(input: RecordAuditInput) {
     action: input.action,
     entityType: input.entityType,
     entityId: input.entityId ?? null,
+    orgId:
+      input.orgId && Types.ObjectId.isValid(input.orgId)
+        ? new Types.ObjectId(input.orgId)
+        : null,
     actor: {
       userId: input.actor?.userId
         ? new Types.ObjectId(input.actor.userId)
@@ -91,6 +101,13 @@ interface ListAuditQuery {
   action?: AuditAction;
   page?: number;
   pageSize?: number;
+  /** Active org. When supplied, the filter pins on `orgId` strictly —
+   *  the legacy null-orgId fallback was retired in Phase 3d once the
+   *  Phase-0/1 migration backfilled every audit row. Cross-tenant
+   *  admin views (platform-side analytics) bypass this by omitting
+   *  the field — and should add a `// SCOPE_OK:` comment so reviewers
+   *  see the intent. */
+  orgId?: string | null;
 }
 
 interface DeleteAuditActor {
@@ -139,6 +156,14 @@ export async function listAuditLogs(query: ListAuditQuery = {}) {
   if (query.entityType) filter.entityType = query.entityType;
   if (query.entityId) filter.entityId = query.entityId;
   if (query.action) filter.action = query.action;
+  if (query.orgId && Types.ObjectId.isValid(query.orgId)) {
+    // Strict per-org filter. Tenants only see their own audit trail.
+    // Migration script backfilled orgId onto every legacy row in
+    // Phase 0+1, so there should be no null-orgId rows left. If any
+    // slip through, they're invisible to per-org admin views — which
+    // is the desired security posture going forward.
+    filter.orgId = new Types.ObjectId(query.orgId);
+  }
 
   const [items, total] = await Promise.all([
     AuditLog.find(filter)

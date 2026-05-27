@@ -62,13 +62,13 @@ const TEMPLATE_META: Record<
  * the isolated editor for that template (separate version histories).
  */
 export default async function AdminEmailTemplatesIndex() {
-  await requirePermission(Permission.EMAIL_TEMPLATE_VIEW);
+  const user = await requirePermission(Permission.EMAIL_TEMPLATE_VIEW);
 
   const cards: TemplateCardData[] = await Promise.all(
     EMAIL_TEMPLATE_KEYS.map(async (key) => {
       const [active, versions] = await Promise.all([
-        getActiveTemplate(key),
-        listTemplateVersions(key),
+        getActiveTemplate(key, user.orgId),
+        listTemplateVersions(key, user.orgId),
       ]);
       return {
         key,

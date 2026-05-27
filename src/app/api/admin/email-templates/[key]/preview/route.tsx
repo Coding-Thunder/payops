@@ -3,10 +3,6 @@ import { render } from "@react-email/render";
 
 import { Permission } from "@/lib/constants/permissions";
 import {
-  BOOKING_TYPES,
-  BookingType,
-} from "@/lib/constants/enums";
-import {
   createEmailTemplateVersionSchema,
   templateKeyParam,
 } from "@/lib/validation";
@@ -15,9 +11,7 @@ import { jsonOk, withApi } from "@/server/api/respond";
 import { requirePermission } from "@/server/auth/session";
 import { getBranding } from "@/server/services/branding.service";
 import { ensureSettingsDocument } from "@/server/services/settings.service";
-import { listActiveProviders } from "@/server/services/provider.service";
-import { PaymentConfirmationEmail } from "@/server/email/templates/payment-confirmation";
-import { PaymentRequestEmail } from "@/server/email/templates/payment-request";
+import { UniversalOrderEmail } from "@/server/email/templates/universal-order-email";
 import {
   buildPaymentPreviewProps,
   buildPaymentRequestPreviewProps,
@@ -34,10 +28,6 @@ interface Params {
  * Render the chosen email template with the editor's current draft
  * overrides — without saving anything to Mongo. Powers the admin
  * editor's live preview pane.
- *
- * Body shape is the same as POST /api/admin/email-templates/[key]
- * (createEmailTemplateVersionSchema) so the same form can hit both
- * endpoints.
  */
 export const POST = withApi(async (req: NextRequest, { params }: Params) => {
   await requirePermission(Permission.EMAIL_TEMPLATE_VIEW);
@@ -45,8 +35,6 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
   const templateKey = templateKeyParam.parse(key);
 
   const body = await req.json().catch(() => ({}));
-  // Strip the optional `provider` and `bookingType` keys out before
-  // schema parse (those control sample data, not template content).
   const draft = createEmailTemplateVersionSchema.parse({
     subject: body?.subject,
     greeting: body?.greeting,
@@ -57,39 +45,18 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
     footerNote: body?.footerNote,
   });
 
-  const [branding, settings, providers] = await Promise.all([
+  const [branding, settings] = await Promise.all([
     getBranding(),
     ensureSettingsDocument(),
-    listActiveProviders(),
   ]);
-  const providerKey =
-    typeof body?.provider === "string" ? body.provider : undefined;
-  const provider =
-    providers.find((p) => p.key === providerKey) ?? providers[0] ?? null;
-  if (!provider) {
-    return jsonOk({ html: "" });
-  }
-  const bookingType = (
-    BOOKING_TYPES as readonly string[]
-  ).includes(body?.bookingType ?? "")
-    ? (body.bookingType as BookingType)
-    : BookingType.NEW_BOOKING;
 
   const baseArgs = {
     brandName: branding.brandName,
     appUrl: env.server.APP_URL,
     supportEmail: branding.supportEmail,
     supportPhone: branding.supportPhone,
-    provider: {
-      id: provider.key,
-      name: provider.name,
-      logo: provider.logo,
-      primaryColor: provider.primaryColor,
-      onPrimaryColor: provider.onPrimaryColor,
-    },
     cancellationPolicy: settings.cancellationPolicy,
     cancellationPolicyVersion: settings.cancellationPolicyVersion,
-    bookingType,
   };
 
   // Overlay the draft content onto the template's sample preview props
@@ -104,11 +71,10 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
       intro: draft.intro ?? props.intro,
       note: draft.note ?? props.note,
     };
-    html = await render(<PaymentRequestEmail {...merged} />);
+    html = await render(<UniversalOrderEmail {...merged} />);
   } else {
-    // payment-confirmation
     const props = buildPaymentPreviewProps(baseArgs);
-    html = await render(<PaymentConfirmationEmail {...props} />);
+    html = await render(<UniversalOrderEmail {...props} />);
   }
   return jsonOk({ html });
 });

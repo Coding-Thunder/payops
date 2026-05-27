@@ -39,7 +39,7 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
   const reqCtx = await getRequestContext();
   const result = await initiatePayment(
     id,
-    { actor, request: reqCtx },
+    { actor, orgId: actor.orgId, request: reqCtx },
     { gateway: input.gateway },
   );
   return jsonOk(result);

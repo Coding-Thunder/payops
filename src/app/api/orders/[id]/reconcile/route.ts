@@ -29,7 +29,11 @@ export const POST = withApi(
     const actor = await requirePermission(Permission.ORDER_VIEW_OWN);
     const { id } = await params;
     const reqCtx = await getRequestContext();
-    const result = await reconcileOrderPayment(id, { actor, request: reqCtx });
+    const result = await reconcileOrderPayment(id, {
+      actor,
+      orgId: actor.orgId,
+      request: reqCtx,
+    });
     return jsonOk(result);
   },
   {

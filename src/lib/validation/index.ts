@@ -3,7 +3,7 @@ export * from "./user";
 export * from "./order";
 export * from "./settings";
 export * from "./risk";
-export * from "./provider";
+// Pass 5h: rental Provider + CarLink validators removed.
 export * from "./branding";
 export {
   createDraftSchema,
@@ -11,9 +11,13 @@ export {
   type CreateDraftInput as CreateOrderDraftInput,
   type UpdateDraftInput as UpdateOrderDraftInput,
 } from "./draft";
-export * from "./car-link";
 export * from "./payment-request";
 export * from "./email-template";
 export * from "./consent";
 export * from "./evidence";
 export * from "./quotation";
+export * from "./gateway";
+export * from "./signup";
+export * from "./password-reset";
+export * from "./item-type";
+export * from "./business-setup";

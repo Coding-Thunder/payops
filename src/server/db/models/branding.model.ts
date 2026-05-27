@@ -17,7 +17,12 @@ import {
 export const BRANDING_KEY = "default" as const;
 
 export interface BrandingDoc {
+  /** Legacy singleton key. Kept during migration so existing
+   *  `findOne({ key: "default" })` calls still work. Retires once every
+   *  Branding row carries `orgId`. */
   key: string;
+  /** Tenant boundary. Nullable during migration window. */
+  orgId?: Types.ObjectId | null;
   brandName: string;
   supportEmail: string;
   supportPhone: string;
@@ -37,11 +42,14 @@ export type BrandingDocument = HydratedDocument<BrandingDoc>;
 
 const brandingSchema = new Schema<BrandingDoc>(
   {
-    key: {
-      type: String,
-      required: true,
-      unique: true,
-      default: BRANDING_KEY,
+    // Legacy singleton selector. New per-org rows omit `key` entirely
+    // and rely on `orgId` for uniqueness. Field-level `unique: true`
+    // removed in favour of the partial-unique declared below.
+    key: { type: String, default: undefined, maxlength: 32 },
+    orgId: {
+      type: Schema.Types.ObjectId,
+      ref: "Organization",
+      default: null,
     },
     brandName: { type: String, required: true, trim: true, maxlength: 80 },
     supportEmail: {
@@ -74,6 +82,26 @@ const brandingSchema = new Schema<BrandingDoc>(
         return r;
       },
     },
+  },
+);
+
+// One Branding row per organization.
+brandingSchema.index(
+  { orgId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { orgId: { $type: "objectId" } },
+    name: "branding_orgId_unique",
+  },
+);
+// Legacy {key:"default"} singleton — partial-unique exempts per-org
+// rows that omit `key`.
+brandingSchema.index(
+  { key: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { key: { $type: "string" } },
+    name: "branding_key_unique",
   },
 );
 

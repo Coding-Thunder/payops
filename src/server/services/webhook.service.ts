@@ -44,6 +44,21 @@ interface ProcessEventResult {
 }
 
 /**
+ * Optional scope hint. When supplied by the per-org webhook route, the
+ * order-lookup helpers below scope to `orgId` so a Stripe event
+ * delivered to org A's URL can never resolve org B's order — even if
+ * org B's `paymentIntentId` happens to be the same string (it won't
+ * be, since intents are globally unique on Stripe's side, but the
+ * scope is still the right semantic boundary).
+ *
+ * Legacy `/api/webhooks/stripe` route calls without a scope; behaviour
+ * is unchanged for Tenant #1.
+ */
+export interface ProcessEventScope {
+  orgId?: string | null;
+}
+
+/**
  * Idempotently process a gateway-verified event. Repeated calls with the
  * same event id are no-ops. Database mutations are atomic. Email sends
  * are also gated by the order's `confirmationEmailSentAt` so we never
@@ -55,9 +70,14 @@ interface ProcessEventResult {
  */
 export async function processGatewayEvent(
   event: VerifiedPaymentEvent,
+  scope: ProcessEventScope = {},
 ): Promise<ProcessEventResult> {
   await connectMongo();
-  logger.info("payments.event", { id: event.eventId, type: event.type });
+  logger.info("payments.event", {
+    id: event.eventId,
+    type: event.type,
+    orgId: scope.orgId ?? undefined,
+  });
 
   // Best-effort: WEBHOOK_RECEIVED is non-transactional — observability
   // only. The dedupe-claim inside each handler is the real guard.
@@ -70,23 +90,23 @@ export async function processGatewayEvent(
 
   switch (event.type) {
     case "checkout.completed":
-      return handleCheckoutCompleted(event);
+      return handleCheckoutCompleted(event, scope);
     case "checkout.expired":
-      return handleCheckoutExpired(event);
+      return handleCheckoutExpired(event, scope);
     case "checkout.failed":
-      return handleCheckoutFailed(event);
+      return handleCheckoutFailed(event, scope);
     case "payment.failed":
-      return handlePaymentFailed(event);
+      return handlePaymentFailed(event, scope);
     case "dispute.created":
-      return handleDisputeCreated(event);
+      return handleDisputeCreated(event, scope);
     case "dispute.updated":
-      return handleDisputeUpdated(event);
+      return handleDisputeUpdated(event, scope);
     case "dispute.closed":
-      return handleDisputeClosed(event);
+      return handleDisputeClosed(event, scope);
     case "dispute.funds_withdrawn":
-      return handleDisputeFundsWithdrawn(event);
+      return handleDisputeFundsWithdrawn(event, scope);
     case "refund.created":
-      return handleRefundCreated(event);
+      return handleRefundCreated(event, scope);
     case "unhandled":
     default:
       return { handled: false, duplicate: false, reason: "unhandled_event" };
@@ -99,23 +119,38 @@ export const processStripeEvent = processGatewayEvent;
 
 async function findOrderForEvent(
   event: VerifiedPaymentEvent,
+  scope: ProcessEventScope = {},
 ): Promise<OrderDocument | null> {
+  // When a scope is supplied by the per-org webhook route, every
+  // lookup pins the orgId so a cross-tenant collision can never
+  // resolve the wrong order. Without a scope (legacy route) we keep
+  // pre-Phase-3 behaviour — Tenant #1's flow unchanged.
+  const scopeClause =
+    scope.orgId && Types.ObjectId.isValid(scope.orgId)
+      ? { orgId: new Types.ObjectId(scope.orgId) }
+      : null;
+
   // Order id round-tripped via the gateway's metadata is the most
   // reliable identifier — it survives session-id rotation and works
   // for events that don't carry a session id.
   if (event.orderId && Types.ObjectId.isValid(event.orderId)) {
-    const direct = await Order.findById(event.orderId);
+    const filter = scopeClause
+      ? { _id: new Types.ObjectId(event.orderId), ...scopeClause }
+      : { _id: new Types.ObjectId(event.orderId) };
+    const direct = await Order.findOne(filter);
     if (direct) return direct;
   }
   if (event.sessionId) {
     const bySession = await Order.findOne({
       "payment.stripeSessionId": event.sessionId,
+      ...(scopeClause ?? {}),
     });
     if (bySession) return bySession;
   }
   if (event.paymentIntentId) {
     const byIntent = await Order.findOne({
       "payment.paymentIntentId": event.paymentIntentId,
+      ...(scopeClause ?? {}),
     });
     if (byIntent) return byIntent;
   }
@@ -124,8 +159,9 @@ async function findOrderForEvent(
 
 async function handleCheckoutCompleted(
   event: VerifiedPaymentEvent,
+  scope: ProcessEventScope = {},
 ): Promise<ProcessEventResult> {
-  const order = await findOrderForEvent(event);
+  const order = await findOrderForEvent(event, scope);
   if (!order) {
     logger.warn("payments.order_not_found_for_session", {
       sessionId: event.sessionId,
@@ -363,6 +399,10 @@ export async function applyCheckoutPaid(
         kind: "creator",
         userId: String(outcome.updated.createdBy.userId),
       },
+      // Persisted order.orgId is the authoritative tenant key.
+      // Null only for pre-migration orders (Tenant #1 backfilled
+      // by the Phase 0+1 migration; no other null sources exist).
+      orgId: outcome.updated.orgId ? String(outcome.updated.orgId) : null,
       payload: {
         orderId: String(outcome.updated._id),
         orderNumber: outcome.updated.orderNumber,
@@ -394,8 +434,9 @@ export async function applyCheckoutPaid(
 
 async function handleCheckoutExpired(
   event: VerifiedPaymentEvent,
+  scope: ProcessEventScope = {},
 ): Promise<ProcessEventResult> {
-  const order = await findOrderForEvent(event);
+  const order = await findOrderForEvent(event, scope);
   if (!order) {
     return { handled: false, duplicate: false, reason: "order_not_found" };
   }
@@ -497,6 +538,7 @@ async function handleCheckoutExpired(
       kind: "creator",
       userId: String(outcome.updated.createdBy.userId),
     },
+    orgId: outcome.updated.orgId ? String(outcome.updated.orgId) : null,
     payload: {
       orderId: String(outcome.updated._id),
       orderNumber: outcome.updated.orderNumber,
@@ -513,8 +555,9 @@ async function handleCheckoutExpired(
 
 async function handleCheckoutFailed(
   event: VerifiedPaymentEvent,
+  scope: ProcessEventScope = {},
 ): Promise<ProcessEventResult> {
-  const order = await findOrderForEvent(event);
+  const order = await findOrderForEvent(event, scope);
   if (!order) {
     return { handled: false, duplicate: false, reason: "order_not_found" };
   }
@@ -527,8 +570,9 @@ async function handleCheckoutFailed(
 
 async function handlePaymentFailed(
   event: VerifiedPaymentEvent,
+  scope: ProcessEventScope = {},
 ): Promise<ProcessEventResult> {
-  const order = await findOrderForEvent(event);
+  const order = await findOrderForEvent(event, scope);
   if (!order) {
     return { handled: false, duplicate: false, reason: "order_not_found" };
   }
@@ -645,6 +689,7 @@ async function failOrder(
       kind: "creator",
       userId: String(outcome.updated.createdBy.userId),
     },
+    orgId: outcome.updated.orgId ? String(outcome.updated.orgId) : null,
     payload: {
       orderId: String(outcome.updated._id),
       orderNumber: outcome.updated.orderNumber,
@@ -673,14 +718,23 @@ async function failOrder(
  */
 async function findOrderByPaymentIntent(
   event: VerifiedPaymentEvent,
+  scope: ProcessEventScope = {},
 ): Promise<OrderDocument | null> {
+  const scopeClause =
+    scope.orgId && Types.ObjectId.isValid(scope.orgId)
+      ? { orgId: new Types.ObjectId(scope.orgId) }
+      : null;
   if (event.orderId && Types.ObjectId.isValid(event.orderId)) {
-    const direct = await Order.findById(event.orderId);
+    const filter = scopeClause
+      ? { _id: new Types.ObjectId(event.orderId), ...scopeClause }
+      : { _id: new Types.ObjectId(event.orderId) };
+    const direct = await Order.findOne(filter);
     if (direct) return direct;
   }
   if (event.paymentIntentId) {
     const byIntent = await Order.findOne({
       "payment.paymentIntentId": event.paymentIntentId,
+      ...(scopeClause ?? {}),
     });
     if (byIntent) return byIntent;
   }
@@ -689,12 +743,13 @@ async function findOrderByPaymentIntent(
 
 async function handleDisputeCreated(
   event: VerifiedPaymentEvent,
+  scope: ProcessEventScope = {},
 ): Promise<ProcessEventResult> {
   const d = event.dispute;
   if (!d) {
     return { handled: false, duplicate: false, reason: "missing_dispute_payload" };
   }
-  const order = await findOrderByPaymentIntent(event);
+  const order = await findOrderByPaymentIntent(event, scope);
   if (!order) {
     logger.warn("payments.dispute.order_not_found", {
       disputeId: d.gatewayDisputeId,
@@ -875,6 +930,7 @@ async function handleDisputeCreated(
   publishEvent({
     type: DomainEventType.ORDER_DISPUTE_CREATED,
     audience: { kind: "creator", userId: String(order.createdBy.userId) },
+    orgId: order.orgId ? String(order.orgId) : null,
     payload: {
       orderId: String(order._id),
       orderNumber: order.orderNumber,
@@ -892,6 +948,7 @@ async function handleDisputeCreated(
 
 async function handleDisputeUpdated(
   event: VerifiedPaymentEvent,
+  scope: ProcessEventScope = {},
 ): Promise<ProcessEventResult> {
   const d = event.dispute;
   if (!d) {
@@ -903,7 +960,7 @@ async function handleDisputeUpdated(
   if (!dispute) {
     // Update arrived before created — rare but possible if Stripe retried
     // out of order. Treat as a create and let that handler reconcile.
-    return handleDisputeCreated(event);
+    return handleDisputeCreated(event, scope);
   }
 
   type Outcome =
@@ -969,6 +1026,10 @@ async function handleDisputeUpdated(
   publishEvent({
     type: DomainEventType.ORDER_DISPUTE_UPDATED,
     audience: { kind: "admins" },
+    // Scope passed by the per-org webhook route. For dispute streams
+    // we also accept the dispute's stored orgId (if present from a
+    // future migration) but the route-level scope is authoritative.
+    orgId: scope.orgId ?? null,
     payload: {
       orderId: String(dispute.orderId),
       orderNumber: dispute.orderNumber,
@@ -986,6 +1047,7 @@ async function handleDisputeUpdated(
 
 async function handleDisputeClosed(
   event: VerifiedPaymentEvent,
+  scope: ProcessEventScope = {},
 ): Promise<ProcessEventResult> {
   const d = event.dispute;
   if (!d) {
@@ -1001,7 +1063,7 @@ async function handleDisputeClosed(
     // handler will register this event-id on the new dispute; we strip
     // it back off so the close transition below isn't treated as a
     // duplicate of itself.
-    await handleDisputeCreated(event);
+    await handleDisputeCreated(event, scope);
     dispute = await Dispute.findOne({
       gatewayDisputeId: d.gatewayDisputeId,
     });
@@ -1096,6 +1158,7 @@ async function handleDisputeClosed(
   publishEvent({
     type: DomainEventType.ORDER_DISPUTE_CLOSED,
     audience: { kind: "admins" },
+    orgId: scope.orgId ?? null,
     payload: {
       orderId: String(dispute.orderId),
       orderNumber: dispute.orderNumber,
@@ -1114,6 +1177,7 @@ async function handleDisputeClosed(
 
 async function handleDisputeFundsWithdrawn(
   event: VerifiedPaymentEvent,
+  scope: ProcessEventScope = {},
 ): Promise<ProcessEventResult> {
   const d = event.dispute;
   if (!d) {
@@ -1172,6 +1236,7 @@ async function handleDisputeFundsWithdrawn(
   publishEvent({
     type: DomainEventType.ORDER_DISPUTE_UPDATED,
     audience: { kind: "admins" },
+    orgId: scope.orgId ?? null,
     payload: {
       orderId: String(dispute.orderId),
       orderNumber: dispute.orderNumber,
@@ -1190,12 +1255,13 @@ async function handleDisputeFundsWithdrawn(
 
 async function handleRefundCreated(
   event: VerifiedPaymentEvent,
+  scope: ProcessEventScope = {},
 ): Promise<ProcessEventResult> {
   const r = event.refund;
   if (!r) {
     return { handled: false, duplicate: false, reason: "missing_refund_payload" };
   }
-  const order = await findOrderByPaymentIntent(event);
+  const order = await findOrderByPaymentIntent(event, scope);
   if (!order) {
     logger.warn("payments.refund.order_not_found", {
       refundId: r.gatewayRefundId,
@@ -1295,6 +1361,7 @@ async function handleRefundCreated(
       kind: "creator",
       userId: String(outcome.updated.createdBy.userId),
     },
+    orgId: outcome.updated.orgId ? String(outcome.updated.orgId) : null,
     payload: {
       orderId: String(outcome.updated._id),
       orderNumber: outcome.updated.orderNumber,

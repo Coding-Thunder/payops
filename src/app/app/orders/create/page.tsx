@@ -1,41 +1,41 @@
-import { CreateOrderForm } from "@/components/features/orders/create-order-form";
 import { PageHeader } from "@/components/common/page-header";
+import { DynamicOrderForm } from "@/components/features/orders/dynamic-order-form";
 import { CURRENCIES } from "@/lib/constants/enums";
 import { Permission } from "@/lib/constants/permissions";
 import { requirePermission } from "@/server/auth/session";
-import { listActiveProviders } from "@/server/services/provider.service";
+import { listActiveItemTypes } from "@/server/services/item-type.service";
 import { getSettings } from "@/server/services/settings.service";
 
 export const metadata = { title: "Create order" };
 export const dynamic = "force-dynamic";
 
 /**
- * Step 1 of the linear flow — booking entry.
+ * Pass 5e — Universal create-order page.
  *
- * Server-rendered page that fetches what the form binds against
- * (allowed booking types, default currency, active providers) and
- * renders the form directly. On submit the form posts /api/orders and
- * routes the agent to /orders/[id]/email. No internal tabs, no drafts
- * autosave, no workspace shell.
+ * The form is dynamic: the operator picks an ItemType from the org's
+ * catalog, and the form renders whatever `attributeSchema` that ItemType
+ * declares. Tenant #1's rental flow is now just one option among many —
+ * the auto-seeded `rental_booking` ItemType — selected from the same
+ * picker as `milk_carton`, `service_visit`, or anything else the admin
+ * has defined.
  */
 export default async function CreateOrderPage() {
-  await requirePermission(Permission.ORDER_CREATE);
-  const [settings, providers] = await Promise.all([
-    getSettings(),
-    listActiveProviders(),
+  const actor = await requirePermission(Permission.ORDER_CREATE);
+  const [settings, itemTypes] = await Promise.all([
+    getSettings(actor.orgId),
+    listActiveItemTypes(actor.orgId ?? null),
   ]);
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Create order"
-        description="Capture booking details. The payment link is generated when you send the request email."
+        description="Pick what's being sold, fill in the fields, and we'll generate the payment link when you send the request email."
       />
-      <CreateOrderForm
-        allowedBookingTypes={settings.allowedBookingTypes}
+      <DynamicOrderForm
+        itemTypes={itemTypes}
         defaultCurrency={settings.defaultCurrency}
         allowedCurrencies={CURRENCIES}
-        providers={providers}
       />
     </div>
   );

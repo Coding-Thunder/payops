@@ -8,7 +8,6 @@ import {
 import { PageHeader } from "@/components/common/page-header";
 import { StatCard } from "@/components/common/stat-card";
 import { RevenueChart } from "@/components/features/analytics/revenue-chart";
-import { BookingTypeLabel } from "@/lib/constants/labels";
 import { Permission } from "@/lib/constants/permissions";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { requirePermission } from "@/server/auth/session";
@@ -77,22 +76,22 @@ export default async function AdminAnalyticsPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>By booking type</CardTitle>
+            <CardTitle>By item type</CardTitle>
           </CardHeader>
           <CardContent>
-            {summary.bookingTypes.length === 0 ? (
+            {summary.itemTypes.length === 0 ? (
               <p className="text-[12.5px] text-muted-foreground">
                 No data yet.
               </p>
             ) : (
               <ul className="divide-y divide-border text-[13px]">
-                {summary.bookingTypes.map((b) => (
+                {summary.itemTypes.map((b) => (
                   <li
-                    key={b.bookingType}
+                    key={b.itemTypeKey}
                     className="flex items-center justify-between py-2"
                   >
-                    <span className="text-foreground">
-                      {BookingTypeLabel[b.bookingType]}
+                    <span className="text-foreground font-mono text-[12px]">
+                      {b.itemTypeKey}
                     </span>
                     <span className="text-muted-foreground tabular-nums">
                       {b.count} orders ·{" "}

@@ -14,8 +14,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export const GET = withApi(async () => {
-  await requirePermission(Permission.BRANDING_VIEW);
-  const data = await getBranding();
+  const actor = await requirePermission(Permission.BRANDING_VIEW);
+  const data = await getBranding(actor.orgId);
   return jsonOk(data);
 });
 
@@ -24,6 +24,10 @@ export const PATCH = withApi(async (req: NextRequest) => {
   const body = await req.json();
   const input = updateBrandingSchema.parse(body);
   const ctx = await getRequestContext();
-  const data = await updateBranding(input, { actor, request: ctx });
+  const data = await updateBranding(input, {
+    actor,
+    orgId: actor.orgId,
+    request: ctx,
+  });
   return jsonOk(data);
 });

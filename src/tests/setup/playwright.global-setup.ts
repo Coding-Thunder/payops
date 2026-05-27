@@ -104,11 +104,6 @@ export default async function globalSetup() {
         key: SETTINGS_KEY,
         paymentExpiryHours: 24,
         orderPrefix: "SMK",
-        allowedBookingTypes: [
-          "NEW_BOOKING",
-          "MODIFICATION",
-          "CANCELLATION_CHARGE",
-        ],
         defaultCurrency: "USD",
         supportEmail: "support@smoke.payops.test",
         supportPhone: "+15555550100",

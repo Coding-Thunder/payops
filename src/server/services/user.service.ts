@@ -53,6 +53,10 @@ interface UserActor {
 
 interface MutationContext {
   actor: UserActor;
+  /** Active organization. Threaded for SSE event scoping + audit
+   *  orgId stamping. Optional for back-compat with un-migrated
+   *  callers; new routes pass it from `actor.orgId`. */
+  orgId?: string | null;
   request?: RequestContext | null;
 }
 
@@ -140,6 +144,9 @@ export async function createUser(
     type: DomainEventType.USER_CREATED,
     audience: { kind: "admins" },
     actor: { id: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+    // Scope the SSE delivery to the creating tenant — admins in
+    // other orgs will not receive this user-creation notification.
+    orgId: ctx.orgId ?? null,
     payload: {
       userId: String(doc._id),
       name: doc.name,
@@ -224,6 +231,7 @@ export async function updateUser(
     type: DomainEventType.USER_UPDATED,
     audience: { kind: "admins" },
     actor: { id: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+    orgId: ctx.orgId ?? null,
     payload: {
       userId: String(doc._id),
       name: doc.name,

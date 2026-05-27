@@ -20,6 +20,11 @@ export interface UserDoc {
   status: RecordState;
   createdBy?: Types.ObjectId | null;
   lastLoginAt?: Date | null;
+  /** Default organization a user lands in after login. Multi-org users
+   *  will gain an org-switcher later; today every user has exactly one
+   *  membership and this points at it. Nullable during the legacy →
+   *  multi-tenant migration; required once the backfill completes. */
+  primaryOrgId?: Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -58,6 +63,12 @@ const userSchema = new Schema<UserDoc>(
       default: null,
     },
     lastLoginAt: { type: Date, default: null },
+    primaryOrgId: {
+      type: Schema.Types.ObjectId,
+      ref: "Organization",
+      default: null,
+      index: true,
+    },
   },
   {
     timestamps: true,

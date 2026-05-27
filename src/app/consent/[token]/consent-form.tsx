@@ -5,7 +5,6 @@ import { ShieldCheckIcon } from "lucide-react";
 
 import { api, ApiClientError } from "@/lib/api-client";
 import { Checkbox } from "@/components/ui/checkbox";
-import { BookingTypeLabel } from "@/lib/constants/labels";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import type { BrandingDTO, PublicConsentView } from "@/types";
 
@@ -238,32 +237,27 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
 }
 
 function SummaryBlock({ view }: { view: PublicConsentView }) {
+  const s = view.snapshot;
   return (
     <div className="border-t border-slate-100 px-6 py-5 sm:px-8">
       <p className="text-[11px] font-semibold uppercase tracking-[0.10em] text-slate-500">
-        Booking summary
+        Order summary
       </p>
       <div className="mt-3 flex items-baseline justify-between gap-3">
         <span className="text-2xl font-semibold tracking-tight tabular-nums text-slate-900">
-          {formatCurrency(view.snapshot.amount, view.snapshot.currency)}
-        </span>
-        <span className="text-xs text-slate-500">
-          {BookingTypeLabel[view.snapshot.bookingType]}
+          {formatCurrency(s.amount, s.currency)}
         </span>
       </div>
       <dl className="mt-4 divide-y divide-slate-100 text-sm">
         <DetailRow label="Customer" value={view.customerName} />
         <DetailRow label="Email" value={view.customerEmail} mono />
-        <DetailRow label="Provider" value={view.snapshot.provider || "—"} />
-        <DetailRow label="Vehicle" value={view.snapshot.vehicle} />
-        <DetailRow
-          label="Pick-up"
-          value={formatDateTime(view.snapshot.pickupDate)}
-        />
-        <DetailRow
-          label="Drop-off"
-          value={formatDateTime(view.snapshot.dropoffDate)}
-        />
+        {s.summary ? <DetailRow label="Items" value={s.summary} /> : null}
+        {s.startsAt ? (
+          <DetailRow label="Starts" value={formatDateTime(s.startsAt)} />
+        ) : null}
+        {s.endsAt ? (
+          <DetailRow label="Ends" value={formatDateTime(s.endsAt)} />
+        ) : null}
       </dl>
     </div>
   );

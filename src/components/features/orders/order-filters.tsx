@@ -13,11 +13,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ORDER_STATUSES, BOOKING_TYPES } from "@/lib/constants/enums";
-import {
-  BookingTypeLabel,
-  OrderStatusLabel,
-} from "@/lib/constants/labels";
+import { ORDER_STATUSES } from "@/lib/constants/enums";
+import { OrderStatusLabel } from "@/lib/constants/labels";
 
 const ALL = "__all__";
 
@@ -79,22 +76,6 @@ export function OrderFilters({ canSeeAll }: OrderFiltersProps) {
           {ORDER_STATUSES.map((s) => (
             <SelectItem key={s} value={s}>
               {OrderStatusLabel[s]}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Select
-        value={params.get("bookingType") ?? ALL}
-        onValueChange={(v) => update("bookingType", v)}
-      >
-        <SelectTrigger className="w-full md:w-52">
-          <SelectValue placeholder="Booking type" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>All types</SelectItem>
-          {BOOKING_TYPES.map((t) => (
-            <SelectItem key={t} value={t}>
-              {BookingTypeLabel[t]}
             </SelectItem>
           ))}
         </SelectContent>

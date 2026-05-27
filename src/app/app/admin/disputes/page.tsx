@@ -60,7 +60,8 @@ function reasonsFor(order: OrderDTO): RiskReason[] {
 
 export default async function DisputesPage() {
   const actor = await requirePermission(Permission.ORDER_VIEW_ALL);
-  const items = await listAtRiskOrders();
+  // Pass 5a: dispute board scoped to actor's tenant.
+  const items = await listAtRiskOrders(actor.orgId);
   const canSearchEvidence = roleHasPermission(
     actor.role,
     Permission.EVIDENCE_VIEW,

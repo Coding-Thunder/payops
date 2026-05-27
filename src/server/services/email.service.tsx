@@ -23,15 +23,13 @@ import type { OrderDTO } from "@/types";
 import { getMailer } from "@/server/email/smtp";
 import { inlinePublicImage } from "@/server/email/inline-image";
 import {
-  PaymentRequestEmail,
-  type PaymentRequestEmailProps,
-} from "@/server/email/templates/payment-request";
-import {
-  PaymentConfirmationEmail,
-  type PaymentConfirmationEmailProps,
-} from "@/server/email/templates/payment-confirmation";
-import { formatEmailDate, formatEmailDay, formatMoney } from "@/server/email/format";
+  UniversalOrderEmail,
+  type UniversalOrderEmailProps,
+} from "@/server/email/templates/universal-order-email";
+import type { EmailBlockContext } from "@/server/email/blocks";
+import { formatEmailDate, formatMoney } from "@/server/email/format";
 import { buildConsentMailto } from "@/server/email/consent-mailto";
+import { resolveEmailBlocksForOrder } from "./email-blocks.service";
 
 import { recordAudit } from "./audit.service";
 import { captureEvidenceSafe } from "./evidence.service";
@@ -140,55 +138,57 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
 export async function sendPaymentConfirmationEmail(
   order: OrderDTO,
 ): Promise<{ id: string | null }> {
-  // Branding is a single Mongo read per send. We deliberately don't cache
-  // it across sends so a brand-name / support-contact change propagates to
-  // the very next confirmation, no process restart required.
+  // Pass 5f: composable block renderer. The template now works for ANY
+  // order shape — rental, milk shop, pharmacy, subscription. The legacy
+  // rental "vehicle + trip" UI is just one block layout among many,
+  // contributed by the auto-seeded rental_booking ItemType.
+  //
+  // Branding lookup is scoped to the ORDER's organization — so Tenant
+  // #2's customer sees Tenant #2's brand on their receipt, not the
+  // legacy singleton's.
   const [branding, tpl] = await Promise.all([
-    getBranding(),
-    getActiveTemplateContent("payment-confirmation"),
+    getBranding(order.orgId),
+    getActiveTemplateContent("payment-confirmation", order.orgId),
   ]);
   const brandName = branding.brandName;
-  // Inline the provider logo as a data URI so Gmail / Outlook render it
-  // without proxying back to our server. Falls back to the original
-  // (absolute) URL if the file is missing or remote — same visual result
-  // wherever APP_URL is publicly reachable, no regression there.
-  const providerLogoInline = order.provider
-    ? await inlinePublicImage(order.provider.logo)
-    : null;
-  const providerForEmail = order.provider
-    ? { ...order.provider, logo: providerLogoInline ?? order.provider.logo }
-    : order.provider;
-  const props: PaymentConfirmationEmailProps = {
-    brandName,
-    appUrl: env.server.APP_URL,
-    supportEmail: branding.supportEmail,
-    supportPhone: branding.supportPhone,
-    customerName: order.customer.name,
-    orderNumber: order.orderNumber,
-    bookingType: order.bookingType,
-    amount: formatMoney(
-      order.payment.amountReceived ?? order.pricing.amount,
-      order.pricing.currency,
-    ),
-    paidOn: order.payment.paidAt
-      ? formatEmailDate(order.payment.paidAt)
-      : formatEmailDate(new Date()),
-    provider: providerForEmail,
-    vehicle: order.vehicle,
-    trip: {
-      pickupDate: formatEmailDay(order.trip.pickupDate),
-      dropoffDate: formatEmailDay(order.trip.dropoffDate),
+  const amountFormatted = formatMoney(
+    order.payment.amountReceived ?? order.pricing.amount,
+    order.pricing.currency,
+  );
+  const paidOn = order.payment.paidAt
+    ? formatEmailDate(order.payment.paidAt)
+    : formatEmailDate(new Date());
+  // Pre-inline the rental hero image if present so the receipt renders
+  // without an external network round-trip. Other verticals can supply
+  // an `image_url` attribute on their line items for the same effect —
+  // the resolver below picks whichever one is set.
+  await inlineFirstHeroImage(order);
+
+  const ctx: EmailBlockContext = {
+    order,
+    branding: {
+      brandName,
+      supportEmail: branding.supportEmail,
+      supportPhone: branding.supportPhone,
     },
-    receiptUrl: order.payment.receiptUrl ?? null,
-    cancellationPolicy: order.policy?.text ?? "",
-    cancellationPolicyVersion: order.policy?.version ?? undefined,
+    payment: {
+      amount: amountFormatted,
+      paidOn,
+      receiptUrl: order.payment.receiptUrl ?? null,
+    },
   };
-  const html = await render(<PaymentConfirmationEmail {...props} />);
-  const text = await render(<PaymentConfirmationEmail {...props} />, {
+  const blocks = await resolveEmailBlocksForOrder(order);
+  const props: UniversalOrderEmailProps = {
+    variant: "confirmation",
+    blocks,
+    ctx,
+  };
+  const html = await render(<UniversalOrderEmail {...props} />);
+  const text = await render(<UniversalOrderEmail {...props} />, {
     plainText: true,
   });
   const finalSubject =
-    tpl?.subject?.trim() || subjectForBookingType(order, brandName);
+    tpl?.subject?.trim() || defaultConfirmationSubject(order, brandName);
   const fromAddress = env.server.EMAIL_FROM;
   const replyTo = env.server.EMAIL_REPLY_TO || null;
   const recipient = order.customer.email;
@@ -221,9 +221,10 @@ export async function sendPaymentConfirmationEmail(
         supportEmail: branding.supportEmail,
         supportPhone: branding.supportPhone,
       },
-      amount: props.amount,
-      paidOn: props.paidOn,
-      receiptUrl: props.receiptUrl ?? null,
+      amount: amountFormatted,
+      paidOn,
+      receiptUrl: order.payment.receiptUrl ?? null,
+      blocks,
       html,
       text,
     },
@@ -233,6 +234,29 @@ export async function sendPaymentConfirmationEmail(
     },
   });
   return sent;
+}
+
+/** Pass 5f: pre-inline the first hero image into a data URI so Gmail /
+ *  Outlook don't proxy the asset back to our server. Mutates the line
+ *  item's `vehicle_image_url` / `image_url` attribute in place. */
+async function inlineFirstHeroImage(order: OrderDTO): Promise<void> {
+  const line = order.lineItems[0];
+  if (!line) return;
+  const attrs = line.attributes ?? {};
+  const url =
+    (attrs.vehicle_image_url as string | null | undefined) ??
+    (attrs.image_url as string | null | undefined) ??
+    null;
+  if (!url) return;
+  const inlined = await inlinePublicImage(url);
+  if (inlined) {
+    // Mutate in place — the block renderer reads the same field.
+    if (attrs.vehicle_image_url) {
+      (line.attributes as Record<string, unknown>).vehicle_image_url = inlined;
+    } else {
+      (line.attributes as Record<string, unknown>).image_url = inlined;
+    }
+  }
 }
 
 /* ───────────────────────── Payment request ─────────────────────────── */
@@ -268,6 +292,16 @@ export interface PaymentRequestOverrides {
  * without persisting a record. The send path always passes one (see
  * `sendPaymentRequestEmail`).
  */
+export interface ComposedPaymentRequest {
+  template: UniversalOrderEmailProps;
+  consentMailto: string;
+  consentRequired: boolean;
+  /** Surfaced into the audit / evidence payload so the chain captures
+   *  what was wired into the email when sent. */
+  primaryCta: NonNullable<UniversalOrderEmailProps["cta"]> | null;
+  gatewayLabel: string | null;
+}
+
 export async function composePaymentRequestProps(
   order: OrderDTO,
   overrides: PaymentRequestOverrides = {},
@@ -276,18 +310,18 @@ export async function composePaymentRequestProps(
     consentMessage: string;
     consentRequired: boolean;
   } | null,
-): Promise<PaymentRequestEmailProps> {
+): Promise<ComposedPaymentRequest> {
+  // Pass 5f: composable block renderer. Works for any ItemType — the
+  // block list is resolved from the order's lineItems' ItemTypes plus
+  // platform defaults. The legacy "vehicle + trip" UI is just one set
+  // of contributed blocks (SCHEDULING_WINDOW + ITEM_HERO) on the
+  // rental_booking ItemType.
   const [branding, tpl, settings] = await Promise.all([
-    getBranding(),
-    getActiveTemplateContent("payment-request"),
-    getSettings(),
+    getBranding(order.orgId),
+    getActiveTemplateContent("payment-request", order.orgId),
+    getSettings(order.orgId),
   ]);
-  const providerLogoInline = order.provider
-    ? await inlinePublicImage(order.provider.logo)
-    : null;
-  const providerForEmail = order.provider
-    ? { ...order.provider, logo: providerLogoInline ?? order.provider.logo }
-    : order.provider;
+
   const effectiveConsentMessage =
     consent?.consentMessage ?? settings.consentMessage;
   const consentMailto = buildConsentMailto({
@@ -303,20 +337,10 @@ export async function composePaymentRequestProps(
   const alreadyConsented =
     order.consent?.status === ConsentStatus.RECEIVED ||
     order.consent?.status === ConsentStatus.VERIFIED;
-  // Gateway-agnostic at the call site — `order.payment.paymentUrl` is
-  // whatever the chosen gateway returned. Variable kept generic.
   const checkoutUrl = order.payment.paymentUrl ?? "";
   const consentRequired =
     consent?.consentRequired ?? settings.consentMode === ConsentMode.REQUIRED;
 
-  // Resolve the consent URL.
-  //   - Send path: caller passes `consent.consentUrl` from requestConsent.
-  //   - Preview path (no consent arg): if the order already has a consent
-  //     record (re-send case), sign its id so the preview shows the
-  //     real link the customer would receive. First-time preview falls
-  //     back to a clearly-labelled placeholder so the agent still sees
-  //     the correct CTA copy ("Review & Confirm Booking") — the actual
-  //     link is signed when they click Send.
   let consentUrl: string | null = consent?.consentUrl ?? null;
   if (!consentUrl && !alreadyConsented) {
     const existingId = order.consent?.currentConsentId;
@@ -330,62 +354,66 @@ export async function composePaymentRequestProps(
     }
   }
 
+  const formattedAmount = formatMoney(
+    order.pricing.amount,
+    order.pricing.currency,
+  );
   const primaryCta = alreadyConsented && checkoutUrl
     ? {
         url: checkoutUrl,
-        label: `Pay ${formatMoney(order.pricing.amount, order.pricing.currency)} securely with Stripe →`,
+        label: `Pay ${formattedAmount} securely →`,
         helperText:
-          "You already confirmed this booking — this opens Stripe Checkout.",
+          "You already confirmed this order — this opens secure checkout.",
       }
     : consentUrl
       ? {
           url: consentUrl,
           label: consentRequired
             ? "Agree & Continue to Payment"
-            : "Review & Confirm Booking",
+            : "Review & Confirm Order",
           helperText: effectiveConsentMessage,
         }
       : checkoutUrl
         ? {
             url: checkoutUrl,
-            label: `Pay ${formatMoney(order.pricing.amount, order.pricing.currency)} securely with Stripe →`,
+            label: `Pay ${formattedAmount} securely →`,
             helperText: null,
           }
         : null;
-  // Layering: agent override → admin's active template override → null
-  // (template fallback to hardcoded copy). The composer's "leave blank
-  // to use defaults" hint covers BOTH the agent-side and template-side
-  // defaults without the agent having to know about templates.
-  return {
-    brandName: branding.brandName,
-    appUrl: env.server.APP_URL,
-    supportEmail: branding.supportEmail,
-    supportPhone: branding.supportPhone,
-    customerName: order.customer.name,
-    orderNumber: order.orderNumber,
-    bookingType: order.bookingType,
-    amount: formatMoney(order.pricing.amount, order.pricing.currency),
-    dueBy: order.payment.expiresAt
-      ? formatEmailDate(order.payment.expiresAt)
-      : null,
-    provider: providerForEmail,
-    vehicle: order.vehicle,
-    trip: {
-      pickupDate: formatEmailDay(order.trip.pickupDate),
-      dropoffDate: formatEmailDay(order.trip.dropoffDate),
+
+  // Pre-inline hero image (same logic as the confirmation flow).
+  await inlineFirstHeroImage(order);
+
+  const blocks = await resolveEmailBlocksForOrder(order);
+  const ctx: EmailBlockContext = {
+    order,
+    branding: {
+      brandName: branding.brandName,
+      supportEmail: branding.supportEmail,
+      supportPhone: branding.supportPhone,
     },
-    paymentUrl: checkoutUrl,
-    gatewayLabel: order.payment.gateway
-      ? PAYMENT_GATEWAY_LABELS[order.payment.gateway as PaymentGatewayKey]
-      : null,
+    // Request emails have no paid amount yet; payment_summary block
+    // renders nothing in this variant (its conditional self-suppresses).
+    payment: null,
+  };
+  const template: UniversalOrderEmailProps = {
+    variant: "request",
+    blocks,
+    ctx,
+    cta: primaryCta,
     greeting: overrides.greeting ?? tpl?.greeting ?? null,
     intro: overrides.intro ?? tpl?.intro ?? null,
     note: overrides.note ?? tpl?.note ?? null,
-    cancellationPolicy: order.policy?.text ?? "",
-    cancellationPolicyVersion: order.policy?.version ?? undefined,
-    primaryCta: primaryCta ?? undefined,
+  };
+  const gatewayLabel = order.payment.gateway
+    ? PAYMENT_GATEWAY_LABELS[order.payment.gateway as PaymentGatewayKey]
+    : null;
+  return {
+    template,
     consentMailto,
     consentRequired,
+    primaryCta: primaryCta ?? null,
+    gatewayLabel,
   };
 }
 
@@ -393,8 +421,30 @@ export function defaultPaymentRequestSubject(
   order: OrderDTO,
   brandName: string,
 ): string {
-  const providerName = order.provider?.name ?? brandName;
-  return `Complete your ${providerName} payment • ${order.orderNumber}`;
+  return `Complete your ${brandName} payment • ${order.orderNumber}`;
+}
+
+function defaultConfirmationSubject(order: OrderDTO, brand: string): string {
+  return `${brand} payment confirmed • ${order.orderNumber}`;
+}
+
+/** Build the universal consent snapshot from the order's line items +
+ *  scheduling window. */
+function buildConsentSnapshot(
+  order: OrderDTO,
+  paymentLinkRef: string | null,
+): import("@/types").PaymentConsentSnapshot {
+  const lineNames = order.lineItems
+    .map((l) => (l.quantity > 1 ? `${l.quantity}× ${l.name}` : l.name))
+    .join(", ");
+  return {
+    summary: lineNames || order.orderNumber,
+    startsAt: order.scheduling?.startsAt ?? null,
+    endsAt: order.scheduling?.endsAt ?? null,
+    amount: order.pricing.amount,
+    currency: order.pricing.currency,
+    paymentLinkRef,
+  };
 }
 
 export interface SendPaymentRequestContext {
@@ -438,9 +488,9 @@ export async function sendPaymentRequestEmail(
     );
   }
   const [branding, tpl, settings] = await Promise.all([
-    getBranding(),
-    getActiveTemplateContent("payment-request"),
-    getSettings(),
+    getBranding(order.orgId),
+    getActiveTemplateContent("payment-request", order.orgId),
+    getSettings(order.orgId),
   ]);
 
   let consentUrl: string | null = null;
@@ -459,19 +509,16 @@ export async function sendPaymentRequestEmail(
           customerName: order.customer.name,
           consentMessage: settings.consentMessage,
           consentEmailSubject: subject,
-          snapshot: {
-            bookingType: order.bookingType,
-            provider: order.provider?.name ?? "",
-            vehicle: `${order.vehicle.company} • ${order.vehicle.type}`,
-            pickupDate: order.trip.pickupDate,
-            dropoffDate: order.trip.dropoffDate,
-            amount: order.pricing.amount,
-            currency: order.pricing.currency,
-            paymentLinkRef: order.payment.paymentUrl,
-          },
+          // Pass 5f: universal snapshot — rental fields populate when
+          // the order carries them, otherwise the `summary` +
+          // `startsAt/endsAt` describe the line items + scheduling.
+          snapshot: buildConsentSnapshot(order, order.payment.paymentUrl),
         },
         {
           actor: context.actor,
+          // Pass 5a: pin to the order's tenant so consent records
+          // can't be created against a cross-tenant order id.
+          orgId: order.orgId,
           appUrl: env.server.APP_URL,
           request: context.request ?? null,
         },
@@ -488,14 +535,14 @@ export async function sendPaymentRequestEmail(
     }
   }
 
-  const props = await composePaymentRequestProps(order, overrides, {
+  const composed = await composePaymentRequestProps(order, overrides, {
     consentUrl,
     consentMessage: settings.consentMessage,
     consentRequired: settings.consentMode === ConsentMode.REQUIRED,
   });
   const toAddress = overrides.toOverride?.trim() || order.customer.email;
-  const html = await render(<PaymentRequestEmail {...props} />);
-  const text = await render(<PaymentRequestEmail {...props} />, {
+  const html = await render(<UniversalOrderEmail {...composed.template} />);
+  const text = await render(<UniversalOrderEmail {...composed.template} />, {
     plainText: true,
   });
   const sent = await sendEmail({
@@ -533,23 +580,24 @@ export async function sendPaymentRequestEmail(
       to: toAddress,
       messageId: sent.id,
       brand: {
-        name: props.brandName,
-        supportEmail: props.supportEmail,
-        supportPhone: props.supportPhone,
+        name: branding.brandName,
+        supportEmail: branding.supportEmail,
+        supportPhone: branding.supportPhone,
       },
-      amount: props.amount,
+      amount: formatMoney(order.pricing.amount, order.pricing.currency),
       gateway: order.payment.gateway ?? null,
-      gatewayLabel: props.gatewayLabel ?? null,
-      cta: props.primaryCta
+      gatewayLabel: composed.gatewayLabel,
+      cta: composed.primaryCta
         ? {
-            url: props.primaryCta.url,
-            label: props.primaryCta.label,
-            helperText: props.primaryCta.helperText ?? null,
+            url: composed.primaryCta.url,
+            label: composed.primaryCta.label,
+            helperText: composed.primaryCta.helperText ?? null,
           }
         : null,
-      consentRequired: props.consentRequired ?? false,
-      cancellationPolicy: props.cancellationPolicy,
-      cancellationPolicyVersion: props.cancellationPolicyVersion ?? null,
+      consentRequired: composed.consentRequired,
+      cancellationPolicy: order.policy?.text ?? "",
+      cancellationPolicyVersion: order.policy?.version ?? null,
+      blocks: composed.template.blocks,
       html,
       text,
     },
@@ -584,6 +632,9 @@ export async function sendPaymentRequestEmail(
           role: context.actor.role,
         }
       : undefined,
+    // DTO carries the order's tenant — same value the order was
+    // stamped with at creation, can't drift.
+    orgId: order.orgId,
     payload: {
       orderId: order.id,
       orderNumber: order.orderNumber,
@@ -594,18 +645,3 @@ export async function sendPaymentRequestEmail(
   return { id: sent.id, consentToken };
 }
 
-function subjectForBookingType(order: OrderDTO, brand: string): string {
-  // Provider name leads the subject so the customer can tell at a glance
-  // which rental this email is about — most actionable identifier first.
-  const providerName = order.provider?.name ?? brand;
-  switch (order.bookingType) {
-    case "NEW_BOOKING":
-      return `${providerName} booking confirmed • ${order.orderNumber}`;
-    case "MODIFICATION":
-      return `${providerName} modification confirmed • ${order.orderNumber}`;
-    case "CANCELLATION_CHARGE":
-      return `${providerName} cancellation charge • ${order.orderNumber}`;
-    default:
-      return `${providerName} payment confirmed • ${order.orderNumber}`;
-  }
-}

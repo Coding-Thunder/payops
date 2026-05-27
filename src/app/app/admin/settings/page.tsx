@@ -23,7 +23,6 @@ export default async function AdminSettingsPage() {
         initial={{
           paymentExpiryHours: settings.paymentExpiryHours,
           orderPrefix: settings.orderPrefix,
-          allowedBookingTypes: settings.allowedBookingTypes,
           defaultCurrency: settings.defaultCurrency,
           successRedirectUrl: settings.successRedirectUrl,
           cancelRedirectUrl: settings.cancelRedirectUrl,

@@ -1,9 +1,4 @@
-import {
-  BOOKING_TYPES,
-  ConsentMode,
-  Currency,
-  type BookingType,
-} from "@/lib/constants/enums";
+import { ConsentMode, Currency } from "@/lib/constants/enums";
 import {
   DEFAULT_CANCELLATION_POLICY,
   DEFAULT_CONSENT_MESSAGE,
@@ -27,8 +22,6 @@ export function buildSettings(seed: SettingsSeed = {}): SettingDoc {
     key: SETTINGS_KEY,
     paymentExpiryHours: seed.paymentExpiryHours ?? 24,
     orderPrefix: seed.orderPrefix ?? "TST",
-    allowedBookingTypes:
-      seed.allowedBookingTypes ?? ([...BOOKING_TYPES] as BookingType[]),
     defaultCurrency: (seed.defaultCurrency ?? Currency.USD) as Currency,
     supportEmail: seed.supportEmail ?? "support@payops.test",
     supportPhone: seed.supportPhone ?? "+15555550100",
@@ -56,7 +49,6 @@ export async function createSettings(
       $set: {
         paymentExpiryHours: data.paymentExpiryHours,
         orderPrefix: data.orderPrefix,
-        allowedBookingTypes: data.allowedBookingTypes,
         defaultCurrency: data.defaultCurrency,
         supportEmail: data.supportEmail,
         supportPhone: data.supportPhone,

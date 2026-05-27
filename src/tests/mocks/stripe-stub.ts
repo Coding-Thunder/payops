@@ -37,12 +37,26 @@ export interface StripeStubOptions {
   failOnNextCreate?: { code: string; message: string } | null;
 }
 
+export interface RecordedWebhookEndpoint {
+  id: string;
+  url: string;
+  enabled_events: readonly string[];
+  secret: string;
+}
+
 export interface StripeStub {
   readonly sessionsCreated: RecordedSessionCreate[];
   readonly sessionsExpired: string[];
+  /** Pass 6a — endpoints registered through the onboarding helper. */
+  readonly webhookEndpointsCreated: RecordedWebhookEndpoint[];
+  /** Pass 6a — endpoint ids deleted via `webhookEndpoints.del`. */
+  readonly webhookEndpointsDeleted: string[];
 
   /** Forces the next `checkout.sessions.create` to throw. */
   failNextCreate(err: { code: string; message: string }): void;
+  /** Pass 6a — forces the next `balance.retrieve` to throw with the
+   *  supplied Stripe-shaped error. Use to simulate auth failures. */
+  failNextBalance(err: { type: string; message: string }): void;
 
   /** Clears recorded calls. */
   reset(): void;
@@ -54,8 +68,12 @@ export interface StripeStub {
 export function createStripeStub(opts: StripeStubOptions = {}): StripeStub {
   const sessionsCreated: RecordedSessionCreate[] = [];
   const sessionsExpired: string[] = [];
+  const webhookEndpointsCreated: RecordedWebhookEndpoint[] = [];
+  const webhookEndpointsDeleted: string[] = [];
   let nextFailure = opts.failOnNextCreate ?? null;
+  let nextBalanceFailure: { type: string; message: string } | null = null;
   let sessionCounter = 0;
+  let endpointCounter = 0;
 
   const successBaseUrl = opts.successBaseUrl ?? "http://127.0.0.1:3100";
 
@@ -116,6 +134,84 @@ export function createStripeStub(opts: StripeStubOptions = {}): StripeStub {
         },
       },
     },
+    balance: {
+      retrieve: async (): Promise<Stripe.Balance> => {
+        if (nextBalanceFailure) {
+          const e = new Error(nextBalanceFailure.message) as Error & {
+            type?: string;
+          };
+          e.type = nextBalanceFailure.type;
+          nextBalanceFailure = null;
+          throw e;
+        }
+        return {
+          object: "balance",
+          available: [],
+          pending: [],
+          livemode: false,
+        } as unknown as Stripe.Balance;
+      },
+    },
+    webhookEndpoints: {
+      create: async (
+        params: Stripe.WebhookEndpointCreateParams,
+      ): Promise<Stripe.WebhookEndpoint> => {
+        endpointCounter += 1;
+        const id = `we_test_stub_${Date.now()}_${endpointCounter}`;
+        const secret = `whsec_test_stub_${endpointCounter}`;
+        const record: RecordedWebhookEndpoint = {
+          id,
+          url: params.url,
+          enabled_events: Array.isArray(params.enabled_events)
+            ? [...params.enabled_events]
+            : [],
+          secret,
+        };
+        webhookEndpointsCreated.push(record);
+        return {
+          id,
+          object: "webhook_endpoint",
+          url: params.url,
+          enabled_events: [...record.enabled_events],
+          status: "enabled",
+          livemode: false,
+          api_version: null,
+          application: null,
+          created: Math.floor(Date.now() / 1000),
+          description: params.description ?? null,
+          metadata: {},
+          secret,
+        } as unknown as Stripe.WebhookEndpoint;
+      },
+      list: async (): Promise<Stripe.ApiList<Stripe.WebhookEndpoint>> => {
+        return {
+          object: "list",
+          data: webhookEndpointsCreated.map((r) => ({
+            id: r.id,
+            object: "webhook_endpoint",
+            url: r.url,
+            enabled_events: [...r.enabled_events],
+            status: "enabled",
+            livemode: false,
+            secret: r.secret,
+          })) as unknown as Stripe.WebhookEndpoint[],
+          has_more: false,
+          url: "/v1/webhook_endpoints",
+        } as Stripe.ApiList<Stripe.WebhookEndpoint>;
+      },
+      del: async (
+        id: string,
+      ): Promise<Stripe.DeletedWebhookEndpoint> => {
+        webhookEndpointsDeleted.push(id);
+        const idx = webhookEndpointsCreated.findIndex((r) => r.id === id);
+        if (idx >= 0) webhookEndpointsCreated.splice(idx, 1);
+        return {
+          id,
+          object: "webhook_endpoint",
+          deleted: true,
+        } as Stripe.DeletedWebhookEndpoint;
+      },
+    },
     webhooks: {
       constructEvent: (
         rawBody: string | Buffer,
@@ -174,14 +270,23 @@ export function createStripeStub(opts: StripeStubOptions = {}): StripeStub {
   return {
     sessionsCreated,
     sessionsExpired,
+    webhookEndpointsCreated,
+    webhookEndpointsDeleted,
     failNextCreate(err) {
       nextFailure = err;
+    },
+    failNextBalance(err) {
+      nextBalanceFailure = err;
     },
     reset() {
       sessionsCreated.length = 0;
       sessionsExpired.length = 0;
+      webhookEndpointsCreated.length = 0;
+      webhookEndpointsDeleted.length = 0;
       nextFailure = null;
+      nextBalanceFailure = null;
       sessionCounter = 0;
+      endpointCounter = 0;
     },
     asStripe() {
       return stripeLike as unknown as Stripe;

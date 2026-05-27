@@ -7,7 +7,7 @@ import { logger } from "@/lib/logger";
 import { DisputeOutcome, DisputeStatus } from "@/lib/constants/enums";
 
 import { toMinorUnits } from "../currency";
-import { getStripe } from "../stripe";
+import { getStripe, getStripeForSecret } from "../stripe";
 import type {
   CreatePaymentSessionInput,
   CreatedPaymentSession,
@@ -115,20 +115,64 @@ function mapStripeDisputeOutcome(
   }
 }
 
-const SECRET = env.server.STRIPE_SECRET_KEY;
-const HAS_CREDENTIALS = Boolean(SECRET);
-const IS_SANDBOX = SECRET.startsWith("sk_test_") || SECRET.startsWith("rk_test_");
+/**
+ * Builder for a per-credential Stripe gateway.
+ *
+ * Phase-3 introduces per-org credentials stored in `gateway_credentials`.
+ * `getGatewayForOrg` calls this with values pulled from that table.
+ *
+ * Legacy `stripeGateway` (below) wraps the env-backed credentials so
+ * Tenant #1's unchanged flow keeps working — that path is identical to
+ * `buildStripeGateway({ secretKey: env.STRIPE_SECRET_KEY, webhookSecret: env.STRIPE_WEBHOOK_SECRET })`.
+ */
+export interface StripeGatewayCreds {
+  secretKey: string;
+  webhookSecret: string;
+}
 
-export const stripeGateway: PaymentGateway = {
+export function buildStripeGateway(
+  creds: StripeGatewayCreds,
+): PaymentGateway {
+  const SECRET = creds.secretKey;
+  const WHSEC = creds.webhookSecret;
+  const HAS_CREDENTIALS = Boolean(SECRET) && Boolean(WHSEC);
+  const IS_SANDBOX =
+    SECRET.startsWith("sk_test_") || SECRET.startsWith("rk_test_");
+  // Build a Stripe client tied to THESE credentials, not the cached
+  // env-backed one. Callers like `verifyWebhook` and `createSession`
+  // capture this closure so a per-org gateway never accidentally
+  // routes through the wrong account.
+  const stripeClient = () =>
+    creds.secretKey === env.server.STRIPE_SECRET_KEY
+      ? getStripe()
+      : getStripeForSecret(creds.secretKey);
+
+  return makeStripeGateway({
+    stripe: stripeClient,
+    webhookSecret: WHSEC,
+    enabled: HAS_CREDENTIALS,
+    sandbox: IS_SANDBOX,
+  });
+}
+
+interface StripeGatewayDeps {
+  stripe: () => Stripe;
+  webhookSecret: string;
+  enabled: boolean;
+  sandbox: boolean;
+}
+
+function makeStripeGateway(deps: StripeGatewayDeps): PaymentGateway {
+  return {
   key: "STRIPE",
   label: "Stripe",
-  enabled: HAS_CREDENTIALS,
-  sandbox: IS_SANDBOX,
+  enabled: deps.enabled,
+  sandbox: deps.sandbox,
 
   async createSession(
     input: CreatePaymentSessionInput,
   ): Promise<CreatedPaymentSession> {
-    const stripe = getStripe();
+    const stripe = deps.stripe();
     const amountMinor = toMinorUnits(input.amount, input.currency);
     if (amountMinor < 50) {
       throw new Error("Amount is below Stripe's minimum charge");
@@ -200,7 +244,7 @@ export const stripeGateway: PaymentGateway = {
   },
 
   async expireSession(sessionId: string): Promise<void> {
-    const stripe = getStripe();
+    const stripe = deps.stripe();
     try {
       await stripe.checkout.sessions.expire(sessionId);
     } catch (err) {
@@ -217,11 +261,11 @@ export const stripeGateway: PaymentGateway = {
     rawBody: string | Buffer,
     signatureHeader: string,
   ): VerifiedPaymentEvent {
-    const stripe = getStripe();
+    const stripe = deps.stripe();
     const event = stripe.webhooks.constructEvent(
       rawBody,
       signatureHeader,
-      env.server.STRIPE_WEBHOOK_SECRET,
+      deps.webhookSecret,
     );
 
     const session = (() => {
@@ -378,7 +422,7 @@ export const stripeGateway: PaymentGateway = {
   },
 
   async getSessionStatus(sessionId: string): Promise<SessionStatus> {
-    const stripe = getStripe();
+    const stripe = deps.stripe();
     const session = await stripe.checkout.sessions.retrieve(sessionId);
     const statusRaw = (session.status ?? "unknown") as string;
     const paymentRaw = (session.payment_status ?? "unknown") as string;
@@ -407,4 +451,16 @@ export const stripeGateway: PaymentGateway = {
           : null,
     };
   },
-};
+  };
+}
+
+/**
+ * Legacy env-backed singleton. Tenant #1's existing flow continues to
+ * resolve to this via `getDefaultGateway()` / `getGateway("STRIPE")`.
+ * New per-org code paths go through `getGatewayForOrg(orgId, "STRIPE")`
+ * → `buildStripeGateway(creds)` instead.
+ */
+export const stripeGateway: PaymentGateway = buildStripeGateway({
+  secretKey: env.server.STRIPE_SECRET_KEY,
+  webhookSecret: env.server.STRIPE_WEBHOOK_SECRET,
+});

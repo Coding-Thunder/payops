@@ -5,7 +5,6 @@ import { Types } from "mongoose";
 import {
   AuditAction,
   AuditEntity,
-  type BookingType,
   type ConsentMode,
   type Currency,
 } from "@/lib/constants/enums";
@@ -21,6 +20,8 @@ import {
   DEFAULT_CONSENT_MESSAGE,
 } from "@/server/db/models/setting.model";
 import { connectMongo } from "@/server/db/mongoose";
+import { loadScopedSingleton } from "@/server/db/org/scoped-singleton";
+import { orgIdFilter } from "@/server/db/org/org-context";
 import type { UpdateSettingsInput } from "@/lib/validation";
 
 import { recordAudit } from "./audit.service";
@@ -28,7 +29,6 @@ import { recordAudit } from "./audit.service";
 export interface OperationalSettings {
   paymentExpiryHours: number;
   orderPrefix: string;
-  allowedBookingTypes: BookingType[];
   defaultCurrency: Currency;
   successRedirectUrl: string;
   cancelRedirectUrl: string;
@@ -45,7 +45,6 @@ function toDTO(doc: SettingDoc | null): OperationalSettings {
     return {
       paymentExpiryHours: e.DEFAULT_PAYMENT_EXPIRY_HOURS,
       orderPrefix: e.DEFAULT_ORDER_PREFIX,
-      allowedBookingTypes: ["NEW_BOOKING", "MODIFICATION", "CANCELLATION_CHARGE"],
       defaultCurrency: (e.DEFAULT_CURRENCY as Currency) || "USD",
       successRedirectUrl: `${e.APP_URL}/pay/success`,
       cancelRedirectUrl: `${e.APP_URL}/pay/cancelled`,
@@ -59,7 +58,6 @@ function toDTO(doc: SettingDoc | null): OperationalSettings {
   return {
     paymentExpiryHours: doc.paymentExpiryHours,
     orderPrefix: doc.orderPrefix,
-    allowedBookingTypes: doc.allowedBookingTypes,
     defaultCurrency: doc.defaultCurrency,
     // Redirect URLs are always derived from APP_URL so deploys / domain
     // changes propagate without a settings migration.
@@ -73,9 +71,23 @@ function toDTO(doc: SettingDoc | null): OperationalSettings {
   };
 }
 
-export async function getSettings(): Promise<OperationalSettings> {
+/**
+ * Read the operational settings for an org. When `orgId` is omitted the
+ * legacy `{ key: "default" }` singleton is returned — keeps untouched
+ * callers working through the multi-tenant migration window. When an
+ * `orgId` is supplied we resolve the per-org row, lazy-provisioning it
+ * by cloning the legacy singleton on first access.
+ */
+export async function getSettings(
+  orgId?: string | null,
+): Promise<OperationalSettings> {
   await connectMongo();
-  const doc = await Setting.findOne({ key: SETTINGS_KEY }).lean<SettingDoc>();
+  const doc = await loadScopedSingleton<SettingDoc>(Setting, {
+    orgId,
+    legacyKeyField: "key",
+    legacyKeyValue: SETTINGS_KEY,
+    seedFor: (legacy) => seedSettingsFields(legacy),
+  });
   return toDTO(doc);
 }
 
@@ -83,11 +95,65 @@ interface UpdateSettingsContext {
   actorId: string;
   actorName: string;
   actorRole: "SUPER_ADMIN" | "ADMIN" | "STAFF";
+  /** Active organization. Optional only because some legacy admin
+   *  callers haven't been migrated yet — when supplied, the update
+   *  lands on the per-org row (lazy-provisioned on first write). */
+  orgId?: string | null;
   request?: { ip: string | null; userAgent: string | null; requestId: string | null } | null;
 }
 
-export async function ensureSettingsDocument(): Promise<SettingDoc> {
+/** Build the seed payload used by `loadScopedSingleton` to clone the
+ *  legacy `{key:"default"}` row (or env defaults when none) into a
+ *  fresh per-org row. MUST NOT include `key`. */
+function seedSettingsFields(
+  legacy: Pick<
+    SettingDoc,
+    | "paymentExpiryHours"
+    | "orderPrefix"
+    | "defaultCurrency"
+    | "successRedirectUrl"
+    | "cancelRedirectUrl"
+    | "cancellationPolicy"
+    | "cancellationPolicyVersion"
+    | "consentMode"
+    | "consentMessage"
+  > | null,
+): Record<string, unknown> {
+  const e = env.server;
+  return {
+    paymentExpiryHours:
+      legacy?.paymentExpiryHours ?? e.DEFAULT_PAYMENT_EXPIRY_HOURS,
+    orderPrefix: legacy?.orderPrefix ?? e.DEFAULT_ORDER_PREFIX,
+    defaultCurrency: legacy?.defaultCurrency ?? e.DEFAULT_CURRENCY,
+    successRedirectUrl:
+      legacy?.successRedirectUrl ?? `${e.APP_URL}/pay/success`,
+    cancelRedirectUrl: legacy?.cancelRedirectUrl ?? `${e.APP_URL}/pay/cancelled`,
+    cancellationPolicy:
+      legacy?.cancellationPolicy ?? DEFAULT_CANCELLATION_POLICY,
+    cancellationPolicyVersion: legacy?.cancellationPolicyVersion ?? "v1",
+    consentMode: legacy?.consentMode ?? "ADVISORY",
+    consentMessage: legacy?.consentMessage ?? DEFAULT_CONSENT_MESSAGE,
+  };
+}
+
+export async function ensureSettingsDocument(
+  orgId?: string | null,
+): Promise<SettingDoc> {
   await connectMongo();
+  // Per-org path: load (lazy-provisioning if needed) via the scoped
+  // singleton helper so we use the same concurrency-safe insert path
+  // as `getSettings`.
+  if (orgId) {
+    const doc = await loadScopedSingleton<SettingDoc>(Setting, {
+      orgId,
+      legacyKeyField: "key",
+      legacyKeyValue: SETTINGS_KEY,
+      seedFor: (legacy) => seedSettingsFields(legacy),
+    });
+    if (!doc) throw new Error("Failed to load settings document for org");
+    return doc;
+  }
+  // Legacy path — preserved verbatim for back-compat callers.
   const e = env.server;
   const doc = await Setting.findOneAndUpdate(
     { key: SETTINGS_KEY },
@@ -96,11 +162,6 @@ export async function ensureSettingsDocument(): Promise<SettingDoc> {
         key: SETTINGS_KEY,
         paymentExpiryHours: e.DEFAULT_PAYMENT_EXPIRY_HOURS,
         orderPrefix: e.DEFAULT_ORDER_PREFIX,
-        allowedBookingTypes: [
-          "NEW_BOOKING",
-          "MODIFICATION",
-          "CANCELLATION_CHARGE",
-        ],
         defaultCurrency: e.DEFAULT_CURRENCY,
         successRedirectUrl: `${e.APP_URL}/pay/success`,
         cancelRedirectUrl: `${e.APP_URL}/pay/cancelled`,
@@ -116,7 +177,7 @@ export async function updateSettings(
   input: UpdateSettingsInput,
   ctx: UpdateSettingsContext,
 ): Promise<OperationalSettings> {
-  const existing = await ensureSettingsDocument();
+  const existing = await ensureSettingsDocument(ctx.orgId ?? null);
 
   // Compute the actual diff so the audit row only carries fields that
   // really changed (rather than the whole submitted body). Mirrors the
@@ -127,7 +188,6 @@ export async function updateSettings(
   const fields: Array<keyof UpdateSettingsInput> = [
     "paymentExpiryHours",
     "orderPrefix",
-    "allowedBookingTypes",
     "defaultCurrency",
     "successRedirectUrl",
     "cancelRedirectUrl",
@@ -162,8 +222,14 @@ export async function updateSettings(
     };
   }
 
+  // Target the per-org row when ctx carries an orgId; otherwise update
+  // the legacy singleton. The filter is mutually exclusive with the
+  // partial-unique on `orgId`, so updates can never cross-tenant.
+  const updateFilter = ctx.orgId
+    ? { orgId: orgIdFilter(ctx.orgId) }
+    : { key: SETTINGS_KEY };
   const updated = await Setting.findOneAndUpdate(
-    { key: SETTINGS_KEY },
+    updateFilter,
     { $set: set },
     { returnDocument: "after" },
   ).lean<SettingDoc>();
@@ -172,7 +238,8 @@ export async function updateSettings(
   await recordAudit({
     action: AuditAction.SETTINGS_UPDATED,
     entityType: AuditEntity.SETTINGS,
-    entityId: SETTINGS_KEY,
+    entityId: ctx.orgId ?? SETTINGS_KEY,
+    orgId: ctx.orgId ?? null,
     actor: {
       userId: ctx.actorId,
       name: ctx.actorName,

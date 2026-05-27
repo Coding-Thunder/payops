@@ -20,6 +20,10 @@ export const POST = withApi(async (req: NextRequest) => {
   const body = await req.json().catch(() => ({}));
   const { ids } = deleteByIdsSchema.parse(body);
   const ctx = await getRequestContext();
-  const result = await deleteOrders(ids, { actor, request: ctx });
+  const result = await deleteOrders(ids, {
+    actor,
+    orgId: actor.orgId,
+    request: ctx,
+  });
   return jsonOk(result);
 });

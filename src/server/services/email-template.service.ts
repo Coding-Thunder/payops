@@ -16,6 +16,7 @@ import {
   type EmailTemplateKey,
 } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
+import { orgIdFilter } from "@/server/db/org/org-context";
 import type { EmailTemplateVersionDTO } from "@/types";
 
 import type { RequestContext } from "@/server/api/request-context";
@@ -23,6 +24,10 @@ import { recordAudit } from "./audit.service";
 
 interface ActorCtx {
   actor: { id: string; name: string; role: UserRole };
+  /** Active organization. New rows are stamped with this orgId so each
+   *  tenant's template versions form an independent stream. Legacy
+   *  un-scoped callers (no orgId) save global rows for back-compat. */
+  orgId?: string | null;
   request?: RequestContext | null;
 }
 
@@ -56,24 +61,50 @@ function toDTO(
 
 // ─── Reads ─────────────────────────────────────────────────────────────────
 
+/**
+ * List every version of a template for the given org. When `orgId` is
+ * supplied we return only that tenant's rows; when omitted (legacy
+ * caller) we list every row regardless of orgId — preserves the
+ * pre-Phase-3d behaviour while admin pages migrate to the new
+ * signature.
+ *
+ * Per-org templates are OPTIONAL: most tenants will run on the code's
+ * built-in copy (no DB row at all). Saving a row in the admin UI is
+ * how an operator overrides the defaults for THEIR brand voice.
+ */
 export async function listTemplateVersions(
   templateKey: EmailTemplateKey,
+  orgId?: string | null,
 ): Promise<EmailTemplateVersionDTO[]> {
   await connectMongo();
-  const docs = await EmailTemplate.find({ templateKey })
+  const filter: Record<string, unknown> = { templateKey };
+  if (orgId) filter.orgId = orgIdFilter(orgId);
+  const docs = await EmailTemplate.find(filter)
     .sort({ version: -1 })
     .lean<(EmailTemplateDoc & { _id: Types.ObjectId })[]>();
   return docs.map(toDTO);
 }
 
+/**
+ * Return the currently-active version for an org. Returns null when no
+ * row exists for this org — the email service then falls back to the
+ * code's hardcoded copy (which is the right default for tenants that
+ * never customize).
+ *
+ * Legacy callers (no `orgId`) get the pre-Phase-3d behaviour: a single
+ * global active row per templateKey. Used by un-migrated paths during
+ * cutover.
+ */
 export async function getActiveTemplate(
   templateKey: EmailTemplateKey,
+  orgId?: string | null,
 ): Promise<EmailTemplateVersionDTO | null> {
   await connectMongo();
-  const doc = await EmailTemplate.findOne({
-    templateKey,
-    active: true,
-  }).lean<EmailTemplateDoc & { _id: Types.ObjectId }>();
+  const filter: Record<string, unknown> = { templateKey, active: true };
+  if (orgId) filter.orgId = orgIdFilter(orgId);
+  const doc = await EmailTemplate.findOne(filter).lean<
+    EmailTemplateDoc & { _id: Types.ObjectId }
+  >();
   return doc ? toDTO(doc) : null;
 }
 
@@ -86,8 +117,12 @@ export async function getActiveTemplate(
  */
 export async function getActiveTemplateContent(
   templateKey: EmailTemplateKey,
+  orgId?: string | null,
 ): Promise<EmailTemplateContent | null> {
-  const active = await getActiveTemplate(templateKey);
+  // Per-org override first; null fall-through means the email renderer
+  // uses the code-defined default copy (which is the right thing for
+  // tenants that never customize templates).
+  const active = await getActiveTemplate(templateKey, orgId);
   if (!active) return null;
   return {
     subject: active.subject,
@@ -117,20 +152,26 @@ export async function createTemplateVersion(
   ctx: ActorCtx,
 ): Promise<EmailTemplateVersionDTO> {
   await connectMongo();
-  // Highest version number currently in use for this key.
-  const latest = await EmailTemplate.findOne({ templateKey })
+  // Scope every version lookup + update to the caller's org. Version
+  // numbers count UP within (orgId, templateKey) — Tenant #2's v1
+  // doesn't share a counter with Tenant #1's v17.
+  const scope: Record<string, unknown> = { templateKey };
+  if (ctx.orgId) scope.orgId = orgIdFilter(ctx.orgId);
+
+  const latest = await EmailTemplate.findOne(scope)
     .sort({ version: -1 })
     .select({ version: 1 })
     .lean<{ version: number }>();
   const nextVersion = (latest?.version ?? 0) + 1;
 
-  // Deactivate any currently active row so the new version takes over.
+  // Deactivate the currently active row FOR THIS TENANT only.
   await EmailTemplate.updateMany(
-    { templateKey, active: true },
+    { ...scope, active: true },
     { $set: { active: false } },
   );
 
   const doc = await EmailTemplate.create({
+    orgId: ctx.orgId ? orgIdFilter(ctx.orgId) : null,
     templateKey,
     version: nextVersion,
     active: true,
@@ -151,6 +192,7 @@ export async function createTemplateVersion(
     action: AuditAction.EMAIL_TEMPLATE_VERSION_CREATED,
     entityType: AuditEntity.EMAIL_TEMPLATE,
     entityId: String(doc._id),
+    orgId: ctx.orgId ?? null,
     actor: {
       userId: ctx.actor.id,
       name: ctx.actor.name,
@@ -186,14 +228,19 @@ export async function activateTemplateVersion(
   if (!doc || doc.templateKey !== templateKey) {
     throw new NotFoundError("Template version not found");
   }
+  // Cross-tenant guard: a Tenant #2 admin can't activate a Tenant #1
+  // version by guessing the id. Skipped for legacy un-scoped callers
+  // (no ctx.orgId — pre-Phase-3d behaviour).
+  if (ctx.orgId && doc.orgId && String(doc.orgId) !== ctx.orgId) {
+    throw new NotFoundError("Template version not found");
+  }
   if (doc.active) {
     return toDTO(doc);
   }
 
-  await EmailTemplate.updateMany(
-    { templateKey, active: true },
-    { $set: { active: false } },
-  );
+  const scope: Record<string, unknown> = { templateKey, active: true };
+  if (ctx.orgId) scope.orgId = orgIdFilter(ctx.orgId);
+  await EmailTemplate.updateMany(scope, { $set: { active: false } });
   const updated = await EmailTemplate.findByIdAndUpdate(
     versionId,
     { $set: { active: true } },
@@ -205,6 +252,7 @@ export async function activateTemplateVersion(
     action: AuditAction.EMAIL_TEMPLATE_VERSION_ACTIVATED,
     entityType: AuditEntity.EMAIL_TEMPLATE,
     entityId: String(updated._id),
+    orgId: ctx.orgId ?? null,
     actor: {
       userId: ctx.actor.id,
       name: ctx.actor.name,

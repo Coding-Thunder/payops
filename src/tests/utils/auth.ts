@@ -32,11 +32,18 @@ export function actorFor(
   role: UserRole = UserRole.ADMIN,
   opts: ActorOptions = {},
 ): AuthenticatedUser {
+  const id = opts.id ?? new Types.ObjectId().toString();
+  // Tests get a deterministic legacy-style orgId so they never have to
+  // think about the tenant boundary unless they're testing it. A new
+  // ObjectId per call mirrors how production users land post-migration.
+  const orgId = new Types.ObjectId().toString();
   return {
-    id: opts.id ?? new Types.ObjectId().toString(),
+    id,
     name: opts.name ?? `${role} User`,
     email: opts.email ?? `${role.toLowerCase()}@payops.test`,
     role,
+    orgId,
+    orgIds: [orgId],
   };
 }
 

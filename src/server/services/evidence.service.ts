@@ -25,7 +25,6 @@ import {
   type OrderDoc,
 } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
-import { resolveProvider } from "@/lib/constants/providers";
 import type {
   OrderEvidenceChainDTO,
   OrderEvidenceEventDTO,
@@ -266,6 +265,10 @@ interface EvidenceContext {
     email: string;
     role: UserRole;
   };
+  /** Active organization. Threaded through Pass 5a — every Order
+   *  lookup pins this to prevent a Tenant A admin from reading the
+   *  evidence chain of a Tenant B order by guessing the id. */
+  orgId?: string | null;
 }
 
 /**
@@ -285,7 +288,9 @@ export async function getEvidenceChain(
   if (!Types.ObjectId.isValid(orderId)) {
     throw new NotFoundError("Order not found");
   }
-  const orderDoc = await Order.findById(orderId).lean<
+  const orderFilter: Record<string, unknown> = { _id: orderId };
+  if (ctx.orgId) orderFilter.orgId = new Types.ObjectId(ctx.orgId);
+  const orderDoc = await Order.findOne(orderFilter).lean<
     OrderDoc & { _id: Types.ObjectId }
   >();
   if (!orderDoc) throw new NotFoundError("Order not found");
@@ -298,24 +303,6 @@ export async function getEvidenceChain(
 
   const events = docs.map(evidenceToDTO);
   const verification = verifyChainFromDocs(docs, orderId);
-  const provider = orderDoc.provider
-    ? {
-        id: orderDoc.provider.id,
-        name: orderDoc.provider.name,
-        logo: orderDoc.provider.logo,
-        primaryColor: orderDoc.provider.primaryColor ?? undefined,
-        onPrimaryColor: orderDoc.provider.onPrimaryColor ?? undefined,
-      }
-    : (() => {
-        const fb = resolveProvider(undefined);
-        return {
-          id: fb.id,
-          name: fb.name,
-          logo: fb.logo,
-          primaryColor: fb.primaryColor,
-          onPrimaryColor: fb.onPrimaryColor,
-        };
-      })();
 
   return {
     events,
@@ -330,12 +317,34 @@ export async function getEvidenceChain(
       },
       status: orderDoc.status,
       state: orderDoc.state,
-      provider,
-      vehicle: {
-        company: orderDoc.vehicle.company,
-        type: orderDoc.vehicle.type,
-        imageUrl: orderDoc.vehicle.imageUrl ?? null,
-      },
+      lineItems: (orderDoc.lineItems ?? []).map((li) => ({
+        itemId: li.itemId ? String(li.itemId) : null,
+        itemTypeKey: li.itemTypeKey,
+        name: li.name,
+        description: li.description ?? null,
+        quantity: li.quantity,
+        unitPrice: li.unitPrice,
+        total: li.total,
+        attributes: li.attributes ?? {},
+        scheduling: li.scheduling
+          ? {
+              type: li.scheduling.type,
+              startsAt: li.scheduling.startsAt.toISOString(),
+              endsAt: li.scheduling.endsAt
+                ? li.scheduling.endsAt.toISOString()
+                : null,
+            }
+          : null,
+      })),
+      scheduling: orderDoc.scheduling
+        ? {
+            type: orderDoc.scheduling.type,
+            startsAt: orderDoc.scheduling.startsAt.toISOString(),
+            endsAt: orderDoc.scheduling.endsAt
+              ? orderDoc.scheduling.endsAt.toISOString()
+              : null,
+          }
+        : null,
       createdAt: orderDoc.createdAt.toISOString(),
     },
   };
@@ -577,6 +586,34 @@ export async function getEvidenceChainSummary(
         headHash: null,
       },
     };
+  }
+  // Pass 5a tenant gate: verify the orderId belongs to the actor's
+  // org BEFORE we surface its evidence-chain summary. OrderEvidence
+  // doesn't carry orgId on its own schema (yet) — we trust the
+  // transitive scope via the order it points at. Returns the empty
+  // summary on a miss rather than throwing, matching the existing
+  // behaviour for invalid ObjectIds above.
+  if (ctx.orgId) {
+    const owner = await Order.findOne({
+      _id: new Types.ObjectId(orderId),
+      orgId: new Types.ObjectId(ctx.orgId),
+    })
+      .select({ _id: 1 })
+      .lean<{ _id: unknown } | null>();
+    if (!owner) {
+      return {
+        eventCount: 0,
+        lastEventType: null,
+        lastEventAt: null,
+        verification: {
+          valid: true,
+          eventCount: 0,
+          brokenAtSequence: null,
+          reason: null,
+          headHash: null,
+        },
+      };
+    }
   }
   const docs = await OrderEvidence.find({
     orderId: new Types.ObjectId(orderId),

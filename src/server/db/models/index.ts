@@ -1,11 +1,55 @@
 export { User } from "./user.model";
 export type { UserDoc, UserDocument } from "./user.model";
 
-export { Order } from "./order.model";
-export type { OrderDoc, OrderDocument } from "./order.model";
+export {
+  Organization,
+  ORG_STATUSES,
+  ORG_SLUG_REGEX,
+  OrgStatus,
+} from "./organization.model";
+export type {
+  OrganizationDoc,
+  OrganizationDocument,
+} from "./organization.model";
 
-export { Provider } from "./provider.model";
-export type { ProviderDoc, ProviderDocument } from "./provider.model";
+export { OrgMember } from "./org-member.model";
+export type { OrgMemberDoc, OrgMemberDocument } from "./org-member.model";
+
+export {
+  GatewayCredential,
+  GatewayMode,
+  GATEWAY_MODES,
+} from "./gateway-credential.model";
+export type {
+  EncryptedField,
+  GatewayCredentialDoc,
+  GatewayCredentialDocument,
+} from "./gateway-credential.model";
+
+export { Order } from "./order.model";
+export type {
+  OrderDoc,
+  OrderDocument,
+  OrderLineItem,
+  OrderScheduling,
+} from "./order.model";
+
+export { ItemType } from "./item-type.model";
+export type {
+  ItemAttributeSpec,
+  ItemTypeDoc,
+  ItemTypeDocument,
+} from "./item-type.model";
+
+export { Item } from "./item.model";
+export type {
+  ItemDoc,
+  ItemDocument,
+  ItemInventorySnapshot,
+  ItemPrice,
+} from "./item.model";
+
+// Provider + CarLink models removed in Pass 5h.
 
 export { Branding, BRANDING_KEY } from "./branding.model";
 export type { BrandingDoc, BrandingDocument } from "./branding.model";
@@ -18,9 +62,6 @@ export type { AuditLogDoc, AuditLogDocument } from "./audit-log.model";
 
 export { OrderDraft } from "./order-draft.model";
 export type { OrderDraftDoc, OrderDraftDocument } from "./order-draft.model";
-
-export { CarLink } from "./car-link.model";
-export type { CarLinkDoc, CarLinkDocument } from "./car-link.model";
 
 export {
   EmailTemplate,

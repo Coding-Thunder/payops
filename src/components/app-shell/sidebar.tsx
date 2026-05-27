@@ -4,11 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3Icon,
-  CarIcon,
   CreditCardIcon,
   HomeIcon,
+  KeyIcon,
+  LayersIcon,
   MailIcon,
-  PackageIcon,
   PaletteIcon,
   ScrollTextIcon,
   SettingsIcon,
@@ -65,22 +65,26 @@ const SECTIONS: NavSection[] = [
         permissions: [Permission.USER_VIEW],
       },
       {
-        href: "/app/admin/providers",
-        label: "Providers",
-        icon: PackageIcon,
-        permissions: [Permission.PROVIDER_VIEW],
+        href: "/app/admin/item-types",
+        label: "Item types",
+        icon: LayersIcon,
+        permissions: [Permission.ITEM_TYPE_MANAGE],
       },
-      {
-        href: "/app/admin/car-links",
-        label: "Car library",
-        icon: CarIcon,
-        permissions: [Permission.CAR_LINK_MANAGE],
-      },
+      // Pass 5g: rental-specific admin surfaces ("Providers", "Car library")
+      // are no longer reachable from the nav. The data behind them lives
+      // in `Order.lineItems[].attributes` for new orders; the catalog
+      // collections are kept (read-only) until Pass 5h's 30-day soak ends.
       {
         href: "/app/admin/branding",
         label: "Branding",
         icon: PaletteIcon,
         permissions: [Permission.BRANDING_VIEW],
+      },
+      {
+        href: "/app/admin/gateways",
+        label: "Gateways",
+        icon: KeyIcon,
+        permissions: [Permission.GATEWAY_VIEW],
       },
       {
         href: "/app/admin/email-templates",

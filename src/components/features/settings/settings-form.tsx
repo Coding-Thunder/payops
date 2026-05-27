@@ -6,7 +6,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 
 import { Button } from "@/components/ui/button";
 import { LoadingButton } from "@/components/ui/loading-button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Form,
   FormControl,
@@ -29,11 +28,10 @@ import { toast } from "@/components/ui/sonner";
 import { Section, SectionStack } from "@/components/common/section";
 import { api, ApiClientError } from "@/lib/api-client";
 import {
-  BOOKING_TYPES,
   CONSENT_MODES,
   CURRENCIES,
 } from "@/lib/constants/enums";
-import { BookingTypeLabel, ConsentModeLabel } from "@/lib/constants/labels";
+import { ConsentModeLabel } from "@/lib/constants/labels";
 import {
   updateSettingsSchema,
   type UpdateSettingsInput,
@@ -150,39 +148,6 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
               />
             </div>
 
-            <FormField
-              control={form.control}
-              name="allowedBookingTypes"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Allowed booking types</FormLabel>
-                  <div className="grid gap-2 sm:grid-cols-3">
-                    {BOOKING_TYPES.map((t) => {
-                      const checked = field.value?.includes(t) ?? false;
-                      return (
-                        <label
-                          key={t}
-                          className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-[13px] cursor-pointer transition-colors hover:bg-surface-1"
-                        >
-                          <Checkbox
-                            checked={checked}
-                            disabled={!canEdit || isSubmitting}
-                            onCheckedChange={(c) => {
-                              const next = new Set(field.value ?? []);
-                              if (c) next.add(t);
-                              else next.delete(t);
-                              field.onChange(Array.from(next));
-                            }}
-                          />
-                          <span>{BookingTypeLabel[t]}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
           </Section>
 
           <Section

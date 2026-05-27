@@ -5,8 +5,6 @@ import {
 } from "mongoose";
 
 import {
-  BOOKING_TYPES,
-  BookingType,
   CONSENT_MODES,
   ConsentMode,
   CURRENCIES,
@@ -38,10 +36,15 @@ export const DEFAULT_CONSENT_MESSAGE =
   "I confirm that I understand and agree to proceed with this payment and booking.";
 
 export interface SettingDoc {
+  /** Legacy singleton key (`"default"`). Kept during migration so the
+   *  pre-multi-tenant `findOne({ key: "default" })` reads keep working. */
   key: string;
+  /** Tenant boundary. Nullable during migration window; once every
+   *  Setting row has been backfilled, `findOne({ orgId })` becomes the
+   *  canonical lookup and `key` retires. */
+  orgId?: import("mongoose").Types.ObjectId | null;
   paymentExpiryHours: number;
   orderPrefix: string;
-  allowedBookingTypes: BookingType[];
   defaultCurrency: Currency;
   /** @deprecated support contact moved to the Branding doc. Field is kept
    *  on the schema for read-back compat with old documents. */
@@ -73,7 +76,18 @@ export type SettingDocument = HydratedDocument<SettingDoc>;
 
 const settingSchema = new Schema<SettingDoc>(
   {
-    key: { type: String, required: true, unique: true, default: SETTINGS_KEY },
+    // Legacy singleton selector. Pre-multi-tenant code paths still write
+    // `key: "default"` via `ensureSettingsDocument`; per-org rows omit
+    // the field entirely and rely on `orgId` for uniqueness. Field-level
+    // `unique: true` is removed in favour of the partial-unique index
+    // declared below so the migration window can carry both shapes
+    // without collision.
+    key: { type: String, default: undefined, maxlength: 32 },
+    orgId: {
+      type: Schema.Types.ObjectId,
+      ref: "Organization",
+      default: null,
+    },
     paymentExpiryHours: {
       type: Number,
       required: true,
@@ -88,12 +102,6 @@ const settingSchema = new Schema<SettingDoc>(
       trim: true,
       maxlength: 6,
       default: "ORD",
-    },
-    allowedBookingTypes: {
-      type: [String],
-      enum: BOOKING_TYPES,
-      required: true,
-      default: () => [...BOOKING_TYPES],
     },
     defaultCurrency: {
       type: String,
@@ -146,6 +154,28 @@ const settingSchema = new Schema<SettingDoc>(
         return r;
       },
     },
+  },
+);
+
+// Exactly one Setting row per organization. Partial filter so legacy
+// rows that haven't been backfilled with orgId yet don't collide.
+settingSchema.index(
+  { orgId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { orgId: { $type: "objectId" } },
+    name: "settings_orgId_unique",
+  },
+);
+// Legacy {key:"default"} singleton — kept unique while migration code
+// still upserts via key. Partial filter exempts per-org rows that
+// omit the field entirely.
+settingSchema.index(
+  { key: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { key: { $type: "string" } },
+    name: "settings_key_unique",
   },
 );
 

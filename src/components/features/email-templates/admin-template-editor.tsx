@@ -20,24 +20,12 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingButton } from "@/components/ui/loading-button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
 import { api, ApiClientError } from "@/lib/api-client";
 import type { EmailTemplateKey } from "@/lib/constants/email-templates";
 import { cn } from "@/lib/utils";
 import type { EmailTemplateVersionDTO } from "@/types";
-
-interface ProviderOption {
-  key: string;
-  name: string;
-}
 
 interface TemplateOption {
   key: EmailTemplateKey;
@@ -49,7 +37,6 @@ interface AdminTemplateEditorProps {
   templates: readonly TemplateOption[];
   versions: EmailTemplateVersionDTO[];
   activeVersion: EmailTemplateVersionDTO | null;
-  providers: readonly ProviderOption[];
   initialHtml: string;
 }
 
@@ -100,15 +87,11 @@ export function AdminTemplateEditor({
   templates,
   versions,
   activeVersion,
-  providers,
   initialHtml,
 }: AdminTemplateEditorProps) {
   const router = useRouter();
   const [draft, setDraft] = React.useState<DraftState>(() =>
     draftFromVersion(activeVersion),
-  );
-  const [provider, setProvider] = React.useState<string>(
-    providers[0]?.key ?? "",
   );
   const [html, setHtml] = React.useState(initialHtml);
   const [previewLoading, setPreviewLoading] = React.useState(false);
@@ -138,7 +121,7 @@ export function AdminTemplateEditor({
       try {
         const { html: rendered } = await api.post<{ html: string }>(
           `/api/admin/email-templates/${templateKey}/preview`,
-          { ...draftPayload(draft), provider },
+          draftPayload(draft),
           { signal: controller.signal },
         );
         setHtml(rendered);
@@ -157,7 +140,7 @@ export function AdminTemplateEditor({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [draft, provider, templateKey]);
+  }, [draft, templateKey]);
 
   async function handleSave() {
     setSaving(true);
@@ -307,28 +290,6 @@ export function AdminTemplateEditor({
                 maxLength={500}
               />
             </Field>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-[13px] tracking-tight">
-              Preview as provider
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Select value={provider} onValueChange={setProvider}>
-              <SelectTrigger>
-                <SelectValue placeholder="Pick a provider" />
-              </SelectTrigger>
-              <SelectContent>
-                {providers.map((p) => (
-                  <SelectItem key={p.key} value={p.key}>
-                    {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </CardContent>
         </Card>
 

@@ -1,7 +1,6 @@
 import type {
   AuditAction,
   AuditEntity,
-  BookingType,
   ConsentMethod,
   ConsentMode,
   ConsentStatus,
@@ -15,7 +14,6 @@ import type {
   RecordState,
   UserRole,
 } from "@/lib/constants/enums";
-import type { ProviderSnapshot } from "@/lib/constants/providers";
 
 /** Public user shape used by the UI and API responses (never includes passwordHash). */
 export interface PublicUser {
@@ -41,19 +39,6 @@ export interface OrderCustomer {
   name: string;
   email: string;
   phone: string;
-}
-
-export interface OrderVehicle {
-  company: string;
-  type: string;
-  /** Public URL operator captured at creation time; surfaces on the order
-   *  detail page, Stripe checkout, and the confirmation email. */
-  imageUrl?: string | null;
-}
-
-export interface OrderTrip {
-  pickupDate: string;
-  dropoffDate: string;
 }
 
 export interface OrderPricing {
@@ -132,16 +117,40 @@ export interface OrderDisputePointer {
   currency: Currency | null;
 }
 
+/* ───────── Universal commerce DTO additions (Pass 5d) ─────────────── */
+
+/** Snapshot of the time window an order is bound to. Optional —
+ *  retail / one-shot orders have null. ISO-8601 strings on the wire. */
+export interface OrderSchedulingDTO {
+  type: "FIXED_WINDOW" | "OPEN_ENDED" | "RECURRING_INTERVAL";
+  startsAt: string;
+  endsAt: string | null;
+}
+
+/** Universal line-item snapshot. Carries everything a renderer needs
+ *  without having to re-resolve the catalog row at read time. */
+export interface OrderLineItemDTO {
+  itemId: string | null;
+  itemTypeKey: string;
+  name: string;
+  description: string | null;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+  attributes: Record<string, unknown>;
+  scheduling: OrderSchedulingDTO | null;
+}
+
 export interface OrderDTO {
   id: string;
+  /** Tenant boundary. Nullable for back-compat with pre-multi-tenant
+   *  rows that the migration script hadn't yet backfilled when the
+   *  DTO was first read. Production rows always have it set. */
+  orgId: string | null;
   orderNumber: string;
-  bookingType: BookingType;
   status: OrderStatus;
   state: RecordState;
   customer: OrderCustomer;
-  provider: ProviderSnapshot;
-  vehicle: OrderVehicle;
-  trip: OrderTrip;
   pricing: OrderPricing;
   payment: OrderPayment;
   createdBy: OrderCreator;
@@ -156,6 +165,12 @@ export interface OrderDTO {
    *  refund webhook lands. */
   refundedAmount: number;
   notes?: string | null;
+  /** Pass 5b/5d — universal commerce line items. Required field;
+   *  legacy rental orders pre-Pass-5c-backfill have `[]`. */
+  lineItems: OrderLineItemDTO[];
+  /** Pass 5b/5d — optional time window for the order. Null for
+   *  retail / one-shot orders. */
+  scheduling: OrderSchedulingDTO | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -187,11 +202,11 @@ export interface DisputeDTO {
 }
 
 export interface PaymentConsentSnapshot {
-  bookingType: BookingType;
-  provider: string;
-  vehicle: string;
-  pickupDate: string;
-  dropoffDate: string;
+  /** Human-readable line item summary frozen at consent-request time. */
+  summary?: string | null;
+  /** Scheduling window taken from the order at consent-request time. */
+  startsAt?: string | null;
+  endsAt?: string | null;
   amount: number;
   currency: Currency;
   paymentLinkRef: string | null;
@@ -322,11 +337,10 @@ export interface OrderEvidenceChainDTO {
     pricing: OrderPricing;
     status: OrderStatus;
     state: RecordState;
-    provider: ProviderSnapshot;
-    /** Vehicle snapshot lifted to the chain order so the evidence
-     *  page + PDF can render the operator-captured car image
-     *  alongside the provider logo. */
-    vehicle: OrderVehicle;
+    /** Universal commerce — line items snapshot for the evidence page. */
+    lineItems: OrderLineItemDTO[];
+    /** Optional time window for the order (scheduled / windowed items). */
+    scheduling: OrderSchedulingDTO | null;
     createdAt: string;
   };
 }

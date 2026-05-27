@@ -1,5 +1,4 @@
 import {
-  BookingType,
   ConsentMethod,
   ConsentMode,
   ConsentStatus,
@@ -11,11 +10,7 @@ import {
   UserRole,
 } from "./enums";
 
-export const BookingTypeLabel: Record<BookingType, string> = {
-  NEW_BOOKING: "New booking",
-  MODIFICATION: "Modification",
-  CANCELLATION_CHARGE: "Cancellation charge",
-};
+// Pass 5h: `BookingTypeLabel` removed alongside the BookingType enum.
 
 export const OrderStatusLabel: Record<OrderStatus, string> = {
   NOT_INITIATED: "Draft",

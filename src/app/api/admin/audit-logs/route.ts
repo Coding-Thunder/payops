@@ -27,17 +27,20 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export const GET = withApi(async (req: NextRequest) => {
-  await requirePermission(Permission.AUDIT_VIEW);
+  const actor = await requirePermission(Permission.AUDIT_VIEW);
   const url = new URL(req.url);
   const query = querySchema.parse(
     Object.fromEntries(url.searchParams.entries()),
   );
+  // Strict per-org filter — Phase 3d retired the legacy null-orgId
+  // fallback. Each tenant sees only their own audit trail.
   const data = await listAuditLogs({
     entityType: query.entityType as AuditEntity | undefined,
     entityId: query.entityId,
     action: query.action as AuditAction | undefined,
     page: query.page,
     pageSize: query.pageSize,
+    orgId: actor.orgId,
   });
   return jsonOk(data);
 });

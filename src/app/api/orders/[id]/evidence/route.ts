@@ -22,6 +22,6 @@ interface Params {
 export const GET = withApi(async (_req: Request, { params }: Params) => {
   const actor = await requirePermission(Permission.EVIDENCE_VIEW);
   const { id } = await params;
-  const chain = await getEvidenceChain(id, { actor });
+  const chain = await getEvidenceChain(id, { actor, orgId: actor.orgId });
   return jsonOk(chain);
 });

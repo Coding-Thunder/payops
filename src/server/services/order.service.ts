@@ -1,14 +1,12 @@
 import "server-only";
 
 import { type ClientSession, Types } from "mongoose";
-import type Stripe from "stripe";
 
 import { sessionOpt, withTx } from "@/server/db/transaction";
 
 import {
   AuditAction,
   AuditEntity,
-  BookingType,
   ConsentMethod,
   ConsentStatus,
   OrderEvidenceActorType,
@@ -27,20 +25,23 @@ import {
 } from "@/lib/errors";
 import { roleHasPermission, Permission } from "@/lib/constants/permissions";
 import { DomainEventType } from "@/lib/constants/events";
-import { resolveProvider } from "@/lib/constants/providers";
 import { logger } from "@/lib/logger";
 import { publishEvent } from "@/server/events/bus";
-import { Order, type OrderDoc } from "@/server/db/models";
+import {
+  Order,
+  type OrderDoc,
+  type OrderLineItem,
+  type OrderScheduling,
+} from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 import type {
   ArchiveOrderInput,
-  CreateOrderInput,
+  CreateOrderUniversalInput,
   ListOrdersQuery,
 } from "@/lib/validation";
 import type { OrderDTO, PaginatedResult } from "@/types";
 
 import type { RequestContext } from "@/server/api/request-context";
-import { getStripe } from "@/server/payments/stripe";
 import type {
   CreatedPaymentSession,
   SessionStatus,
@@ -48,14 +49,15 @@ import type {
 import {
   getDefaultGateway,
   getGateway,
+  getGatewayForOrg,
 } from "@/server/payments/gateways";
 import { recordAudit } from "./audit.service";
 import { captureEvidenceSafe } from "./evidence.service";
 import { getSettings } from "./settings.service";
 import { generateOrderNumber } from "./order-number";
-import { buildProviderSnapshotFromKey } from "./provider.service";
 import { getBranding } from "./branding.service";
 import { applyCheckoutPaid } from "./webhook.service";
+import { validateLineAttributes } from "./attribute-validator.service";
 
 const ZERO_DECIMAL_CURRENCIES = new Set([
   "BIF",
@@ -85,7 +87,32 @@ interface OrderActor {
 
 interface OrderContext {
   actor: OrderActor;
+  /** Active organization. Optional ONLY during the multi-tenant
+   *  migration window — every route handler in Phase 3b passes it.
+   *  When set, per-org settings/branding/gateway are resolved; when
+   *  absent (legacy callers not yet migrated), the env-backed
+   *  singletons are used. */
+  orgId?: string | null;
   request?: RequestContext | null;
+}
+
+/**
+ * Build a `findOne` filter that pins both `_id` AND `orgId` when
+ * ctx.orgId is supplied. Pass 5a uses this on every lookup-by-id in
+ * this service so an ADMIN of Tenant A can't read/edit/delete a
+ * Tenant B order by guessing its id (the Phase-A audit risk #4.1).
+ *
+ * Legacy callers (no ctx.orgId) keep the unscoped `{_id}` filter so
+ * pre-multi-tenant code paths stay back-compat.
+ */
+function scopedOrderFilter(
+  id: string,
+  orgId: string | null | undefined,
+): Record<string, unknown> {
+  if (orgId) {
+    return { _id: id, orgId: new Types.ObjectId(orgId) };
+  }
+  return { _id: id };
 }
 
 export function toMinorUnits(amount: number, currency: string): number {
@@ -98,34 +125,11 @@ export function toMinorUnits(amount: number, currency: string): number {
 function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO {
   return {
     id: String(doc._id),
+    orgId: doc.orgId ? String(doc.orgId) : null,
     orderNumber: doc.orderNumber,
-    bookingType: doc.bookingType as BookingType,
     status: doc.status as OrderStatus,
     state: doc.state as RecordState,
     customer: { ...doc.customer },
-    provider: doc.provider
-      ? {
-          id: doc.provider.id,
-          name: doc.provider.name,
-          logo: doc.provider.logo,
-          primaryColor: doc.provider.primaryColor ?? undefined,
-          onPrimaryColor: doc.provider.onPrimaryColor ?? undefined,
-        }
-      : (() => {
-          const fallback = resolveProvider(undefined);
-          return {
-            id: fallback.id,
-            name: fallback.name,
-            logo: fallback.logo,
-            primaryColor: fallback.primaryColor,
-            onPrimaryColor: fallback.onPrimaryColor,
-          };
-        })(),
-    vehicle: { ...doc.vehicle },
-    trip: {
-      pickupDate: doc.trip.pickupDate.toISOString(),
-      dropoffDate: doc.trip.dropoffDate.toISOString(),
-    },
     pricing: { amount: doc.pricing.amount, currency: doc.pricing.currency },
     payment: {
       gateway: (doc.payment.gateway ?? null) as PaymentGatewayKey | null,
@@ -221,6 +225,36 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
       : null,
     refundedAmount: doc.refundedAmount ?? 0,
     notes: doc.notes ?? null,
+    // Pass 5d: universal commerce — line items snapshot. Empty array
+    // on pre-Pass-5c legacy orders that haven't been backfilled yet.
+    lineItems: (doc.lineItems ?? []).map((li) => ({
+      itemId: li.itemId ? String(li.itemId) : null,
+      itemTypeKey: li.itemTypeKey,
+      name: li.name,
+      description: li.description ?? null,
+      quantity: li.quantity,
+      unitPrice: li.unitPrice,
+      total: li.total,
+      attributes: li.attributes ?? {},
+      scheduling: li.scheduling
+        ? {
+            type: li.scheduling.type,
+            startsAt: li.scheduling.startsAt.toISOString(),
+            endsAt: li.scheduling.endsAt
+              ? li.scheduling.endsAt.toISOString()
+              : null,
+          }
+        : null,
+    })),
+    scheduling: doc.scheduling
+      ? {
+          type: doc.scheduling.type,
+          startsAt: doc.scheduling.startsAt.toISOString(),
+          endsAt: doc.scheduling.endsAt
+            ? doc.scheduling.endsAt.toISOString()
+            : null,
+        }
+      : null,
     createdAt: doc.createdAt.toISOString(),
     updatedAt: doc.updatedAt.toISOString(),
   };
@@ -237,6 +271,11 @@ interface CreateOrderResult {
 /**
  * Persist a business order. NO Stripe side-effects.
  *
+ * Universal commerce shape: `lineItems[]` + optional `scheduling`. Every
+ * line's `itemTypeKey` resolves against THIS org's ItemType catalog and
+ * its `attributes` are validated against `attributeSchema`. Cross-tenant
+ * ItemType reuse is REFUSED at the validator layer.
+ *
  * The order starts in NOT_INITIATED state — checkoutUrl, sessionId,
  * paymentIntentId, expiresAt all remain null. The agent transitions
  * the order to PAYMENT_PENDING by calling `initiatePayment` from the
@@ -249,22 +288,73 @@ interface CreateOrderResult {
  *   - keep Stripe rate-limit + idempotency surface tight
  */
 export async function createOrder(
-  input: CreateOrderInput,
+  input: CreateOrderUniversalInput,
   ctx: OrderContext,
 ): Promise<CreateOrderResult> {
   await connectMongo();
-  const settings = await getSettings();
-
-  if (!settings.allowedBookingTypes.includes(input.bookingType)) {
-    throw new ValidationError(
-      "This booking type is currently disabled. Update operational settings to enable it.",
-    );
-  }
+  // Read settings + policy snapshot from the caller's org so Tenant #2
+  // doesn't inherit Tenant #1's cancellation policy text.
+  const settings = await getSettings(ctx.orgId);
 
   const currency = input.pricing.currency ?? settings.defaultCurrency;
   const orderId = new Types.ObjectId();
   const orderNumber = generateOrderNumber(settings.orderPrefix);
-  const providerSnapshot = await buildProviderSnapshotFromKey(input.provider);
+
+  // Stamp the tenant boundary onto the order. This is the field every
+  // downstream service (webhook lookup, evidence chain, gateway
+  // routing) keys off, so we set it at creation and never mutate it.
+  const orderOrgId = ctx.orgId ? new Types.ObjectId(ctx.orgId) : null;
+
+  // Per-line attribute validation (resolves ItemType + scrubs unknown
+  // keys + coerces types). Throws ValidationError on any mismatch.
+  const validatedLines: OrderLineItem[] = [];
+  let computedTotal = 0;
+  for (let i = 0; i < input.lineItems.length; i += 1) {
+    const line = input.lineItems[i];
+    const { attributes } = await validateLineAttributes({
+      orgId: ctx.orgId ?? null,
+      itemTypeKey: line.itemTypeKey,
+      attributes: line.attributes ?? {},
+      context: `lineItems[${i}]`,
+    });
+    const lineTotal = line.total ?? line.quantity * line.unitPrice;
+    computedTotal += lineTotal;
+    validatedLines.push({
+      itemId: line.itemId ? new Types.ObjectId(line.itemId) : null,
+      itemTypeKey: line.itemTypeKey,
+      name: line.name,
+      description: line.description ?? null,
+      quantity: line.quantity,
+      unitPrice: line.unitPrice,
+      total: lineTotal,
+      attributes,
+      scheduling: line.scheduling
+        ? {
+            type: line.scheduling.type,
+            startsAt: new Date(line.scheduling.startsAt),
+            endsAt: line.scheduling.endsAt
+              ? new Date(line.scheduling.endsAt)
+              : null,
+          }
+        : null,
+    });
+  }
+  // Defend against client tampering: declared grand total must match
+  // the sum of validated line totals within rounding tolerance.
+  if (Math.abs(computedTotal - input.pricing.amount) > 0.01) {
+    throw new ValidationError(
+      `Order grand total ${input.pricing.amount} does not match the sum of line items (${computedTotal.toFixed(2)}).`,
+    );
+  }
+  const schedulingToPersist: OrderScheduling | null = input.scheduling
+    ? {
+        type: input.scheduling.type,
+        startsAt: new Date(input.scheduling.startsAt),
+        endsAt: input.scheduling.endsAt
+          ? new Date(input.scheduling.endsAt)
+          : null,
+      }
+    : null;
 
   // Transactional: Order doc + audit row + genesis evidence row are
   // written together. A failure on evidence aborts the order create —
@@ -274,17 +364,13 @@ export async function createOrder(
       [
         {
           _id: orderId,
+          orgId: orderOrgId,
           orderNumber,
-          bookingType: input.bookingType,
           status: OrderStatus.NOT_INITIATED,
           state: RecordState.ACTIVE,
           customer: input.customer,
-          provider: providerSnapshot,
-          vehicle: input.vehicle,
-          trip: {
-            pickupDate: new Date(input.trip.pickupDate),
-            dropoffDate: new Date(input.trip.dropoffDate),
-          },
+          lineItems: validatedLines,
+          scheduling: schedulingToPersist,
           pricing: { amount: input.pricing.amount, currency },
           payment: {
             status: OrderStatus.NOT_INITIATED,
@@ -314,13 +400,14 @@ export async function createOrder(
         action: AuditAction.ORDER_CREATED,
         entityType: AuditEntity.ORDER,
         entityId: String(orderDoc._id),
+        orgId: ctx.orgId ?? null,
         actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
         request: ctx.request ?? null,
         metadata: {
           orderNumber: orderDoc.orderNumber,
           amount: orderDoc.pricing.amount,
           currency: orderDoc.pricing.currency,
-          bookingType: orderDoc.bookingType,
+          itemTypeKeys: orderDoc.lineItems?.map((l) => l.itemTypeKey) ?? [],
         },
       },
       session,
@@ -342,30 +429,29 @@ export async function createOrder(
         request: ctx.request ?? null,
         payload: {
           orderNumber: orderDoc.orderNumber,
-          bookingType: orderDoc.bookingType,
           customer: {
             name: orderDoc.customer.name,
             email: orderDoc.customer.email,
             phone: orderDoc.customer.phone,
           },
-          provider: orderDoc.provider
+          lineItems: (orderDoc.lineItems ?? []).map((li) => ({
+            itemTypeKey: li.itemTypeKey,
+            name: li.name,
+            description: li.description ?? null,
+            quantity: li.quantity,
+            unitPrice: li.unitPrice,
+            total: li.total,
+            attributes: li.attributes ?? {},
+          })),
+          scheduling: orderDoc.scheduling
             ? {
-                id: orderDoc.provider.id,
-                name: orderDoc.provider.name,
-                logo: orderDoc.provider.logo,
-                primaryColor: orderDoc.provider.primaryColor ?? null,
-                onPrimaryColor: orderDoc.provider.onPrimaryColor ?? null,
+                type: orderDoc.scheduling.type,
+                startsAt: orderDoc.scheduling.startsAt.toISOString(),
+                endsAt: orderDoc.scheduling.endsAt
+                  ? orderDoc.scheduling.endsAt.toISOString()
+                  : null,
               }
             : null,
-          vehicle: {
-            company: orderDoc.vehicle.company,
-            type: orderDoc.vehicle.type,
-            imageUrl: orderDoc.vehicle.imageUrl ?? null,
-          },
-          trip: {
-            pickupDate: orderDoc.trip.pickupDate.toISOString(),
-            dropoffDate: orderDoc.trip.dropoffDate.toISOString(),
-          },
           pricing: {
             amount: orderDoc.pricing.amount,
             currency: orderDoc.pricing.currency,
@@ -399,13 +485,13 @@ export async function createOrder(
     type: DomainEventType.ORDER_CREATED,
     audience: { kind: "creator", userId: ctx.actor.id },
     actor: { id: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+    orgId: ctx.orgId ?? null,
     payload: {
       orderId: String(created._id),
       orderNumber: created.orderNumber,
       amount: created.pricing.amount,
       currency: created.pricing.currency,
       customerName: created.customer.name,
-      bookingType: created.bookingType,
     },
   });
 
@@ -459,7 +545,7 @@ export async function initiatePayment(
 ): Promise<InitiatePaymentResult> {
   await connectMongo();
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
-  const doc = await Order.findById(id);
+  const doc = await Order.findOne(scopedOrderFilter(id, ctx.orgId));
   if (!doc) throw new NotFoundError("Order not found");
 
   const canSeeAll = roleHasPermission(ctx.actor.role, Permission.ORDER_VIEW_ALL);
@@ -504,29 +590,33 @@ export async function initiatePayment(
     options.gateway ??
     (doc.payment.gateway as PaymentGatewayKey | null) ??
     getDefaultGateway().key;
-  const gateway = getGateway(gatewayKey);
+  // Prefer the order's own orgId over ctx.orgId — they should match for
+  // any new order, but using the persisted value defends against a
+  // stale ctx caused by an org-switcher race. Falls back to ctx.orgId
+  // for legacy orders persisted before Phase 0+1 backfill ran.
+  const orderOrgId = doc.orgId ? String(doc.orgId) : (ctx.orgId ?? null);
+  // Per-org gateway: reads credentials from `gateway_credentials` (per
+  // tenant) OR falls back to env (Tenant #1 path). The legacy registry
+  // `getGateway(key)` is no longer used here so Tenant #2's session
+  // never resolves to Tenant #1's Stripe account.
+  const gateway = await getGatewayForOrg(orderOrgId, gatewayKey);
+  if (!gateway) {
+    throw new ConflictError(
+      `${gatewayKey} is not configured for this organization. Configure credentials in admin settings or pick another gateway.`,
+    );
+  }
   if (!gateway.enabled) {
     throw new ConflictError(
       `${gateway.label} is not available. Configure credentials in admin settings or pick another gateway.`,
     );
   }
 
-  const settings = await getSettings();
+  const settings = await getSettings(orderOrgId);
   const expiresAt = new Date(
     Date.now() + settings.paymentExpiryHours * 60 * 60 * 1000,
   );
-  const branding = await getBranding();
-  const productName = describeProductName({
-    bookingType: doc.bookingType,
-    provider: doc.provider?.id ?? resolveProvider(undefined).id,
-    vehicle: { company: doc.vehicle.company, type: doc.vehicle.type },
-  });
-  const description = describeProductDescription({
-    trip: {
-      pickupDate: doc.trip.pickupDate.toISOString(),
-      dropoffDate: doc.trip.dropoffDate.toISOString(),
-    },
-  });
+  const branding = await getBranding(orderOrgId);
+  const gatewayProduct = describeProductForGateway(doc);
 
   let session: CreatedPaymentSession;
   try {
@@ -536,16 +626,15 @@ export async function initiatePayment(
       amount: doc.pricing.amount,
       currency: doc.pricing.currency,
       customer: doc.customer,
-      productName,
-      description,
-      imageUrls: doc.vehicle.imageUrl ? [doc.vehicle.imageUrl] : undefined,
+      productName: gatewayProduct.name,
+      description: gatewayProduct.description ?? "",
+      imageUrls: gatewayProduct.imageUrls,
       successUrl: settings.successRedirectUrl,
       cancelUrl: settings.cancelRedirectUrl,
       expiresAt,
       metadata: {
         orderId: String(doc._id),
         orderNumber: doc.orderNumber,
-        bookingType: doc.bookingType,
         actorId: ctx.actor.id,
         actorEmail: ctx.actor.email,
         appName: branding.brandName,
@@ -600,6 +689,7 @@ export async function initiatePayment(
         action: AuditAction.ORDER_PAYMENT_LINK_REGENERATED,
         entityType: AuditEntity.ORDER,
         entityId: String(updated._id),
+        orgId: orderOrgId,
         actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
         request: ctx.request ?? null,
         metadata: {
@@ -650,8 +740,8 @@ export async function initiatePayment(
           amount: updated.pricing.amount,
           currency: updated.pricing.currency,
           expiresAt: session.expiresAt.toISOString(),
-          productName,
-          description,
+          productName: gatewayProduct.name,
+          description: gatewayProduct.description,
         },
         refs: {
           paymentSessionId: session.sessionId,
@@ -669,9 +759,9 @@ export async function initiatePayment(
     // Another concurrent call flipped us out of NOT_INITIATED. Bin the
     // brand-new orphan gateway session and return the existing state.
     void gateway.expireSession(session.sessionId);
-    const racedDoc = await Order.findById(id).lean<
-      OrderDoc & { _id: Types.ObjectId }
-    >();
+    const racedDoc = await Order.findOne(
+      scopedOrderFilter(id, ctx.orgId),
+    ).lean<OrderDoc & { _id: Types.ObjectId }>();
     if (!racedDoc?.payment.checkoutUrl) {
       throw new ConflictError("Payment initiation collided — try again");
     }
@@ -696,6 +786,10 @@ export async function initiatePayment(
     type: DomainEventType.ORDER_LINK_REGENERATED,
     audience: { kind: "creator", userId: String(updated.createdBy.userId) },
     actor: { id: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+    // Prefer the persisted order.orgId — it's the authoritative
+    // tenant key (set at creation, never mutated). Falls back to
+    // ctx.orgId for orders pre-dating the Phase 0+1 backfill.
+    orgId: updated.orgId ? String(updated.orgId) : (ctx.orgId ?? null),
     payload: {
       orderId: String(updated._id),
       orderNumber: updated.orderNumber,
@@ -711,125 +805,53 @@ export async function initiatePayment(
   };
 }
 
-interface BuildSessionInput {
-  orderId: string;
-  orderNumber: string;
-  input: CreateOrderInput;
-  currency: string;
-  successUrl: string;
-  cancelUrl: string;
-  expiresAt: Date;
-  actor: OrderActor;
-}
-
-async function buildCheckoutSession(args: BuildSessionInput) {
-  const stripe = getStripe();
-  const amountMinor = toMinorUnits(args.input.pricing.amount, args.currency);
-  if (amountMinor < 50) {
-    throw new ValidationError("Amount is below Stripe's minimum charge");
-  }
-
-  const productName = describeProductName(args.input);
-  const description = describeProductDescription(args.input);
-  // Stripe metadata strings show up on the Stripe dashboard and on the
-  // PaymentIntent description — admins can rebrand the workspace and the
-  // next checkout session reflects it without a redeploy.
-  const branding = await getBranding();
-
-  return stripe.checkout.sessions.create(
-    {
-      mode: "payment",
-      payment_method_types: ["card"],
-      customer_email: args.input.customer.email,
-      client_reference_id: args.orderId,
-      success_url: `${args.successUrl}?order=${encodeURIComponent(args.orderNumber)}&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${args.cancelUrl}?order=${encodeURIComponent(args.orderNumber)}`,
-      expires_at: clampStripeExpiry(args.expiresAt),
-      line_items: [
-        {
-          quantity: 1,
-          price_data: {
-            currency: args.currency.toLowerCase(),
-            unit_amount: amountMinor,
-            product_data: {
-              name: productName,
-              description,
-              // Stripe renders these in the Checkout summary alongside
-              // the price. Only forward when the operator captured a
-              // valid http(s) URL — anything else (data URI, localhost,
-              // empty) Stripe will reject.
-              ...(args.input.vehicle.imageUrl &&
-              /^https?:\/\//i.test(args.input.vehicle.imageUrl)
-                ? { images: [args.input.vehicle.imageUrl] }
-                : {}),
-            },
-          },
-        },
-      ],
-      metadata: {
-        orderId: args.orderId,
-        orderNumber: args.orderNumber,
-        bookingType: args.input.bookingType,
-        actorId: args.actor.id,
-        actorEmail: args.actor.email,
-        appName: branding.brandName,
-      },
-      payment_intent_data: {
-        description: `${branding.brandName} • ${args.orderNumber}`,
-        metadata: {
-          orderId: args.orderId,
-          orderNumber: args.orderNumber,
-        },
-      },
-    },
-    {
-      idempotencyKey: `order:${args.orderId}:checkout`,
-    },
-  );
-}
+// `buildCheckoutSession` + `clampStripeExpiry` removed in Phase 3b:
+// `regeneratePaymentLink` now goes through the gateway interface, which
+// owns the Stripe-specific session-build + expiry clamping in
+// `gateways/stripe.ts`. Keeping a parallel helper here would be a
+// permanent Stripe back door for per-org routing to leak through.
 
 /**
- * Stripe's checkout session expiry must be between 30 minutes and 24 hours
- * from now. Clamp accordingly.
+ * Derive gateway-facing product copy from the order's line items +
+ * optional scheduling window. Single-line orders use the line name;
+ * multi-line orders synthesize a "+ N more" summary. An attribute named
+ * `image_url` on the first line (if present) is forwarded to the
+ * gateway's product image slot.
  */
-function clampStripeExpiry(date: Date): number {
-  const now = Date.now();
-  const min = now + 31 * 60 * 1000;
-  const max = now + 23 * 60 * 60 * 1000 + 30 * 60 * 1000;
-  const target = date.getTime();
-  const clamped = Math.min(Math.max(target, min), max);
-  return Math.floor(clamped / 1000);
-}
-
-interface ProductNameInput {
-  bookingType: BookingType;
-  provider: string;
-  vehicle: { company: string; type: string };
-}
-
-function describeProductName(input: ProductNameInput): string {
-  const providerName = resolveProvider({ id: input.provider }).name;
-  const vehicle = `${input.vehicle.company} ${input.vehicle.type}`;
-  switch (input.bookingType) {
-    case BookingType.NEW_BOOKING:
-      return `${providerName} • ${vehicle} rental`;
-    case BookingType.MODIFICATION:
-      return `${providerName} booking modification • ${vehicle}`;
-    case BookingType.CANCELLATION_CHARGE:
-      return `${providerName} cancellation charge • ${vehicle}`;
-    default:
-      return `${providerName} • ${vehicle}`;
+function describeProductForGateway(doc: OrderDoc): {
+  name: string;
+  description: string | null;
+  imageUrls: string[] | undefined;
+} {
+  const line = doc.lineItems?.[0];
+  if (!line) {
+    throw new Error(
+      `Order ${doc.orderNumber} has no lineItems; cannot describe for gateway`,
+    );
   }
-}
-
-interface ProductDescriptionInput {
-  trip: { pickupDate: string; dropoffDate: string };
-}
-
-function describeProductDescription(input: ProductDescriptionInput): string {
-  const pickup = new Date(input.trip.pickupDate).toISOString().slice(0, 10);
-  const drop = new Date(input.trip.dropoffDate).toISOString().slice(0, 10);
-  return `Pick-up: ${pickup} • Drop-off: ${drop}`;
+  const total = doc.lineItems?.length ?? 0;
+  const name = total > 1 ? `${line.name} + ${total - 1} more` : line.name;
+  let description: string | null = null;
+  if (doc.scheduling) {
+    const start = doc.scheduling.startsAt.toISOString().slice(0, 10);
+    const end = doc.scheduling.endsAt
+      ? doc.scheduling.endsAt.toISOString().slice(0, 10)
+      : null;
+    description = end ? `${start} → ${end}` : `Starts ${start}`;
+  } else if (line.description) {
+    description = line.description;
+  }
+  // Universal orders may carry an image_url in line attributes — surface
+  // it if so.
+  const imgAttr =
+    (line.attributes?.image_url as string | null | undefined) ??
+    (line.attributes?.vehicle_image_url as string | null | undefined) ??
+    null;
+  return {
+    name,
+    description,
+    imageUrls: imgAttr ? [imgAttr] : undefined,
+  };
 }
 
 // ---------- Listing / fetching ----------
@@ -840,9 +862,15 @@ export async function listOrders(
 ): Promise<PaginatedResult<OrderDTO>> {
   await connectMongo();
   const filter: Record<string, unknown> = {};
+  // Tenant gate — pinned BEFORE every other clause so query
+  // permutations can't strip it. The PRIMARY cross-tenant isolation
+  // for the list view; the createdBy.userId check below was the
+  // pre-Phase-5a guard but only fired for STAFF.
+  if (ctx.orgId) {
+    filter.orgId = new Types.ObjectId(ctx.orgId);
+  }
   filter.state = query.state ?? RecordState.ACTIVE;
   if (query.status) filter.status = query.status;
-  if (query.bookingType) filter.bookingType = query.bookingType;
 
   // STAFF can only see their own orders unless explicitly granted ORDER_VIEW_ALL.
   const canSeeAll = roleHasPermission(ctx.actor.role, Permission.ORDER_VIEW_ALL);
@@ -894,7 +922,9 @@ export async function getOrderById(
 ): Promise<OrderDTO> {
   await connectMongo();
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
-  const doc = await Order.findById(id).lean<OrderDoc & { _id: Types.ObjectId }>();
+  const doc = await Order.findOne(
+    scopedOrderFilter(id, ctx.orgId),
+  ).lean<OrderDoc & { _id: Types.ObjectId }>();
   if (!doc) throw new NotFoundError("Order not found");
 
   const canSeeAll = roleHasPermission(ctx.actor.role, Permission.ORDER_VIEW_ALL);
@@ -908,6 +938,16 @@ export async function getOrderByNumber(
   orderNumber: string,
 ): Promise<OrderDTO | null> {
   await connectMongo();
+  // Public lookup — no ctx.orgId because the caller is the
+  // unauthenticated /pay/success render. Relies on the LEGACY global
+  // unique on `orderNumber` (kept during the Phase 0+1 migration) so
+  // orderNumber is still globally unique. Caller MUST verify the
+  // session id matches the order before doing anything sensitive
+  // (see `reconcileOrderPayment` for the pattern).
+  //
+  // TODO Pass 5b+: drop the global unique once every Order row has
+  // orgId; this function must then accept orgId or be replaced with
+  // a (orderNumber, sessionId) verification helper.
   const doc = await Order.findOne({ orderNumber }).lean<
     OrderDoc & { _id: Types.ObjectId }
   >();
@@ -921,7 +961,7 @@ export async function archiveOrder(
 ): Promise<OrderDTO> {
   await connectMongo();
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
-  const doc = await Order.findById(id);
+  const doc = await Order.findOne(scopedOrderFilter(id, ctx.orgId));
   if (!doc) throw new NotFoundError("Order not found");
 
   if (doc.state === RecordState.ARCHIVED) {
@@ -951,6 +991,7 @@ export async function archiveOrder(
     type: DomainEventType.ORDER_ARCHIVED,
     audience: { kind: "creator", userId: String(doc.createdBy.userId) },
     actor: { id: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+    orgId: doc.orgId ? String(doc.orgId) : (ctx.orgId ?? null),
     payload: {
       orderId: String(doc._id),
       orderNumber: doc.orderNumber,
@@ -972,7 +1013,7 @@ export async function regeneratePaymentLink(
 ): Promise<RegenerateLinkResult> {
   await connectMongo();
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
-  const doc = await Order.findById(id);
+  const doc = await Order.findOne(scopedOrderFilter(id, ctx.orgId));
   if (!doc) throw new NotFoundError("Order not found");
 
   const canSeeAll = roleHasPermission(ctx.actor.role, Permission.ORDER_VIEW_ALL);
@@ -986,77 +1027,82 @@ export async function regeneratePaymentLink(
     throw new ConflictError("Cannot regenerate link on an archived order");
   }
 
-  const settings = await getSettings();
-  const stripe = getStripe();
+  // Per-order tenant scope — same precedence as initiatePayment.
+  const orderOrgId = doc.orgId ? String(doc.orgId) : (ctx.orgId ?? null);
+  // Route the regenerate through the gateway interface (Phase 3b closes
+  // the back door — pre-Phase-3 this called Stripe directly via
+  // `getStripe()`/`buildCheckoutSession`, which made the per-org
+  // Stripe-account routing impossible).
+  const gatewayKey =
+    (doc.payment.gateway as PaymentGatewayKey | null) ??
+    getDefaultGateway().key;
+  const gateway = await getGatewayForOrg(orderOrgId, gatewayKey);
+  if (!gateway) {
+    throw new ConflictError(
+      `${gatewayKey} is not configured for this organization. Reconfigure credentials before regenerating.`,
+    );
+  }
+  if (!gateway.enabled) {
+    throw new ConflictError(
+      `${gateway.label} is not available. Configure credentials in admin settings.`,
+    );
+  }
+
+  const settings = await getSettings(orderOrgId);
+  const branding = await getBranding(orderOrgId);
   const expiresAt = new Date(
     Date.now() + settings.paymentExpiryHours * 60 * 60 * 1000,
   );
 
-  // Expire previous session if still open
+  // Expire previous session via the gateway adapter — works for any
+  // gateway (best-effort; gateway impls log + swallow on
+  // already-expired).
   if (doc.payment.stripeSessionId) {
-    try {
-      await stripe.checkout.sessions.expire(doc.payment.stripeSessionId);
-    } catch (err) {
-      logger.warn("orders.previous_session_expire_failed", {
-        sessionId: doc.payment.stripeSessionId,
-        err: err instanceof Error ? err.message : String(err),
-      });
-    }
+    void gateway.expireSession(doc.payment.stripeSessionId);
   }
 
-  let session: Stripe.Checkout.Session;
+  const gatewayProduct = describeProductForGateway(doc);
+
+  let session: CreatedPaymentSession;
   try {
-    session = await buildCheckoutSession({
+    session = await gateway.createSession({
       orderId: String(doc._id),
       orderNumber: doc.orderNumber,
-      input: {
-        bookingType: doc.bookingType,
-        // Regeneration reuses the snapshot already attached to the order —
-        // never re-validates against the live catalog so disabled providers
-        // can still have outstanding payment links refreshed.
-        provider: doc.provider?.id ?? resolveProvider(undefined).id,
-        customer: doc.customer,
-        vehicle: {
-          company: doc.vehicle.company,
-          type: doc.vehicle.type,
-          imageUrl: doc.vehicle.imageUrl ?? null,
-        },
-        trip: {
-          pickupDate: doc.trip.pickupDate.toISOString(),
-          dropoffDate: doc.trip.dropoffDate.toISOString(),
-        },
-        pricing: {
-          amount: doc.pricing.amount,
-          currency: doc.pricing.currency,
-        },
-        notes: doc.notes ?? undefined,
-      },
+      amount: doc.pricing.amount,
       currency: doc.pricing.currency,
+      customer: doc.customer,
+      productName: gatewayProduct.name,
+      description: gatewayProduct.description ?? "",
+      imageUrls: gatewayProduct.imageUrls,
       successUrl: settings.successRedirectUrl,
       cancelUrl: settings.cancelRedirectUrl,
       expiresAt,
-      actor: ctx.actor,
+      metadata: {
+        orderId: String(doc._id),
+        orderNumber: doc.orderNumber,
+        actorId: ctx.actor.id,
+        actorEmail: ctx.actor.email,
+        appName: branding.brandName,
+      },
     });
   } catch (err) {
     logger.error("orders.regenerate_failed", {
       orderId: String(doc._id),
+      gateway: gatewayKey,
       err: err instanceof Error ? err.message : String(err),
     });
     throw new PaymentError("Could not regenerate the payment link", err);
   }
 
   if (!session.url) {
-    throw new PaymentError("Stripe did not return a checkout URL");
+    throw new PaymentError("Gateway did not return a checkout URL");
   }
 
-  doc.payment.stripeSessionId = session.id;
+  doc.payment.stripeSessionId = session.sessionId;
   doc.payment.checkoutUrl = session.url;
-  doc.payment.expiresAt = new Date(
-    (session.expires_at ?? Math.floor(expiresAt.getTime() / 1000)) * 1000,
-  );
+  doc.payment.expiresAt = session.expiresAt;
   doc.payment.failureReason = null;
-  doc.payment.paymentIntentId =
-    typeof session.payment_intent === "string" ? session.payment_intent : null;
+  doc.payment.paymentIntentId = session.paymentIntentId;
   doc.status = OrderStatus.PAYMENT_PENDING;
   doc.payment.status = OrderStatus.PAYMENT_PENDING;
 
@@ -1071,9 +1117,13 @@ export async function regeneratePaymentLink(
         action: AuditAction.ORDER_PAYMENT_LINK_REGENERATED,
         entityType: AuditEntity.ORDER,
         entityId: String(doc._id),
+        orgId: orderOrgId,
         actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
         request: ctx.request ?? null,
-        metadata: { stripeSessionId: session.id },
+        metadata: {
+          paymentSessionId: session.sessionId,
+          gateway: gatewayKey,
+        },
       },
       txSession,
     );
@@ -1092,11 +1142,8 @@ export async function regeneratePaymentLink(
         },
         request: ctx.request ?? null,
         payload: {
-          paymentSessionId: session.id,
-          paymentIntentId:
-            typeof session.payment_intent === "string"
-              ? session.payment_intent
-              : null,
+          paymentSessionId: session.sessionId,
+          paymentIntentId: session.paymentIntentId,
           checkoutUrl: session.url,
           amount: doc.pricing.amount,
           currency: doc.pricing.currency,
@@ -1105,11 +1152,8 @@ export async function regeneratePaymentLink(
             : null,
         },
         refs: {
-          paymentSessionId: session.id,
-          paymentIntentId:
-            typeof session.payment_intent === "string"
-              ? session.payment_intent
-              : null,
+          paymentSessionId: session.sessionId,
+          paymentIntentId: session.paymentIntentId,
           customerEmail: doc.customer.email,
         },
       },
@@ -1130,6 +1174,7 @@ export async function regeneratePaymentLink(
     type: DomainEventType.ORDER_LINK_REGENERATED,
     audience: { kind: "creator", userId: String(doc.createdBy.userId) },
     actor: { id: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+    orgId: doc.orgId ? String(doc.orgId) : (ctx.orgId ?? null),
     payload: {
       orderId: String(doc._id),
       orderNumber: doc.orderNumber,
@@ -1157,7 +1202,11 @@ export async function deleteOrders(
   if (valid.length === 0) return { deleted: 0, blockedPaidIds: [] };
 
   const objectIds = valid.map((id) => new Types.ObjectId(id));
-  const docs = await Order.find({ _id: { $in: objectIds } })
+  // Pin orgId on the load AND on the delete so a Tenant A admin
+  // can't pass Tenant B order ids through this endpoint.
+  const docFilter: Record<string, unknown> = { _id: { $in: objectIds } };
+  if (ctx.orgId) docFilter.orgId = new Types.ObjectId(ctx.orgId);
+  const docs = await Order.find(docFilter)
     .select({ _id: 1, orderNumber: 1, status: 1 })
     .lean<{ _id: Types.ObjectId; orderNumber: string; status: OrderStatus }[]>();
 
@@ -1171,7 +1220,14 @@ export async function deleteOrders(
   }
 
   const deletableIds = deletable.map((d) => d._id);
-  const res = await Order.deleteMany({ _id: { $in: deletableIds } });
+  // Defense-in-depth: pin orgId on the delete too. `deletable` was
+  // already filtered by orgId on the find above, so the ids can only
+  // belong to the actor's tenant — but a future code path that
+  // rebuilds the id list shouldn't be able to bypass the tenant
+  // boundary by accident.
+  const deleteFilter: Record<string, unknown> = { _id: { $in: deletableIds } };
+  if (ctx.orgId) deleteFilter.orgId = new Types.ObjectId(ctx.orgId);
+  const res = await Order.deleteMany(deleteFilter);
 
   await recordAudit({
     action: AuditAction.ORDER_DELETED,
@@ -1211,7 +1267,7 @@ export async function setOrderRiskFlag(
 ): Promise<OrderDTO> {
   await connectMongo();
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
-  const doc = await Order.findById(id);
+  const doc = await Order.findOne(scopedOrderFilter(id, ctx.orgId));
   if (!doc) throw new NotFoundError("Order not found");
 
   if (input.flagged) {
@@ -1270,7 +1326,7 @@ export async function updateOrderCustomer(
 }> {
   await connectMongo();
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
-  const doc = await Order.findById(id);
+  const doc = await Order.findOne(scopedOrderFilter(id, ctx.orgId));
   if (!doc) throw new NotFoundError("Order not found");
 
   const canSeeAll = roleHasPermission(ctx.actor.role, Permission.ORDER_VIEW_ALL);
@@ -1383,7 +1439,10 @@ export async function reconcileOrderPayment(
 ): Promise<ReconcileResult> {
   await connectMongo();
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
-  const doc = await Order.findById(id);
+  // Authed path: pin orgId. Public path (no ctx — /pay/success
+  // render): no orgId available; the sessionId match below is the
+  // tenant boundary surrogate.
+  const doc = await Order.findOne(scopedOrderFilter(id, ctx?.orgId));
   if (!doc) throw new NotFoundError("Order not found");
 
   if (ctx?.actor) {
@@ -1431,10 +1490,14 @@ export async function reconcileOrderPayment(
   const wasPending =
     doc.status === OrderStatus.PAYMENT_PENDING ||
     doc.status === OrderStatus.LINK_GENERATED;
-  const gateway = getGateway(
-    (doc.payment.gateway as PaymentGatewayKey | null) ?? getDefaultGateway().key,
-  );
-  if (!gateway.enabled) {
+  // Reconcile resolves the gateway from the ORDER's persisted orgId
+  // — not ctx — because the public `/pay/success` render reconciles
+  // without an actor present. The order itself is the tenant boundary.
+  const orderOrgId = doc.orgId ? String(doc.orgId) : null;
+  const gatewayKey: PaymentGatewayKey =
+    (doc.payment.gateway as PaymentGatewayKey | null) ?? getDefaultGateway().key;
+  const gateway = await getGatewayForOrg(orderOrgId, gatewayKey);
+  if (!gateway || !gateway.enabled) {
     return {
       order: orderToDTO(doc.toObject({ getters: false }) as OrderDoc & { _id: Types.ObjectId }),
       changed: false,
@@ -1477,9 +1540,9 @@ export async function reconcileOrderPayment(
       paidAtMs: Date.now(),
       source: "reconcile",
     });
-    const refreshed = await Order.findById(id).lean<
-      OrderDoc & { _id: Types.ObjectId }
-    >();
+    const refreshed = await Order.findOne(
+      scopedOrderFilter(id, ctx?.orgId),
+    ).lean<OrderDoc & { _id: Types.ObjectId }>();
     if (!refreshed) throw new NotFoundError("Order not found");
     return {
       order: orderToDTO(refreshed),
@@ -1498,9 +1561,9 @@ export async function reconcileOrderPayment(
       doc.payment.status = OrderStatus.EXPIRED;
       await doc.save();
     }
-    const refreshed = await Order.findById(id).lean<
-      OrderDoc & { _id: Types.ObjectId }
-    >();
+    const refreshed = await Order.findOne(
+      scopedOrderFilter(id, ctx?.orgId),
+    ).lean<OrderDoc & { _id: Types.ObjectId }>();
     return {
       order: orderToDTO(refreshed!),
       changed: wasPending,
@@ -1523,9 +1586,15 @@ export async function reconcileOrderPayment(
   };
 }
 
-export async function listAtRiskOrders(): Promise<OrderDTO[]> {
+export async function listAtRiskOrders(
+  orgId: string | null,
+): Promise<OrderDTO[]> {
   await connectMongo();
-  const docs = await Order.find({
+  // Pin orgId so the /admin/disputes board doesn't leak Tenant B's
+  // at-risk orders to Tenant A's admin. Legacy callers (orgId null)
+  // still get the global view — to be removed once the route is
+  // updated to pass actor.orgId.
+  const filter: Record<string, unknown> = {
     $or: [
       { "risk.flagged": true },
       {
@@ -1533,7 +1602,9 @@ export async function listAtRiskOrders(): Promise<OrderDTO[]> {
         status: { $in: [OrderStatus.FAILED, OrderStatus.EXPIRED] },
       },
     ],
-  })
+  };
+  if (orgId) filter.orgId = new Types.ObjectId(orgId);
+  const docs = await Order.find(filter)
     .sort({ "risk.flagged": -1, updatedAt: -1 })
     .limit(100)
     .lean<(OrderDoc & { _id: Types.ObjectId })[]>();

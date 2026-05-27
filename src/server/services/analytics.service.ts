@@ -1,7 +1,6 @@
 import "server-only";
 
 import {
-  BookingType,
   OrderStatus,
   RecordState,
 } from "@/lib/constants/enums";
@@ -31,8 +30,8 @@ export interface DailyPoint {
   orders: number;
 }
 
-export interface BookingTypeBreakdown {
-  bookingType: BookingType;
+export interface ItemTypeBreakdown {
+  itemTypeKey: string;
   count: number;
   revenue: number;
 }
@@ -48,7 +47,7 @@ export interface AnalyticsSummary {
   range: { from: string; to: string };
   totals: AnalyticsTotals;
   daily: DailyPoint[];
-  bookingTypes: BookingTypeBreakdown[];
+  itemTypes: ItemTypeBreakdown[];
   topStaff: StaffBreakdown[];
 }
 
@@ -113,20 +112,21 @@ export async function getAnalyticsSummary(
       { $sort: { _id: 1 } },
     ]),
     Order.aggregate<{
-      _id: BookingType;
+      _id: string;
       count: number;
       revenue: number;
     }>([
       { $match: baseMatch },
+      { $unwind: { path: "$lineItems", preserveNullAndEmptyArrays: false } },
       {
         $group: {
-          _id: "$bookingType",
+          _id: "$lineItems.itemTypeKey",
           count: { $sum: 1 },
           revenue: {
             $sum: {
               $cond: [
                 { $eq: ["$status", OrderStatus.PAID] },
-                { $ifNull: ["$payment.amountReceived", "$pricing.amount"] },
+                { $ifNull: ["$lineItems.total", 0] },
                 0,
               ],
             },
@@ -216,8 +216,8 @@ export async function getAnalyticsSummary(
       revenue: round2(d.revenue),
       orders: d.orders,
     })),
-    bookingTypes: bookingAgg.map((b) => ({
-      bookingType: b._id,
+    itemTypes: bookingAgg.map((b) => ({
+      itemTypeKey: b._id,
       count: b.count,
       revenue: round2(b.revenue),
     })),

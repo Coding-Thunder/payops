@@ -71,6 +71,29 @@ const serverSchema = z.object({
    * widget to render AND the server to validate.
    */
   TURNSTILE_SECRET_KEY: z.string().optional(),
+
+  /**
+   * AES-256 master key (32 bytes, base64-encoded) used to encrypt
+   * per-org gateway credentials at rest. Optional during the
+   * multi-tenant migration window — the legacy tenant continues to
+   * use env-based Stripe credentials and never touches this. Required
+   * the moment ANY org saves a per-org gateway credential.
+   *
+   * Generate: `openssl rand -base64 32`
+   *
+   * Treat as a high-value secret. Loss of the key locks all encrypted
+   * credentials. Rotation: write new rows with the new key (the field
+   * `keyVersion` on each encrypted blob discriminates which key to
+   * use at decrypt time), then re-encrypt old rows and drop the
+   * previous key — manage out-of-band.
+   */
+  PAYOPS_MASTER_KEY: z
+    .string()
+    .optional()
+    .refine(
+      (v) => !v || Buffer.from(v, "base64").length === 32,
+      "PAYOPS_MASTER_KEY must decode to exactly 32 bytes (base64). Generate one with: openssl rand -base64 32",
+    ),
 });
 
 const clientSchema = z.object({

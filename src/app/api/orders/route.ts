@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { Permission } from "@/lib/constants/permissions";
 import {
-  createOrderSchema,
+  createOrderUniversalSchema,
   listOrdersQuerySchema,
 } from "@/lib/validation";
 import { getRequestContext } from "@/server/api/request-context";
@@ -19,15 +19,23 @@ export const GET = withApi(async (req: NextRequest) => {
   const query = listOrdersQuerySchema.parse(
     Object.fromEntries(url.searchParams.entries()),
   );
-  const data = await listOrders(query, { actor });
+  const data = await listOrders(query, { actor, orgId: actor.orgId });
   return jsonOk(data);
 });
 
+/**
+ * Universal commerce shape only: `lineItems[]` + optional `scheduling`.
+ * Pass 5h removed the legacy rental discriminator.
+ */
 export const POST = withApi(async (req: NextRequest) => {
   const actor = await requirePermission(Permission.ORDER_CREATE);
   const body = await req.json();
-  const input = createOrderSchema.parse(body);
   const ctx = await getRequestContext();
-  const result = await createOrder(input, { actor, request: ctx });
+  const parsed = createOrderUniversalSchema.parse(body);
+  const result = await createOrder(parsed, {
+    actor,
+    orgId: actor.orgId,
+    request: ctx,
+  });
   return jsonOk(result, { status: 201 });
 });

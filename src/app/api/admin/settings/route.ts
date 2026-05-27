@@ -11,8 +11,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export const GET = withApi(async () => {
-  await requirePermission(Permission.SETTINGS_VIEW);
-  const data = await getSettings();
+  // `requirePermission` returns the auth user with `orgId` resolved
+  // from the JWT (new tokens) or User.primaryOrgId (legacy tokens
+  // pre-migration). Threading it through means tenant #2 reads its
+  // own settings row instead of the legacy singleton.
+  const actor = await requirePermission(Permission.SETTINGS_VIEW);
+  const data = await getSettings(actor.orgId);
   return jsonOk(data);
 });
 
@@ -25,6 +29,7 @@ export const PATCH = withApi(async (req: NextRequest) => {
     actorId: actor.id,
     actorName: actor.name,
     actorRole: actor.role,
+    orgId: actor.orgId,
     request: ctx,
   });
   return jsonOk(data);

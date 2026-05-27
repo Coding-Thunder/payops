@@ -50,6 +50,9 @@ export interface EmailTemplateContent {
 }
 
 export interface EmailTemplateDoc extends EmailTemplateContent {
+  /** Tenant boundary. Nullable during migration; per-org template
+   *  overrides land once the column is fully backfilled. */
+  orgId?: Types.ObjectId | null;
   templateKey: EmailTemplateKey;
   version: number;
   active: boolean;
@@ -75,6 +78,12 @@ const creatorSchema = new Schema(
 
 const emailTemplateSchema = new Schema<EmailTemplateDoc>(
   {
+    orgId: {
+      type: Schema.Types.ObjectId,
+      ref: "Organization",
+      default: null,
+      index: true,
+    },
     templateKey: {
       type: String,
       enum: EMAIL_TEMPLATE_KEYS,
@@ -121,6 +130,17 @@ emailTemplateSchema.index(
 // concurrent writes; serializing activation through a single service
 // is cleaner).
 emailTemplateSchema.index({ templateKey: 1, active: 1 });
+// Per-tenant unique (templateKey, version). Partial filter keeps the
+// legacy global unique authoritative during migration. Once every row
+// carries orgId, drop the global unique and promote this one.
+emailTemplateSchema.index(
+  { orgId: 1, templateKey: 1, version: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { orgId: { $type: "objectId" } },
+    name: "email_templates_orgId_key_version_unique",
+  },
+);
 
 export const EmailTemplate: Model<EmailTemplateDoc> =
   registerModel<EmailTemplateDoc>("EmailTemplate", emailTemplateSchema);

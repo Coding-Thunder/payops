@@ -6,7 +6,7 @@
 export { EmailLayout } from "./email-layout";
 export { EmailHeader } from "./email-header";
 export { EmailFooter } from "./email-footer";
-export { ProviderBadge } from "./provider-badge";
+// Pass 5h: rental ProviderBadge component removed.
 export { SuccessBanner } from "./success-banner";
 export { SummaryCard } from "./summary-card";
 export { MetadataRow } from "./metadata-row";

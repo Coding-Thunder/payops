@@ -105,7 +105,15 @@ export function LoginForm({ nextPath, turnstileSiteKey }: LoginFormProps) {
           name="password"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Password</FormLabel>
+              <div className="flex items-center justify-between">
+                <FormLabel>Password</FormLabel>
+                <a
+                  href="/forgot-password"
+                  className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
+                >
+                  Forgot?
+                </a>
+              </div>
               <FormControl>
                 <Input
                   type="password"

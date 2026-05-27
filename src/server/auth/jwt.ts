@@ -11,6 +11,16 @@ export interface SessionPayload {
   email: string;
   name: string;
   role: UserRole;
+  /** Active organization for this session. Optional during the
+   *  single-tenant → multi-tenant migration window: tokens signed
+   *  pre-migration carry no orgId and the session resolver falls back
+   *  to `User.primaryOrgId`. Newly issued tokens always include it. */
+  orgId?: string;
+  /** Every organization the user is a member of (any status). Used by
+   *  the future org-switcher UI to enumerate options without an extra
+   *  query on every page. Stays small (typically 1 today, single-digit
+   *  later). Optional for back-compat. */
+  orgIds?: string[];
 }
 
 let cachedKey: Uint8Array | null = null;
@@ -59,11 +69,20 @@ export function getSessionTtlSeconds(): number {
 
 export async function signSession(payload: SessionPayload): Promise<string> {
   const ttl = getSessionTtlSeconds();
-  return new SignJWT({
+  const claims: Record<string, unknown> = {
     email: payload.email,
     name: payload.name,
     role: payload.role,
-  })
+  };
+  // Only include org claims when present. Pre-migration code that calls
+  // `signSession` without an orgId continues to produce a backwards-
+  // compatible token — `verifySession` returns `orgId: undefined` and
+  // the session resolver falls back to `User.primaryOrgId`.
+  if (payload.orgId) claims.orgId = payload.orgId;
+  if (payload.orgIds && payload.orgIds.length > 0) {
+    claims.orgIds = payload.orgIds;
+  }
+  return new SignJWT(claims)
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setIssuer(ISSUER)
     .setAudience(AUDIENCE)
@@ -91,11 +110,21 @@ export async function verifySession(
     ) {
       return null;
     }
+    const orgId =
+      typeof payload.orgId === "string" && payload.orgId.length > 0
+        ? payload.orgId
+        : undefined;
+    const orgIdsRaw = Array.isArray(payload.orgIds) ? payload.orgIds : null;
+    const orgIds = orgIdsRaw
+      ? orgIdsRaw.filter((id): id is string => typeof id === "string" && id.length > 0)
+      : undefined;
     return {
       sub: payload.sub,
       email: payload.email as string,
       name: payload.name as string,
       role: payload.role as UserRole,
+      orgId,
+      orgIds,
     };
   } catch {
     return null;

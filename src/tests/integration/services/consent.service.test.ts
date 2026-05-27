@@ -48,11 +48,12 @@ async function seedRequestedConsent() {
         "I confirm that I understand and agree to proceed with this payment and booking.",
       consentEmailSubject: "Test subject",
       snapshot: {
-        bookingType: order.bookingType,
-        provider: order.provider.name,
-        vehicle: `${order.vehicle.company} • ${order.vehicle.type}`,
-        pickupDate: order.trip.pickupDate.toISOString(),
-        dropoffDate: order.trip.dropoffDate.toISOString(),
+        summary:
+          (order.lineItems ?? [])
+            .map((l) => l.name)
+            .join(", ") || order.orderNumber,
+        startsAt: order.scheduling?.startsAt.toISOString() ?? null,
+        endsAt: order.scheduling?.endsAt?.toISOString() ?? null,
         amount: order.pricing.amount,
         currency: order.pricing.currency,
         paymentLinkRef: order.payment.checkoutUrl ?? null,

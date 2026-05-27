@@ -16,6 +16,10 @@ const AUDIT_ACTIONS = Object.values(AuditAction);
 const AUDIT_ENTITIES = Object.values(AuditEntity);
 
 export interface AuditLogDoc {
+  /** Tenant boundary. Nullable during the migration — null only for
+   *  pre-migration rows. Cross-tenant audit views (platform-admin
+   *  surfaces) bypass this; per-tenant admin pages must filter on it. */
+  orgId?: Types.ObjectId | null;
   action: AuditAction;
   entityType: AuditEntity;
   entityId?: string | null;
@@ -39,6 +43,12 @@ export type AuditLogDocument = HydratedDocument<AuditLogDoc>;
 
 const auditLogSchema = new Schema<AuditLogDoc>(
   {
+    orgId: {
+      type: Schema.Types.ObjectId,
+      ref: "Organization",
+      default: null,
+      index: true,
+    },
     action: { type: String, enum: AUDIT_ACTIONS, required: true, index: true },
     entityType: {
       type: String,
@@ -83,6 +93,10 @@ const auditLogSchema = new Schema<AuditLogDoc>(
 auditLogSchema.index({ createdAt: -1 });
 auditLogSchema.index({ action: 1, createdAt: -1 });
 auditLogSchema.index({ entityType: 1, entityId: 1, createdAt: -1 });
+auditLogSchema.index(
+  { orgId: 1, createdAt: -1 },
+  { partialFilterExpression: { orgId: { $type: "objectId" } } },
+);
 
 import { registerModel } from "./register";
 export const AuditLog: Model<AuditLogDoc> = registerModel<AuditLogDoc>(

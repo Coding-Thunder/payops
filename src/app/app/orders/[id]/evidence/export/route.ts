@@ -43,7 +43,7 @@ export const GET = withApi(async (_req: Request, { params }: Params) => {
   const actor = await requirePermission(Permission.EVIDENCE_EXPORT);
   const { id } = await params;
   const reqCtx = await getRequestContext();
-  const chain = await getEvidenceChain(id, { actor });
+  const chain = await getEvidenceChain(id, { actor, orgId: actor.orgId });
 
   if (chain.events.length > PDF_MAX_EVENTS) {
     return NextResponse.json(

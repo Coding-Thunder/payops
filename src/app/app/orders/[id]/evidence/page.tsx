@@ -38,10 +38,16 @@ export default async function OrderEvidencePage({
 
 async function loadChainOrNotFound(
   id: string,
-  user: { id: string; name: string; email: string; role: import("@/lib/constants/enums").UserRole },
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    role: import("@/lib/constants/enums").UserRole;
+    orgId: string | null;
+  },
 ) {
   try {
-    return await getEvidenceChain(id, { actor: user });
+    return await getEvidenceChain(id, { actor: user, orgId: user.orgId });
   } catch (err) {
     if (err instanceof NotFoundError) notFound();
     if (err instanceof ForbiddenError) notFound();

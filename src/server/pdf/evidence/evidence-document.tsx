@@ -2,7 +2,6 @@ import "server-only";
 
 import {
   Document,
-  Image,
   Page,
   StyleSheet,
   Text,
@@ -192,37 +191,25 @@ export function EvidenceDocument({
           label="Amount"
           value={formatCurrency(order.pricing.amount, order.pricing.currency)}
         />
-        <Row label="Provider" value={order.provider?.name ?? "—"} />
         <Row
-          label="Vehicle"
-          value={`${order.vehicle.company} · ${order.vehicle.type}`}
+          label={order.lineItems.length === 1 ? "Item" : "Items"}
+          value={
+            order.lineItems
+              .map((l) =>
+                l.quantity > 1 ? `${l.quantity}× ${l.name}` : l.name,
+              )
+              .join(", ") || "—"
+          }
         />
+        {order.scheduling ? (
+          <Row
+            label="Window"
+            value={`${order.scheduling.startsAt}${
+              order.scheduling.endsAt ? ` → ${order.scheduling.endsAt}` : ""
+            }`}
+          />
+        ) : null}
         <Row label="Created" value={order.createdAt} />
-
-        <View style={styles.imagesRow}>
-          {order.provider?.logo ? (
-            <View style={styles.imageTile}>
-              <Text style={styles.imageTileLabel}>Provider</Text>
-              <Image
-                src={order.provider.logo}
-                style={styles.imageTileImg}
-              />
-              <Text style={styles.imageTileCaption}>{order.provider.name}</Text>
-            </View>
-          ) : null}
-          {order.vehicle.imageUrl ? (
-            <View style={styles.imageTile}>
-              <Text style={styles.imageTileLabel}>Vehicle</Text>
-              <Image
-                src={order.vehicle.imageUrl}
-                style={styles.imageTileImg}
-              />
-              <Text style={styles.imageTileCaption}>
-                {order.vehicle.company} · {order.vehicle.type}
-              </Text>
-            </View>
-          ) : null}
-        </View>
 
         <Text style={styles.h2}>Consent evidence</Text>
         <ConsentBlock events={events} />

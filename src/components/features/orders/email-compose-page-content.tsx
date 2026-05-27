@@ -24,7 +24,6 @@ import { OrderDetailsSkeleton } from "@/components/common/skeletons";
 import { CenteredSpinner } from "@/components/ui/spinner";
 import { useOrderQuery } from "@/hooks/use-order-query";
 import { ApiClientError } from "@/lib/api-client";
-import { BookingTypeLabel } from "@/lib/constants/labels";
 import { formatCurrency } from "@/lib/format";
 
 interface EmailComposePageContentProps {
@@ -139,17 +138,18 @@ export function EmailComposePageContent({
               value={`${order.customer.name} · ${order.customer.email}`}
             />
             <SummaryRow
-              label="Booking"
-              value={BookingTypeLabel[order.bookingType]}
-            />
-            <SummaryRow
               label="Amount"
               value={formatCurrency(order.pricing.amount, order.pricing.currency)}
             />
-            <SummaryRow label="Provider" value={order.provider?.name ?? "—"} />
             <SummaryRow
-              label="Vehicle"
-              value={`${order.vehicle.company} · ${order.vehicle.type}`}
+              label={order.lineItems.length === 1 ? "Item" : "Items"}
+              value={
+                order.lineItems
+                  .map((l) =>
+                    l.quantity > 1 ? `${l.quantity}× ${l.name}` : l.name,
+                  )
+                  .join(", ") || "—"
+              }
             />
             <SummaryRow label="Order" value={order.orderNumber} mono />
           </dl>
@@ -159,9 +159,7 @@ export function EmailComposePageContent({
       <EmailComposer
         order={order}
         initialHtml=""
-        defaultSubject={`Complete your ${
-          order.provider?.name ?? "rental"
-        } payment • ${order.orderNumber}`}
+        defaultSubject={`Complete your payment • ${order.orderNumber}`}
         onSent={(at) => setSentAt(at)}
       />
 

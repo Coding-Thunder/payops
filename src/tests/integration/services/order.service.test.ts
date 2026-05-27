@@ -1,3 +1,4 @@
+import { Types } from "mongoose";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -37,12 +38,30 @@ beforeEach(async () => {
   await createSettings();
 });
 
+async function seedRentalBookingType(orgId: string): Promise<void> {
+  const { ItemType } = await import("@/server/db/models");
+  await ItemType.create({
+    orgId: new Types.ObjectId(orgId),
+    key: "rental_booking",
+    name: "Rental booking",
+    pricingModel: "TIME_WINDOW",
+    requiresScheduling: true,
+    inventoryTracked: false,
+    attributeSchema: [],
+    confirmationEmailBlocks: [],
+  });
+}
+
 describe("createOrder", () => {
   it("persists an order in NOT_INITIATED state without contacting Stripe", async () => {
     const actor = actorFor(UserRole.ADMIN);
+    await seedRentalBookingType(actor.orgId!);
     const stripe = getCurrentTestStripe();
 
-    const result = await createOrder(validCreateOrderInput(), { actor });
+    const result = await createOrder(validCreateOrderInput(), {
+      actor,
+      orgId: actor.orgId,
+    });
 
     expect(result.order.id).toMatch(/^[a-f0-9]{24}$/);
     expect(result.order.status).toBe(OrderStatus.NOT_INITIATED);
@@ -65,7 +84,11 @@ describe("createOrder", () => {
 
   it("emits an ORDER_CREATED audit row tagged with the actor", async () => {
     const actor = actorFor(UserRole.STAFF, { name: "Sara Staff" });
-    const { order } = await createOrder(validCreateOrderInput(), { actor });
+    await seedRentalBookingType(actor.orgId!);
+    const { order } = await createOrder(validCreateOrderInput(), {
+      actor,
+      orgId: actor.orgId,
+    });
     const audit = await AuditLog.findOne({
       action: AuditAction.ORDER_CREATED,
       entityId: order.id,
@@ -75,23 +98,16 @@ describe("createOrder", () => {
     expect(audit?.metadata).toMatchObject({ orderNumber: order.orderNumber });
   });
 
-  it("rejects a booking type not in the active settings", async () => {
-    await createSettings({ allowedBookingTypes: ["NEW_BOOKING"] });
-    await expect(
-      createOrder(validCreateOrderInput({ bookingType: "MODIFICATION" }), {
-        actor: actorFor(UserRole.ADMIN),
-      }),
-    ).rejects.toBeInstanceOf(ValidationError);
-  });
-
   it("rejects amounts below the model's 50-cent floor at creation", async () => {
     // Mongoose `min: 0.5` validator fires synchronously inside create().
     // Stripe is no longer involved here — order persistence simply
     // refuses to save.
+    const actor = actorFor(UserRole.ADMIN);
+    await seedRentalBookingType(actor.orgId!);
     await expect(
       createOrder(
         validCreateOrderInput({ pricing: { amount: 0.4, currency: "USD" } }),
-        { actor: actorFor(UserRole.ADMIN) },
+        { actor, orgId: actor.orgId },
       ),
     ).rejects.toThrow();
 

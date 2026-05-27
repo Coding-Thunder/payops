@@ -546,10 +546,9 @@ function PaymentSummaryCard({
         <dl className="grid grid-cols-2 gap-3 text-[12.5px]">
           <Meta label="Customer" value={order.customer.name} />
           <Meta label="Amount" value={formatAmount(order)} />
-          <Meta label="Provider" value={order.provider?.name ?? "—"} />
           <Meta
-            label="Vehicle"
-            value={`${order.vehicle.company} · ${order.vehicle.type}`}
+            label={order.lineItems.length === 1 ? "Item" : "Items"}
+            value={order.lineItems[0]?.name ?? "—"}
           />
         </dl>
         {order.payment.paymentUrl ? (

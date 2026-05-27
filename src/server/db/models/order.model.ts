@@ -6,8 +6,6 @@ import {
 } from "mongoose";
 
 import {
-  BOOKING_TYPES,
-  BookingType,
   CONSENT_STATUSES,
   ConsentStatus,
   CURRENCIES,
@@ -23,11 +21,19 @@ import {
   RECORD_STATES,
   RecordState,
 } from "@/lib/constants/enums";
-import { PROVIDER_KEY_REGEX } from "@/lib/constants/providers";
+import {
+  ITEM_TYPE_KEY_REGEX,
+  SchedulingType,
+  SCHEDULING_TYPES,
+} from "@/lib/constants/items";
 
 export interface OrderDoc {
+  /** Tenant boundary. Nullable during the single-tenant → multi-tenant
+   *  migration window so legacy rows can be backfilled without rejecting
+   *  reads. Becomes required in a follow-up pass once every row carries
+   *  one and every write site has been migrated to `OrgScopedRepo`. */
+  orgId?: Types.ObjectId | null;
   orderNumber: string;
-  bookingType: BookingType;
   status: OrderStatus;
   state: RecordState;
 
@@ -35,29 +41,6 @@ export interface OrderDoc {
     name: string;
     email: string;
     phone: string;
-  };
-  /** Rental brand snapshot. Frozen at creation so receipts and dashboards
-   *  keep showing the same brand even if the registry is later rebranded
-   *  or the catalog entry is deleted. */
-  provider: {
-    id: string;
-    name: string;
-    logo: string;
-    primaryColor?: string | null;
-    onPrimaryColor?: string | null;
-  };
-  vehicle: {
-    company: string;
-    type: string;
-    /** Optional public URL the operator provides at creation time so the
-     *  customer sees the car on the order detail page, the Stripe
-     *  checkout summary, and the payment-confirmation email. Stored
-     *  verbatim — we don't proxy, resize, or rehost it. */
-    imageUrl?: string | null;
-  };
-  trip: {
-    pickupDate: Date;
-    dropoffDate: Date;
   };
   pricing: {
     /** Stored in MAJOR units (e.g. dollars), 2-decimal precision. */
@@ -94,6 +77,36 @@ export interface OrderDoc {
     name: string;
     email: string;
   };
+
+  /**
+   * Phase 5b — universal commerce line items.
+   *
+   * Optional / nullable during the cutover. Tenant #1's existing
+   * Order rows have `lineItems: []` (default). New orders post-Pass
+   * 5d will populate this; once Tenant #1 is migrated (Pass 5c) and
+   * the deprecated `vehicle/trip/provider` fields are dropped (Pass
+   * 5h), this becomes the canonical "what the customer is paying
+   * for" structure.
+   *
+   * Each entry is a SNAPSHOT taken at order-create time — `name`,
+   * `unitPrice`, and resolved `attributes` are frozen so a later
+   * Catalog edit / archive doesn't rewrite history.
+   */
+  lineItems?: OrderLineItem[];
+
+  /**
+   * Optional time window the order is bound to. Mirrors the legacy
+   * `trip` subdoc for rental orders but is generic: appointment
+   * slots, subscription cycles, consulting engagements all use the
+   * same shape. Null for retail / one-shot service orders.
+   *
+   * Pass 5c migration copies Tenant #1's existing `trip` →
+   * `scheduling` with `type: FIXED_WINDOW`. New orders set this
+   * directly from the form when at least one line's ItemType has
+   * `requiresScheduling`.
+   */
+  scheduling?: OrderScheduling | null;
+
   /** Snapshot of the cancellation policy at the moment this order was
    *  created. Frozen for the lifetime of the order so disputes can show
    *  the exact terms the customer was charged under. */
@@ -147,6 +160,54 @@ export interface OrderDoc {
   updatedAt: Date;
 }
 
+/**
+ * Universal commerce line item. Snapshot embedded on the Order at
+ * create-time so the order's "what was bought" stays consistent even
+ * when the catalog row is later edited / archived.
+ *
+ * `attributes` shape is per-tenant per-vertical, validated at the
+ * service layer against the referenced `ItemType.attributeSchema`.
+ * Persisted as `Mixed` because the SCHEMA is per-org — we deliberately
+ * don't push that knowledge into the persistence layer.
+ */
+export interface OrderLineItem {
+  /** Catalog reference. Null for ad-hoc lines (e.g. one-off charges,
+   *  custom service items that aren't worth a catalog row). */
+  itemId?: Types.ObjectId | null;
+  /** Stable identifier matching `ItemType.key`. Persisted so the
+   *  email renderer can pick the right blocks without joining
+   *  back to the live ItemType (which might have been edited). */
+  itemTypeKey: string;
+  /** Snapshot from the Item.name at creation time. */
+  name: string;
+  description?: string | null;
+  quantity: number;
+  /** Major units. Mirrors Order.pricing convention. */
+  unitPrice: number;
+  /** Computed = `quantity * unitPrice`. Snapshotted so a later
+   *  pricingModel change can't retroactively edit historical totals. */
+  total: number;
+  /** Per-vertical payload. Validated against ItemType at service-layer. */
+  attributes: Record<string, unknown>;
+  /** Optional line-level scheduling (e.g. one of two cars rented for
+   *  different windows). Falls back to the order-level scheduling
+   *  when null. */
+  scheduling?: OrderScheduling | null;
+}
+
+/**
+ * Order-level (or line-level) time window. Universal across rental
+ * bookings, appointment slots, subscription cycles, consulting
+ * engagements. Null on retail / one-shot orders.
+ */
+export interface OrderScheduling {
+  type: SchedulingType;
+  startsAt: Date;
+  /** Required for FIXED_WINDOW + RECURRING_INTERVAL; nullable for
+   *  OPEN_ENDED (consulting engagement, open-tab service). */
+  endsAt?: Date | null;
+}
+
 export type OrderDocument = HydratedDocument<OrderDoc>;
 
 const customerSchema = new Schema(
@@ -160,47 +221,6 @@ const customerSchema = new Schema(
       maxlength: 254,
     },
     phone: { type: String, required: true, trim: true, maxlength: 32 },
-  },
-  { _id: false },
-);
-
-const vehicleSchema = new Schema(
-  {
-    company: { type: String, required: true, trim: true, maxlength: 80 },
-    type: { type: String, required: true, trim: true, maxlength: 80 },
-    imageUrl: {
-      type: String,
-      default: null,
-      maxlength: 2048,
-      trim: true,
-    },
-  },
-  { _id: false },
-);
-
-const providerSchema = new Schema(
-  {
-    id: {
-      type: String,
-      required: true,
-      uppercase: true,
-      trim: true,
-      maxlength: 32,
-      match: PROVIDER_KEY_REGEX,
-      index: true,
-    },
-    name: { type: String, required: true, trim: true, maxlength: 80 },
-    logo: { type: String, required: true, maxlength: 200 },
-    primaryColor: { type: String, default: null, maxlength: 16 },
-    onPrimaryColor: { type: String, default: null, maxlength: 16 },
-  },
-  { _id: false },
-);
-
-const tripSchema = new Schema(
-  {
-    pickupDate: { type: Date, required: true },
-    dropoffDate: { type: Date, required: true },
   },
   { _id: false },
 );
@@ -263,6 +283,61 @@ const policySchema = new Schema(
     acceptedAt: { type: Date, required: true, default: Date.now },
     version: { type: String, required: true, maxlength: 16, default: "v1" },
     text: { type: String, required: true, maxlength: 4000, default: "" },
+  },
+  { _id: false },
+);
+
+/* ────────── Pass 5b — universal commerce subdocs (additive) ──────────── */
+
+/**
+ * Order.scheduling — optional time window. Same shape used at the
+ * line-item level when individual lines diverge from the order-level
+ * window.
+ */
+const orderSchedulingSchema = new Schema<OrderScheduling>(
+  {
+    type: { type: String, enum: SCHEDULING_TYPES, required: true },
+    startsAt: { type: Date, required: true },
+    endsAt: { type: Date, default: null },
+  },
+  { _id: false },
+);
+
+/**
+ * Order.lineItems[] — universal commerce line item. Replaces the
+ * rental-shaped `vehicle/trip/provider` triple over Pass 5c–5h.
+ *
+ * `attributes` is `Schema.Types.Mixed` deliberately: the per-tenant
+ * ItemType.attributeSchema defines what's allowed, and service-layer
+ * validation in Pass 5d will refuse unknown keys + enforce types.
+ * Keeping the persistence layer schema-shape-free means new
+ * verticals don't require a Mongoose model change.
+ */
+const orderLineItemSchema = new Schema<OrderLineItem>(
+  {
+    itemId: {
+      type: Schema.Types.ObjectId,
+      ref: "Item",
+      default: null,
+    },
+    itemTypeKey: {
+      type: String,
+      required: true,
+      trim: true,
+      lowercase: true,
+      maxlength: 32,
+      match: ITEM_TYPE_KEY_REGEX,
+    },
+    name: { type: String, required: true, trim: true, maxlength: 200 },
+    description: { type: String, default: null, maxlength: 2000 },
+    quantity: { type: Number, required: true, min: 1, default: 1 },
+    // Major units. Same convention as `pricing.amount`. Allow 0 for
+    // promo lines / waived charges; total stays a function of qty
+    // × unitPrice computed at the service layer.
+    unitPrice: { type: Number, required: true, min: 0 },
+    total: { type: Number, required: true, min: 0 },
+    attributes: { type: Schema.Types.Mixed, default: () => ({}) },
+    scheduling: { type: orderSchedulingSchema, default: null },
   },
   { _id: false },
 );
@@ -332,18 +407,18 @@ const disputePointerSchema = new Schema(
 
 const orderSchema = new Schema<OrderDoc>(
   {
+    orgId: {
+      type: Schema.Types.ObjectId,
+      ref: "Organization",
+      default: null,
+      index: true,
+    },
     orderNumber: {
       type: String,
       required: true,
       unique: true,
       index: true,
       maxlength: 32,
-    },
-    bookingType: {
-      type: String,
-      enum: BOOKING_TYPES,
-      required: true,
-      index: true,
     },
     status: {
       type: String,
@@ -360,12 +435,14 @@ const orderSchema = new Schema<OrderDoc>(
       index: true,
     },
     customer: { type: customerSchema, required: true },
-    provider: { type: providerSchema, required: true },
-    vehicle: { type: vehicleSchema, required: true },
-    trip: { type: tripSchema, required: true },
     pricing: { type: pricingSchema, required: true },
     payment: { type: paymentSchema, required: true },
     createdBy: { type: creatorSchema, required: true },
+    // Pass 5b — universal commerce additions (optional, default
+    // empty/null). Existing rental orders are unaffected; new code
+    // paths (Pass 5d+) will populate these on every order.
+    lineItems: { type: [orderLineItemSchema], default: () => [] },
+    scheduling: { type: orderSchedulingSchema, default: null },
     policy: {
       type: policySchema,
       required: true,
@@ -410,14 +487,37 @@ orderSchema.index({ state: 1, createdAt: -1 });
 orderSchema.index({ "provider.id": 1, createdAt: -1 });
 orderSchema.index({ "consent.status": 1, createdAt: -1 });
 orderSchema.index({ "dispute.status": 1, "dispute.openedAt": -1 });
+// Org-scoped list queries — every multi-tenant read filters on orgId.
+// Partial index ignores legacy null-orgId rows so the index stays small
+// during the migration window.
+orderSchema.index(
+  { orgId: 1, createdAt: -1 },
+  { partialFilterExpression: { orgId: { $exists: true, $ne: null } } },
+);
+orderSchema.index(
+  { orgId: 1, status: 1, createdAt: -1 },
+  { partialFilterExpression: { orgId: { $exists: true, $ne: null } } },
+);
+// Compound uniqueness for `orderNumber` per-tenant. The legacy global
+// unique index on `orderNumber` (above) stays in place during migration
+// so dual-write paths can't collide. Drop the global unique in a later
+// pass once every order carries an orgId.
+orderSchema.index(
+  { orgId: 1, orderNumber: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { orgId: { $type: "objectId" } },
+    name: "orders_orgId_orderNumber_unique",
+  },
+);
 // `payment.stripeSessionId` already has `index: true, sparse: true` on the
 // field definition — declaring it again here triggers a duplicate-index
 // warning at startup. Keep it on the field, drop the schema-level call.
 
 orderSchema.pre("validate", function () {
-  if (this.trip?.pickupDate && this.trip?.dropoffDate) {
-    if (this.trip.pickupDate >= this.trip.dropoffDate) {
-      throw new Error("Drop-off date must be after pick-up date");
+  if (this.scheduling?.startsAt && this.scheduling?.endsAt) {
+    if (this.scheduling.startsAt >= this.scheduling.endsAt) {
+      throw new Error("Scheduling end must be after start");
     }
   }
 });

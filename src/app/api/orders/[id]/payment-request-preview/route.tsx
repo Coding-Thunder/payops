@@ -7,7 +7,7 @@ import { jsonOk, withApi } from "@/server/api/respond";
 import { requirePermission } from "@/server/auth/session";
 import { getOrderById } from "@/server/services/order.service";
 import { composePaymentRequestProps } from "@/server/services/email.service";
-import { PaymentRequestEmail } from "@/server/email/templates/payment-request";
+import { UniversalOrderEmail } from "@/server/email/templates/universal-order-email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,12 +47,12 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
         }
       : order;
 
-  const props = await composePaymentRequestProps(orderForPreview, {
+  const composed = await composePaymentRequestProps(orderForPreview, {
     subject: input.subject,
     greeting: input.greeting,
     intro: input.intro,
     note: input.note,
   });
-  const html = await render(<PaymentRequestEmail {...props} />);
+  const html = await render(<UniversalOrderEmail {...composed.template} />);
   return jsonOk({ html });
 });

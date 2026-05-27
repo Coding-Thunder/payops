@@ -1,16 +1,12 @@
 import { Types } from "mongoose";
 
 import {
-  BookingType,
   ConsentStatus,
   Currency,
   OrderStatus,
   RecordState,
 } from "@/lib/constants/enums";
-import {
-  buildProviderSnapshot,
-  ProviderId,
-} from "@/lib/constants/providers";
+import { SchedulingType } from "@/lib/constants/items";
 import { Order, type OrderDoc, type OrderDocument } from "@/server/db/models";
 
 /**
@@ -18,9 +14,10 @@ import { Order, type OrderDoc, type OrderDocument } from "@/server/db/models";
  * tests; `createOrder()` persists it. The shape mirrors `OrderDoc` so
  * callers can override any nested field with a partial.
  *
- * Trip dates are anchored to "tomorrow" / "two days from now" so they
- * pass the model's pre-validate hook (`dropoff > pickup`) without being
- * fragile to time-of-day.
+ * Pass 5h: rental-specific fields (bookingType, provider, vehicle, trip)
+ * are gone. Every fixture now produces a universal-shape order with one
+ * `service_visit` line item + a fixed scheduling window. Tests for
+ * other verticals override `lineItems` / `scheduling` as needed.
  */
 
 interface CreatorSeed {
@@ -42,27 +39,35 @@ function nextSuffix(): string {
 export function buildOrder(seed: OrderSeed = {}): OrderDoc & { _id: Types.ObjectId } {
   const suffix = nextSuffix();
   const now = new Date();
-  const pickup = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  const dropoff = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
+  const startsAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const endsAt = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
   return {
     _id: new Types.ObjectId(),
     orderNumber: seed.orderNumber ?? `TST-${suffix.toUpperCase()}`.slice(0, 32),
-    bookingType: seed.bookingType ?? BookingType.NEW_BOOKING,
     status: seed.status ?? OrderStatus.PAYMENT_PENDING,
     state: seed.state ?? RecordState.ACTIVE,
-    provider: seed.provider ?? buildProviderSnapshot(ProviderId.BUDGET),
     customer: {
       name: seed.customer?.name ?? "Test Customer",
       email: (seed.customer?.email ?? "customer@payops.test").toLowerCase(),
       phone: seed.customer?.phone ?? "+15555550100",
     },
-    vehicle: {
-      company: seed.vehicle?.company ?? "Toyota",
-      type: seed.vehicle?.type ?? "Corolla",
-    },
-    trip: {
-      pickupDate: seed.trip?.pickupDate ?? pickup,
-      dropoffDate: seed.trip?.dropoffDate ?? dropoff,
+    lineItems: seed.lineItems ?? [
+      {
+        itemId: null,
+        itemTypeKey: "service_visit",
+        name: "Test service visit",
+        description: null,
+        quantity: 1,
+        unitPrice: 199.5,
+        total: 199.5,
+        attributes: {},
+        scheduling: null,
+      },
+    ],
+    scheduling: seed.scheduling ?? {
+      type: SchedulingType.FIXED_WINDOW,
+      startsAt,
+      endsAt,
     },
     pricing: {
       amount: seed.pricing?.amount ?? 199.5,
@@ -129,13 +134,11 @@ export async function createOrder(seed: OrderSeed = {}): Promise<OrderDocument> 
   return (await Order.create({
     _id: data._id,
     orderNumber: data.orderNumber,
-    bookingType: data.bookingType,
     status: data.status,
     state: data.state,
-    provider: data.provider,
     customer: data.customer,
-    vehicle: data.vehicle,
-    trip: data.trip,
+    lineItems: data.lineItems,
+    scheduling: data.scheduling,
     pricing: data.pricing,
     payment: data.payment,
     createdBy: data.createdBy,

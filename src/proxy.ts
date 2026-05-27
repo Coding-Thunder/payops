@@ -22,7 +22,12 @@ const AUDIENCE = "payops:web";
 const PUBLIC_PATHS = [
   "/",
   "/login",
+  "/signup",
+  "/forgot-password",
   "/api/auth/login",
+  "/api/auth/signup",
+  "/api/auth/forgot-password",
+  "/api/auth/reset-password",
   "/api/webhooks/stripe",
   "/api/health",
   "/api/quotations",
@@ -31,12 +36,23 @@ const PUBLIC_PATHS = [
 /** Public path prefixes for marketing + customer-facing flows. */
 const PUBLIC_PREFIXES = [
   "/pay/",
+  // Token-bound password reset URLs of the form
+  // `/reset-password/<base64url-token>`. The server-side route
+  // verifies the HMAC; an invalid token surfaces a generic error.
+  "/reset-password/",
   // Hosted consent flow is the customer's first stop after they click
   // the email's primary CTA. They have no session — the HMAC token in
   // the URL is the credential. Both the page and the JSON endpoint are
   // whitelisted; consent.service verifies the token before touching DB.
   "/consent/",
   "/api/consent/",
+  // Per-org gateway webhook URLs. The orgId path segment is parsed by
+  // the route handler; auth is via Stripe's signature header verified
+  // against the tenant's webhook secret in `gateway_credentials`. We
+  // exempt the whole prefix so any future gateway (Razorpay, etc.) can
+  // mount under `/api/webhooks/<gateway>/<orgId>` without re-touching
+  // the proxy.
+  "/api/webhooks/",
 ];
 
 /** Admin-only path prefixes (super_admin + admin). */
@@ -115,11 +131,11 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(new URL("/app/dashboard", req.url));
   }
 
-  // Already-authed users hitting the login page bounce into the app.
-  // Note we deliberately do NOT bounce them off the marketing root —
-  // operators sometimes link to it from external docs and the public
-  // surface should always render.
-  if (pathname === "/login") {
+  // Already-authed users hitting the login OR signup page bounce
+  // into the app. The marketing root deliberately stays accessible
+  // to authed users (operators sometimes link to it from external
+  // docs and the public surface should always render).
+  if (pathname === "/login" || pathname === "/signup") {
     return NextResponse.redirect(new URL("/app/dashboard", req.url));
   }
 
@@ -150,6 +166,6 @@ export const config = {
      *      renders as a broken image.)
      *   - stripe webhook (must keep raw body)
      */
-    "/((?!_next/static|_next/image|favicon.ico|assets|providers|branding|marketing|static|api/webhooks/stripe).*)",
+    "/((?!_next/static|_next/image|favicon.ico|assets|providers|branding|marketing|static|api/webhooks).*)",
   ],
 };

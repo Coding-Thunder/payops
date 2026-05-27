@@ -22,10 +22,12 @@ interface Params {
 
 /** List every version (active first by version desc) for `[key]`. */
 export const GET = withApi(async (_req: NextRequest, { params }: Params) => {
-  await requirePermission(Permission.EMAIL_TEMPLATE_VIEW);
+  const actor = await requirePermission(Permission.EMAIL_TEMPLATE_VIEW);
   const { key } = await params;
   const templateKey = templateKeyParam.parse(key);
-  const versions = await listTemplateVersions(templateKey);
+  // Phase 3d: scope to actor's org so Tenant #2 sees only their own
+  // version history (empty until they save the first override).
+  const versions = await listTemplateVersions(templateKey, actor.orgId);
   return jsonOk({ versions });
 });
 
@@ -39,6 +41,7 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
   const ctx = await getRequestContext();
   const version = await createTemplateVersion(templateKey, input, {
     actor,
+    orgId: actor.orgId,
     request: ctx,
   });
   return jsonOk(version, { status: 201 });

@@ -23,15 +23,8 @@ export const Permission = {
   SETTINGS_VIEW: "settings:view",
   SETTINGS_UPDATE: "settings:update",
 
-  PROVIDER_VIEW: "provider:view",
-  PROVIDER_MANAGE: "provider:manage",
-
   BRANDING_VIEW: "branding:view",
   BRANDING_MANAGE: "branding:manage",
-
-  CAR_LINK_VIEW: "car_link:view",
-  CAR_LINK_CREATE: "car_link:create",
-  CAR_LINK_MANAGE: "car_link:manage",
 
   EMAIL_TEMPLATE_VIEW: "email_template:view",
   EMAIL_TEMPLATE_MANAGE: "email_template:manage",
@@ -44,6 +37,20 @@ export const Permission = {
 
   EVIDENCE_VIEW: "evidence:view",
   EVIDENCE_EXPORT: "evidence:export",
+
+  /** Per-org payment-gateway credentials (Stripe/Razorpay/etc). SUPER_ADMIN
+   *  only by default — the page surfaces secrets and the webhook URL the
+   *  operator must paste into their gateway dashboard. Treat as a financial
+   *  permission, not a workspace-config one. */
+  GATEWAY_VIEW: "gateway:view",
+  GATEWAY_MANAGE: "gateway:manage",
+
+  /** Pass 5e — per-tenant ItemType catalog. Listing is open to anyone
+   *  who can create orders (the dynamic form picks an ItemType to
+   *  render). Editing is admin-only because the attribute schema +
+   *  email-block layout drive every order written against the type. */
+  ITEM_TYPE_VIEW: "item_type:view",
+  ITEM_TYPE_MANAGE: "item_type:manage",
 } as const;
 export type Permission = (typeof Permission)[keyof typeof Permission];
 
@@ -58,10 +65,9 @@ const STAFF_PERMISSIONS: readonly Permission[] = [
   Permission.ORDER_VIEW_OWN,
   Permission.ORDER_CREATE,
   Permission.ORDER_REGENERATE_LINK,
-  // Staff can browse + add new entries to the car-link library inline
-  // during order creation. Edits and deletes are admin-only.
-  Permission.CAR_LINK_VIEW,
-  Permission.CAR_LINK_CREATE,
+  // Dynamic create-order form must list this tenant's ItemTypes
+  // to render the right attribute inputs. View-only for staff.
+  Permission.ITEM_TYPE_VIEW,
   // Agents need to see whether the customer they're chasing has already
   // acknowledged the request — gates the "ready to charge" call.
   Permission.CONSENT_VIEW,
@@ -80,11 +86,9 @@ const ADMIN_ONLY_PERMISSIONS: readonly Permission[] = [
   Permission.ANALYTICS_VIEW,
   Permission.SETTINGS_VIEW,
   Permission.SETTINGS_UPDATE,
-  Permission.PROVIDER_VIEW,
-  Permission.PROVIDER_MANAGE,
   Permission.BRANDING_VIEW,
   Permission.BRANDING_MANAGE,
-  Permission.CAR_LINK_MANAGE,
+  Permission.ITEM_TYPE_MANAGE,
   Permission.EMAIL_TEMPLATE_VIEW,
   Permission.EMAIL_TEMPLATE_MANAGE,
   Permission.AUDIT_VIEW,
