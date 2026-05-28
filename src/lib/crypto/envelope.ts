@@ -9,7 +9,7 @@ import {
  *
  * Used by `GatewayCredential` to store Stripe / Razorpay / etc. secret
  * keys + webhook secrets without exposing them in DB dumps, logs, or
- * stack traces. The master key lives in `PAYOPS_MASTER_KEY` (32 bytes,
+ * stack traces. The master key lives in `TRACETXN_MASTER_KEY` (32 bytes,
  * base64-encoded) and is rotated out-of-band — re-encrypt every row
  * with the new key when rotating.
  *
@@ -17,7 +17,7 @@ import {
  *   - One master key + per-row IV is the simplest design that's still
  *     secure. The "data key" pattern matters when you want per-row
  *     keys backed by a KMS (so a leaked DB dump can't be decrypted
- *     without the KMS itself). At PayOps' current scale + ops model,
+ *     without the KMS itself). At TraceTxn's current scale + ops model,
  *     the master key would live in the same secrets manager the data
  *     key would — no extra blast-radius reduction.
  *   - The `keyVersion` field below leaves the door open: a future
@@ -53,23 +53,23 @@ let cachedKey: Buffer | null = null;
 
 /**
  * Resolve the master key once per process. Reads from
- * `PAYOPS_MASTER_KEY` (base64). Throws if missing or malformed —
+ * `TRACETXN_MASTER_KEY` (base64). Throws if missing or malformed —
  * callers should let the error propagate so a misconfigured deploy
  * fails loudly instead of silently writing plaintext.
  */
 function getMasterKey(): Buffer {
   if (cachedKey) return cachedKey;
-  const raw = process.env.PAYOPS_MASTER_KEY;
+  const raw = process.env.TRACETXN_MASTER_KEY;
   if (!raw) {
     throw new Error(
-      "PAYOPS_MASTER_KEY is not set — required to encrypt or decrypt gateway credentials. " +
+      "TRACETXN_MASTER_KEY is not set — required to encrypt or decrypt gateway credentials. " +
         "Generate one with: openssl rand -base64 32",
     );
   }
   const buf = Buffer.from(raw, "base64");
   if (buf.length !== KEY_BYTES) {
     throw new Error(
-      `PAYOPS_MASTER_KEY must decode to exactly ${KEY_BYTES} bytes (got ${buf.length}). ` +
+      `TRACETXN_MASTER_KEY must decode to exactly ${KEY_BYTES} bytes (got ${buf.length}). ` +
         "Generate a fresh one with: openssl rand -base64 32",
     );
   }
@@ -119,7 +119,7 @@ export function encryptSecret(plaintext: string): EncryptedSecret {
 export function decryptSecret(encrypted: EncryptedSecret): string {
   if (encrypted.keyVersion !== "v1") {
     throw new Error(
-      `Unknown PAYOPS_MASTER_KEY version: ${encrypted.keyVersion}`,
+      `Unknown TRACETXN_MASTER_KEY version: ${encrypted.keyVersion}`,
     );
   }
   const key = getMasterKey();
@@ -143,7 +143,7 @@ export function decryptSecret(encrypted: EncryptedSecret): string {
 
 /**
  * True iff the env carries a valid master key. Useful for gating UI
- * affordances ("you must configure PAYOPS_MASTER_KEY before saving
+ * affordances ("you must configure TRACETXN_MASTER_KEY before saving
  * gateway credentials") without throwing.
  */
 export function isEncryptionAvailable(): boolean {

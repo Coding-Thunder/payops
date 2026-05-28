@@ -84,16 +84,16 @@ export function getCurrentTestStripe(): StripeStub {
 }
 
 beforeAll(async () => {
-  const rootUri = process.env.PAYOPS_IT_MONGO_URI;
+  const rootUri = process.env.TRACETXN_IT_MONGO_URI;
   if (!rootUri) {
     throw new Error(
-      "PAYOPS_IT_MONGO_URI not set — did integration.global-setup.ts run?",
+      "TRACETXN_IT_MONGO_URI not set — did integration.global-setup.ts run?",
     );
   }
   perFileDbName = `it-${crypto.randomUUID().slice(0, 8)}`;
   process.env.MONGODB_DB = perFileDbName;
   process.env.MONGODB_URI = rootUri;
-  process.env.PAYOPS_TEST_MODE = "integration";
+  process.env.TRACETXN_TEST_MODE = "integration";
 
   // Force a clean module-level cache for the shared mongoose connection.
   delete (globalThis as { __payopsMongoose?: unknown }).__payopsMongoose;

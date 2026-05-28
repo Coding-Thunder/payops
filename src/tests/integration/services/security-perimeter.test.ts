@@ -40,7 +40,7 @@ let headers: Awaited<ReturnType<typeof mockNextHeaders>>;
 beforeEach(async () => {
   await ensureMongo();
   await resetDatabase();
-  process.env.PAYOPS_MASTER_KEY = masterKey;
+  process.env.TRACETXN_MASTER_KEY = masterKey;
   _resetMasterKeyForTesting();
   _resetLegacyOrgIdForTesting();
   headers = await mockNextHeaders();
@@ -48,7 +48,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await headers.restore();
-  delete process.env.PAYOPS_MASTER_KEY;
+  delete process.env.TRACETXN_MASTER_KEY;
   _resetMasterKeyForTesting();
   _resetLegacyOrgIdForTesting();
 });

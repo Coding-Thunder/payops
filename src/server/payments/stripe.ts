@@ -14,9 +14,9 @@ let cached: Stripe | null = null;
  * `getStripeForSecret(secretKey)` instead so the credential resolved
  * from a `GatewayCredential` row drives the client.
  *
- * Test-mode escape hatch: when `PAYOPS_TEST_MODE` is set to "smoke" or
+ * Test-mode escape hatch: when `TRACETXN_TEST_MODE` is set to "smoke" or
  * "integration", an in-process stub is returned. The stub implements
- * only the methods PayOps uses (checkout sessions + webhook helpers)
+ * only the methods TraceTxn uses (checkout sessions + webhook helpers)
  * and never opens a network socket. Production never sets this env
  * var, so the real Stripe client is always used in real deployments.
  *
@@ -35,7 +35,7 @@ export function getStripe(): Stripe {
 
   cached = new Stripe(env.server.STRIPE_SECRET_KEY, {
     typescript: true,
-    appInfo: { name: "PayOps", version: "1.0.0" },
+    appInfo: { name: "TraceTxn", version: "1.0.0" },
     maxNetworkRetries: 2,
     timeout: 15_000,
   });
@@ -59,7 +59,7 @@ export function getStripeForSecret(secretKey: string): Stripe {
   if (!secretKey) {
     throw new Error("getStripeForSecret called without a secret key");
   }
-  const testMode = process.env.PAYOPS_TEST_MODE;
+  const testMode = process.env.TRACETXN_TEST_MODE;
   if (testMode === "smoke" || testMode === "integration") {
     // Reuse the test stub installed by `setStripeForTesting` in the
     // integration / smoke setup. The stub is gateway-agnostic — it
@@ -73,7 +73,7 @@ export function getStripeForSecret(secretKey: string): Stripe {
   }
   return new Stripe(secretKey, {
     typescript: true,
-    appInfo: { name: "PayOps", version: "1.0.0" },
+    appInfo: { name: "TraceTxn", version: "1.0.0" },
     maxNetworkRetries: 2,
     timeout: 15_000,
   });
@@ -89,7 +89,7 @@ export function setStripeForTesting(client: Stripe | null): void {
 }
 
 function buildTestStubIfActive(): Stripe | null {
-  const testMode = process.env.PAYOPS_TEST_MODE;
+  const testMode = process.env.TRACETXN_TEST_MODE;
   if (testMode !== "smoke" && testMode !== "integration") return null;
   // Lazy-loaded so production bundles never include test code.
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional: lazy CJS require keeps test mocks out of prod bundle

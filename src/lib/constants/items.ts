@@ -3,7 +3,7 @@
  * scheduling shapes, and the finite library of composable email blocks
  * that ItemTypes can opt their orders into.
  *
- * Phase 5 architectural verdict: PayOps becomes a vertical-agnostic
+ * Phase 5 architectural verdict: TraceTxn becomes a vertical-agnostic
  * commerce + payment-ops platform. The Order schema carries
  * `lineItems[].itemTypeKey` + `attributes`; the SHAPE of those
  * attributes is per-tenant per-vertical, defined in an `ItemType`

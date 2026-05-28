@@ -156,7 +156,7 @@ export function Hero() {
           />
           <ScreenshotFrame
             src="/marketing/evidence-chain.webp"
-            alt="PayOps evidence chain — hash-linked record of an order's lifecycle"
+            alt="TraceTxn evidence chain — hash-linked record of an order's lifecycle"
             bare
             priority
             className="ring-1 ring-white/10 shadow-[0_50px_120px_-30px_rgba(0,0,0,0.7)]"

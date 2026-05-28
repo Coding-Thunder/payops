@@ -209,7 +209,7 @@ function makeStripeGateway(deps: StripeGatewayDeps): PaymentGateway {
         ],
         metadata: input.metadata,
         payment_intent_data: {
-          description: `${input.metadata.appName ?? "PayOps"} • ${input.orderNumber}`,
+          description: `${input.metadata.appName ?? "TraceTxn"} • ${input.orderNumber}`,
           metadata: {
             orderId: input.orderId,
             orderNumber: input.orderNumber,

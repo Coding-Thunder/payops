@@ -99,7 +99,7 @@ export function GatewaysPageContent({
       <Alert variant="destructive">
         <AlertTitle>Master encryption key not configured</AlertTitle>
         <AlertDescription>
-          Set <code>PAYOPS_MASTER_KEY</code> in the deployment environment
+          Set <code>TRACETXN_MASTER_KEY</code> in the deployment environment
           before saving any gateway credentials. Generate one with{" "}
           <code>openssl rand -base64 32</code>.
         </AlertDescription>
@@ -198,7 +198,7 @@ function ConnectedStripeCard({
       <CardContent className="space-y-3">
         <div className="rounded-md border border-emerald-200/60 bg-emerald-50/50 px-3 py-2 text-[12.5px] text-emerald-900">
           <ShieldCheckIcon className="-mt-0.5 mr-1 inline size-3.5" />
-          PayOps is connected to your Stripe account and webhooks are
+          TraceTxn is connected to your Stripe account and webhooks are
           registered automatically. You can start taking payments.
         </div>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-[13px]">
@@ -443,7 +443,7 @@ function ConnectStripeCard({
                     We call Stripe with your secret key to confirm it works.
                   </li>
                   <li>
-                    We register PayOps as a webhook endpoint at{" "}
+                    We register TraceTxn as a webhook endpoint at{" "}
                     <code className="break-all text-[11px]">
                       {previewCallbackUrl}
                     </code>{" "}

@@ -185,10 +185,10 @@ function buildDTO(doc: GatewayCredentialDoc, secretKeyPlaintext: string): SavedC
 
 /**
  * Upsert a per-org credential. Encrypts secret material with
- * `PAYOPS_MASTER_KEY` before writing. Re-saving for the same
+ * `TRACETXN_MASTER_KEY` before writing. Re-saving for the same
  * (orgId, gateway) replaces the encrypted blobs (key rotation).
  *
- * Refuses to write when `PAYOPS_MASTER_KEY` is missing — fail loudly
+ * Refuses to write when `TRACETXN_MASTER_KEY` is missing — fail loudly
  * so an operator never persists "encrypted" data they can't decrypt.
  */
 export async function saveGatewayCredential(
@@ -197,7 +197,7 @@ export async function saveGatewayCredential(
 ): Promise<SavedCredentialDTO> {
   if (!isEncryptionAvailable()) {
     throw new ConflictError(
-      "PAYOPS_MASTER_KEY is not configured. Generate a key (openssl rand -base64 32) and set it before saving gateway credentials.",
+      "TRACETXN_MASTER_KEY is not configured. Generate a key (openssl rand -base64 32) and set it before saving gateway credentials.",
     );
   }
   if (!input.secretKey || input.secretKey.length < 8) {
@@ -260,7 +260,7 @@ export async function disableGatewayCredential(
 ): Promise<void> {
   requireOrgId(ctx.orgId);
   await connectMongo();
-  // Pass 6a: when PayOps auto-registered a Stripe webhook endpoint
+  // Pass 6a: when TraceTxn auto-registered a Stripe webhook endpoint
   // during connect, try to delete it on Stripe's side too so we don't
   // leave dangling endpoints. Best-effort: any failure leaves the
   // local row disabled and surfaces a warning log for the operator.
@@ -315,7 +315,7 @@ export interface ConnectStripeInput {
 
 export interface ConnectStripeResult {
   credential: SavedCredentialDTO;
-  /** Stripe `we_...` id PayOps registered for this org. Surfaced back
+  /** Stripe `we_...` id TraceTxn registered for this org. Surfaced back
    *  to the admin UI so it can show "we configured a webhook
    *  endpoint" confirmation. */
   webhookEndpointId: string;
@@ -328,7 +328,7 @@ export interface ConnectStripeResult {
  *   2. Refuses if the key's mode doesn't match what the operator
  *      selected (prevents accidentally putting a LIVE key into TEST
  *      mode or vice versa).
- *   3. Registers PayOps as a webhook endpoint on the operator's
+ *   3. Registers TraceTxn as a webhook endpoint on the operator's
  *      Stripe account; captures the signing secret on the create
  *      response (Stripe only returns it once).
  *   4. Encrypts secret + signing secret with the master key.
@@ -344,7 +344,7 @@ export async function connectStripeCredential(
 ): Promise<ConnectStripeResult> {
   if (!isEncryptionAvailable()) {
     throw new ConflictError(
-      "PAYOPS_MASTER_KEY is not configured. Generate a key (openssl rand -base64 32) and set it before saving gateway credentials.",
+      "TRACETXN_MASTER_KEY is not configured. Generate a key (openssl rand -base64 32) and set it before saving gateway credentials.",
     );
   }
   if (!input.secretKey || input.secretKey.length < 10) {

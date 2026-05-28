@@ -37,7 +37,7 @@ const masterKey = randomBytes(32).toString("base64");
 beforeEach(async () => {
   await ensureMongo();
   await resetDatabase();
-  process.env.PAYOPS_MASTER_KEY = masterKey;
+  process.env.TRACETXN_MASTER_KEY = masterKey;
   _resetMasterKeyForTesting();
   headers = await mockNextHeaders();
   getCurrentTestStripe().reset();
@@ -49,7 +49,7 @@ afterEach(async () => {
     session.restore();
     session = null;
   }
-  delete process.env.PAYOPS_MASTER_KEY;
+  delete process.env.TRACETXN_MASTER_KEY;
   _resetMasterKeyForTesting();
 });
 

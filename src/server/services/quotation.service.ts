@@ -89,9 +89,9 @@ async function sendInternalNotification(
   // never legitimate; collapse to single space and cap length.
   const headerSafe = (s: string) =>
     s.replace(/[\r\n]+/g, " ").trim().slice(0, 200);
-  const subject = `[PayOps lead] ${headerSafe(doc.companyName)} — ${headerSafe(doc.expectedVolume)}`;
+  const subject = `[TraceTxn lead] ${headerSafe(doc.companyName)} — ${headerSafe(doc.expectedVolume)}`;
   const lines = [
-    `New PayOps quotation request`,
+    `New TraceTxn quotation request`,
     ``,
     `Name      : ${doc.fullName}`,
     `Company   : ${doc.companyName}`,
@@ -130,7 +130,7 @@ async function sendInternalNotification(
       subject,
       html,
       text,
-      headers: { "X-PayOps-Lead": String(doc._id) },
+      headers: { "X-TraceTxn-Lead": String(doc._id) },
     });
     return {
       status: "SENT",

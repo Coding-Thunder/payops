@@ -54,13 +54,13 @@ const masterKey = randomBytes(32).toString("base64");
 beforeEach(async () => {
   await ensureMongo();
   await resetDatabase();
-  process.env.PAYOPS_MASTER_KEY = masterKey;
+  process.env.TRACETXN_MASTER_KEY = masterKey;
   _resetMasterKeyForTesting();
   _resetLegacyOrgIdForTesting();
 });
 
 afterEach(() => {
-  delete process.env.PAYOPS_MASTER_KEY;
+  delete process.env.TRACETXN_MASTER_KEY;
   _resetMasterKeyForTesting();
   _resetLegacyOrgIdForTesting();
 });

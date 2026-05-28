@@ -7,7 +7,7 @@ const serverSchema = z.object({
     .enum(["development", "test", "production"])
     .default("development"),
 
-  APP_NAME: z.string().min(1).default("PayOps"),
+  APP_NAME: z.string().min(1).default("TraceTxn"),
   CUSTOMER_BRAND_NAME: z.string().min(1).default("Rental Confirmation"),
   APP_URL: z.string().url().default("http://localhost:3000"),
 
@@ -53,7 +53,7 @@ const serverSchema = z.object({
   SMTP_PASS: z.string().optional(),
   EMAIL_FROM: z
     .string()
-    .default("PayOps <no-reply@payops.example.com>"),
+    .default("TraceTxn <no-reply@tracetxn.example.com>"),
   EMAIL_REPLY_TO: z.string().optional(),
   SUPPORT_EMAIL: z.string().default("vinaymaheshwari35@gmail.com"),
   SUPPORT_PHONE: z.string().default("+1-555-0100"),
@@ -87,17 +87,17 @@ const serverSchema = z.object({
    * use at decrypt time), then re-encrypt old rows and drop the
    * previous key — manage out-of-band.
    */
-  PAYOPS_MASTER_KEY: z
+  TRACETXN_MASTER_KEY: z
     .string()
     .optional()
     .refine(
       (v) => !v || Buffer.from(v, "base64").length === 32,
-      "PAYOPS_MASTER_KEY must decode to exactly 32 bytes (base64). Generate one with: openssl rand -base64 32",
+      "TRACETXN_MASTER_KEY must decode to exactly 32 bytes (base64). Generate one with: openssl rand -base64 32",
     ),
 });
 
 const clientSchema = z.object({
-  NEXT_PUBLIC_APP_NAME: z.string().default("PayOps"),
+  NEXT_PUBLIC_APP_NAME: z.string().default("TraceTxn"),
   NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().optional(),
   /** Cloudflare Turnstile public site key. When set, the login + sales

@@ -68,7 +68,7 @@ export async function enqueueEmail(
  * PendingEmail row before any background work fires.
  */
 export function kickPostCommitDrain(): void {
-  if (process.env.PAYOPS_TEST_MODE) return;
+  if (process.env.TRACETXN_TEST_MODE) return;
   setImmediate(() => {
     drainOnePendingEmail().catch((err) => {
       logger.warn("email_outbox.post_commit_drain_failed", {
@@ -86,7 +86,7 @@ type CronGlobal = typeof globalThis & {
 };
 
 function ensureBackgroundDrainer(): void {
-  if (process.env.PAYOPS_TEST_MODE) return;
+  if (process.env.TRACETXN_TEST_MODE) return;
   const g = globalThis as CronGlobal;
   if (g.__payopsOutboxCron) return;
   g.__payopsOutboxCron = setInterval(() => {
@@ -224,7 +224,7 @@ async function fetchOrderForOutbox(orderId: string) {
     actor: {
       id: "system",
       name: "outbox",
-      email: "system@payops.local",
+      email: "system@tracetxn.local",
       role: UserRole.SUPER_ADMIN,
     },
   });

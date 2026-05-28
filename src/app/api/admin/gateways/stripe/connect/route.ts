@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
  *
  * Pass 6a — one-shot Stripe connect. Body carries just `mode` +
  * `secretKey` (+ optional `publishableKey`, `accountId`); the server
- * verifies the key against Stripe, auto-registers PayOps as a webhook
+ * verifies the key against Stripe, auto-registers TraceTxn as a webhook
  * endpoint, captures the signing secret on the create response, and
  * persists everything encrypted. The operator never has to visit the
  * Stripe dashboard's Webhooks page.

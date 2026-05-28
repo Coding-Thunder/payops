@@ -18,7 +18,7 @@ export async function setSessionCookie(
     value: token,
     httpOnly: true,
     // SameSite=strict pairs with the `withApi` Origin check as the CSRF
-    // defense. PayOps has no cross-site auth requirement; agents
+    // defense. TraceTxn has no cross-site auth requirement; agents
     // browse from bookmarks / internal nav. Customer-facing pages
     // (`/pay/*`, `/consent/*`) don't read this cookie at all.
     sameSite: "strict",

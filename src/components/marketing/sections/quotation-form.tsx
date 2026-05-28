@@ -151,7 +151,7 @@ export function QuotationForm({ turnstileSiteKey }: QuotationFormProps = {}) {
         {/* ── Left rail ───────────────────────────────────────── */}
         <aside data-reveal data-reveal-order={0} className="lg:sticky lg:top-32">
           <a
-            href="mailto:vinaymaheshwari35@gmail.com?subject=PayOps%20%E2%80%94%20requirements"
+            href="mailto:vinaymaheshwari35@gmail.com?subject=TraceTxn%20%E2%80%94%20requirements"
             className="group block rounded-2xl border p-6 backdrop-blur-sm transition-transform hover:-translate-y-px"
             style={{
               borderColor: "var(--m-border)",
@@ -171,7 +171,7 @@ export function QuotationForm({ turnstileSiteKey }: QuotationFormProps = {}) {
               className="mt-2 text-[13px] leading-relaxed"
               style={{ color: "var(--m-fg-soft)" }}
             >
-              Reaches the team building and operating PayOps. No drip,
+              Reaches the team building and operating TraceTxn. No drip,
               no SDR.
             </p>
             <p className="mt-5 inline-flex items-center gap-1.5 text-[12.5px] font-medium">
@@ -426,7 +426,7 @@ export function QuotationForm({ turnstileSiteKey }: QuotationFormProps = {}) {
                     style={{ color: "var(--m-fg-soft)" }}
                   >
                     By submitting, you agree to be contacted by the
-                    PayOps team about your request. No marketing.
+                    TraceTxn team about your request. No marketing.
                   </p>
                   <LoadingButton
                     type="submit"

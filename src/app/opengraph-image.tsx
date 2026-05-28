@@ -22,7 +22,7 @@ import { ImageResponse } from "next/og";
 
 export const runtime = "edge";
 export const alt =
-  "PayOps — When the chargeback lands six weeks later, the evidence is already filed.";
+  "TraceTxn — When the chargeback lands six weeks later, the evidence is already filed.";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -121,7 +121,7 @@ export default async function OgImage() {
               letterSpacing: -1,
             }}
           >
-            P
+            T
           </div>
           <div
             style={{
@@ -131,7 +131,7 @@ export default async function OgImage() {
               color: "white",
             }}
           >
-            PayOps
+            TraceTxn
           </div>
           <div
             style={{

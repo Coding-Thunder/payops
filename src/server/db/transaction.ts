@@ -15,7 +15,7 @@ import { connectMongo } from "@/server/db/mongoose";
  *
  * Test-mode fallback: `mongodb-memory-server` (single node) cannot
  * transact. When the integration harness sets
- * `PAYOPS_TEST_MODE=integration` we skip the session entirely and run
+ * `TRACETXN_TEST_MODE=integration` we skip the session entirely and run
  * the callback directly — production (Atlas, replica-set) takes the
  * real transaction path. Same code path; the same code is tested.
  *
@@ -50,7 +50,7 @@ export async function withTx<T>(
 }
 
 function transactionsDisabled(): boolean {
-  if (process.env.PAYOPS_TEST_MODE === "integration") return true;
+  if (process.env.TRACETXN_TEST_MODE === "integration") return true;
   if (process.env.PAYOPS_TX_DISABLED === "1") return true;
   return false;
 }

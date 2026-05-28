@@ -16,7 +16,7 @@ import {
  * AES-256-GCM envelope: round-trip + tamper-detection + key-rotation
  * preconditions.
  *
- * We mutate `process.env.PAYOPS_MASTER_KEY` per test and bust the
+ * We mutate `process.env.TRACETXN_MASTER_KEY` per test and bust the
  * envelope module's master-key cache via `_resetMasterKeyForTesting`.
  * Without that reset, the cached buffer from a prior test would shadow
  * the new env value.
@@ -31,28 +31,28 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  delete process.env.PAYOPS_MASTER_KEY;
+  delete process.env.TRACETXN_MASTER_KEY;
   _resetMasterKeyForTesting();
 });
 
 describe("envelope encryption", () => {
   describe("happy path", () => {
     it("round-trips a UTF-8 secret", () => {
-      process.env.PAYOPS_MASTER_KEY = freshMasterKey();
+      process.env.TRACETXN_MASTER_KEY = freshMasterKey();
       const plaintext = "sk_test_1234567890";
       const enc = encryptSecret(plaintext);
       expect(decryptSecret(enc)).toBe(plaintext);
     });
 
     it("round-trips a secret with non-ASCII bytes", () => {
-      process.env.PAYOPS_MASTER_KEY = freshMasterKey();
+      process.env.TRACETXN_MASTER_KEY = freshMasterKey();
       const plaintext = "whsec_péyops™🔐";
       const enc = encryptSecret(plaintext);
       expect(decryptSecret(enc)).toBe(plaintext);
     });
 
     it("produces a different IV on every call (no nonce reuse)", () => {
-      process.env.PAYOPS_MASTER_KEY = freshMasterKey();
+      process.env.TRACETXN_MASTER_KEY = freshMasterKey();
       const a = encryptSecret("same-secret");
       const b = encryptSecret("same-secret");
       expect(a.iv).not.toBe(b.iv);
@@ -62,23 +62,23 @@ describe("envelope encryption", () => {
   });
 
   describe("misconfiguration", () => {
-    it("throws when PAYOPS_MASTER_KEY is missing", () => {
-      delete process.env.PAYOPS_MASTER_KEY;
+    it("throws when TRACETXN_MASTER_KEY is missing", () => {
+      delete process.env.TRACETXN_MASTER_KEY;
       expect(() => encryptSecret("anything")).toThrowError(
-        /PAYOPS_MASTER_KEY/i,
+        /TRACETXN_MASTER_KEY/i,
       );
     });
 
-    it("throws when PAYOPS_MASTER_KEY is the wrong length", () => {
+    it("throws when TRACETXN_MASTER_KEY is the wrong length", () => {
       // 16 bytes — too short for AES-256.
-      process.env.PAYOPS_MASTER_KEY = Buffer.alloc(16).toString("base64");
+      process.env.TRACETXN_MASTER_KEY = Buffer.alloc(16).toString("base64");
       expect(() => encryptSecret("anything")).toThrowError(/32 bytes/i);
     });
 
     it("isEncryptionAvailable() reflects env state", () => {
-      delete process.env.PAYOPS_MASTER_KEY;
+      delete process.env.TRACETXN_MASTER_KEY;
       expect(isEncryptionAvailable()).toBe(false);
-      process.env.PAYOPS_MASTER_KEY = freshMasterKey();
+      process.env.TRACETXN_MASTER_KEY = freshMasterKey();
       _resetMasterKeyForTesting();
       expect(isEncryptionAvailable()).toBe(true);
     });
@@ -86,7 +86,7 @@ describe("envelope encryption", () => {
 
   describe("tamper detection", () => {
     function withFreshKey(): EncryptedSecret {
-      process.env.PAYOPS_MASTER_KEY = freshMasterKey();
+      process.env.TRACETXN_MASTER_KEY = freshMasterKey();
       return encryptSecret("sk_live_secret_value");
     }
 
@@ -121,10 +121,10 @@ describe("envelope encryption", () => {
     });
 
     it("rejects decryption with a different master key", () => {
-      process.env.PAYOPS_MASTER_KEY = freshMasterKey();
+      process.env.TRACETXN_MASTER_KEY = freshMasterKey();
       const enc = encryptSecret("sk_live_originalkey");
       // Rotate the env to a different key — old blobs no longer decrypt.
-      process.env.PAYOPS_MASTER_KEY = freshMasterKey();
+      process.env.TRACETXN_MASTER_KEY = freshMasterKey();
       _resetMasterKeyForTesting();
       expect(() => decryptSecret(enc)).toThrow();
     });
@@ -132,7 +132,7 @@ describe("envelope encryption", () => {
 
   describe("forwards-compat", () => {
     it("rejects an unknown keyVersion", () => {
-      process.env.PAYOPS_MASTER_KEY = freshMasterKey();
+      process.env.TRACETXN_MASTER_KEY = freshMasterKey();
       const enc = encryptSecret("hello");
       const future = {
         ...enc,

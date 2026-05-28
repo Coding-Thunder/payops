@@ -199,7 +199,7 @@ async function uniqueOrgSlug(name: string): Promise<string> {
  *
  * Three categories:
  *   - app routing keywords (admin, api, app, …)
- *   - PayOps brand + the legacy tenant key
+ *   - TraceTxn brand (and the legacy PayOps name) + the legacy tenant key
  *   - generic trademark / abuse magnets (microsoft, google, …)
  *
  * Kept conservative — adding more is cheap, removing one mid-flight
@@ -229,7 +229,9 @@ const RESERVED_SLUGS = new Set<string>([
   "support",
   "system",
   "www",
-  // Platform brand.
+  // Platform brand — both the current and the legacy name stay
+  // reserved so neither can be registered as an org slug.
+  "tracetxn",
   "payops",
   // Legacy tenant slug — reserved so a future signup never collides.
   "legacy",

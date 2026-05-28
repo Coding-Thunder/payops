@@ -10,7 +10,7 @@ import { getCurrentUser } from "@/server/auth/session";
 import { SignupForm } from "./_components/signup-form";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Create your PayOps account" };
+export const metadata = { title: "Create your TraceTxn account" };
 
 export default async function SignupPage() {
   // Already signed in → drop them into the app instead of letting

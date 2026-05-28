@@ -19,19 +19,19 @@ let mongod: MongoMemoryServer | null = null;
 
 export async function setup() {
   loadEnvFile(".env.test");
-  process.env.PAYOPS_TEST_MODE = "integration";
+  process.env.TRACETXN_TEST_MODE = "integration";
 
   mongod = await MongoMemoryServer.create({
     binary: { version: "7.0.14" },
-    instance: { dbName: "payops-it-root" },
+    instance: { dbName: "tracetxn-it-root" },
   });
   const uri = mongod.getUri();
   // Pass to per-file setup via env vars. `MONGODB_URI` is rewritten
   // per-file so test isolation is real, not just by convention.
-  process.env.PAYOPS_IT_MONGO_URI = uri;
+  process.env.TRACETXN_IT_MONGO_URI = uri;
   process.env.MONGODB_URI = uri;
-  process.env.MONGODB_DB = "payops-it-root";
-  process.env.PAYOPS_TEST_MODE = "integration";
+  process.env.MONGODB_DB = "tracetxn-it-root";
+  process.env.TRACETXN_TEST_MODE = "integration";
 }
 
 export async function teardown() {

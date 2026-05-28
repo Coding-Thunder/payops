@@ -22,10 +22,9 @@ const SECTIONS: Array<{ href: string; label: string }> = [
  *     translucent dark with white text.
  *   - On light themes it stays neutral / cream.
  *
- * Even though PayOps is privately deployed, operators still need a
- * way to reach `/login` from the public surface — the Sign in link
- * sits left of the primary CTA so the quotation button stays visually
- * dominant.
+ * Sign in sits left of the primary CTA so the signup button stays
+ * visually dominant; operators still need a quick path back to the
+ * authed app from the public surface.
  */
 export function MarketingNav() {
   const [scrolled, setScrolled] = React.useState(false);
@@ -77,7 +76,7 @@ export function MarketingNav() {
         <Link
           href="/"
           className="group inline-flex items-center gap-2.5"
-          aria-label="PayOps home"
+          aria-label="TraceTxn home"
         >
           <span
             className={cn(
@@ -88,19 +87,17 @@ export function MarketingNav() {
             )}
           >
             <svg
-              viewBox="0 0 64 64"
+              viewBox="0 0 48 48"
               className="size-4"
               aria-hidden
               xmlns="http://www.w3.org/2000/svg"
             >
-              <path
-                d="M19 16h15.5c6.6 0 11.5 4.5 11.5 11s-4.9 11-11.5 11H26v13h-7V16zm7 16h7.5c3 0 5-2 5-5s-2-5-5-5H26v10z"
-                fill="currentColor"
-              />
+              <rect x="10" y="13" width="28" height="5" rx="2.5" fill="currentColor" />
+              <rect x="21.5" y="13" width="5" height="24" rx="2.5" fill="currentColor" />
             </svg>
           </span>
           <span className="text-[15px] font-semibold tracking-tight">
-            PayOps
+            TraceTxn
           </span>
         </Link>
 

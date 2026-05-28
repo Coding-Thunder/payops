@@ -29,7 +29,7 @@ interface StructuredDataProps {
 export function StructuredData({
   baseUrl,
   brand = env.public.NEXT_PUBLIC_APP_NAME,
-  description = "PayOps is the payment operations platform for the full order lifecycle — hashed dispute evidence, hosted consent, multi-gateway orchestration, and append-only audit. Built for retail, services, repair, dealership, B2B, and any commerce shape that takes money seriously.",
+  description = "TraceTxn is the payment operations platform for the full order lifecycle — hashed dispute evidence, hosted consent, multi-gateway orchestration, and append-only audit. Built for retail, services, repair, dealership, B2B, and any commerce shape that takes money seriously.",
 }: StructuredDataProps) {
   const url = (baseUrl ?? env.public.NEXT_PUBLIC_APP_URL).replace(/\/$/, "");
 
@@ -83,7 +83,7 @@ export function StructuredData({
           {
             "@type": "ListItem",
             position: 1,
-            name: "PayOps",
+            name: "TraceTxn",
             item: url,
           },
         ],
@@ -146,15 +146,15 @@ export function StructuredData({
         mainEntity: [
           {
             "@type": "Question",
-            name: "Is PayOps a multi-tenant SaaS?",
+            name: "Is TraceTxn a multi-tenant SaaS?",
             acceptedAnswer: {
               "@type": "Answer",
-              text: "Yes. PayOps is a multi-tenant operational platform — every workspace is fully isolated by tenant boundary, with its own catalog, orders, evidence, and audit trail. Sign up free, connect Stripe, and run your first order within minutes.",
+              text: "Yes. TraceTxn is a multi-tenant operational platform — every workspace is fully isolated by tenant boundary, with its own catalog, orders, evidence, and audit trail. Sign up free, connect Stripe, and run your first order within minutes.",
             },
           },
           {
             "@type": "Question",
-            name: "What kinds of businesses use PayOps?",
+            name: "What kinds of businesses use TraceTxn?",
             acceptedAnswer: {
               "@type": "Answer",
               text: "Retail, grocery, pharmacy, repair, dealership, services, equipment, B2B workflows, rentals, and any custom commerce shape that needs operational payment infrastructure — order workflows, evidence chains, dispute readiness, consent capture, and multi-gateway routing.",
@@ -162,7 +162,7 @@ export function StructuredData({
           },
           {
             "@type": "Question",
-            name: "Which payment gateways does PayOps support?",
+            name: "Which payment gateways does TraceTxn support?",
             acceptedAnswer: {
               "@type": "Answer",
               text: "Stripe is fully live today — checkout, webhooks, disputes, refunds. Razorpay and Authorize.net adapters are scaffolded for activation on credentials. Adyen and PayPal are on the roadmap. The orchestration layer was built gateway-agnostic from day one.",
@@ -170,7 +170,7 @@ export function StructuredData({
           },
           {
             "@type": "Question",
-            name: "How does PayOps help with chargeback disputes?",
+            name: "How does TraceTxn help with chargeback disputes?",
             acceptedAnswer: {
               "@type": "Answer",
               text: "Every order persists a hashed, append-only evidence chain — payment intent, charge id, customer consent signature, email correspondence, IP/UA capture, gateway receipts. When a dispute fires, the order auto-flags, the chain freezes, and a one-click PDF export is ready to forward to the bank.",

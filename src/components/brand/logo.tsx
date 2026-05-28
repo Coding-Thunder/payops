@@ -7,9 +7,11 @@ interface LogoMarkProps {
 }
 
 /**
- * The PayOps brand mark. Stylised "P" formed by overlapping rounded shapes
- * suggesting a card and a route - works in mono or two-tone using the
- * surrounding text colour.
+ * The TraceTxn brand mark. Bold "T" glyph with an emerald trace-head
+ * dot at the right edge of the horizontal bar — the dot reads as the
+ * live edge of the order's evidence chain, where the latest event
+ * lives. Mono on `currentColor`; the accent stays emerald regardless
+ * of context tone.
  */
 export function LogoMark({ className, decorated = false }: LogoMarkProps) {
   return (
@@ -21,22 +23,21 @@ export function LogoMark({ className, decorated = false }: LogoMarkProps) {
       className={cn("size-6", className)}
     >
       {decorated ? (
-        <circle cx="24" cy="24" r="23" stroke="currentColor" strokeOpacity="0.18" strokeWidth="1" />
+        <circle
+          cx="24"
+          cy="24"
+          r="23"
+          stroke="currentColor"
+          strokeOpacity="0.18"
+          strokeWidth="1"
+        />
       ) : null}
-      <path
-        d="M14 12h12.5a8.5 8.5 0 0 1 0 17H19v7h-5V12Z"
-        fill="currentColor"
-      />
-      <circle cx="26.5" cy="20.5" r="3.25" fill="currentColor" fillOpacity="0.35" />
-      <rect
-        x="14"
-        y="32"
-        width="11"
-        height="2.5"
-        rx="1.25"
-        fill="currentColor"
-        fillOpacity="0.45"
-      />
+      {/* Horizontal bar — the trace */}
+      <rect x="10" y="13" width="28" height="5" rx="2.5" fill="currentColor" />
+      {/* Vertical stem — the transaction */}
+      <rect x="21.5" y="13" width="5" height="24" rx="2.5" fill="currentColor" />
+      {/* Trace-head accent — emerald, live edge of the chain */}
+      <circle cx="38" cy="15.5" r="2.4" fill="oklch(0.74 0.15 152)" />
     </svg>
   );
 }
@@ -52,7 +53,7 @@ interface LogoLockupProps {
 /** Logo mark + wordmark + optional subtitle. */
 export function LogoLockup({
   className,
-  brand = "PayOps",
+  brand = "TraceTxn",
   subtitle,
   size = "md",
   tone = "default",

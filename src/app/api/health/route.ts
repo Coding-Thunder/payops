@@ -24,7 +24,7 @@ let warnedOnce = false;
  * tenant should fix. Today the only check is:
  *
  *   - encrypted `GatewayCredential` rows exist AND
- *     `PAYOPS_MASTER_KEY` is missing/malformed → "degraded"
+ *     `TRACETXN_MASTER_KEY` is missing/malformed → "degraded"
  *
  * (Decryption would otherwise fail on the next payment-link request.)
  *
@@ -54,7 +54,7 @@ async function computeWarnings(): Promise<string[]> {
       const hasEncryptedRows = await GatewayCredential.exists({});
       if (hasEncryptedRows) {
         const msg =
-          "PAYOPS_MASTER_KEY is not configured but encrypted gateway credentials exist. Decryption will fail on the next payment-link request. Set PAYOPS_MASTER_KEY in the runtime env.";
+          "TRACETXN_MASTER_KEY is not configured but encrypted gateway credentials exist. Decryption will fail on the next payment-link request. Set TRACETXN_MASTER_KEY in the runtime env.";
         warnings.push(msg);
         if (!warnedOnce) {
           logger.error("health.master_key_missing_with_credentials", { msg });

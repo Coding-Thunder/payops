@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 interface ScreenshotFrameProps {
   src: string | StaticImageData;
   alt: string;
-  /** Hint shown in the fake URL bar — e.g. "payops.example.com / dashboard". */
+  /** Hint shown in the fake URL bar — e.g. "tracetxn.example.com / dashboard". */
   urlLabel?: string;
   /** Pinned width/height of the source image so Next/Image can lay out
    *  without CLS. Captured shots are 1440×900. */

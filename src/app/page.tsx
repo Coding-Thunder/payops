@@ -29,7 +29,7 @@ export const metadata: Metadata = {
 };
 
 /**
- * PayOps marketing landing page.
+ * TraceTxn marketing landing page.
  *
  * Eight chapters, each with its own color theme (CSS variables in
  * `globals.css` driven by `data-theme`):

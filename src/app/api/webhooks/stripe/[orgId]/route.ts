@@ -28,7 +28,7 @@ export const dynamic = "force-dynamic";
  * Why a separate route and not "global URL + lookup by Stripe account":
  *   - Stripe Connect's `account` field on events only populates for
  *     marketplace mode. Direct merchant accounts (which is the model
- *     PayOps' tenants use) don't carry it.
+ *     TraceTxn's tenants use) don't carry it.
  *   - Routing in the URL is the simplest, most-auditable design: the
  *     URL itself encodes which tenant should verify the signature.
  *

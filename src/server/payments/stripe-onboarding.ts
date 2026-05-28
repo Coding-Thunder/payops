@@ -23,10 +23,10 @@ import { getStripeForSecret } from "./stripe";
  * trail in `gateway-credentials.service.ts` is unchanged.
  */
 
-/** Events PayOps subscribes to. Mirrors `mapStripeEventType` in
+/** Events TraceTxn subscribes to. Mirrors `mapStripeEventType` in
  *  `gateways/stripe.ts` — any new event handled there must be added
  *  here so newly-registered endpoints actually receive it. */
-export const PAYOPS_STRIPE_EVENTS = [
+export const TRACETXN_STRIPE_EVENTS = [
   "checkout.session.completed",
   "checkout.session.async_payment_succeeded",
   "checkout.session.expired",
@@ -97,7 +97,7 @@ export async function verifyStripeSecret(
 }
 
 /**
- * Register PayOps as a webhook endpoint on the operator's Stripe
+ * Register TraceTxn as a webhook endpoint on the operator's Stripe
  * account. Idempotent: if an endpoint with the same callback URL
  * already exists we re-use it. Returns the endpoint id + the freshly
  * minted signing secret.
@@ -149,9 +149,9 @@ export async function registerStripeWebhookEndpoint(args: {
   const created = await stripe.webhookEndpoints.create({
     url: args.callbackUrl,
     enabled_events: [
-      ...PAYOPS_STRIPE_EVENTS,
+      ...TRACETXN_STRIPE_EVENTS,
     ] as unknown as Stripe.WebhookEndpointCreateParams.EnabledEvent[],
-    description: "PayOps — auto-registered by the admin onboarding flow.",
+    description: "TraceTxn — auto-registered by the admin onboarding flow.",
   });
   if (!created.secret) {
     throw new Error(

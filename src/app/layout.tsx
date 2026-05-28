@@ -33,13 +33,13 @@ const geistMono = Geist_Mono({
  * and document the brand-positioning vocabulary in code.
  */
 
-const SITE_NAME = process.env.NEXT_PUBLIC_APP_NAME || "PayOps";
+const SITE_NAME = process.env.NEXT_PUBLIC_APP_NAME || "TraceTxn";
 const SITE_URL = (
-  process.env.NEXT_PUBLIC_APP_URL || "https://payops.example.com"
+  process.env.NEXT_PUBLIC_APP_URL || "https://tracetxn.example.com"
 ).replace(/\/$/, "");
 const HEADLINE = "Payment Operations Platform · Dispute & Chargeback Evidence";
 const DESCRIPTION =
-  "PayOps is the payment operations platform built for the full order lifecycle. Lifecycle visibility, hashed evidence chain, hosted consent, and multi-gateway orchestration — for retail, services, repair, dealership, B2B, and every commerce shape that takes money seriously.";
+  "TraceTxn is the payment operations platform built for the full order lifecycle. Lifecycle visibility, hashed evidence chain, hosted consent, and multi-gateway orchestration — for retail, services, repair, dealership, B2B, and every commerce shape that takes money seriously.";
 const SHORT_DESCRIPTION =
   "Lifecycle visibility, hashed dispute evidence, and multi-gateway orchestration — operational infrastructure for modern commerce.";
 const OG_IMAGE = `${SITE_URL}/marketing/evidence-chain.webp`;

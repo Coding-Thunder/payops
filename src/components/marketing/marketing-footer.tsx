@@ -21,19 +21,17 @@ export function MarketingFooter() {
               }}
             >
               <svg
-                viewBox="0 0 64 64"
+                viewBox="0 0 48 48"
                 className="size-4"
                 aria-hidden
                 xmlns="http://www.w3.org/2000/svg"
               >
-                <path
-                  d="M19 16h15.5c6.6 0 11.5 4.5 11.5 11s-4.9 11-11.5 11H26v13h-7V16zm7 16h7.5c3 0 5-2 5-5s-2-5-5-5H26v10z"
-                  fill="currentColor"
-                />
+                <rect x="10" y="13" width="28" height="5" rx="2.5" fill="currentColor" />
+                <rect x="21.5" y="13" width="5" height="24" rx="2.5" fill="currentColor" />
               </svg>
             </span>
             <span className="text-[15px] font-semibold tracking-tight">
-              PayOps
+              TraceTxn
             </span>
             <span
               className="ml-3 text-[12.5px]"

@@ -37,7 +37,7 @@ import { registerModel } from "./register";
  * single-tenant build continues working unchanged.
  *
  * Security:
- *   - The encrypted blobs are useless without `PAYOPS_MASTER_KEY`.
+ *   - The encrypted blobs are useless without `TRACETXN_MASTER_KEY`.
  *   - Hard delete is supported — operator off-boarding a tenant
  *     deletes the row + revokes the key in the gateway dashboard.
  *   - `lastVerifiedAt` records the last successful API ping against
@@ -79,7 +79,7 @@ export interface GatewayCredentialDoc {
   /** Stripe Connect `acct_…` (or equivalent) — reserved for future
    *  marketplace mode. Null today. */
   accountId?: string | null;
-  /** Pass 6a — set when PayOps auto-created the Stripe webhook
+  /** Pass 6a — set when TraceTxn auto-created the Stripe webhook
    *  endpoint on the operator's account. Used to delete the endpoint
    *  when the credential is disabled so we don't leave dangling
    *  endpoints behind. Null for rows where the operator pasted a

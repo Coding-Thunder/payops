@@ -21,7 +21,7 @@ export async function enforceSameOrigin(): Promise<void> {
   // Test harness drives handlers without going through a real browser,
   // so the Origin header is rarely set. Skip the guard there — same
   // contract as `enforceRateLimit`. Production still enforces.
-  if (process.env.PAYOPS_TEST_MODE) return;
+  if (process.env.TRACETXN_TEST_MODE) return;
   const h = await headers();
   const origin = h.get("origin");
   const referer = h.get("referer");
@@ -101,7 +101,7 @@ interface RateLimitOptions {
  */
 export function enforceRateLimit(opts: RateLimitOptions): void {
   // Tests rely on tight loops that would trip prod-sized limits.
-  if (process.env.PAYOPS_TEST_MODE) return;
+  if (process.env.TRACETXN_TEST_MODE) return;
 
   const now = Date.now();
   maybeSweep(now);
