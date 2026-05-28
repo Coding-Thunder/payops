@@ -1,251 +1,406 @@
-import { CheckIcon } from "lucide-react";
+import { CheckIcon, ShieldIcon, TrophyIcon } from "lucide-react";
 
 /**
- * Marketing canvas — case-file artifact.
+ * Case-file canvas — the WON variant.
  *
- * Static React mock that mirrors the in-app evidence document
- * (`features/evidence/evidence-chain-view.tsx`). Same skeleton, same
- * typographic rhythm — visitors see the actual product surface
- * embedded in the landing, not a stylised abstraction of it.
+ * Static React mock that mirrors the reference's "CHARGEBACK SOLVED"
+ * artifact layout, point-for-point:
+ *   - Dark navy header band with document metadata
+ *   - Two tall rounded white panels side-by-side
+ *   - Left: chain-integrity pill, ORDER SUMMARY grid, EVIDENCE
+ *     TIMELINE with bold numbered green ring nodes connected by a
+ *     thick green vertical line, integrity statement footer
+ *   - Right: CHARGEBACK OUTCOME (dark header) over a big green
+ *     CASE WON panel, key facts, WHY WE WON checklist, "case
+ *     closed" callout
  *
- * Hardcoded sample data is intentional. No coupling to the product
- * components — the marketing surface should never break when the
- * authed surface evolves, and vice versa.
+ * Hardcoded sample data. No coupling to authed components.
  */
+
+const TIMELINE: Array<{
+  seq: number;
+  label: string;
+  sub: string | null;
+  time: string;
+}> = [
+  { seq: 1, label: "Order created", sub: "Agent · Mira Holst", time: "22:13:35" },
+  {
+    seq: 2,
+    label: "Payment gateway selected",
+    sub: "Agent · Mira Holst",
+    time: "22:13:53",
+  },
+  {
+    seq: 3,
+    label: "Payment link generated",
+    sub: "Session cs_test_a1B2c3… · Intent pi_3R7kx2KZ4m…",
+    time: "22:13:53",
+  },
+  {
+    seq: 4,
+    label: "Payment request email sent",
+    sub: "To talia.berenson@example.com",
+    time: "22:14:46",
+  },
+  {
+    seq: 5,
+    label: "Consent requested",
+    sub: "Token cda61ecc5b18eb96…",
+    time: "22:14:35",
+  },
+  {
+    seq: 6,
+    label: "Consent received",
+    sub: "Customer · Talia M. Berenson · IP 73.114.142.18",
+    time: "22:21:22",
+  },
+  {
+    seq: 7,
+    label: "Payment completed",
+    sub: "Gateway Stripe · Intent pi_3R7kx2KZ4m…",
+    time: "22:21:35",
+  },
+  {
+    seq: 8,
+    label: "Confirmation email sent",
+    sub: "To talia.berenson@example.com",
+    time: "22:21:35",
+  },
+  { seq: 9, label: "Order confirmed", sub: "System", time: "22:21:35" },
+];
+
+const WHY_WE_WON = [
+  "Complete end-to-end transaction trail",
+  "Customer consent on file",
+  "Payment successfully completed",
+  "Email communication verified",
+  "Immutable evidence with integrity proof",
+];
+
 export function CaseFileCanvas() {
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card text-foreground shadow-[0_24px_60px_-32px_rgba(0,0,0,0.35)]">
-      {/* ── Dark header band ─────────────────────────────────── */}
-      <div className="border-b border-white/10 bg-[oklch(0.13_0.012_286)] px-5 py-4 text-white">
-        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/55">
-          tracetxn · case file
+    <div
+      className="relative overflow-hidden rounded-2xl shadow-[0_30px_80px_-40px_rgba(15,40,80,0.35)]"
+      style={{ background: "oklch(0.97 0.005 240)" }}
+    >
+      {/* ── Dark navy header band ─────────────────────────────── */}
+      <header
+        className="relative border-b border-white/10 px-6 py-7 text-white sm:px-8"
+        style={{ background: "var(--ink-navy)" }}
+      >
+        <p className="font-mono text-[10.5px] uppercase tracking-[0.2em] text-white/55">
+          TraceTxn · case file
         </p>
-        <p className="mt-1.5 font-mono text-[14px] tracking-tight tabular-nums">
+        <p className="mt-2 font-mono text-[16px] tracking-tight tabular-nums">
           ORD-260805-K4M9P2RT3W
         </p>
-        <p className="mt-1 font-mono text-[10.5px] text-white/55 tabular-nums">
+        <p className="mt-1.5 font-mono text-[11.5px] text-white/60 tabular-nums">
           Generated 2026-05-26 08:14:35 UTC · 9 events ·{" "}
-          <span className="text-emerald-300">Integrity VALID</span>
+          <span style={{ color: "oklch(0.78 0.18 148)" }}>
+            Integrity VALID
+          </span>
         </p>
-      </div>
+      </header>
 
-      {/* ── Body: two columns ───────────────────────────────── */}
-      <div className="grid grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] gap-x-8 gap-y-6 px-5 py-6">
-        {/* Left: summary + timeline */}
-        <div className="space-y-5">
-          <div>
-            <SectionLabel>Order summary</SectionLabel>
-            <dl className="mt-3 divide-y divide-border/60">
-              {SUMMARY_ROWS.map((r) => (
-                <SummaryRow key={r.k} k={r.k} v={r.v} mono={r.mono} />
-              ))}
-            </dl>
+      {/* ── Two-column body ───────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-5 p-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] lg:p-7">
+        {/* ── LEFT PANEL: order evidence ──────────────────────── */}
+        <div className="rounded-xl bg-card p-5 ring-1 ring-border/70 sm:p-6">
+          <h2 className="text-[16px] font-semibold tracking-tight">
+            Order evidence —{" "}
+            <span className="font-mono tabular-nums">
+              ORD-260805-K4M9P2RT3W
+            </span>
+          </h2>
+
+          <ChainPill />
+
+          {/* ORDER SUMMARY */}
+          <SectionLabel>Order summary</SectionLabel>
+          <div className="grid grid-cols-2 gap-x-5 gap-y-3 sm:grid-cols-5">
+            <SummaryCell label="Customer" value="Talia M. Berenson" />
+            <SummaryCell label="Amount" value="$2,840.00 USD" mono />
+            <SummaryCell label="Status" value={<PaidPill />} />
+            <SummaryCell label="Provider" value="Budget" />
+            <SummaryCell
+              label="Vehicle"
+              value="Toyota Camry XLE 2025"
+            />
           </div>
 
-          <div>
-            <SectionLabel suffix="9 events">Evidence timeline</SectionLabel>
-            <ol className="mt-3 divide-y divide-border/60">
+          {/* TIMELINE */}
+          <div className="mt-7">
+            <div className="flex items-baseline justify-between">
+              <p className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Evidence timeline
+              </p>
+              <span className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground">
+                (9 events)
+              </span>
+            </div>
+
+            <ol className="relative mt-4">
+              {/* Vertical green connector line behind the nodes */}
+              <span
+                aria-hidden
+                className="pointer-events-none absolute left-[0.875rem] top-3 bottom-3 w-[2.5px] rounded-full"
+                style={{ background: "var(--success)" }}
+              />
               {TIMELINE.map((e) => (
                 <li
                   key={e.seq}
-                  className="grid grid-cols-[1.75rem_1fr_auto_1rem] items-baseline gap-x-3 py-2"
+                  className="relative grid grid-cols-[1.75rem_1fr_auto_1rem] items-start gap-x-3 py-2"
                 >
-                  <span className="font-mono text-[11px] text-muted-foreground tabular-nums">
+                  <span
+                    className="relative z-10 grid size-7 place-items-center rounded-full text-[11px] font-semibold text-white"
+                    style={{ background: "var(--success)" }}
+                  >
                     {e.seq}
                   </span>
-                  <div className="min-w-0">
-                    <p className="text-[12px] font-medium leading-tight">
+                  <div className="pt-1 min-w-0">
+                    <p className="text-[13px] font-semibold leading-tight">
                       {e.label}
                     </p>
-                    {e.meta ? (
-                      <p className="mt-0.5 truncate text-[10.5px] text-muted-foreground leading-snug">
-                        {e.meta}
+                    {e.sub ? (
+                      <p className="mt-0.5 truncate font-mono text-[10.5px] text-muted-foreground">
+                        {e.sub}
                       </p>
                     ) : null}
                   </div>
-                  <span className="font-mono text-[10.5px] text-muted-foreground tabular-nums">
+                  <span className="pt-1 font-mono text-[11px] text-muted-foreground tabular-nums">
                     {e.time}
                   </span>
                   <CheckIcon
-                    className="size-3 text-success justify-self-end"
-                    aria-hidden
+                    className="mt-2 size-3.5 justify-self-end text-success"
+                    strokeWidth={2.5}
                   />
                 </li>
               ))}
             </ol>
           </div>
-        </div>
 
-        {/* Right: outcome panel — READY variant */}
-        <aside className="flex flex-col">
-          <SectionLabel>Outcome</SectionLabel>
-
-          <div className="mt-4 flex flex-col gap-5">
+          {/* Integrity callout */}
+          <div
+            className="mt-6 grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-lg border px-4 py-3"
+            style={{ borderColor: "var(--success-border)" }}
+          >
+            <ShieldIcon
+              className="size-5 text-success"
+              strokeWidth={2}
+            />
             <div>
-              <div className="flex items-baseline gap-2.5">
-                <span
-                  aria-hidden
-                  className="inline-block size-2 rounded-full bg-success"
-                />
-                <p className="text-[14px] font-semibold tracking-tight text-success">
-                  READY
-                </p>
-              </div>
-              <p className="mt-1.5 max-w-[26ch] text-[11.5px] leading-relaxed text-muted-foreground">
-                Evidence chain captured. This order is dispute-ready as
-                of 2026-05-26 08:21:35 UTC.
+              <p className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.14em] text-success-strong">
+                Evidence integrity
+              </p>
+              <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+                Each event is cryptographically chained. Any tampering
+                would break the chain.
               </p>
             </div>
+            <div className="flex flex-col items-end gap-1.5">
+              <span
+                className="inline-flex items-center rounded-md px-2 py-0.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.16em] text-white"
+                style={{ background: "var(--success)" }}
+              >
+                VALID
+              </span>
+              <span className="inline-flex items-center gap-1 text-[10.5px] text-success-strong">
+                <CheckIcon className="size-3" strokeWidth={3} />
+                Chain verified
+              </span>
+            </div>
+          </div>
+        </div>
 
+        {/* ── RIGHT PANEL: chargeback outcome ─────────────────── */}
+        <aside className="space-y-4">
+          {/* Header strip */}
+          <div
+            className="overflow-hidden rounded-t-xl px-5 py-3 text-white"
+            style={{ background: "var(--ink-navy)" }}
+          >
+            <p className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.18em] text-white/65">
+              Chargeback outcome
+            </p>
+          </div>
+
+          {/* Big GREEN CASE WON panel */}
+          <div
+            className="-mt-4 grid grid-cols-[auto_1fr] items-center gap-4 rounded-b-xl px-5 py-5 text-white shadow-[0_18px_44px_-20px_oklch(0.62_0.17_148_/_0.45)]"
+            style={{ background: "var(--success)" }}
+          >
+            <span className="grid size-12 place-items-center rounded-full bg-white/20 ring-2 ring-white/70">
+              <CheckIcon className="size-6 text-white" strokeWidth={3} />
+            </span>
             <div>
-              <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                Evidence on file
+              <p className="text-[20px] font-bold leading-tight tracking-tight">
+                CASE WON
               </p>
-              <dl className="mt-2.5 divide-y divide-border/60">
-                {EVIDENCE_FACTS.map((f) => (
-                  <div
-                    key={f.k}
-                    className="grid grid-cols-[1fr_auto] items-baseline gap-3 py-1.5"
-                  >
-                    <dt className="text-[11px] text-muted-foreground">
-                      {f.k}
-                    </dt>
-                    <dd className="font-mono text-[10.5px] tabular-nums">
-                      {f.v}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
+              <p className="mt-1 text-[12.5px] leading-snug text-white/85">
+                Chargeback reversed in your favor
+              </p>
+            </div>
+          </div>
+
+          {/* Outcome facts grid */}
+          <div className="rounded-xl bg-card p-5 ring-1 ring-border/70">
+            <OutcomeRow label="Reason code" value="13.1 — Merchandise/Service Not Received" />
+            <OutcomeRow label="Received" value="2026-05-05" mono />
+            <OutcomeRow label="Represented" value="2026-05-07" mono />
+            <OutcomeRow label="Decision" value="2026-05-21" mono />
+            <OutcomeRow label="Outcome" value="Won — Reversed" toned />
+            <OutcomeRow
+              label="Recovered amount"
+              value="$2,840.00 USD"
+              mono
+              recovered
+            />
+          </div>
+
+          {/* WHY WE WON */}
+          <div className="rounded-xl bg-card p-5 ring-1 ring-border/70">
+            <p className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Why we won
+            </p>
+            <ul className="mt-3 space-y-2.5">
+              {WHY_WE_WON.map((reason) => (
+                <li
+                  key={reason}
+                  className="grid grid-cols-[auto_1fr] items-baseline gap-2.5 text-[12.5px]"
+                >
+                  <CheckIcon
+                    className="mt-[3px] size-3.5 shrink-0 text-success"
+                    strokeWidth={2.5}
+                  />
+                  <span className="leading-snug">{reason}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Case closed callout */}
+          <div
+            className="grid grid-cols-[auto_1fr] gap-3 rounded-xl px-4 py-3.5"
+            style={{
+              background: "var(--success-soft)",
+              border: "1px solid var(--success-border)",
+            }}
+          >
+            <TrophyIcon
+              className="size-5 text-amber-500"
+              style={{ color: "oklch(0.75 0.16 78)" }}
+              strokeWidth={2}
+            />
+            <div>
+              <p className="text-[12.5px] font-semibold text-success-strong">
+                This case is now closed.
+              </p>
+              <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+                Funds have been returned to your account.
+              </p>
             </div>
           </div>
         </aside>
       </div>
+    </div>
+  );
+}
 
-      {/* ── Integrity statement footer ──────────────────────── */}
-      <div className="grid grid-cols-[1fr_auto] items-end gap-4 border-t border-border/70 px-5 py-4 text-[10.5px] leading-relaxed text-muted-foreground">
-        <p className="max-w-[60ch]">
-          <span className="font-medium text-foreground">
-            Integrity statement.
-          </span>{" "}
-          Each of the 9 events in this case file is cryptographically
-          chained against the previous one.{" "}
-          <span className="text-success">Verified chain.</span>
-        </p>
-        <p className="font-mono tabular-nums">
-          <span className="text-muted-foreground">Chain head</span>
-          <span className="ml-1.5 text-foreground">a1b2c3d4e5f6…</span>
-        </p>
+/* ─── primitives ──────────────────────────────────────────────────── */
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mt-6 mb-3 inline-flex items-center gap-2 font-mono text-[10.5px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+      <span aria-hidden className="text-success">
+        ▣
+      </span>
+      {children}
+    </p>
+  );
+}
+
+function ChainPill() {
+  return (
+    <span
+      className="mt-4 inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium"
+      style={{
+        background: "var(--success-soft)",
+        color: "var(--success-strong)",
+        border: "1px solid var(--success-border)",
+      }}
+    >
+      <CheckIcon className="size-3" strokeWidth={3} />
+      Chain integrity verified
+    </span>
+  );
+}
+
+function SummaryCell({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: React.ReactNode;
+  mono?: boolean;
+}) {
+  return (
+    <div>
+      <p className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-muted-foreground">
+        {label}
+      </p>
+      <div className={`mt-1 text-[12.5px] ${mono ? "font-mono tabular-nums" : ""}`}>
+        {value}
       </div>
     </div>
   );
 }
 
-/* ─────────── sample data + primitives ────────────────────────────────── */
-
-function SectionLabel({
-  children,
-  suffix,
-}: {
-  children: React.ReactNode;
-  suffix?: string;
-}) {
+function PaidPill() {
   return (
-    <div className="flex items-baseline justify-between border-b border-border/70 pb-1.5">
-      <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-        {children}
-      </h3>
-      {suffix ? (
-        <span className="font-mono text-[10px] text-muted-foreground tabular-nums">
-          {suffix}
-        </span>
-      ) : null}
-    </div>
+    <span
+      className="inline-flex items-center rounded-md px-1.5 py-0.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.14em]"
+      style={{
+        background: "var(--success-soft)",
+        color: "var(--success-strong)",
+        border: "1px solid var(--success-border)",
+      }}
+    >
+      PAID
+    </span>
   );
 }
 
-function SummaryRow({
-  k,
-  v,
+function OutcomeRow({
+  label,
+  value,
   mono,
+  toned,
+  recovered,
 }: {
-  k: string;
-  v: string;
+  label: string;
+  value: string;
   mono?: boolean;
+  toned?: boolean;
+  recovered?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-[7rem_1fr] items-baseline gap-x-3 py-1.5">
-      <dt className="text-[11px] text-muted-foreground">{k}</dt>
+    <div className="grid grid-cols-[8rem_1fr] items-baseline gap-3 border-b border-border/60 py-2 last:border-b-0">
+      <dt className="text-[11.5px] text-muted-foreground">{label}</dt>
       <dd
-        className={
-          mono
-            ? "font-mono text-[11px] tabular-nums break-all"
-            : "text-[11.5px]"
+        className={`text-[12.5px] ${
+          mono ? "font-mono tabular-nums" : ""
+        } ${toned || recovered ? "font-semibold" : ""}`}
+        style={
+          recovered
+            ? { color: "var(--success-strong)" }
+            : toned
+              ? { color: "var(--success-strong)" }
+              : undefined
         }
       >
-        {v}
+        {value}
       </dd>
     </div>
   );
 }
-
-const SUMMARY_ROWS: Array<{ k: string; v: string; mono?: boolean }> = [
-  { k: "Customer", v: "Talia M. Berenson" },
-  { k: "Email", v: "talia.berenson@example.com", mono: true },
-  { k: "Amount", v: "$2,840.00 USD", mono: true },
-  { k: "Status", v: "PAID", mono: true },
-  { k: "Paid", v: "2026-05-26 08:21:35 UTC", mono: true },
-  { k: "Gateway", v: "Stripe", mono: true },
-];
-
-const TIMELINE: Array<{
-  seq: string;
-  label: string;
-  meta: string | null;
-  time: string;
-}> = [
-  {
-    seq: "01",
-    label: "Order created",
-    meta: "Agent · Mira Holst",
-    time: "08:13:35",
-  },
-  {
-    seq: "02",
-    label: "Payment link generated",
-    meta: "Session cs_test_a1B2c3…",
-    time: "08:13:53",
-  },
-  {
-    seq: "03",
-    label: "Payment request email sent",
-    meta: "To talia.berenson@example.com",
-    time: "08:14:46",
-  },
-  {
-    seq: "04",
-    label: "Consent requested",
-    meta: "Token cda61ecc5b18eb96…",
-    time: "08:14:35",
-  },
-  {
-    seq: "05",
-    label: "Consent received",
-    meta: "Customer · IP 73.114.142.18",
-    time: "08:21:22",
-  },
-  {
-    seq: "06",
-    label: "Payment completed",
-    meta: "Gateway Stripe · pi_3R7kx2KZ4m…",
-    time: "08:21:35",
-  },
-];
-
-const EVIDENCE_FACTS: Array<{ k: string; v: string }> = [
-  { k: "Hashed event chain", v: "9 events" },
-  { k: "Customer consent", v: "Signed 08:21:22" },
-  { k: "Email delivery", v: "2 sent · 0 failed" },
-  { k: "Gateway receipt", v: "Stripe · pi_3R7kx…" },
-  { k: "Customer IP capture", v: "73.114.142.18" },
-  { k: "Integrity verification", v: "Valid" },
-];
