@@ -4,6 +4,7 @@ import { GsapController } from "@/components/marketing/gsap-controller";
 import { MarketingFooter } from "@/components/marketing/marketing-footer";
 import { MarketingNav } from "@/components/marketing/marketing-nav";
 import { StructuredData } from "@/components/marketing/seo/structured-data";
+import { CommerceShapes } from "@/components/marketing/sections/commerce-shapes";
 import { EnterpriseChoose } from "@/components/marketing/sections/enterprise-choose";
 import { FightDisputes } from "@/components/marketing/sections/fight-disputes";
 import { Hero } from "@/components/marketing/sections/hero";
@@ -30,16 +31,17 @@ export const metadata: Metadata = {
 /**
  * PayOps marketing landing page.
  *
- * Seven chapters, each with its own color theme (CSS variables in
+ * Eight chapters, each with its own color theme (CSS variables in
  * `globals.css` driven by `data-theme`):
  *
  *   1. Hero        — obsidian (dark, aurora orbs)
  *   2. Disputes    — orange (sticky scroll, evidence chain)
  *   3. Lifecycle   — sage (React timeline + 12-surface bento)
- *   4. Gateways    — cobalt (logo bento + code interface block)
- *   5. Trust       — cream (animated counters + audit pillars)
- *   6. Deployment  — ultraviolet (steps + included list)
- *   7. Closing     — closing/dark (form + email channel)
+ *   4. Shapes      — graphite (dark spec-sheet · 8 commerce verticals)
+ *   5. Gateways    — cobalt (logo bento + code interface block)
+ *   6. Trust       — cream (animated counters + audit pillars)
+ *   7. Workflows   — ultraviolet (steps + included list)
+ *   8. Closing     — closing/dark (form + email channel)
  *
  * Free scroll only — snap-mandatory removed. The GSAP controller
  * handles reveal + parallax + count-up + theme-aware nav.
@@ -58,6 +60,7 @@ export default function LandingPage() {
         <Hero />
         <FightDisputes />
         <Lifecycle />
+        <CommerceShapes />
         <MultiGateway />
         <EnterpriseChoose />
         <OrgSetups />

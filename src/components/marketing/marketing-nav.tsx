@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 const SECTIONS: Array<{ href: string; label: string }> = [
   { href: "#disputes", label: "Disputes" },
   { href: "#lifecycle", label: "Lifecycle" },
+  { href: "#shapes", label: "Shapes" },
   { href: "#gateways", label: "Gateways" },
   { href: "#enterprise", label: "Trust" },
   { href: "#orgs", label: "Deployment" },
@@ -40,10 +41,10 @@ export function MarketingNav() {
   React.useEffect(() => {
     const sync = () => {
       const t = document.body.dataset.activeTheme;
-      // Only the hero is dark now. Everything below it is white or
-      // cream, so the nav stays in its light state from the second
-      // section onward.
-      setDark(t === "obsidian" || !t);
+      // Dark sections: the hero (obsidian) and the mid-page Commerce
+      // Shapes spec sheet (graphite). Both flip the nav into its
+      // dark variant so the foreground stays legible.
+      setDark(t === "obsidian" || t === "graphite" || !t);
     };
     sync();
     const obs = new MutationObserver(sync);

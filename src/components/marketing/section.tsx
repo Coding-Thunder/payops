@@ -8,6 +8,7 @@ export type MarketingTheme =
   | "cream"
   | "ultraviolet"
   | "closing"
+  | "graphite"
   | "default";
 
 interface MarketingSectionProps {
