@@ -39,9 +39,9 @@ const SITE_URL = (
 ).replace(/\/$/, "");
 const HEADLINE = "Payment Operations Platform · Dispute & Chargeback Evidence";
 const DESCRIPTION =
-  "PayOps is the payment operations platform built for the full lifecycle. Lifecycle visibility, hashed evidence chain, hosted consent, and multi-gateway orchestration — deployed privately on a domain you own. Reserved for one merchant per instance.";
+  "PayOps is the payment operations platform built for the full order lifecycle. Lifecycle visibility, hashed evidence chain, hosted consent, and multi-gateway orchestration — for retail, services, repair, dealership, B2B, and every commerce shape that takes money seriously.";
 const SHORT_DESCRIPTION =
-  "Lifecycle visibility, hashed dispute evidence, and multi-gateway orchestration — privately deployed.";
+  "Lifecycle visibility, hashed dispute evidence, and multi-gateway orchestration — operational infrastructure for modern commerce.";
 const OG_IMAGE = `${SITE_URL}/marketing/evidence-chain.webp`;
 
 export const metadata: Metadata = {
@@ -95,7 +95,15 @@ export const metadata: Metadata = {
     // Brand / generic
     "fintech",
     "enterprise payments",
-    "rental payment platform",
+    "order lifecycle platform",
+    "commerce operations platform",
+    "multi tenant payment platform",
+    "self serve payment operations",
+    "b2b payment workflows",
+    "order workflow software",
+    "payment evidence platform",
+    "merchant audit trail",
+    "consent capture platform",
     "payment ops console",
     "payment ops center",
     "payment control tower",

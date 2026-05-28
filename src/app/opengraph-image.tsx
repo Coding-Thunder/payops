@@ -209,7 +209,7 @@ export default async function OgImage() {
                 background: "rgb(80,210,130)",
               }}
             />
-            Privately deployed · reserved per merchant
+            Multi-gateway · audit-grade · self-serve
           </div>
           <div
             style={{

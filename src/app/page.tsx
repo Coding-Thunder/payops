@@ -24,7 +24,7 @@ export const metadata: Metadata = {
   title:
     "Payment Operations Platform · Chargeback Evidence · Multi-Gateway Orchestration",
   description:
-    "Lifecycle visibility from order creation to chargeback. Hashed evidence chain, hosted consent, multi-gateway orchestration. Reserved for one merchant per instance. Stripe live · Razorpay + Authorize.net next.",
+    "Lifecycle visibility from order creation to chargeback. Hashed evidence chain, hosted consent, multi-gateway orchestration. Built for retail, services, repair, dealership, and B2B commerce. Stripe live · Razorpay + Authorize.net next.",
   alternates: { canonical: "/" },
 };
 

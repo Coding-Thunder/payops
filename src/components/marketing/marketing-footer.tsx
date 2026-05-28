@@ -39,7 +39,7 @@ export function MarketingFooter() {
               className="ml-3 text-[12.5px]"
               style={{ color: "var(--m-fg-soft)" }}
             >
-              · payment operations · privately deployed
+              · payment operations · multi-tenant by design
             </span>
           </div>
 

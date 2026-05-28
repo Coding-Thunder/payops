@@ -78,7 +78,7 @@ export function Hero() {
               className="size-1.5 rounded-full bg-[color:var(--m-orange)]"
               style={{ animation: "pulse-soft 2.2s ease-in-out infinite" }}
             />
-            Payment operations · Privately deployed
+            Payment operations · For businesses that take money seriously
           </p>
 
           <h1
@@ -106,9 +106,10 @@ export function Hero() {
             data-reveal-order={2}
             className="mx-auto mt-7 max-w-2xl text-[16.5px] leading-relaxed text-white/70"
           >
-            Lifecycle visibility, hashed evidence chain, and
-            multi-gateway orchestration — deployed to a domain you own.
-            Reserved for one merchant per instance.
+            Lifecycle visibility, hashed evidence chain, hosted consent,
+            and multi-gateway orchestration — operational infrastructure
+            for retail, repair, services, dealerships, B2B, and every
+            commerce shape that needs a real audit trail.
           </p>
 
           <div
@@ -120,7 +121,7 @@ export function Hero() {
               href="/signup"
               className="group inline-flex h-12 items-center gap-2 rounded-full bg-white px-6 text-[14px] font-semibold text-[color:var(--m-ink)] transition-all hover:-translate-y-px hover:shadow-[0_8px_32px_-8px_rgba(255,255,255,0.6)]"
             >
-              Sign up free
+              Start free
               <span
                 aria-hidden
                 className="transition-transform group-hover:translate-x-0.5"
@@ -129,10 +130,10 @@ export function Hero() {
               </span>
             </a>
             <a
-              href="#quote"
+              href="#lifecycle"
               className="inline-flex h-12 items-center px-4 text-[13.5px] text-white/65 transition-colors hover:text-white"
             >
-              Or talk to sales ↓
+              See the lifecycle ↓
             </a>
           </div>
         </div>

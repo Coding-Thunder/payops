@@ -11,7 +11,7 @@ const SECTIONS: Array<{ href: string; label: string }> = [
   { href: "#shapes", label: "Shapes" },
   { href: "#gateways", label: "Gateways" },
   { href: "#enterprise", label: "Trust" },
-  { href: "#orgs", label: "Deployment" },
+  { href: "#orgs", label: "Workflows" },
 ];
 
 /**
