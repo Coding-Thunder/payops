@@ -1,25 +1,20 @@
 import type { Metadata } from "next";
 
-import { GsapController } from "@/components/marketing/gsap-controller";
-import { MarketingFooter } from "@/components/marketing/marketing-footer";
-import { MarketingNav } from "@/components/marketing/marketing-nav";
+import { CoverBand } from "@/components/marketing/cover-band";
+import { DocumentFooter } from "@/components/marketing/document-footer";
+import {
+  DocumentRail,
+  TopBand,
+} from "@/components/marketing/page-chrome";
+import { ClosingRegion } from "@/components/marketing/regions/closing-region";
+import { EvidenceRegion } from "@/components/marketing/regions/evidence-region";
+import { GatewaysRegion } from "@/components/marketing/regions/gateways-region";
+import { IntegrityRegion } from "@/components/marketing/regions/integrity-region";
+import { LifecycleRegion } from "@/components/marketing/regions/lifecycle-region";
+import { SetupRegion } from "@/components/marketing/regions/setup-region";
 import { StructuredData } from "@/components/marketing/seo/structured-data";
-import { CommerceShapes } from "@/components/marketing/sections/commerce-shapes";
-import { EnterpriseChoose } from "@/components/marketing/sections/enterprise-choose";
-import { FightDisputes } from "@/components/marketing/sections/fight-disputes";
-import { Hero } from "@/components/marketing/sections/hero";
-import { Lifecycle } from "@/components/marketing/sections/lifecycle";
-import { MultiGateway } from "@/components/marketing/sections/multi-gateway";
-import { OrgSetups } from "@/components/marketing/sections/org-setups";
-import { QuotationForm } from "@/components/marketing/sections/quotation-form";
 import { env } from "@/lib/env";
 
-/**
- * Landing-page metadata. Overrides the root template defaults with
- * a heavier, more keyword-rich description and pinned canonical so
- * `/` is the authoritative URL even if the page is loaded via
- * tracking params (utm_*, ref=, etc.).
- */
 export const metadata: Metadata = {
   title:
     "Payment Operations Platform · Chargeback Evidence · Multi-Gateway Orchestration",
@@ -29,46 +24,48 @@ export const metadata: Metadata = {
 };
 
 /**
- * TraceTxn marketing landing page.
+ * TraceTxn landing page — composed as one continuous document, not
+ * a stack of marketing sections.
  *
- * Eight chapters, each with its own color theme (CSS variables in
- * `globals.css` driven by `data-theme`):
+ * Structure:
+ *   - TopBand (sticky utility chrome)
+ *   - CoverBand (full-width dark cover, the document opening)
+ *   - DocumentRail (sticky left anchor list — table of contents)
+ *   - Document body composed of regions, each with its own
+ *     composition (different column ratios, different densities)
+ *   - DocumentFooter (closing strip)
  *
- *   1. Hero        — obsidian (dark, aurora orbs)
- *   2. Disputes    — orange (sticky scroll, evidence chain)
- *   3. Lifecycle   — sage (React timeline + 12-surface bento)
- *   4. Shapes      — graphite (dark spec-sheet · 8 commerce verticals)
- *   5. Gateways    — cobalt (logo bento + code interface block)
- *   6. Trust       — cream (animated counters + audit pillars)
- *   7. Workflows   — ultraviolet (steps + included list)
- *   8. Closing     — closing/dark (form + email channel)
- *
- * Free scroll only — snap-mandatory removed. The GSAP controller
- * handles reveal + parallax + count-up + theme-aware nav.
+ * No MarketingSection wrappers, no per-region eyebrow/title chrome,
+ * no per-section theme washes. Regions vary visually because they're
+ * purpose-built for their content, not because they share a section
+ * grammar with different styling.
  */
 export default function LandingPage() {
   return (
-    <div>
-      {/* Structured data (Organization / WebSite / SoftwareApplication
-          / FAQPage) — rendered server-side, picked up by Google +
-          Bing for rich-result eligibility (FAQ accordion, sitelinks
-          search box, product knowledge panel). */}
+    <div className="bg-background text-foreground">
       <StructuredData />
-      <MarketingNav />
-      <GsapController />
-      <main>
-        <Hero />
-        <FightDisputes />
-        <Lifecycle />
-        <CommerceShapes />
-        <MultiGateway />
-        <EnterpriseChoose />
-        <OrgSetups />
-        <QuotationForm
-          turnstileSiteKey={env.public.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null}
-        />
+      <TopBand />
+      <CoverBand />
+
+      <main className="mx-auto max-w-[1280px] px-6 lg:px-10">
+        <div className="grid grid-cols-1 gap-x-12 lg:grid-cols-[10rem_minmax(0,1fr)] lg:items-start">
+          <DocumentRail />
+          <div className="min-w-0">
+            <EvidenceRegion />
+            <LifecycleRegion />
+            <GatewaysRegion />
+            <IntegrityRegion />
+            <SetupRegion />
+            <ClosingRegion
+              turnstileSiteKey={
+                env.public.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null
+              }
+            />
+          </div>
+        </div>
       </main>
-      <MarketingFooter />
+
+      <DocumentFooter />
     </div>
   );
 }
