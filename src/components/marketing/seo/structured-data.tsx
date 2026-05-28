@@ -29,7 +29,7 @@ interface StructuredDataProps {
 export function StructuredData({
   baseUrl,
   brand = env.public.NEXT_PUBLIC_APP_NAME,
-  description = "PayOps is the payment operations platform for lifecycle visibility, hashed dispute evidence, and multi-gateway orchestration. Privately deployed on your own domain.",
+  description = "PayOps is the payment operations platform for the full order lifecycle — hashed dispute evidence, hosted consent, multi-gateway orchestration, and append-only audit. Built for retail, services, repair, dealership, B2B, and any commerce shape that takes money seriously.",
 }: StructuredDataProps) {
   const url = (baseUrl ?? env.public.NEXT_PUBLIC_APP_URL).replace(/\/$/, "");
 
@@ -121,7 +121,9 @@ export function StructuredData({
           "Append-only audit log",
           "Realtime SSE updates",
           "PDF + CSV dispute evidence export",
-          "Privately deployed per merchant",
+          "Multi-tenant — every workspace fully isolated",
+          "Self-serve onboarding with vertical templates",
+          "Universal item + order primitives across business types",
         ],
         offers: {
           "@type": "Offer",
@@ -147,7 +149,15 @@ export function StructuredData({
             name: "Is PayOps a multi-tenant SaaS?",
             acceptedAnswer: {
               "@type": "Answer",
-              text: "No. PayOps is a privately-deployed SaaS — each customer gets their own instance provisioned on their own domain. No shared tenant, no public sign-up.",
+              text: "Yes. PayOps is a multi-tenant operational platform — every workspace is fully isolated by tenant boundary, with its own catalog, orders, evidence, and audit trail. Sign up free, connect Stripe, and run your first order within minutes.",
+            },
+          },
+          {
+            "@type": "Question",
+            name: "What kinds of businesses use PayOps?",
+            acceptedAnswer: {
+              "@type": "Answer",
+              text: "Retail, grocery, pharmacy, repair, dealership, services, equipment, B2B workflows, rentals, and any custom commerce shape that needs operational payment infrastructure — order workflows, evidence chains, dispute readiness, consent capture, and multi-gateway routing.",
             },
           },
           {
@@ -155,7 +165,7 @@ export function StructuredData({
             name: "Which payment gateways does PayOps support?",
             acceptedAnswer: {
               "@type": "Answer",
-              text: "Stripe is fully live today (checkout, webhooks, disputes, refunds). Razorpay and Authorize.net adapters are scaffolded for activation on credentials. Adyen and PayPal are on the roadmap.",
+              text: "Stripe is fully live today — checkout, webhooks, disputes, refunds. Razorpay and Authorize.net adapters are scaffolded for activation on credentials. Adyen and PayPal are on the roadmap. The orchestration layer was built gateway-agnostic from day one.",
             },
           },
           {
@@ -171,15 +181,15 @@ export function StructuredData({
             name: "How is pricing structured?",
             acceptedAnswer: {
               "@type": "Answer",
-              text: "Quote-based. Each deployment is scoped to your stack, volume, and integration requirements at quotation. Send requirements to vinaymaheshwari35@gmail.com for a tailored proposal.",
+              text: "Self-serve workspaces start free. Custom routing, high-volume, regional gateway selection, or procurement-driven engagements run on a quote — start a conversation from the closing section of the landing page.",
             },
           },
           {
             "@type": "Question",
-            name: "How long does deployment take?",
+            name: "How quickly can I be live?",
             acceptedAnswer: {
               "@type": "Answer",
-              text: "After quotation acceptance, deployment is typically 1–2 weeks: branding, role matrix, gateway routing, and DNS provisioning. We respond to quotation requests within one business day.",
+              text: "Self-serve onboarding takes a few minutes — create your workspace, connect Stripe (one-click test + auto-registered webhook), seed your catalog from a vertical template, and run your first order. Custom setups land within 1–2 weeks of quotation acceptance.",
             },
           },
         ],

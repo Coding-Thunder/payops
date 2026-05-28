@@ -1,39 +1,41 @@
 import { MarketingSection, AccentWord } from "../section";
 
 /**
- * Deployment chapter — reframes the old "OrgSetups" section as the
- * private-deployment story. Ultraviolet wash for "exclusive,
- * premium" rather than "we don't have signup". File name kept so the
- * page import contract doesn't need to move.
+ * Workflows chapter — the self-serve onboarding story. Three steps
+ * from "create workspace" to "first paid order", followed by what
+ * every workspace gets out of the box.
+ *
+ * File path kept (`org-setups.tsx`) and section id kept (`#orgs`) so
+ * the page import contract and the nav anchor don't move.
  */
 
 const STEPS: Array<{ k: string; title: string; body: string }> = [
   {
     k: "01",
-    title: "Quotation",
-    body: "Share volume, current stack, and gateway preferences. We respond within one business day with a scoped proposal.",
+    title: "Create your workspace",
+    body: "Sign up, name your business, pick a vertical template — retail, services, rental, repair, dealership, generic. The catalog seeds itself; the operator console is live.",
   },
   {
     k: "02",
-    title: "Customisation",
-    body: "Branding, policy snapshots, role matrix, gateway routing — configured to your org before the first deploy.",
+    title: "Connect Stripe",
+    body: "One-click test, auto-registered webhook endpoint, deep links into your Stripe dashboard. Razorpay and Authorize.net adapters slot in next.",
   },
   {
     k: "03",
-    title: "Private deployment",
-    body: "Provisioned on a domain you own. Reserved for one merchant per instance. No shared tenant, no public sign-up.",
+    title: "Run your first order",
+    body: "Catalog → order → payment link → consent → paid. Every transition recorded on the evidence chain from minute one.",
   },
 ];
 
 const INCLUDED: string[] = [
-  "Branded customer-facing pages",
-  "Role + permission matrix to your spec",
-  "Gateway adapters (Stripe live, others on demand)",
-  "Audit-grade evidence chain",
-  "Hosted consent flow",
+  "Org-isolated data — your tenant, your records",
+  "Branded customer-facing payment pages",
+  "Role + permission matrix (Admin, Staff, custom)",
+  "Audit-grade hashed evidence chain",
+  "Hosted consent capture",
   "PDF + CSV dispute exports",
-  "Realtime SSE — single instance ready",
-  "DigitalOcean / GCP / AWS targets",
+  "Realtime SSE lifecycle updates",
+  "Stripe live · Razorpay + Authorize.net adapters next",
 ];
 
 export function OrgSetups() {
@@ -41,14 +43,14 @@ export function OrgSetups() {
     <MarketingSection
       id="orgs"
       theme="ultraviolet"
-      eyebrow="Privately deployed · reserved per merchant"
+      eyebrow="Self-serve onboarding · live in minutes"
       title={
         <>
-          Not shrink-wrap SaaS. A{" "}
-          <AccentWord>managed deployment</AccentWord> sized to your stack.
+          Create the workspace.{" "}
+          <AccentWord>Run your first order</AccentWord> before the day ends.
         </>
       }
-      description="PayOps is reserved for one merchant per instance. After quotation, your deployment is scoped, branded, and provisioned on a domain you own — not a tenant on someone else's cluster."
+      description="Item types, orders, evidence, and consent are universal primitives. Pick a vertical template, connect Stripe, run a real order through the lifecycle — all of it inside your tenant from the first minute."
     >
       {/* ── Step diagram ────────────────────────────────────────── */}
       <div className="grid gap-4 lg:grid-cols-3">
@@ -113,7 +115,7 @@ export function OrgSetups() {
           className="font-mono text-[10.5px] uppercase tracking-[0.18em]"
           style={{ color: "var(--m-eyebrow)" }}
         >
-          Included with every deployment
+          What every workspace gets
         </p>
         <ul className="mt-5 grid grid-cols-1 gap-x-6 gap-y-2.5 sm:grid-cols-2 lg:grid-cols-4">
           {INCLUDED.map((it) => (

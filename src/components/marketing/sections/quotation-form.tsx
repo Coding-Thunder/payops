@@ -125,14 +125,27 @@ export function QuotationForm({ turnstileSiteKey }: QuotationFormProps = {}) {
     <MarketingSection
       id="quote"
       theme="closing"
-      eyebrow="Start a quotation · or just email Vinay"
+      eyebrow="For custom, high-volume, or procurement-led setups"
       title={
         <>
-          Tell us about your{" "}
-          <AccentWord>payments stack.</AccentWord>
+          If your setup needs more than{" "}
+          <AccentWord>self-serve, start here.</AccentWord>
         </>
       }
-      description="A short brief is enough to get a tailored response from the team that builds and operates PayOps. We reply within one business day."
+      description={
+        <>
+          Most teams start free and grow from there. If you need scoped
+          routing, regional gateway selection, a procurement track, or
+          volumes that warrant a dedicated conversation — tell us about
+          it and we&apos;ll respond within one business day.{" "}
+          <a
+            href="/signup"
+            className="underline decoration-current/40 underline-offset-4 transition-colors hover:decoration-current"
+          >
+            Self-serve is one click away.
+          </a>
+        </>
+      }
     >
       <div className="grid gap-12 lg:grid-cols-[1fr_1.3fr] lg:items-start">
         {/* ── Left rail ───────────────────────────────────────── */}
@@ -158,7 +171,7 @@ export function QuotationForm({ turnstileSiteKey }: QuotationFormProps = {}) {
               className="mt-2 text-[13px] leading-relaxed"
               style={{ color: "var(--m-fg-soft)" }}
             >
-              Reaches the engineer + operator building PayOps. No drip,
+              Reaches the team building and operating PayOps. No drip,
               no SDR.
             </p>
             <p className="mt-5 inline-flex items-center gap-1.5 text-[12.5px] font-medium">
