@@ -1,4 +1,4 @@
-import { CheckIcon } from "lucide-react";
+import { AlertCircleIcon, CheckIcon, XCircleIcon } from "lucide-react";
 
 import { ConsentStatus, DisputeOutcome, DisputeStatus, OrderStatus } from "@/lib/constants/enums";
 import { formatCurrency, formatUtcTimestamp } from "@/lib/format";
@@ -179,12 +179,35 @@ function OpenVariant({
   const d = order.dispute!;
   const deadline = order.payment.paidAt; // proxy until DisputeDTO is wired
   return (
-    <div className="mt-5 flex flex-col gap-7">
-      <StatusBlock
-        label="OPEN"
-        line={`Chargeback opened ${d.openedAt ? formatUtcTimestamp(d.openedAt) : "—"}. Submit evidence before the deadline.`}
-        tone="warning"
-      />
+    <div className="mt-5 flex flex-col gap-6">
+      {/* Amber OPEN hero block — calm urgency. */}
+      <div
+        className="grid grid-cols-[auto_1fr] items-center gap-4 rounded-xl px-5 py-5 shadow-[0_18px_44px_-20px_color-mix(in_oklch,var(--warning)_45%,transparent)]"
+        style={{
+          background: "var(--warning)",
+          color: "oklch(0.18 0.05 78)",
+        }}
+      >
+        <span
+          className="grid size-12 place-items-center rounded-full bg-white/30 ring-2"
+          style={{
+            color: "oklch(0.18 0.05 78)",
+            borderColor: "oklch(0.18 0.05 78 / 0.4)",
+          }}
+        >
+          <AlertCircleIcon className="size-6" strokeWidth={2.5} />
+        </span>
+        <div>
+          <p className="text-[20px] font-bold leading-tight tracking-tight">
+            OPEN
+          </p>
+          <p className="mt-1 text-[12.5px] leading-snug opacity-85">
+            Chargeback opened{" "}
+            {d.openedAt ? formatUtcTimestamp(d.openedAt) : "—"}. Submit
+            evidence before the deadline.
+          </p>
+        </div>
+      </div>
 
       {d.amount && d.currency ? (
         <FocalAmount
@@ -223,12 +246,25 @@ function WonVariant({
     (e) => e.eventType === "CONSENT_RECEIVED",
   );
   return (
-    <div className="mt-5 flex flex-col gap-7">
-      <StatusBlock
-        label="CASE WON"
-        line="Chargeback reversed in your favor."
-        tone="success"
-      />
+    <div className="mt-5 flex flex-col gap-6">
+      {/* Big green CASE WON hero block — same operational
+          identity moment as the reference's outcome panel. */}
+      <div
+        className="grid grid-cols-[auto_1fr] items-center gap-4 rounded-xl px-5 py-5 text-white shadow-[0_18px_44px_-20px_color-mix(in_oklch,var(--success)_50%,transparent)]"
+        style={{ background: "var(--success)" }}
+      >
+        <span className="grid size-12 place-items-center rounded-full bg-white/20 ring-2 ring-white/70">
+          <CheckIcon className="size-6 text-white" strokeWidth={3} />
+        </span>
+        <div>
+          <p className="text-[20px] font-bold leading-tight tracking-tight">
+            CASE WON
+          </p>
+          <p className="mt-1 text-[12.5px] leading-snug text-white/85">
+            Chargeback reversed in your favor.
+          </p>
+        </div>
+      </div>
 
       {d.amount && d.currency ? (
         <FocalAmount
@@ -278,12 +314,24 @@ function LostVariant({
 }) {
   const d = order.dispute!;
   return (
-    <div className="mt-5 flex flex-col gap-7">
-      <StatusBlock
-        label="CASE LOST"
-        line="Chargeback decided in the customer's favor."
-        tone="danger"
-      />
+    <div className="mt-5 flex flex-col gap-6">
+      {/* Red CASE LOST hero block — same composition, opposite outcome. */}
+      <div
+        className="grid grid-cols-[auto_1fr] items-center gap-4 rounded-xl px-5 py-5 text-white shadow-[0_18px_44px_-20px_color-mix(in_oklch,var(--destructive)_50%,transparent)]"
+        style={{ background: "var(--destructive)" }}
+      >
+        <span className="grid size-12 place-items-center rounded-full bg-white/20 ring-2 ring-white/70">
+          <XCircleIcon className="size-6 text-white" strokeWidth={3} />
+        </span>
+        <div>
+          <p className="text-[20px] font-bold leading-tight tracking-tight">
+            CASE LOST
+          </p>
+          <p className="mt-1 text-[12.5px] leading-snug text-white/85">
+            Chargeback decided in the customer&apos;s favor.
+          </p>
+        </div>
+      </div>
 
       {d.amount && d.currency ? (
         <FocalAmount

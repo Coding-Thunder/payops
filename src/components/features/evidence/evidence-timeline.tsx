@@ -1,5 +1,5 @@
 import { Fragment } from "react";
-import { CheckIcon, AlertTriangleIcon } from "lucide-react";
+import { AlertTriangleIcon } from "lucide-react";
 
 import {
   OrderEvidenceActorLabel,
@@ -48,7 +48,20 @@ export function EvidenceTimeline({
     );
   }
   return (
-    <ol className="divide-y divide-border/60">
+    <ol className="relative">
+      {/* Vertical green connector line behind the numbered nodes.
+          Solid green when the chain is valid; destructive when broken
+          at any point (the row-level marker tells you which one). */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute left-[0.875rem] top-3 bottom-3 w-[2.5px] rounded-full"
+        style={{
+          background:
+            brokenAtSequence != null
+              ? "var(--destructive)"
+              : "var(--success)",
+        }}
+      />
       {events.map((event) => (
         <TimelineRow
           key={event.id}
@@ -78,20 +91,40 @@ function TimelineRow({
       : null;
 
   return (
-    <li className="grid grid-cols-[3rem_1fr_auto_1.25rem] items-baseline gap-x-4 py-2.5 first:pt-0 last:pb-0">
-      {/* Sequence */}
-      <span className="font-mono text-[12px] text-muted-foreground tabular-nums">
-        {String(event.sequence).padStart(2, "0")}
+    <li className="relative grid grid-cols-[1.75rem_1fr_auto] items-start gap-x-3 py-2.5 first:pt-0 last:pb-0">
+      {/* Numbered green ring node — bold operational identity
+          marker. Replaces the prior tiny sequence + tick combo. */}
+      <span
+        className={`relative z-10 grid size-7 place-items-center rounded-full text-[11px] font-semibold ${
+          isBrokenHead
+            ? "text-white shadow-[0_0_0_3px_color-mix(in_oklch,var(--destructive)_25%,transparent)]"
+            : "text-white"
+        }`}
+        style={{
+          background: isBrokenHead
+            ? "var(--destructive)"
+            : "var(--success)",
+        }}
+      >
+        {isBrokenHead ? (
+          <AlertTriangleIcon className="size-3.5" strokeWidth={2.5} />
+        ) : (
+          event.sequence
+        )}
       </span>
 
       {/* Label + secondary line */}
-      <div className="min-w-0 space-y-0.5">
-        <p className="text-[13px] font-medium leading-tight">
+      <div className="min-w-0 pt-1">
+        <p
+          className={`text-[13px] font-semibold leading-tight ${
+            isBrokenHead ? "text-destructive" : ""
+          }`}
+        >
           {label}
         </p>
         <RowMeta event={event} />
         {isBrokenHead ? (
-          <p className="mt-1 inline-flex items-center gap-1.5 text-[11.5px] text-destructive">
+          <p className="mt-1 inline-flex items-center gap-1.5 text-[11.5px] font-medium text-destructive">
             <AlertTriangleIcon className="size-3" aria-hidden />
             Chain breaks at this event — payload or hash mutated
           </p>
@@ -100,17 +133,8 @@ function TimelineRow({
       </div>
 
       {/* Timestamp */}
-      <span className="font-mono text-[11.5px] text-muted-foreground tabular-nums">
+      <span className="pt-1 font-mono text-[11px] text-muted-foreground tabular-nums whitespace-nowrap">
         {formatUtcTime(event.occurredAt)}
-      </span>
-
-      {/* Integrity tick */}
-      <span aria-hidden className="justify-self-end">
-        {isBrokenHead ? (
-          <AlertTriangleIcon className="size-3.5 text-destructive" />
-        ) : (
-          <CheckIcon className="size-3.5 text-success" />
-        )}
       </span>
     </li>
   );
