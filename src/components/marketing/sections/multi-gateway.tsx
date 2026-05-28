@@ -76,65 +76,26 @@ export function MultiGateway() {
       }
       description="Stripe handles every active charge today. The orchestration layer underneath was built gateway-agnostic from day one — adapters slot in without rewriting the order lifecycle, webhook contract, or audit chain."
     >
-      {/* ── Bento: provider logos ───────────────────────────────── */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {GATEWAYS.map((g, i) => {
-          const tone = STATUS_TONE[g.status];
-          return (
-            <div
-              key={g.key}
-              data-reveal
-              data-reveal-order={i % 3}
-              className="group relative overflow-hidden rounded-2xl border p-6 backdrop-blur-sm transition-transform hover:-translate-y-px"
-              style={{
-                borderColor: "var(--m-border)",
-                background: "var(--m-surface)",
-              }}
-            >
-              <div
-                aria-hidden
-                className="pointer-events-none absolute -right-12 -top-12 size-40 rounded-full opacity-30 blur-2xl transition-opacity group-hover:opacity-60"
-                style={{
-                  background: `radial-gradient(circle, ${tone.color} 0%, transparent 70%)`,
-                }}
-              />
-              <div className="flex items-center justify-between">
-                <span
-                  className="grid size-12 place-items-center rounded-xl font-mono text-[18px] font-semibold"
-                  style={{
-                    background: "var(--m-surface-strong)",
-                    border: "1px solid var(--m-border)",
-                  }}
-                >
-                  {g.glyph}
-                </span>
-                <span
-                  className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10.5px] font-medium uppercase tracking-[0.14em]"
-                  style={{
-                    background: `color-mix(in oklch, ${tone.color} 20%, transparent)`,
-                    color: tone.color,
-                    border: `1px solid color-mix(in oklch, ${tone.color} 35%, transparent)`,
-                  }}
-                >
-                  <span
-                    className="size-1.5 rounded-full"
-                    style={{ background: tone.color }}
-                  />
-                  {tone.label}
-                </span>
-              </div>
-              <p className="mt-5 text-[16.5px] font-semibold tracking-tight">
-                {g.label}
-              </p>
-              <p
-                className="mt-1.5 text-[12.5px] leading-relaxed"
-                style={{ color: "var(--m-fg-soft)" }}
-              >
-                {g.note}
-              </p>
-            </div>
-          );
-        })}
+      {/* ── Gateway list: two tiers, no per-card chrome ──────────── */}
+      <div
+        className="overflow-hidden rounded-2xl border"
+        style={{ borderColor: "var(--m-border)" }}
+      >
+        <GatewayGroup
+          label="Live"
+          tone={STATUS_TONE.live}
+          gateways={GATEWAYS.filter((g) => g.status === "live")}
+        />
+        <GatewayGroup
+          label="Next"
+          tone={STATUS_TONE.next}
+          gateways={GATEWAYS.filter((g) => g.status === "next")}
+        />
+        <GatewayGroup
+          label="Roadmap"
+          tone={STATUS_TONE.roadmap}
+          gateways={GATEWAYS.filter((g) => g.status === "roadmap")}
+        />
       </div>
 
       {/* ── Code block — dark embedded callout. Lives inside a
@@ -222,6 +183,76 @@ export function MultiGateway() {
         shape across providers.
       </p>
     </MarketingSection>
+  );
+}
+
+// ─── Gateway group ────────────────────────────────────────────────
+function GatewayGroup({
+  label,
+  tone,
+  gateways,
+}: {
+  label: string;
+  tone: { label: string; color: string };
+  gateways: Gateway[];
+}) {
+  if (gateways.length === 0) return null;
+  return (
+    <div
+      className="border-b last:border-b-0"
+      style={{ borderColor: "var(--m-border)" }}
+    >
+      <div
+        className="flex items-center justify-between px-6 py-2.5"
+        style={{ background: "var(--m-surface)" }}
+      >
+        <p
+          className="inline-flex items-center gap-2 font-mono text-[10.5px] font-semibold uppercase tracking-[0.16em]"
+          style={{ color: tone.color }}
+        >
+          <span
+            aria-hidden
+            className="size-1.5 rounded-full"
+            style={{ background: tone.color }}
+          />
+          {label}
+        </p>
+        <p
+          className="font-mono text-[10.5px] tabular-nums"
+          style={{ color: "var(--m-fg-soft)" }}
+        >
+          {gateways.length}
+        </p>
+      </div>
+      <ul>
+        {gateways.map((g) => (
+          <li
+            key={g.key}
+            className="grid grid-cols-[2.25rem_minmax(0,9rem)_minmax(0,1fr)] items-baseline gap-x-4 px-6 py-3 border-t"
+            style={{ borderColor: "var(--m-border)" }}
+          >
+            <span
+              className="grid size-7 place-items-center rounded-md font-mono text-[12px] font-semibold"
+              style={{
+                background: "var(--m-surface)",
+                border: "1px solid var(--m-border)",
+              }}
+            >
+              {g.glyph}
+            </span>
+            <span className="text-[14px] font-semibold tracking-tight">
+              {g.label}
+            </span>
+            <span
+              className="text-[12.5px] leading-snug"
+              style={{ color: "var(--m-fg-soft)" }}
+            >
+              {g.note}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
