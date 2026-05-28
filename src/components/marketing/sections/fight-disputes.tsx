@@ -1,17 +1,18 @@
 import { MarketingSection, AccentWord } from "../section";
-import { ScreenshotFrame } from "../mocks/screenshot-frame";
+import { CaseFileCanvas } from "../mocks/case-file-canvas";
 
-const RECEIPTS = [
-  { label: "Order audit chain", sub: "append-only, typed" },
-  { label: "Payment intent + charge id", sub: "gateway round-trip" },
-  { label: "Email correspondence", sub: "rendered HTML + text" },
-  { label: "Hosted consent signature", sub: "name + IP + UA" },
-  { label: "Hashed event timestamps", sub: "SHA-256 chained" },
-  { label: "Gateway webhook receipts", sub: "verified signatures" },
-  { label: "Lifecycle state transitions", sub: "1..N sequence" },
-  { label: "PDF evidence export", sub: "one-click forward" },
-];
-
+/**
+ * Disputes chapter — the brand center.
+ *
+ * Embeds the actual TraceTxn case-file artifact (a static React mock
+ * of the in-app evidence document) instead of a screenshot. The
+ * product surface IS the marketing artifact; visitors read the same
+ * document operators send to banks.
+ *
+ * The supporting column (right) carries the framing — what the
+ * artifact captures, when it captures it, and why it stays valid
+ * six weeks after the order.
+ */
 export function FightDisputes() {
   return (
     <MarketingSection
@@ -24,144 +25,90 @@ export function FightDisputes() {
           <AccentWord>evidence is already filed.</AccentWord>
         </>
       }
-      description="Banks want proof you delivered, the customer agreed, and the charge matches the order. PayOps captures every artefact inline — contesting a chargeback is a click, not a forensic exercise."
+      description="Banks want proof you delivered, the customer agreed, and the charge matches the order. Every order persists a hashed, append-only case file — contesting a chargeback is a click, not a forensic exercise."
     >
-      {/* Sticky-pin split: product visual sticks while receipts scroll. */}
-      <div className="grid gap-14 lg:grid-cols-[1.05fr_1fr] lg:items-start">
-        <div
-          data-reveal
-          data-reveal-order={0}
-          className="lg:sticky lg:top-32"
-        >
-          <div className="relative">
-            <div
-              aria-hidden
-              className="pointer-events-none absolute -inset-10 -z-10 rounded-[2rem] opacity-60 blur-3xl"
-              style={{
-                background:
-                  "radial-gradient(ellipse 70% 70% at 50% 50%, color-mix(in oklch, var(--m-orange) 50%, transparent) 0%, transparent 70%)",
-              }}
-            />
-            <ScreenshotFrame
-              src="/marketing/evidence-chain.webp"
-              alt="PayOps evidence chain for a disputed order"
-              bare
-              className="ring-1 ring-[color:var(--m-border)]"
-            />
-          </div>
-
-          <div
-            data-reveal
-            data-reveal-order={1}
-            className="mt-6 rounded-2xl border p-5 backdrop-blur"
-            style={{
-              borderColor: "var(--m-border)",
-              background: "var(--m-surface-strong)",
-            }}
-          >
-            <p className="font-mono text-[10.5px] uppercase tracking-[0.18em]"
-              style={{ color: "var(--m-eyebrow)" }}
-            >
-              Webhook → evidence pack
-            </p>
-            <p className="mt-2 text-[13px] leading-relaxed"
-              style={{ color: "var(--m-fg-soft)" }}
-            >
-              <span className="font-mono text-[12.5px] text-current">
-                charge.dispute.created
-              </span>{" "}
-              → order auto-flagged → evidence chain frozen → operator
-              notified → PDF ready to forward to the bank.
-            </p>
-            <div className="mt-4 grid grid-cols-3 gap-2 text-center text-[11px]">
-              {[
-                { v: "<60s", k: "freeze" },
-                { v: "100%", k: "captured" },
-                { v: "1 click", k: "export" },
-              ].map((s) => (
-                <div
-                  key={s.k}
-                  className="rounded-lg border px-2 py-2"
-                  style={{ borderColor: "var(--m-border)" }}
-                >
-                  <p className="font-mono text-[14px] font-semibold">
-                    {s.v}
-                  </p>
-                  <p
-                    className="mt-0.5 font-mono uppercase tracking-[0.12em]"
-                    style={{ color: "var(--m-fg-soft)" }}
-                  >
-                    {s.k}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
+      <div className="grid gap-10 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] lg:items-start">
+        {/* Live case-file canvas — the product surface, not a screenshot */}
+        <div data-reveal data-reveal-order={0} className="lg:sticky lg:top-32">
+          <CaseFileCanvas />
         </div>
 
-        <div>
-          <p
-            data-reveal
-            data-reveal-order={1}
-            className="text-[15.5px] leading-relaxed"
-          >
-            Every order persists a compliance-grade record. The moment a
-            dispute webhook fires, PayOps freezes the chain, auto-flags
-            risk, and prepares an exportable packet — long before the
-            bank's evidence deadline.
-          </p>
-
-          <ul className="mt-8 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-            {RECEIPTS.map((r, i) => (
-              <li
-                key={r.label}
-                data-reveal
-                data-reveal-order={2 + (i % 4)}
-                className="group flex items-start gap-3 rounded-xl border p-3.5 transition-colors"
-                style={{
-                  borderColor: "var(--m-border)",
-                  background: "var(--m-surface)",
-                }}
-              >
-                <CheckBadge />
-                <div>
-                  <p className="text-[13.5px] font-medium">{r.label}</p>
-                  <p
-                    className="mt-0.5 font-mono text-[10.5px] uppercase tracking-[0.12em]"
-                    style={{ color: "var(--m-fg-soft)" }}
-                  >
-                    {r.sub}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ul>
+        {/* Editorial column: what's captured, when, why it lands */}
+        <div className="space-y-8">
+          <Note
+            order={0}
+            label="01"
+            title="Captured inline, not assembled later"
+            body="Every transition writes one row into the hashed chain — order created, link generated, email sent, consent signed, paid. The case file is built by the time the customer hits success."
+          />
+          <Note
+            order={1}
+            label="02"
+            title="Frozen the moment a dispute opens"
+            body={
+              <>
+                The first{" "}
+                <code className="font-mono text-[12px]">
+                  charge.dispute.created
+                </code>{" "}
+                webhook flips the order risk flag, freezes the chain, and
+                stages a one-click export. The bank's evidence deadline
+                stops being a fire drill.
+              </>
+            }
+          />
+          <Note
+            order={2}
+            label="03"
+            title="The export and the in-app view are the same artifact"
+            body="Operators view the case file in TraceTxn; banks receive the PDF export. Same skeleton, same data, same chain head hash — no separate template, no representation drift."
+          />
+          <Note
+            order={3}
+            label="04"
+            title="Tamper-proof by design"
+            body="Every event chain-hashes the previous one's payload. Any edit cascades into a broken chain that surfaces immediately to the operator and the regulator. The data model is the audit."
+          />
         </div>
       </div>
     </MarketingSection>
   );
 }
 
-function CheckBadge() {
+function Note({
+  order,
+  label,
+  title,
+  body,
+}: {
+  order: number;
+  label: string;
+  title: string;
+  body: React.ReactNode;
+}) {
   return (
-    <span
-      aria-hidden
-      className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full"
-      style={{
-        background:
-          "linear-gradient(135deg, var(--m-orange) 0%, var(--m-orange-deep) 100%)",
-        color: "white",
-      }}
+    <div
+      data-reveal
+      data-reveal-order={order + 1}
+      className="grid grid-cols-[2.25rem_1fr] items-baseline gap-x-3"
     >
-      <svg viewBox="0 0 12 12" className="size-3" fill="none">
-        <path
-          d="M2.5 6.5L4.8 8.6L9.5 3.8"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </span>
+      <span
+        className="font-mono text-[10.5px] uppercase tracking-[0.14em]"
+        style={{ color: "var(--m-eyebrow)" }}
+      >
+        {label}
+      </span>
+      <div className="space-y-1.5">
+        <h3 className="text-[15.5px] font-semibold tracking-tight">
+          {title}
+        </h3>
+        <p
+          className="text-[13.5px] leading-relaxed"
+          style={{ color: "var(--m-fg-soft)" }}
+        >
+          {body}
+        </p>
+      </div>
+    </div>
   );
 }
