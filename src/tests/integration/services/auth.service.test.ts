@@ -29,12 +29,12 @@ beforeEach(async () => {
 describe("authenticate", () => {
   it("signs a verifiable session on a correct password", async () => {
     const user = await createUser({
-      email: "ada@payops.test",
+      email: "ada@tracetxn.test",
       password: "Hunter2Hunter2",
     });
 
     const result = await authenticate(
-      { email: "ada@payops.test", password: "Hunter2Hunter2" },
+      { email: "ada@tracetxn.test", password: "Hunter2Hunter2" },
       { ip: "1.2.3.4", userAgent: "vitest", requestId: "req-1" },
     );
 
@@ -60,19 +60,19 @@ describe("authenticate", () => {
   });
 
   it("normalises the supplied email (case + whitespace)", async () => {
-    await createUser({ email: "case@payops.test", password: "Hunter2Hunter2" });
+    await createUser({ email: "case@tracetxn.test", password: "Hunter2Hunter2" });
 
     const r = await authenticate(
-      { email: "  CASE@PayOps.TEST  ", password: "Hunter2Hunter2" },
+      { email: "  CASE@TraceTxn.TEST  ", password: "Hunter2Hunter2" },
       null,
     );
-    expect(r.user.email).toBe("case@payops.test");
+    expect(r.user.email).toBe("case@tracetxn.test");
   });
 
   it("throws UnauthorizedError on an unknown email", async () => {
     await expect(
       authenticate(
-        { email: "noone@payops.test", password: "Hunter2Hunter2" },
+        { email: "noone@tracetxn.test", password: "Hunter2Hunter2" },
         null,
       ),
     ).rejects.toBeInstanceOf(UnauthorizedError);
@@ -85,10 +85,10 @@ describe("authenticate", () => {
   });
 
   it("throws UnauthorizedError on a bad password", async () => {
-    await createUser({ email: "bad@payops.test", password: "Hunter2Hunter2" });
+    await createUser({ email: "bad@tracetxn.test", password: "Hunter2Hunter2" });
 
     await expect(
-      authenticate({ email: "bad@payops.test", password: "wrong-one" }, null),
+      authenticate({ email: "bad@tracetxn.test", password: "wrong-one" }, null),
     ).rejects.toBeInstanceOf(UnauthorizedError);
 
     const audit = await AuditLog.findOne({
@@ -99,14 +99,14 @@ describe("authenticate", () => {
 
   it("rejects DISABLED users even with the correct password", async () => {
     await createUser({
-      email: "off@payops.test",
+      email: "off@tracetxn.test",
       password: "Hunter2Hunter2",
       status: RecordState.DISABLED,
     });
 
     await expect(
       authenticate(
-        { email: "off@payops.test", password: "Hunter2Hunter2" },
+        { email: "off@tracetxn.test", password: "Hunter2Hunter2" },
         null,
       ),
     ).rejects.toBeInstanceOf(UnauthorizedError);
@@ -119,16 +119,16 @@ describe("authenticate", () => {
 
   it("uses the same error message for every failure mode (no enumeration leak)", async () => {
     const e1 = (await authenticate(
-      { email: "nope@payops.test", password: "Hunter2Hunter2" },
+      { email: "nope@tracetxn.test", password: "Hunter2Hunter2" },
       null,
     ).catch((e: unknown) => e)) as Error;
 
     await createUser({
-      email: "exists@payops.test",
+      email: "exists@tracetxn.test",
       password: "Hunter2Hunter2",
     });
     const e2 = (await authenticate(
-      { email: "exists@payops.test", password: "wrong-one" },
+      { email: "exists@tracetxn.test", password: "wrong-one" },
       null,
     ).catch((e: unknown) => e)) as Error;
 

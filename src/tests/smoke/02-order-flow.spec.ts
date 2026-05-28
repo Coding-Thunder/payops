@@ -17,7 +17,7 @@ import {
  *   4. Re-fetch the order via /api/orders/:id and confirm it transitioned
  *      to PAID and recorded the amount + paidAt.
  *
- * This is the heart of PayOps — if it ever breaks, payments are broken.
+ * This is the heart of TraceTxn — if it ever breaks, payments are broken.
  */
 
 test.describe("order + payment flow", () => {
@@ -36,7 +36,7 @@ test.describe("order + payment flow", () => {
         provider: "HERTZ",
         customer: {
           name: "Smoke Customer",
-          email: "smoke-customer@payops.test",
+          email: "smoke-customer@tracetxn.test",
           phone: "+15555550100",
         },
         vehicle: { company: "Toyota", type: "Camry" },
@@ -89,7 +89,7 @@ test.describe("order + payment flow", () => {
         provider: "HERTZ",
         customer: {
           name: "Dup Customer",
-          email: "dup-customer@payops.test",
+          email: "dup-customer@tracetxn.test",
           phone: "+15555550100",
         },
         vehicle: { company: "Honda", type: "Civic" },

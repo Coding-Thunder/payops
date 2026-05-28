@@ -52,7 +52,7 @@ async function seedLegacyOrg(): Promise<string> {
   await User.create({
     _id: ownerId,
     name: "Legacy Owner",
-    email: `legacy-${ownerId.toString().slice(-6)}@payops.test`,
+    email: `legacy-${ownerId.toString().slice(-6)}@tracetxn.test`,
     passwordHash: "x".repeat(60),
     role: UserRole.SUPER_ADMIN,
     status: "ACTIVE",

@@ -140,7 +140,7 @@ function RealtimeBridge({
       statusRef.current("live");
       handle(e.data);
     };
-    source.addEventListener("payops", onEvent);
+    source.addEventListener("tracetxn", onEvent);
 
     source.onerror = () => {
       // EventSource auto-reconnects; surface that state to the UI.
@@ -157,7 +157,7 @@ function RealtimeBridge({
     return () => {
       window.removeEventListener("online", syncOnline);
       window.removeEventListener("offline", syncOnline);
-      source.removeEventListener("payops", onEvent);
+      source.removeEventListener("tracetxn", onEvent);
       source.close();
       if (refreshTimer.current) window.clearTimeout(refreshTimer.current);
     };

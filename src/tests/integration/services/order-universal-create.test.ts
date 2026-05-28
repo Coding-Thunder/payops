@@ -41,7 +41,7 @@ function actorFor(): {
   return {
     id: new Types.ObjectId().toString(),
     name: "Test agent",
-    email: "agent@payops.test",
+    email: "agent@tracetxn.test",
     role: UserRole.ADMIN,
   };
 }

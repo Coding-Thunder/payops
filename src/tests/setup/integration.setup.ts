@@ -96,7 +96,7 @@ beforeAll(async () => {
   process.env.TRACETXN_TEST_MODE = "integration";
 
   // Force a clean module-level cache for the shared mongoose connection.
-  delete (globalThis as { __payopsMongoose?: unknown }).__payopsMongoose;
+  delete (globalThis as { __tracetxnMongoose?: unknown }).__tracetxnMongoose;
 });
 
 beforeEach(() => {
@@ -124,5 +124,5 @@ afterAll(async () => {
     await mongoose.connection.dropDatabase();
     await mongoose.disconnect();
   }
-  delete (globalThis as { __payopsMongoose?: unknown }).__payopsMongoose;
+  delete (globalThis as { __tracetxnMongoose?: unknown }).__tracetxnMongoose;
 });

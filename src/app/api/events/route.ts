@@ -119,7 +119,7 @@ export async function GET(req: NextRequest) {
         ) {
           return;
         }
-        send(`event: payops\ndata: ${JSON.stringify(event)}\n\n`);
+        send(`event: tracetxn\ndata: ${JSON.stringify(event)}\n\n`);
       });
 
       const onAbort = () => {

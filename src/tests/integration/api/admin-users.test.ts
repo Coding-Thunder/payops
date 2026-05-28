@@ -33,7 +33,7 @@ describe("POST /api/admin/users (RBAC)", () => {
         method: "POST",
         body: {
           name: "New Staff",
-          email: "staffer@payops.test",
+          email: "staffer@tracetxn.test",
           role: UserRole.STAFF,
           password: "Hunter2Hunter2",
         },
@@ -51,7 +51,7 @@ describe("POST /api/admin/users (RBAC)", () => {
         method: "POST",
         body: {
           name: "Sneak",
-          email: "sneak@payops.test",
+          email: "sneak@tracetxn.test",
           role: UserRole.SUPER_ADMIN,
           password: "Hunter2Hunter2",
         },
@@ -69,7 +69,7 @@ describe("POST /api/admin/users (RBAC)", () => {
         method: "POST",
         body: {
           name: "Super",
-          email: "super2@payops.test",
+          email: "super2@tracetxn.test",
           role: UserRole.SUPER_ADMIN,
           password: "Hunter2Hunter2",
         },
@@ -86,7 +86,7 @@ describe("POST /api/admin/users (RBAC)", () => {
         method: "POST",
         body: {
           name: "x",
-          email: "x@payops.test",
+          email: "x@tracetxn.test",
           role: UserRole.STAFF,
           password: "Hunter2Hunter2",
         },
@@ -99,8 +99,8 @@ describe("POST /api/admin/users (RBAC)", () => {
 
 describe("GET /api/admin/users", () => {
   it("returns a list, no password fields exposed", async () => {
-    await createUser({ email: "alice@payops.test", role: UserRole.STAFF });
-    await createUser({ email: "bob@payops.test", role: UserRole.STAFF });
+    await createUser({ email: "alice@tracetxn.test", role: UserRole.STAFF });
+    await createUser({ email: "bob@tracetxn.test", role: UserRole.STAFF });
 
     session = await mockSession(actorFor(UserRole.ADMIN));
     const res = await listRoute(buildRequest("/api/admin/users"));
@@ -118,8 +118,8 @@ describe("GET /api/admin/users", () => {
   });
 
   it("filters by role", async () => {
-    await createUser({ email: "s1@payops.test", role: UserRole.STAFF });
-    await createUser({ email: "a1@payops.test", role: UserRole.ADMIN });
+    await createUser({ email: "s1@tracetxn.test", role: UserRole.STAFF });
+    await createUser({ email: "a1@tracetxn.test", role: UserRole.ADMIN });
 
     session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     const res = await listRoute(

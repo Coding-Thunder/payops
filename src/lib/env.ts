@@ -24,7 +24,7 @@ const serverSchema = z.object({
    *  keep working, but encouraged to rotate to a dedicated secret so a
    *  leak of session material doesn't also forge consent tokens. */
   CONSENT_TOKEN_SECRET: z.string().min(32).optional(),
-  COOKIE_NAME: z.string().default("payops_session"),
+  COOKIE_NAME: z.string().default("tracetxn_session"),
   COOKIE_DOMAIN: z.string().optional(),
   COOKIE_SECURE: z
     .union([z.string(), z.boolean()])

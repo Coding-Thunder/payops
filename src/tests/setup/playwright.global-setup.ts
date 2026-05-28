@@ -10,7 +10,7 @@ import { loadEnvFile } from "./load-env";
  * Playwright global setup.
  *
  *   1. Load .env.smoke so MONGODB_URI etc. point at the dedicated
- *      payops-smoke database. Refuse to run if it doesn't.
+ *      tracetxn-smoke database. Refuse to run if it doesn't.
  *   2. Connect to Mongo and drop the database — every run starts clean.
  *   3. Seed deterministic fixtures: admin user, staff user, settings doc.
  *   4. Write the credentials to a tmp file the tests read.
@@ -40,9 +40,9 @@ export default async function globalSetup() {
 
   const uri = process.env.MONGODB_URI;
   const dbName = process.env.MONGODB_DB;
-  if (!uri?.includes("payops-smoke")) {
+  if (!uri?.includes("tracetxn-smoke")) {
     throw new Error(
-      `[smoke] Refusing to run — MONGODB_URI must point at payops-smoke (got ${uri}).`,
+      `[smoke] Refusing to run — MONGODB_URI must point at tracetxn-smoke (got ${uri}).`,
     );
   }
 
@@ -68,7 +68,7 @@ export default async function globalSetup() {
   const admin = {
     _id: new mongoose.Types.ObjectId(),
     name: "Smoke Admin",
-    email: "admin@smoke.payops.test",
+    email: "admin@smoke.tracetxn.test",
     passwordHash: await bcrypt.hash(adminPassword, 12),
     role: "ADMIN",
     status: "ACTIVE",
@@ -81,7 +81,7 @@ export default async function globalSetup() {
   const staff = {
     _id: new mongoose.Types.ObjectId(),
     name: "Smoke Staff",
-    email: "staff@smoke.payops.test",
+    email: "staff@smoke.tracetxn.test",
     passwordHash: await bcrypt.hash(staffPassword, 12),
     role: "STAFF",
     status: "ACTIVE",
@@ -105,7 +105,7 @@ export default async function globalSetup() {
         paymentExpiryHours: 24,
         orderPrefix: "SMK",
         defaultCurrency: "USD",
-        supportEmail: "support@smoke.payops.test",
+        supportEmail: "support@smoke.tracetxn.test",
         supportPhone: "+15555550100",
         successRedirectUrl: `${process.env.APP_URL}/pay/success`,
         cancelRedirectUrl: `${process.env.APP_URL}/pay/cancelled`,

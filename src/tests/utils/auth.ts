@@ -40,7 +40,7 @@ export function actorFor(
   return {
     id,
     name: opts.name ?? `${role} User`,
-    email: opts.email ?? `${role.toLowerCase()}@payops.test`,
+    email: opts.email ?? `${role.toLowerCase()}@tracetxn.test`,
     role,
     orgId,
     orgIds: [orgId],

@@ -119,7 +119,7 @@ export function buildCompletedEvent(args: {
         mode: "payment",
         status: "complete",
         client_reference_id: args.orderId,
-        customer_email: "smoke@payops.test",
+        customer_email: "smoke@tracetxn.test",
         payment_intent: `pi_smoke_${ts}`,
         amount_total: Math.round(args.amount * 100),
         currency: args.currency ?? "usd",

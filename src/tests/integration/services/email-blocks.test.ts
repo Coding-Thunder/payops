@@ -249,8 +249,8 @@ describe("UniversalOrderEmail render", () => {
         ctx: {
           order,
           branding: {
-            brandName: "PayOps",
-            supportEmail: "support@payops.test",
+            brandName: "TraceTxn",
+            supportEmail: "support@tracetxn.test",
             supportPhone: "+1 555 0000",
           },
           payment: {
@@ -279,8 +279,8 @@ describe("UniversalOrderEmail render", () => {
         ctx: {
           order,
           branding: {
-            brandName: "PayOps",
-            supportEmail: "support@payops.test",
+            brandName: "TraceTxn",
+            supportEmail: "support@tracetxn.test",
             supportPhone: "+1 555 0000",
           },
           payment: null,

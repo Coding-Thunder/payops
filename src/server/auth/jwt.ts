@@ -3,8 +3,8 @@ import { SignJWT, jwtVerify } from "jose";
 import { env } from "@/lib/env";
 import { UserRole } from "@/lib/constants/enums";
 
-const ISSUER = "payops";
-const AUDIENCE = "payops:web";
+const ISSUER = "tracetxn";
+const AUDIENCE = "tracetxn:web";
 
 export interface SessionPayload {
   sub: string;

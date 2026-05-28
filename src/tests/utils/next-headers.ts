@@ -14,7 +14,7 @@ interface MockState {
   headers: Map<string, string>;
 }
 
-const globalKey = "__payopsNextHeadersMockState";
+const globalKey = "__tracetxnNextHeadersMockState";
 
 function getState(): MockState {
   const g = globalThis as { [k: string]: unknown };

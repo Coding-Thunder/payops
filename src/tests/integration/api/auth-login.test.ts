@@ -30,13 +30,13 @@ afterEach(async () => {
 describe("POST /api/auth/login", () => {
   it("returns 200 + sets the session cookie on valid credentials", async () => {
     await createUser({
-      email: "ada@payops.test",
+      email: "ada@tracetxn.test",
       password: "Hunter2Hunter2",
     });
 
     const req = buildRequest("/api/auth/login", {
       method: "POST",
-      body: { email: "ada@payops.test", password: "Hunter2Hunter2" },
+      body: { email: "ada@tracetxn.test", password: "Hunter2Hunter2" },
     });
 
     const res = await loginRoute(req);
@@ -45,10 +45,10 @@ describe("POST /api/auth/login", () => {
     expect(status).toBe(200);
     expectOk(body as never);
     expect((body as { data: { email: string } }).data.email).toBe(
-      "ada@payops.test",
+      "ada@tracetxn.test",
     );
 
-    const cookieName = process.env.COOKIE_NAME ?? "payops_session";
+    const cookieName = process.env.COOKIE_NAME ?? "tracetxn_session";
     expect(headersMock.cookieJar.get(cookieName)).toBeTruthy();
   });
 
@@ -69,12 +69,12 @@ describe("POST /api/auth/login", () => {
 
   it("returns 401 UNAUTHORIZED on a wrong password", async () => {
     await createUser({
-      email: "bad@payops.test",
+      email: "bad@tracetxn.test",
       password: "Hunter2Hunter2",
     });
     const req = buildRequest("/api/auth/login", {
       method: "POST",
-      body: { email: "bad@payops.test", password: "wrong-one" },
+      body: { email: "bad@tracetxn.test", password: "wrong-one" },
     });
     const res = await loginRoute(req);
     const { status, body } = await jsonBody(res);
@@ -89,7 +89,7 @@ describe("POST /api/auth/login", () => {
   it("returns 401 UNAUTHORIZED for an unknown email (no enumeration)", async () => {
     const req = buildRequest("/api/auth/login", {
       method: "POST",
-      body: { email: "nobody@payops.test", password: "Hunter2Hunter2" },
+      body: { email: "nobody@tracetxn.test", password: "Hunter2Hunter2" },
     });
     const res = await loginRoute(req);
     const { status, body } = await jsonBody(res);

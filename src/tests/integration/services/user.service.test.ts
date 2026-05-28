@@ -31,14 +31,14 @@ describe("createUser", () => {
     const out = await createUser(
       {
         name: "Grace Hopper",
-        email: "grace@payops.test",
+        email: "grace@tracetxn.test",
         role: UserRole.ADMIN,
         password: "Hunter2Hunter2",
       },
       { actor },
     );
 
-    expect(out.email).toBe("grace@payops.test");
+    expect(out.email).toBe("grace@tracetxn.test");
     expect(out.status).toBe(RecordState.ACTIVE);
 
     const doc = await User.findById(out.id).select("+passwordHash");
@@ -57,7 +57,7 @@ describe("createUser", () => {
     await createUser(
       {
         name: "G",
-        email: "dup@payops.test",
+        email: "dup@tracetxn.test",
         role: UserRole.STAFF,
         password: "Hunter2Hunter2",
       },
@@ -67,7 +67,7 @@ describe("createUser", () => {
       createUser(
         {
           name: "G2",
-          email: "dup@payops.test",
+          email: "dup@tracetxn.test",
           role: UserRole.STAFF,
           password: "Hunter2Hunter2",
         },
@@ -81,7 +81,7 @@ describe("createUser", () => {
       createUser(
         {
           name: "Sneak",
-          email: "sneak@payops.test",
+          email: "sneak@tracetxn.test",
           role: UserRole.SUPER_ADMIN,
           password: "Hunter2Hunter2",
         },

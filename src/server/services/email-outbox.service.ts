@@ -82,14 +82,14 @@ const DRAIN_INTERVAL_MS = 60_000;
 const MAX_ATTEMPTS = 5;
 
 type CronGlobal = typeof globalThis & {
-  __payopsOutboxCron?: NodeJS.Timeout;
+  __tracetxnOutboxCron?: NodeJS.Timeout;
 };
 
 function ensureBackgroundDrainer(): void {
   if (process.env.TRACETXN_TEST_MODE) return;
   const g = globalThis as CronGlobal;
-  if (g.__payopsOutboxCron) return;
-  g.__payopsOutboxCron = setInterval(() => {
+  if (g.__tracetxnOutboxCron) return;
+  g.__tracetxnOutboxCron = setInterval(() => {
     drainPendingEmails(20).catch((err) => {
       logger.warn("email_outbox.cron_drain_failed", {
         err: err instanceof Error ? err.message : String(err),
@@ -99,7 +99,7 @@ function ensureBackgroundDrainer(): void {
   // Don't keep the process alive solely for this timer — let Node exit
   // naturally on shutdown rather than blocking. Some Node typings mark
   // `unref` as Node-only so guard for safety.
-  const timer = g.__payopsOutboxCron as unknown as { unref?: () => void };
+  const timer = g.__tracetxnOutboxCron as unknown as { unref?: () => void };
   if (typeof timer.unref === "function") timer.unref();
 }
 
@@ -234,8 +234,8 @@ async function fetchOrderForOutbox(orderId: string) {
  *  don't inherit it (matters for parallel test workers). */
 export function _stopDrainerForTests(): void {
   const g = globalThis as CronGlobal;
-  if (g.__payopsOutboxCron) {
-    clearInterval(g.__payopsOutboxCron);
-    g.__payopsOutboxCron = undefined;
+  if (g.__tracetxnOutboxCron) {
+    clearInterval(g.__tracetxnOutboxCron);
+    g.__tracetxnOutboxCron = undefined;
   }
 }

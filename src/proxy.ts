@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 
-const ISSUER = "payops";
-const AUDIENCE = "payops:web";
+const ISSUER = "tracetxn";
+const AUDIENCE = "tracetxn:web";
 
 /**
  * Route taxonomy
@@ -105,7 +105,7 @@ export async function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
   if (isPublic(pathname)) return NextResponse.next();
 
-  const cookieName = process.env.COOKIE_NAME || "payops_session";
+  const cookieName = process.env.COOKIE_NAME || "tracetxn_session";
   const token = req.cookies.get(cookieName)?.value;
   const secret = process.env.JWT_SECRET
     ? new TextEncoder().encode(process.env.JWT_SECRET)

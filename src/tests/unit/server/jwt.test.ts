@@ -12,7 +12,7 @@ import {
 describe("JWT session", () => {
   const payload = {
     sub: "507f1f77bcf86cd799439011",
-    email: "ada@payops.test",
+    email: "ada@tracetxn.test",
     name: "Ada Lovelace",
     role: UserRole.ADMIN,
   };

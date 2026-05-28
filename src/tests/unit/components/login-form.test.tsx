@@ -42,7 +42,7 @@ describe("LoginForm", () => {
     vi.stubGlobal("fetch", vi.fn());
 
     const { user } = renderWithUser(<LoginForm />);
-    await user.type(screen.getByLabelText(/work email/i), "ada@payops.test");
+    await user.type(screen.getByLabelText(/work email/i), "ada@tracetxn.test");
     await user.type(screen.getByLabelText(/password/i), "short");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
@@ -56,7 +56,7 @@ describe("LoginForm", () => {
       new Response(
         JSON.stringify({
           ok: true,
-          data: { id: "u1", name: "Ada", email: "ada@payops.test", role: "ADMIN" },
+          data: { id: "u1", name: "Ada", email: "ada@tracetxn.test", role: "ADMIN" },
         }),
         { status: 200, headers: { "content-type": "application/json" } },
       ),
@@ -64,7 +64,7 @@ describe("LoginForm", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const { user } = renderWithUser(<LoginForm nextPath="/orders" />);
-    await user.type(screen.getByLabelText(/work email/i), "ada@payops.test");
+    await user.type(screen.getByLabelText(/work email/i), "ada@tracetxn.test");
     await user.type(screen.getByLabelText(/password/i), "Hunter2!");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
@@ -74,7 +74,7 @@ describe("LoginForm", () => {
     expect(String(call[0])).toMatch(/\/api\/auth\/login$/);
     expect(call[1].method).toBe("POST");
     const body = JSON.parse(call[1].body as string);
-    expect(body).toEqual({ email: "ada@payops.test", password: "Hunter2!" });
+    expect(body).toEqual({ email: "ada@tracetxn.test", password: "Hunter2!" });
 
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/orders"));
     expect(refresh).toHaveBeenCalledTimes(1);
@@ -85,7 +85,7 @@ describe("LoginForm", () => {
       new Response(
         JSON.stringify({
           ok: true,
-          data: { id: "u1", name: "Ada", email: "ada@payops.test", role: "ADMIN" },
+          data: { id: "u1", name: "Ada", email: "ada@tracetxn.test", role: "ADMIN" },
         }),
         { status: 200, headers: { "content-type": "application/json" } },
       ),
@@ -95,7 +95,7 @@ describe("LoginForm", () => {
     const { user } = renderWithUser(
       <LoginForm nextPath="//evil.example.com/steal" />,
     );
-    await user.type(screen.getByLabelText(/work email/i), "ada@payops.test");
+    await user.type(screen.getByLabelText(/work email/i), "ada@tracetxn.test");
     await user.type(screen.getByLabelText(/password/i), "Hunter2!");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
@@ -115,7 +115,7 @@ describe("LoginForm", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const { user } = renderWithUser(<LoginForm />);
-    await user.type(screen.getByLabelText(/work email/i), "ada@payops.test");
+    await user.type(screen.getByLabelText(/work email/i), "ada@tracetxn.test");
     await user.type(screen.getByLabelText(/password/i), "Hunter2!");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 

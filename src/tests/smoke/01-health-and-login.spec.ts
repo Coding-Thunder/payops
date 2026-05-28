@@ -35,7 +35,7 @@ test.describe("system health + login", () => {
     page,
   }) => {
     await page.goto("/login");
-    await page.getByLabel(/work email/i).fill("nobody@payops.test");
+    await page.getByLabel(/work email/i).fill("nobody@tracetxn.test");
     await page.getByLabel(/password/i).fill("WrongPass1234");
     await page.getByRole("button", { name: /sign in/i }).click();
     await expect(page.getByText(/invalid email or password/i)).toBeVisible();

@@ -16,7 +16,7 @@ test.describe("admin operations", () => {
     const { admin } = getSmokeCreds();
     await loginAsApi(request, admin);
 
-    const email = `new-${Date.now()}@payops.test`;
+    const email = `new-${Date.now()}@tracetxn.test`;
     const password = "FreshPass1234";
 
     const create = await request.post("/api/admin/users", {

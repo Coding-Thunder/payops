@@ -48,7 +48,7 @@ export function buildOrder(seed: OrderSeed = {}): OrderDoc & { _id: Types.Object
     state: seed.state ?? RecordState.ACTIVE,
     customer: {
       name: seed.customer?.name ?? "Test Customer",
-      email: (seed.customer?.email ?? "customer@payops.test").toLowerCase(),
+      email: (seed.customer?.email ?? "customer@tracetxn.test").toLowerCase(),
       phone: seed.customer?.phone ?? "+15555550100",
     },
     lineItems: seed.lineItems ?? [
@@ -91,7 +91,7 @@ export function buildOrder(seed: OrderSeed = {}): OrderDoc & { _id: Types.Object
       userId:
         toObjectId(seed.createdBy?.userId) ?? new Types.ObjectId(),
       name: seed.createdBy?.name ?? "Test Creator",
-      email: (seed.createdBy?.email ?? "creator@payops.test").toLowerCase(),
+      email: (seed.createdBy?.email ?? "creator@tracetxn.test").toLowerCase(),
     },
     policy: {
       acceptedAt: seed.policy?.acceptedAt ?? now,

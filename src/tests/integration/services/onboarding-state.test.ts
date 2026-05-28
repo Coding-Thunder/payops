@@ -30,13 +30,13 @@ const masterKey = randomBytes(32).toString("base64");
 beforeEach(async () => {
   await ensureMongo();
   await resetDatabase();
-  process.env.PAYOPS_MASTER_KEY = masterKey;
+  process.env.TRACETXN_MASTER_KEY = masterKey;
   _resetMasterKeyForTesting();
   _resetLegacyOrgIdForTesting();
 });
 
 afterEach(() => {
-  delete process.env.PAYOPS_MASTER_KEY;
+  delete process.env.TRACETXN_MASTER_KEY;
   _resetMasterKeyForTesting();
   _resetLegacyOrgIdForTesting();
 });
@@ -75,6 +75,7 @@ describe("getOnboardingState", () => {
     expect(state.isLegacy).toBe(false);
     expect(state.steps).toEqual({
       gatewayConfigured: false,
+      businessSetupDone: false,
       brandingSet: false,
       firstOrderCreated: false,
       teamMemberAdded: false,
@@ -181,7 +182,19 @@ describe("getOnboardingState", () => {
   it("complete=true only when ALL required steps done (team optional)", async () => {
     const orgId = await makeOrg();
 
-    // Hydrate the required three. Skip team — it's optional.
+    // Pass 6b: required set is now gateway + businessSetup + branding +
+    // first order. Hydrate all four.
+    const { ItemType } = await import("@/server/db/models");
+    await ItemType.create({
+      orgId: new Types.ObjectId(orgId),
+      key: "service_visit",
+      name: "Service visit",
+      pricingModel: "FIXED",
+      requiresScheduling: false,
+      inventoryTracked: false,
+      attributeSchema: [],
+      confirmationEmailBlocks: [],
+    });
     await Branding.create({
       orgId: new Types.ObjectId(orgId),
       brandName: "Brand",

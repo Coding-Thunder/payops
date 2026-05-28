@@ -8,11 +8,11 @@ import { loadEnvFile } from "./load-env";
 /**
  * Playwright global teardown.
  *
- *   - Drops the payops-smoke database so the next run starts clean.
+ *   - Drops the tracetxn-smoke database so the next run starts clean.
  *   - Deletes the credentials file written by global setup.
  *
  * Defensive: refuses to drop anything if MONGODB_URI doesn't point at
- * payops-smoke. This is the last guard against a misconfigured CI
+ * tracetxn-smoke. This is the last guard against a misconfigured CI
  * accidentally targeting dev / prod.
  */
 
@@ -23,7 +23,7 @@ export default async function globalTeardown() {
 
   const uri = process.env.MONGODB_URI;
   const dbName = process.env.MONGODB_DB;
-  if (!uri?.includes("payops-smoke")) return;
+  if (!uri?.includes("tracetxn-smoke")) return;
 
   try {
     await mongoose.connect(uri, {

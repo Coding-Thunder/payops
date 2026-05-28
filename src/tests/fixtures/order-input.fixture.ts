@@ -20,7 +20,7 @@ export function validCreateOrderInput(
   return {
     customer: {
       name: "Ada Lovelace",
-      email: "ada@payops.test",
+      email: "ada@tracetxn.test",
       phone: "+15555550100",
     },
     lineItems: [

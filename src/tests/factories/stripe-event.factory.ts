@@ -5,7 +5,7 @@ import type Stripe from "stripe";
 /**
  * Stripe event factories.
  *
- * Produces realistic envelopes for the events PayOps actually handles:
+ * Produces realistic envelopes for the events TraceTxn actually handles:
  *   - checkout.session.completed
  *   - checkout.session.expired
  *   - checkout.session.async_payment_failed
@@ -58,7 +58,7 @@ export function buildCheckoutCompleted(
         mode: "payment",
         status: "complete",
         client_reference_id: seed.orderId,
-        customer_email: seed.customerEmail ?? "customer@payops.test",
+        customer_email: seed.customerEmail ?? "customer@tracetxn.test",
         payment_intent: paymentIntentId,
         amount_total: seed.amountTotal ?? 19950,
         currency: seed.currency ?? "usd",

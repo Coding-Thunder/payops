@@ -13,7 +13,7 @@ import { createOrder as factoryCreateOrder } from "@/tests/factories/order.facto
 import { ensureMongo } from "@/tests/utils/db";
 
 /**
- * Webhook processor — the most safety-critical surface in PayOps.
+ * Webhook processor — the most safety-critical surface in TraceTxn.
  *
  * Pin the invariants that the operations team relies on:
  *

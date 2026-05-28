@@ -96,8 +96,8 @@ describe("POST /api/auth/signup", () => {
         body: validPayload,
       }),
     );
-    // Cookie name comes from env; default is `payops_session`.
-    expect(headers.cookieJar.has("payops_session")).toBe(true);
+    // Cookie name comes from env; default is `tracetxn_session`.
+    expect(headers.cookieJar.has("tracetxn_session")).toBe(true);
   });
 
   it("disambiguates duplicate org names with a numeric suffix", async () => {

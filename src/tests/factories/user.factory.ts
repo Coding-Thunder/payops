@@ -31,7 +31,7 @@ export function buildUser(seed: UserSeed = {}): UserDoc & { _id: Types.ObjectId 
   return {
     _id: new Types.ObjectId(),
     name: seed.name ?? `Test User ${suffix}`,
-    email: (seed.email ?? `user-${suffix}@payops.test`).toLowerCase(),
+    email: (seed.email ?? `user-${suffix}@tracetxn.test`).toLowerCase(),
     passwordHash: seed.passwordHash ?? "$2b$12$placeholder.hash.value.for.test.only.do.not.use",
     role: seed.role ?? UserRole.STAFF,
     status: seed.status ?? RecordState.ACTIVE,

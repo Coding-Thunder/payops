@@ -39,7 +39,7 @@ describe("OrgContext helpers", () => {
     const actor = {
       id: VALID_OBJECT_ID,
       name: "Ada",
-      email: "ada@payops.test",
+      email: "ada@tracetxn.test",
       role: UserRole.ADMIN,
     };
 
@@ -50,7 +50,7 @@ describe("OrgContext helpers", () => {
         request: null,
       });
       expect(ctx.orgId).toBe(ANOTHER_OBJECT_ID);
-      expect(ctx.actor.email).toBe("ada@payops.test");
+      expect(ctx.actor.email).toBe("ada@tracetxn.test");
     });
 
     it("throws Unauthorized when orgId is missing — never silently falls back", () => {
@@ -77,7 +77,7 @@ describe("OrgContext helpers", () => {
 describe("JWT carries org claims when present", () => {
   const base = {
     sub: VALID_OBJECT_ID,
-    email: "ada@payops.test",
+    email: "ada@tracetxn.test",
     name: "Ada Lovelace",
     role: UserRole.ADMIN,
   };

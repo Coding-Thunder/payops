@@ -44,7 +44,7 @@ test.describe("consent + payment lifecycle", () => {
         provider: "HERTZ",
         customer: {
           name: "Consent Customer",
-          email: "consent-customer@payops.test",
+          email: "consent-customer@tracetxn.test",
           phone: "+15555550100",
         },
         vehicle: { company: "Toyota", type: "Camry" },

@@ -19,7 +19,7 @@ import {
 describe("loginSchema", () => {
   it("accepts a valid email + password", () => {
     const r = loginSchema.safeParse({
-      email: "ada@payops.test",
+      email: "ada@tracetxn.test",
       password: "Hunter2!ok",
     });
     expect(r.success).toBe(true);
@@ -72,12 +72,12 @@ describe("createUserSchema", () => {
   it("normalises emails to lowercase", () => {
     const r = createUserSchema.safeParse({
       name: "Jane Doe",
-      email: "Jane@PayOps.Test",
+      email: "Jane@TraceTxn.Test",
       role: "ADMIN",
       password: "Hunter2Hunter2",
     });
     expect(r.success).toBe(true);
-    if (r.success) expect(r.data.email).toBe("jane@payops.test");
+    if (r.success) expect(r.data.email).toBe("jane@tracetxn.test");
   });
 
   it("rejects an unknown role", () => {
@@ -133,7 +133,7 @@ describe("createOrderUniversalSchema", () => {
       validCreateOrderInput({
         customer: {
           name: "   Ada   ",
-          email: "ada@payops.test",
+          email: "ada@tracetxn.test",
           phone: "+15555550100",
         },
       }),

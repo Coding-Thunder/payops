@@ -1,4 +1,4 @@
-# PayOps testing architecture
+# TraceTxn testing architecture
 
 A three-tier test suite designed for reliability, deterministic execution,
 and confidence during refactors. Every tier runs against its own
@@ -48,11 +48,11 @@ npm run test:all                # unit + integration + smoke
 |---------------|---------------------|--------------------------------------------|
 | `.env.local`  | `next dev`          | `mongodb://127.0.0.1:27017/payops`         |
 | `.env.test`   | Vitest unit + int.  | overridden by mongodb-memory-server        |
-| `.env.smoke`  | Playwright smoke    | `mongodb://127.0.0.1:27017/payops-smoke`   |
+| `.env.smoke`  | Playwright smoke    | `mongodb://127.0.0.1:27017/tracetxn-smoke`   |
 | `.env.prod`   | Production          | MongoDB Atlas                              |
 
 Smoke tests refuse to run if `MONGODB_URI` does not contain
-`payops-smoke` — a hard guard against accidentally targeting dev / prod.
+`tracetxn-smoke` — a hard guard against accidentally targeting dev / prod.
 
 ## Tier 1 · Unit tests
 
@@ -113,7 +113,7 @@ What's covered:
 
 ## Tier 3 · Smoke tests (Playwright)
 
-Boot a real Next.js server against `payops-smoke`, then drive critical
+Boot a real Next.js server against `tracetxn-smoke`, then drive critical
 business workflows over HTTP.
 
 - **Global setup** — connects to Mongo, drops the smoke DB, seeds an
@@ -146,7 +146,7 @@ Every factory exposes a pure `build…()` (for unit tests) and a
 they assume `ensureMongo()` has been called by the test setup.
 
 ```ts
-const admin = await createAdmin({ email: "ada@payops.test" });
+const admin = await createAdmin({ email: "ada@tracetxn.test" });
 const order = await createPaidOrder({ pricing: { amount: 199.5, currency: "USD" } });
 const settings = await createSettings();
 ```

@@ -23,7 +23,7 @@ export function buildSettings(seed: SettingsSeed = {}): SettingDoc {
     paymentExpiryHours: seed.paymentExpiryHours ?? 24,
     orderPrefix: seed.orderPrefix ?? "TST",
     defaultCurrency: (seed.defaultCurrency ?? Currency.USD) as Currency,
-    supportEmail: seed.supportEmail ?? "support@payops.test",
+    supportEmail: seed.supportEmail ?? "support@tracetxn.test",
     supportPhone: seed.supportPhone ?? "+15555550100",
     successRedirectUrl:
       seed.successRedirectUrl ?? "http://localhost:3000/pay/success",

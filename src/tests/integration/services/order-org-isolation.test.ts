@@ -98,7 +98,7 @@ function actor(): TestActor {
   return {
     id: new Types.ObjectId().toString(),
     name: "Ada",
-    email: "ada@payops.test",
+    email: "ada@tracetxn.test",
     role: UserRole.ADMIN,
   };
 }

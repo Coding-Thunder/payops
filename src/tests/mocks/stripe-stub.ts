@@ -17,7 +17,7 @@
  *     same scheme Stripe uses (t=<unix>,v1=<sig>) against the supplied
  *     secret, then parses the JSON body.
  *
- * The stub is intentionally minimal — it implements only what PayOps
+ * The stub is intentionally minimal — it implements only what TraceTxn
  * actually calls. New entry points should fail loudly so a missing
  * implementation is obvious.
  */

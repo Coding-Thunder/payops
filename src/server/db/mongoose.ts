@@ -16,12 +16,12 @@ type CachedMongoose = {
 
 declare global {
    
-  var __payopsMongoose: CachedMongoose | undefined;
+  var __tracetxnMongoose: CachedMongoose | undefined;
 }
 
 const cache: CachedMongoose =
-  global.__payopsMongoose ?? { conn: null, promise: null };
-if (!global.__payopsMongoose) global.__payopsMongoose = cache;
+  global.__tracetxnMongoose ?? { conn: null, promise: null };
+if (!global.__tracetxnMongoose) global.__tracetxnMongoose = cache;
 
 export async function connectMongo(): Promise<Mongoose> {
   if (cache.conn) return cache.conn;

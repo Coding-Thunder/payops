@@ -21,17 +21,17 @@ import { logger } from "@/lib/logger";
  * listener count.
  */
 
-type BusGlobal = typeof globalThis & { __payopsBus?: EventEmitter };
+type BusGlobal = typeof globalThis & { __tracetxnBus?: EventEmitter };
 
 function getBus(): EventEmitter {
   const g = globalThis as BusGlobal;
-  if (!g.__payopsBus) {
+  if (!g.__tracetxnBus) {
     const emitter = new EventEmitter();
     // Each SSE connection adds one listener; allow a generous ceiling.
     emitter.setMaxListeners(0);
-    g.__payopsBus = emitter;
+    g.__tracetxnBus = emitter;
   }
-  return g.__payopsBus;
+  return g.__tracetxnBus;
 }
 
 interface PublishInput<TPayload extends Record<string, unknown>> {
