@@ -1,12 +1,14 @@
-# PayOps — Internal Payment Operations Console
+# TraceTxn — Operational Payment Infrastructure
 
-A production-grade Next.js (App Router) monolith for managing car rental
-payment workflows. Employees create payable orders, the system generates
-Stripe Checkout sessions, the employee shares the link with the customer
-manually, and once Stripe confirms payment via webhook the system atomically
-updates the order and sends a single branded confirmation email.
+A production-grade Next.js (App Router) monolith for managing the full
+transaction lifecycle. Tenants create payable orders against per-vertical
+item types, the system generates payment-gateway sessions, sends a
+hashed-evidence email + hosted-consent flow, and once the gateway
+confirms payment via webhook the system atomically updates the order and
+records every transition into the per-order evidence chain.
 
-> Internal tool. No public sign-up. Only admin-created users can log in.
+> Multi-tenant SaaS. Self-serve signup; per-org Stripe credentials;
+> dispute-grade evidence on every order.
 
 ## Stack
 

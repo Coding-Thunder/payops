@@ -94,14 +94,16 @@ export function TelemetryStrip({
       role="status"
       aria-label="System telemetry"
     >
-      {/* Faint top accent stroke — the only chromatic moment in the
-          strip, signals "this is the brand layer". */}
+      {/* Faint top accent stroke — single brand-color hairline.
+          Drops the old marketing-gradient (orange/cobalt/ultraviolet)
+          in favor of TraceTxn's emerald identity, consistent with
+          the landing's document chrome. */}
       <span
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-px opacity-60"
+        className="pointer-events-none absolute inset-x-0 top-0 h-px opacity-70"
         style={{
           background:
-            "linear-gradient(90deg, transparent 0%, var(--m-orange) 25%, var(--m-cobalt) 55%, var(--m-ultraviolet) 80%, transparent 100%)",
+            "linear-gradient(90deg, transparent 0%, var(--success) 50%, transparent 100%)",
         }}
       />
 

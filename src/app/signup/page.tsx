@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { CheckIcon } from "lucide-react";
 
-import { Aurora } from "@/components/brand/aurora";
-import { DotGrid } from "@/components/brand/illustrations";
 import { LogoLockup, LogoMark } from "@/components/brand/logo";
 import { env } from "@/lib/env";
 import { getCurrentUser } from "@/server/auth/session";
@@ -13,9 +12,6 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Create your TraceTxn account" };
 
 export default async function SignupPage() {
-  // Already signed in → drop them into the app instead of letting
-  // them register a second tenant under the same session. Org-switch
-  // / multi-org membership is a future surface.
   const user = await getCurrentUser();
   if (user) redirect("/app/dashboard");
 
@@ -23,43 +19,71 @@ export default async function SignupPage() {
 
   return (
     <div className="grid min-h-screen w-full grid-cols-1 lg:grid-cols-[1.05fr_1fr]">
-      <section className="relative hidden lg:flex flex-col justify-between bg-primary text-primary-foreground p-12 overflow-hidden">
-        <Aurora />
-        <DotGrid className="absolute inset-0 size-full text-primary-foreground opacity-[0.08]" />
+      {/* Left panel — dark navy cover sheet, same brand language as
+          the landing's hero CoverBand. Replaces the prior Aurora +
+          DotGrid marketing chrome. */}
+      <section
+        className="relative hidden flex-col justify-between overflow-hidden p-12 text-white lg:flex"
+        style={{ background: "var(--ink-navy)" }}
+      >
+        {/* Subtle radial wash for depth (matches CoverBand) */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 -z-10"
+          style={{
+            background:
+              "radial-gradient(ellipse 55% 50% at 85% 25%, color-mix(in oklch, var(--success) 18%, transparent) 0%, transparent 70%)",
+          }}
+        />
+
         <LogoLockup
           tone="inverted"
           brand={brand}
-          subtitle="Payment operations"
+          subtitle="Operational payment infrastructure"
           size="md"
           className="relative"
         />
-        <div className="relative space-y-6 max-w-md">
-          <LogoMark
-            className="size-9 text-primary-foreground/90"
-            decorated
-          />
-          <h2 className="text-[28px] font-semibold tracking-tight leading-[1.15]">
-            Start collecting
+
+        <div className="relative max-w-md space-y-7">
+          <LogoMark className="size-9 text-white" decorated />
+          <h2 className="text-balance text-[28px] font-bold leading-[1.12] tracking-tight">
+            Run your first paid order
             <br />
-            payments in minutes.
+            before the day ends.
           </h2>
-          <p className="text-[13px] leading-relaxed text-primary-foreground/75 max-w-sm">
-            Spin up an isolated workspace, bring your own Stripe
-            credentials, and start operating. No phone calls, no
-            sales demo — just sign up and go.
+          <p className="max-w-sm text-[13.5px] leading-relaxed text-white/72">
+            Spin up an isolated workspace, connect Stripe, ship a
+            payment link. Every transition lands in your hashed
+            evidence chain from minute one.
           </p>
-          <ul className="text-[12px] text-primary-foreground/70 space-y-1.5 pt-2">
-            <li>• Dispute-grade evidence chain on every order</li>
-            <li>• Per-org Stripe routing, your keys never leave Mongo</li>
-            <li>• Branded customer emails out of the box</li>
+
+          <ul className="space-y-2.5 pt-1 text-[12.5px] text-white/80">
+            {[
+              "Dispute-grade evidence chain on every order",
+              "Per-org Stripe routing — your keys stay encrypted",
+              "Branded customer emails out of the box",
+            ].map((line) => (
+              <li
+                key={line}
+                className="grid grid-cols-[auto_1fr] items-start gap-2.5"
+              >
+                <CheckIcon
+                  className="mt-[3px] size-3.5 text-success shrink-0"
+                  strokeWidth={2.5}
+                />
+                <span>{line}</span>
+              </li>
+            ))}
           </ul>
         </div>
-        <div className="relative text-[11px] tracking-wider uppercase text-primary-foreground/55">
-          Free during preview · Cancel anytime
-        </div>
+
+        <p className="relative font-mono text-[10.5px] uppercase tracking-[0.18em] text-white/55">
+          Free during preview · cancel anytime
+        </p>
       </section>
 
-      <section className="flex items-center justify-center px-6 py-12 sm:px-12 bg-background">
+      {/* Right panel — the form */}
+      <section className="flex items-center justify-center bg-background px-6 py-12 sm:px-12">
         <div className="w-full max-w-sm space-y-8">
           <div className="space-y-4">
             <LogoLockup brand={brand} subtitle="Ops console" size="sm" />
@@ -67,15 +91,15 @@ export default async function SignupPage() {
               <h1 className="text-[20px] font-semibold tracking-tight">
                 Create your workspace
               </h1>
-              <p className="text-[13px] text-muted-foreground leading-relaxed">
-                You'll be the super-admin. Invite teammates after setup.
+              <p className="text-[13px] leading-relaxed text-muted-foreground">
+                You&apos;ll be the super-admin. Invite teammates after setup.
               </p>
             </div>
           </div>
           <SignupForm
             turnstileSiteKey={env.public.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null}
           />
-          <p className="text-[11px] text-muted-foreground/80 text-center leading-relaxed">
+          <p className="text-center text-[11px] leading-relaxed text-muted-foreground/80">
             Already have an account?{" "}
             <Link
               href="/login"

@@ -284,14 +284,17 @@
   --chart-5: oklch(0.62 0.21 16);
 
   /* Sidebar (separate so we can tune it independently) ──────── */
-  --sidebar: oklch(0.988 0.001 286);
-  --sidebar-foreground: oklch(0.158 0.005 286);
-  --sidebar-primary: oklch(0.205 0.006 286);
+  /* Sidebar — shifted to the navy hue family (240) so the app
+   * shell shares the same color DNA as the landing's warm-paper
+   * background + cover band, not a purple-gray of its own. */
+  --sidebar: oklch(0.97 0.005 240);
+  --sidebar-foreground: oklch(0.18 0.018 240);
+  --sidebar-primary: oklch(0.22 0.025 240);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.955 0.003 286);
-  --sidebar-accent-foreground: oklch(0.205 0.006 286);
-  --sidebar-border: oklch(0.93 0.003 286);
-  --sidebar-ring: oklch(0.62 0.012 286);
+  --sidebar-accent: oklch(0.94 0.012 240);
+  --sidebar-accent-foreground: oklch(0.18 0.018 240);
+  --sidebar-border: oklch(0.9 0.008 240);
+  --sidebar-ring: oklch(0.62 0.012 240);
 
   /* Shadow scale — layered, restrained. Each step blends a hairline
      contact-shadow (sharp, 1px) with a soft ambient halo. Avoids the

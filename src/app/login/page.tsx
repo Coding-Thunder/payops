@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { CheckIcon } from "lucide-react";
 
-import { Aurora } from "@/components/brand/aurora";
-import { DotGrid } from "@/components/brand/illustrations";
 import { LogoLockup, LogoMark } from "@/components/brand/logo";
 import { env } from "@/lib/env";
 import { getCurrentUser } from "@/server/auth/session";
@@ -23,38 +22,65 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   return (
     <div className="grid min-h-screen w-full grid-cols-1 lg:grid-cols-[1.05fr_1fr]">
-      <section className="relative hidden lg:flex flex-col justify-between bg-primary text-primary-foreground p-12 overflow-hidden">
-        <Aurora />
-        <DotGrid className="absolute inset-0 size-full text-primary-foreground opacity-[0.08]" />
+      {/* Left panel — same dark navy cover sheet as signup. Shared
+          brand language across all unauthed entry surfaces. */}
+      <section
+        className="relative hidden flex-col justify-between overflow-hidden p-12 text-white lg:flex"
+        style={{ background: "var(--ink-navy)" }}
+      >
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 -z-10"
+          style={{
+            background:
+              "radial-gradient(ellipse 55% 50% at 85% 25%, color-mix(in oklch, var(--success) 18%, transparent) 0%, transparent 70%)",
+          }}
+        />
+
         <LogoLockup
           tone="inverted"
           brand={brand}
-          subtitle="Payment operations"
+          subtitle="Operational payment infrastructure"
           size="md"
           className="relative"
         />
-        <div className="relative space-y-6 max-w-md">
-          <LogoMark
-            className="size-9 text-primary-foreground/90"
-            decorated
-          />
-          <h2 className="text-[28px] font-semibold tracking-tight leading-[1.15]">
-            Reliable, auditable
-            <br />
-            payment operations.
+
+        <div className="relative max-w-md space-y-7">
+          <LogoMark className="size-9 text-white" decorated />
+          <h2 className="text-balance text-[28px] font-bold leading-[1.12] tracking-tight">
+            Reliable, auditable payment operations.
           </h2>
-          <p className="text-[13px] leading-relaxed text-primary-foreground/75 max-w-sm">
+          <p className="max-w-sm text-[13.5px] leading-relaxed text-white/72">
             Track the full payment lifecycle, capture dispute-grade
             evidence, and orchestrate gateways — all from one console
             built for operations, finance, and trust teams.
           </p>
+          <ul className="space-y-2.5 pt-1 text-[12.5px] text-white/80">
+            {[
+              "Hashed evidence chain on every order",
+              "Per-org Stripe routing — your keys stay encrypted",
+              "Realtime SSE lifecycle updates",
+            ].map((line) => (
+              <li
+                key={line}
+                className="grid grid-cols-[auto_1fr] items-start gap-2.5"
+              >
+                <CheckIcon
+                  className="mt-[3px] size-3.5 text-success shrink-0"
+                  strokeWidth={2.5}
+                />
+                <span>{line}</span>
+              </li>
+            ))}
+          </ul>
         </div>
-        <div className="relative text-[11px] tracking-wider uppercase text-primary-foreground/55">
+
+        <p className="relative font-mono text-[10.5px] uppercase tracking-[0.18em] text-white/55">
           Authorized access only · Activity is recorded
-        </div>
+        </p>
       </section>
 
-      <section className="flex items-center justify-center px-6 py-12 sm:px-12 bg-background">
+      <section className="flex items-center justify-center bg-background px-6 py-12 sm:px-12">
         <div className="w-full max-w-sm space-y-8">
           <div className="space-y-4">
             <LogoLockup brand={brand} subtitle="Ops console" size="sm" />
@@ -62,7 +88,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               <h1 className="text-[20px] font-semibold tracking-tight">
                 Sign in to your account
               </h1>
-              <p className="text-[13px] text-muted-foreground leading-relaxed">
+              <p className="text-[13px] leading-relaxed text-muted-foreground">
                 Use the credentials your administrator gave you.
               </p>
             </div>
@@ -71,8 +97,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             nextPath={next}
             turnstileSiteKey={env.public.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null}
           />
-          <p className="text-[11px] text-muted-foreground/80 text-center leading-relaxed">
-            Don't have an account yet?{" "}
+          <p className="text-center text-[11px] leading-relaxed text-muted-foreground/80">
+            Don&apos;t have an account yet?{" "}
             <Link
               href="/signup"
               className="text-foreground underline-offset-4 hover:underline"
