@@ -1,24 +1,17 @@
 import { Fragment } from "react";
-import {
-  CarIcon,
-  CheckCircle2Icon,
-  CreditCardIcon,
-  FileSignatureIcon,
-  HashIcon,
-  MailIcon,
-  PenLineIcon,
-  ShieldCheckIcon,
-  XCircleIcon,
-} from "lucide-react";
+import { CheckIcon, AlertTriangleIcon } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   OrderEvidenceActorLabel,
   OrderEvidenceEventLabel,
 } from "@/lib/constants/labels";
 import { OrderEvidenceEventType } from "@/lib/constants/enums";
-import { formatDateTime, formatIp, formatRelative } from "@/lib/format";
+import {
+  formatHashShort,
+  formatIp,
+  formatUtcTime,
+  formatUtcTimestamp,
+} from "@/lib/format";
 import type { OrderEvidenceEventDTO } from "@/types";
 
 interface EvidenceTimelineProps {
@@ -26,119 +19,174 @@ interface EvidenceTimelineProps {
   brokenAtSequence?: number | null;
 }
 
-const ICONS: Partial<Record<OrderEvidenceEventDTO["eventType"], React.ComponentType<{ className?: string }>>> = {
-  ORDER_CREATED: CarIcon,
-  DRAFT_SAVED: PenLineIcon,
-  GATEWAY_SELECTED: CreditCardIcon,
-  PAYMENT_LINK_GENERATED: CreditCardIcon,
-  PAYMENT_LINK_REGENERATED: CreditCardIcon,
-  PAYMENT_REQUEST_EMAIL_SENT: MailIcon,
-  CONSENT_REQUESTED: FileSignatureIcon,
-  CONSENT_RECEIVED: FileSignatureIcon,
-  CONSENT_VERIFIED: ShieldCheckIcon,
-  PAYMENT_STARTED: CreditCardIcon,
-  PAYMENT_COMPLETED: CheckCircle2Icon,
-  CONFIRMATION_EMAIL_SENT: MailIcon,
-  PAYMENT_FAILED: XCircleIcon,
-  PAYMENT_EXPIRED: XCircleIcon,
-};
-
 /**
- * Vertical event timeline rendered on the evidence page. Every event
- * carries its sequence, type, occurredAt, actor, refs, and hashes. The
- * UI surfaces a "Broken from here" indicator on the first event after
- * a verification failure so the operator can see where the chain
- * diverged.
+ * Operational ledger for the case file's evidence timeline.
  *
- * Email-send events render the captured HTML inline (sandboxed iframe
- * via `srcDoc`) — no modal indirection. Keeps the whole evidence
- * record on one scrollable page that matches the PDF dispute packet.
+ * Rendered as a flat tabular list, not a card stack. Each row is one
+ * event, single-line by default; the row expands inline to reveal
+ * email HTML (when applicable) and the hash chain link. Designed to
+ * read at ~12px line-height like a ledger printout, not a
+ * notification feed.
+ *
+ *   ┌──── seq ────┬───────── label ──────────┬──── meta ──────┬─ ✓
+ *   01            Order created               08:13:35 UTC     ✓
+ *                                             Agent · Mira Holst
+ *
+ * Email events + chain-link details collapse behind a per-row
+ * `<details>` so dense scanning stays uninterrupted; operators who
+ * need the body or the hashes open them deliberately.
  */
 export function EvidenceTimeline({
   events,
   brokenAtSequence,
 }: EvidenceTimelineProps) {
+  if (events.length === 0) {
+    return (
+      <p className="text-[12.5px] text-muted-foreground">
+        No evidence events recorded for this order yet.
+      </p>
+    );
+  }
   return (
-    <ol className="divide-y divide-border">
-      {events.map((event) => {
-        const Icon = ICONS[event.eventType] ?? HashIcon;
-        const isBrokenHead = brokenAtSequence === event.sequence;
-        const isEmailEvent =
-          event.eventType ===
-            OrderEvidenceEventType.PAYMENT_REQUEST_EMAIL_SENT ||
-          event.eventType ===
-            OrderEvidenceEventType.CONFIRMATION_EMAIL_SENT;
-        const html =
-          isEmailEvent && typeof event.payload.html === "string"
-            ? (event.payload.html as string)
-            : null;
-        return (
-          <li key={event.id} className="py-5 first:pt-0 last:pb-0">
-            <div className="flex items-start gap-3 mb-2">
-              <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-              <div className="min-w-0 space-y-0.5">
-                <h4 className="text-[13.5px] font-semibold text-foreground">
-                  <span className="text-muted-foreground mr-2 font-mono font-normal">
-                    #{event.sequence}
-                  </span>
-                  {OrderEvidenceEventLabel[event.eventType] ?? event.eventType}
-                </h4>
-                <p className="text-[12px] text-muted-foreground">
-                  {formatDateTime(event.occurredAt)} ·{" "}
-                  {formatRelative(event.occurredAt)} ·{" "}
-                  {OrderEvidenceActorLabel[event.actor.type]}
-                  {event.actor.name ? ` (${event.actor.name})` : ""}
-                </p>
-              </div>
-            </div>
-            <div className="ml-7 space-y-3">
-              {isBrokenHead ? (
-                <Badge variant="destructive">
-                  Chain breaks at this event — payload or hash mutated
-                </Badge>
-              ) : null}
-              <EventDetails event={event} />
-              {isEmailEvent ? <EmailRender event={event} html={html} /> : null}
-              <details className="text-[11.5px] text-muted-foreground">
-                <summary className="cursor-pointer select-none font-medium text-foreground/80 hover:text-foreground">
-                  Hash + chain link
-                </summary>
-                <dl className="mt-2 grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1 font-mono">
-                  <dt className="text-muted-foreground">sequence</dt>
-                  <dd>{event.sequence}</dd>
-                  <dt className="text-muted-foreground">snapshotHash</dt>
-                  <dd className="break-all">{event.snapshotHash}</dd>
-                  <dt className="text-muted-foreground">hash</dt>
-                  <dd className="break-all">{event.hash}</dd>
-                  <dt className="text-muted-foreground">previousHash</dt>
-                  <dd className="break-all">{event.previousHash ?? "GENESIS"}</dd>
-                </dl>
-              </details>
-            </div>
-          </li>
-        );
-      })}
+    <ol className="divide-y divide-border/60">
+      {events.map((event) => (
+        <TimelineRow
+          key={event.id}
+          event={event}
+          isBrokenHead={brokenAtSequence === event.sequence}
+        />
+      ))}
     </ol>
   );
 }
 
-function EventDetails({ event }: { event: OrderEvidenceEventDTO }) {
+function TimelineRow({
+  event,
+  isBrokenHead,
+}: {
+  event: OrderEvidenceEventDTO;
+  isBrokenHead: boolean;
+}) {
+  const label =
+    OrderEvidenceEventLabel[event.eventType] ?? event.eventType;
+  const isEmailEvent =
+    event.eventType === OrderEvidenceEventType.PAYMENT_REQUEST_EMAIL_SENT ||
+    event.eventType === OrderEvidenceEventType.CONFIRMATION_EMAIL_SENT;
+  const html =
+    isEmailEvent && typeof event.payload.html === "string"
+      ? (event.payload.html as string)
+      : null;
+
+  return (
+    <li className="grid grid-cols-[3rem_1fr_auto_1.25rem] items-baseline gap-x-4 py-2.5 first:pt-0 last:pb-0">
+      {/* Sequence */}
+      <span className="font-mono text-[12px] text-muted-foreground tabular-nums">
+        {String(event.sequence).padStart(2, "0")}
+      </span>
+
+      {/* Label + secondary line */}
+      <div className="min-w-0 space-y-0.5">
+        <p className="text-[13px] font-medium leading-tight">
+          {label}
+        </p>
+        <RowMeta event={event} />
+        {isBrokenHead ? (
+          <p className="mt-1 inline-flex items-center gap-1.5 text-[11.5px] text-destructive">
+            <AlertTriangleIcon className="size-3" aria-hidden />
+            Chain breaks at this event — payload or hash mutated
+          </p>
+        ) : null}
+        <RowExpand event={event} html={html} />
+      </div>
+
+      {/* Timestamp */}
+      <span className="font-mono text-[11.5px] text-muted-foreground tabular-nums">
+        {formatUtcTime(event.occurredAt)}
+      </span>
+
+      {/* Integrity tick */}
+      <span aria-hidden className="justify-self-end">
+        {isBrokenHead ? (
+          <AlertTriangleIcon className="size-3.5 text-destructive" />
+        ) : (
+          <CheckIcon className="size-3.5 text-success" />
+        )}
+      </span>
+    </li>
+  );
+}
+
+function RowMeta({ event }: { event: OrderEvidenceEventDTO }) {
+  const actorLabel =
+    OrderEvidenceActorLabel[event.actor.type] ?? event.actor.type;
+  const refs = event.refs ?? null;
+
+  // One-line secondary that surfaces the most operationally useful
+  // reference for the row, without expanding the inline details.
+  let secondary: string | null = null;
+  if (refs?.paymentSessionId) {
+    secondary = `Session ${formatHashShort(refs.paymentSessionId, 14)}`;
+  } else if (refs?.paymentIntentId) {
+    secondary = `Intent ${formatHashShort(refs.paymentIntentId, 14)}`;
+  } else if (refs?.customerEmail) {
+    secondary = `To ${refs.customerEmail}`;
+  } else if (refs?.signatureName) {
+    secondary = `Signed by ${refs.signatureName}`;
+  } else if (event.request?.ip) {
+    secondary = `IP ${formatIp(event.request.ip)}`;
+  }
+
+  return (
+    <p className="text-[11.5px] text-muted-foreground leading-snug">
+      {actorLabel}
+      {event.actor.name ? ` · ${event.actor.name}` : ""}
+      {secondary ? ` · ` : null}
+      {secondary ? (
+        <span className="font-mono tabular-nums">{secondary}</span>
+      ) : null}
+    </p>
+  );
+}
+
+function RowExpand({
+  event,
+  html,
+}: {
+  event: OrderEvidenceEventDTO;
+  html: string | null;
+}) {
+  return (
+    <details className="group/expand mt-2">
+      <summary className="cursor-pointer select-none text-[11.5px] text-muted-foreground hover:text-foreground">
+        <span className="group-open/expand:hidden">Expand details</span>
+        <span className="hidden group-open/expand:inline">Hide details</span>
+      </summary>
+      <div className="mt-3 space-y-4 border-l border-border/60 pl-4">
+        <RefsBlock event={event} />
+        {html ? <EmailRender event={event} html={html} /> : null}
+        <HashBlock event={event} />
+      </div>
+    </details>
+  );
+}
+
+function RefsBlock({ event }: { event: OrderEvidenceEventDTO }) {
   const refs = event.refs ?? null;
   const items: Array<{ label: string; value: string }> = [];
   if (refs?.paymentSessionId) {
-    items.push({
-      label: "Payment session id",
-      value: refs.paymentSessionId,
-    });
+    items.push({ label: "Payment session", value: refs.paymentSessionId });
   }
   if (refs?.paymentIntentId) {
-    items.push({ label: "Payment intent id", value: refs.paymentIntentId });
+    items.push({ label: "Payment intent", value: refs.paymentIntentId });
   }
-  if (refs?.transactionId && refs.transactionId !== refs.paymentIntentId) {
+  if (
+    refs?.transactionId &&
+    refs.transactionId !== refs.paymentIntentId
+  ) {
     items.push({ label: "Transaction id", value: refs.transactionId });
   }
   if (refs?.gatewayEventId) {
-    items.push({ label: "Gateway event id", value: refs.gatewayEventId });
+    items.push({ label: "Gateway event", value: refs.gatewayEventId });
   }
   if (refs?.messageId) {
     items.push({ label: "Email message id", value: refs.messageId });
@@ -154,7 +202,7 @@ function EventDetails({ event }: { event: OrderEvidenceEventDTO }) {
   }
   if (items.length === 0) return null;
   return (
-    <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1 text-[12px]">
+    <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 text-[11.5px]">
       {items.map((i) => (
         <Fragment key={i.label}>
           <dt className="text-muted-foreground">{i.label}</dt>
@@ -165,16 +213,25 @@ function EventDetails({ event }: { event: OrderEvidenceEventDTO }) {
   );
 }
 
+function HashBlock({ event }: { event: OrderEvidenceEventDTO }) {
+  return (
+    <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 text-[11.5px] font-mono">
+      <dt className="text-muted-foreground">snapshotHash</dt>
+      <dd className="break-all">{event.snapshotHash}</dd>
+      <dt className="text-muted-foreground">hash</dt>
+      <dd className="break-all">{event.hash}</dd>
+      <dt className="text-muted-foreground">previousHash</dt>
+      <dd className="break-all">
+        {event.previousHash ?? "GENESIS"}
+      </dd>
+    </dl>
+  );
+}
+
 /**
- * Renders the captured email as flat evidence content — like reading a
- * "show original" download. No card box, no grey backdrop, no centered
- * container; just the subject + headers stacked above the body text.
- *
- * The HTML is generated by our own React Email templates and is safe to
- * mount via dangerouslySetInnerHTML. We use `extractEmailBody` to strip
- * the outer `<html>/<head>/<body>` wrappers + a `<style>` reset that
- * neutralises the templates' centered-card-on-grey chrome so the
- * content sits flush-left as evidence.
+ * Renders the captured email body inline. Strip the outer chrome from
+ * the React-Email HTML and a small reset overrides the centered-card
+ * styling so it reads as flush-left evidence content.
  */
 function EmailRender({
   event,
@@ -183,10 +240,10 @@ function EmailRender({
   event: OrderEvidenceEventDTO;
   html: string | null;
 }) {
+  if (!html) return null;
   const subject =
     typeof event.payload.subject === "string" ? event.payload.subject : "";
-  const to =
-    typeof event.payload.to === "string" ? event.payload.to : "";
+  const to = typeof event.payload.to === "string" ? event.payload.to : "";
   const from =
     typeof event.payload.from === "string" ? event.payload.from : "";
   const replyTo =
@@ -197,14 +254,14 @@ function EmailRender({
     typeof event.payload.messageId === "string"
       ? (event.payload.messageId as string)
       : null;
-  const body = html ? extractEmailBody(html) : null;
+  const body = extractEmailBody(html);
   return (
     <div className="space-y-3">
-      <div className="space-y-1.5">
-        <h3 className="text-[15px] font-semibold text-foreground">
+      <div className="space-y-1">
+        <p className="text-[13.5px] font-semibold text-foreground">
           {subject || "(no subject)"}
-        </h3>
-        <dl className="grid grid-cols-[4rem_1fr] gap-x-3 gap-y-0.5 text-[12px]">
+        </p>
+        <dl className="grid grid-cols-[4rem_1fr] gap-x-3 gap-y-0.5 text-[11.5px]">
           <dt className="text-muted-foreground">From</dt>
           <dd className="text-foreground">{from || "—"}</dd>
           <dt className="text-muted-foreground">To</dt>
@@ -216,7 +273,7 @@ function EmailRender({
             </>
           ) : null}
           <dt className="text-muted-foreground">Date</dt>
-          <dd>{formatDateTime(event.occurredAt)}</dd>
+          <dd>{formatUtcTimestamp(event.occurredAt)}</dd>
           {messageId ? (
             <>
               <dt className="text-muted-foreground">Message id</dt>
@@ -225,40 +282,14 @@ function EmailRender({
           ) : null}
         </dl>
       </div>
-      {body ? (
-        <Card className="max-w-[720px]">
-          <CardContent>
-            <div
-              className="evidence-email-body text-[13px] text-foreground"
-              dangerouslySetInnerHTML={{ __html: body }}
-            />
-          </CardContent>
-        </Card>
-      ) : (
-        <p className="text-[12.5px] text-muted-foreground">
-          No HTML snapshot captured for this send.
-        </p>
-      )}
+      <div
+        className="evidence-email-body rounded-md border border-border/70 bg-background p-4 text-[12.5px] text-foreground"
+        dangerouslySetInnerHTML={{ __html: body }}
+      />
     </div>
   );
 }
 
-/**
- * Strip the outer document chrome from a rendered React-Email HTML
- * string so it can be inlined as evidence content. Display-only — the
- * underlying email templates and the captured HTML payload stay
- * byte-identical, chain hashes still match.
- *
- *   - drops <html>/<head> entirely
- *   - takes the inside of <body>
- *   - prepends a scoped reset that:
- *       - kills any inline `#f6f7f9` page-colour leakage from internal
- *         wrappers (we paint the grey ourselves on the outer container,
- *         so internal duplicates would double up)
- *       - shifts the centered email card flush-left within its
- *         grey-backed container
- *       - constrains images to the container width
- */
 function extractEmailBody(html: string): string {
   const bodyMatch = /<body\b[^>]*>([\s\S]*?)<\/body>/i.exec(html);
   const inner = bodyMatch ? bodyMatch[1] : html;

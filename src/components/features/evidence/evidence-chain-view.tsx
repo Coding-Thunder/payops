@@ -1,23 +1,10 @@
-"use client";
-
-import Link from "next/link";
-import { ArrowLeftIcon, DownloadIcon } from "lucide-react";
-
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { PageHeader } from "@/components/common/page-header";
-import { formatCurrency, formatDateTime } from "@/lib/format";
+import { formatCurrency, formatUtcTimestamp } from "@/lib/format";
 import type { OrderEvidenceChainDTO } from "@/types";
 
-import { ConsentEvidenceCard } from "./consent-evidence-card";
+import { CaseFileHeader } from "./case-file-header";
 import { EvidenceTimeline } from "./evidence-timeline";
-import { IntegrityBadge } from "./integrity-badge";
+import { IntegrityStatement } from "./integrity-statement";
+import { OutcomePanel } from "./outcome-panel";
 
 interface EvidenceChainViewProps {
   chain: OrderEvidenceChainDTO;
@@ -25,164 +12,168 @@ interface EvidenceChainViewProps {
 }
 
 /**
- * Read-only dispute-defense screen. Renders the full hash-chained
- * timeline, a consent evidence card, and the integrity status of the
- * chain.
+ * Case file — read-only dispute-defense surface.
  *
- * "Download PDF" hits the server-rendered export route
- * (`/orders/[id]/evidence/export`) which streams an
- * `application/pdf` packet. Server-side rendering is gated by an
- * in-process semaphore (one render at a time) and a hard cap on
- * chain length so a single export can't OOM the $5-tier box — the
- * UI surfaces a Retry-After on 503.
+ * Composed as a single document, not a stack of cards. The dark
+ * header band, the asymmetric two-column body (order evidence on the
+ * left, outcome panel on the right), and the integrity statement
+ * footer are intended to read as one artifact — the in-app version
+ * and the exported PDF share the same skeleton.
  *
- * The previous `window.print()` UX is gone; print-time CSS classes
- * are kept as belt-and-suspenders for ad-hoc browser prints but the
- * canonical PDF is now the server export.
+ * The previous three-card layout (Order header + Consent + Event
+ * chain) is retired; consent surfaces as a row in the summary block
+ * and as a fact in the outcome panel, not its own section.
  */
 export function EvidenceChainView({
   chain,
   canExport,
 }: EvidenceChainViewProps) {
   const { events, verification, order } = chain;
-  // Authed app surfaces live under `/app/*` (the route folder is `app`,
-  // not the `(app)` route-group that would have been URL-transparent).
-  // Anchor + back-to-order link must carry the same prefix or every
-  // click 404s.
-  const exportHref = `/app/orders/${order.id}/evidence/export`;
+  const generatedAt = new Date().toISOString();
+
   return (
-    <div className="space-y-6 print:space-y-4">
-      <Button
-        asChild
-        variant="ghost"
-        size="sm"
-        className="w-fit print:hidden"
-      >
-        <Link href={`/app/orders/${order.id}`}>
-          <ArrowLeftIcon className="size-3.5" />
-          Back to order
-        </Link>
-      </Button>
-      <PageHeader
-        eyebrow="Dispute evidence"
-        title={`${order.orderNumber} — evidence chain`}
-        description="Immutable, hash-chained record of this order's full lifecycle. Use this as the single document a dispute / chargeback can be defended with."
-        actions={
-          <div className="flex flex-wrap items-center gap-2 print:hidden">
-            <IntegrityBadge verification={verification} />
-            {canExport ? (
-              <Button asChild size="sm" title="Download server-rendered PDF">
-                <a
-                  href={exportHref}
-                  download={`evidence-${order.orderNumber}.pdf`}
-                >
-                  <DownloadIcon className="size-3.5" />
-                  Download PDF
-                </a>
-              </Button>
-            ) : null}
-          </div>
-        }
+    <article className="bg-background text-foreground print:bg-white">
+      <CaseFileHeader
+        orderId={order.id}
+        orderNumber={order.orderNumber}
+        generatedAt={generatedAt}
+        eventCount={events.length}
+        integrityValid={verification.valid}
+        canExport={canExport}
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Order header</CardTitle>
-          <CardDescription>
-            Snapshot of the order at the moment this page was loaded.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="grid gap-3 text-[12.5px] sm:grid-cols-2">
-            <Row label="Order number" value={order.orderNumber} mono />
-            <Row label="Status" value={order.status} />
-            <Row label="Customer" value={order.customer.name} />
-            <Row label="Customer email" value={order.customer.email} />
-            <Row
-              label="Amount"
-              value={formatCurrency(order.pricing.amount, order.pricing.currency)}
-            />
-            <Row
-              label="Created"
-              value={formatDateTime(order.createdAt)}
-            />
-            <Row label="Events recorded" value={String(events.length)} />
-          </div>
+      <div className="grid grid-cols-1 gap-x-10 gap-y-10 px-8 py-10 lg:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)] xl:gap-x-14">
+        {/* ── Left column: order evidence ─────────────────────────── */}
+        <section className="flex flex-col gap-8">
+          <OrderSummary order={order} />
 
-          <div className="space-y-1.5">
-            <h4 className="text-[12.5px] font-semibold text-foreground">
-              {order.lineItems.length === 1 ? "Item" : "Items"}
-            </h4>
-            <p className="text-[13px]">
-              {order.lineItems
-                .map((l) =>
-                  l.quantity > 1 ? `${l.quantity}× ${l.name}` : l.name,
-                )
-                .join(", ") || "—"}
-            </p>
-          </div>
-
-          {order.scheduling ? (
-            <div className="space-y-1">
-              <h4 className="text-[12.5px] font-semibold text-foreground">
-                Window
-              </h4>
-              <p className="text-[13px]">
-                {formatDateTime(order.scheduling.startsAt)}
-                {order.scheduling.endsAt
-                  ? ` → ${formatDateTime(order.scheduling.endsAt)}`
-                  : ""}
-              </p>
+          <div>
+            <SectionHeader
+              label="Evidence timeline"
+              suffix={`${events.length} ${events.length === 1 ? "event" : "events"}`}
+            />
+            <div className="mt-4">
+              <EvidenceTimeline
+                events={events}
+                brokenAtSequence={verification.brokenAtSequence}
+              />
             </div>
-          ) : null}
-        </CardContent>
-      </Card>
+          </div>
+        </section>
 
-      <ConsentEvidenceCard events={events} />
+        {/* ── Right column: outcome panel ─────────────────────────── */}
+        <OutcomePanel
+          order={order}
+          events={events}
+          integrityValid={verification.valid}
+        />
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Event chain</CardTitle>
-          <CardDescription>
-            Each event is hashed against the previous one. Editing a single
-            payload field cascades into every downstream hash and surfaces
-            here as a red &ldquo;broken&rdquo; indicator.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {events.length === 0 ? (
-            <p className="text-[12.5px] text-muted-foreground">
-              No evidence events recorded for this order yet. Events appear
-              automatically when an order is created, a payment link is
-              generated, an email is sent, consent is received, or a webhook
-              confirms payment.
-            </p>
-          ) : (
-            <EvidenceTimeline
-              events={events}
-              brokenAtSequence={verification.brokenAtSequence}
-            />
-          )}
-        </CardContent>
-      </Card>
+      <IntegrityStatement
+        generatedAt={generatedAt}
+        eventCount={events.length}
+        headHash={verification.headHash}
+        valid={verification.valid}
+      />
+    </article>
+  );
+}
+
+/* ─────────────────────── primitives ─────────────────────────────────── */
+
+function OrderSummary({
+  order,
+}: {
+  order: OrderEvidenceChainDTO["order"];
+}) {
+  const items = order.lineItems
+    .map((l) => (l.quantity > 1 ? `${l.quantity}× ${l.name}` : l.name))
+    .filter(Boolean);
+  const itemsText = items.length > 0 ? items.join(", ") : "—";
+
+  const rows: Array<{ k: string; v: React.ReactNode; mono?: boolean }> = [
+    { k: "Customer", v: order.customer.name },
+    { k: "Customer email", v: order.customer.email, mono: true },
+    {
+      k: "Amount",
+      v: formatCurrency(order.pricing.amount, order.pricing.currency),
+      mono: true,
+    },
+    { k: "Status", v: order.status, mono: true },
+    {
+      k: "Order created",
+      v: formatUtcTimestamp(order.createdAt),
+      mono: true,
+    },
+    {
+      k: "Paid",
+      v: order.payment.paidAt
+        ? formatUtcTimestamp(order.payment.paidAt)
+        : "—",
+      mono: true,
+    },
+    { k: "Gateway", v: order.payment.gateway ?? "—", mono: true },
+    {
+      k: "Items",
+      v: itemsText,
+    },
+  ];
+
+  if (order.scheduling) {
+    rows.push({
+      k: "Window",
+      v: `${formatUtcTimestamp(order.scheduling.startsAt)}${
+        order.scheduling.endsAt
+          ? ` → ${formatUtcTimestamp(order.scheduling.endsAt)}`
+          : ""
+      }`,
+      mono: true,
+    });
+  }
+
+  return (
+    <div>
+      <SectionHeader label="Order summary" />
+      <dl className="mt-4 divide-y divide-border/60">
+        {rows.map((r) => (
+          <div
+            key={r.k}
+            className="grid grid-cols-[10rem_1fr] items-baseline gap-x-4 py-2"
+          >
+            <dt className="text-[12.5px] text-muted-foreground">{r.k}</dt>
+            <dd
+              className={
+                r.mono
+                  ? "font-mono text-[12.5px] tabular-nums break-all"
+                  : "text-[13px]"
+              }
+            >
+              {r.v}
+            </dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }
 
-function Row({
+function SectionHeader({
   label,
-  value,
-  mono,
+  suffix,
 }: {
   label: string;
-  value: string;
-  mono?: boolean;
+  suffix?: string;
 }) {
   return (
-    <div className="grid grid-cols-[10rem_1fr] items-start gap-x-3">
-      <div className="text-muted-foreground">{label}</div>
-      <div className={mono ? "font-mono" : ""}>{value}</div>
+    <div className="flex items-baseline justify-between border-b border-border/70 pb-2">
+      <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+        {label}
+      </h2>
+      {suffix ? (
+        <span className="font-mono text-[11px] text-muted-foreground tabular-nums">
+          {suffix}
+        </span>
+      ) : null}
     </div>
   );
 }
-

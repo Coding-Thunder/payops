@@ -342,6 +342,18 @@ export interface OrderEvidenceChainDTO {
     /** Optional time window for the order (scheduled / windowed items). */
     scheduling: OrderSchedulingDTO | null;
     createdAt: string;
+    /** Pointer copies carried for the case-file outcome panel. The
+     *  panel reads `dispute` first (WON / LOST / OPEN), then falls back
+     *  to `payment` + `consent` to render the READY state for every
+     *  paid order. */
+    payment: {
+      gateway: PaymentGatewayKey | null;
+      paymentIntentId: string | null;
+      paidAt: string | null;
+      receiptUrl: string | null;
+    };
+    consent: OrderConsentPointer;
+    dispute: OrderDisputePointer | null;
   };
 }
 

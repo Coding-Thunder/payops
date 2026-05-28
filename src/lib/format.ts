@@ -35,6 +35,54 @@ export function formatDateTime(
   });
 }
 
+/**
+ * ISO-style UTC timestamp for evidence + ledger surfaces.
+ * Format: `2026-05-26 08:14:35 UTC`. Tabular, locale-free, document-grade.
+ */
+export function formatUtcTimestamp(
+  value: string | Date | null | undefined,
+): string {
+  if (!value) return "—";
+  const d = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(d.getTime())) return "—";
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mi = String(d.getUTCMinutes()).padStart(2, "0");
+  const ss = String(d.getUTCSeconds()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss} UTC`;
+}
+
+/**
+ * Time-only variant for high-density ledger rows where the date is
+ * implicit from context. Format: `08:14:35`.
+ */
+export function formatUtcTime(
+  value: string | Date | null | undefined,
+): string {
+  if (!value) return "—";
+  const d = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(d.getTime())) return "—";
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mi = String(d.getUTCMinutes()).padStart(2, "0");
+  const ss = String(d.getUTCSeconds()).padStart(2, "0");
+  return `${hh}:${mi}:${ss}`;
+}
+
+/**
+ * Truncate a long hex hash to the leading characters with an ellipsis.
+ * Used in operational surfaces where the full hash adds noise.
+ */
+export function formatHashShort(
+  value: string | null | undefined,
+  leading = 12,
+): string {
+  if (!value) return "—";
+  if (value.length <= leading) return value;
+  return `${value.slice(0, leading)}…`;
+}
+
 export function formatRelative(value: string | Date | null | undefined): string {
   if (!value) return "—";
   const d = typeof value === "string" ? new Date(value) : value;

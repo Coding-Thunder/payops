@@ -9,6 +9,7 @@ import { sessionOpt } from "@/server/db/transaction";
 import {
   AuditAction,
   AuditEntity,
+  type ConsentMethod,
   OrderEvidenceActorType,
   type OrderEvidenceEventType,
   type UserRole,
@@ -346,6 +347,51 @@ export async function getEvidenceChain(
           }
         : null,
       createdAt: orderDoc.createdAt.toISOString(),
+      // Pointers the case-file outcome panel reads to decide its
+      // variant (READY / OPEN / WON / LOST). All three already live
+      // on the Order doc; we just thread them through the DTO.
+      payment: {
+        gateway: orderDoc.payment.gateway ?? null,
+        paymentIntentId: orderDoc.payment.paymentIntentId ?? null,
+        paidAt: orderDoc.payment.paidAt
+          ? orderDoc.payment.paidAt.toISOString()
+          : null,
+        receiptUrl: orderDoc.payment.receiptUrl ?? null,
+      },
+      consent: {
+        status: orderDoc.consent.status,
+        currentConsentId: orderDoc.consent.currentConsentId
+          ? String(orderDoc.consent.currentConsentId)
+          : null,
+        requestedAt: orderDoc.consent.requestedAt
+          ? orderDoc.consent.requestedAt.toISOString()
+          : null,
+        receivedAt: orderDoc.consent.receivedAt
+          ? orderDoc.consent.receivedAt.toISOString()
+          : null,
+        verifiedAt: orderDoc.consent.verifiedAt
+          ? orderDoc.consent.verifiedAt.toISOString()
+          : null,
+        method: (orderDoc.consent.method as ConsentMethod | null) ?? null,
+      },
+      dispute: orderDoc.dispute
+        ? {
+            status: orderDoc.dispute.status ?? null,
+            currentDisputeId: orderDoc.dispute.currentDisputeId
+              ? String(orderDoc.dispute.currentDisputeId)
+              : null,
+            openedAt: orderDoc.dispute.openedAt
+              ? orderDoc.dispute.openedAt.toISOString()
+              : null,
+            closedAt: orderDoc.dispute.closedAt
+              ? orderDoc.dispute.closedAt.toISOString()
+              : null,
+            outcome: orderDoc.dispute.outcome ?? null,
+            reason: orderDoc.dispute.reason ?? null,
+            amount: orderDoc.dispute.amount ?? null,
+            currency: orderDoc.dispute.currency ?? null,
+          }
+        : null,
     },
   };
 }
