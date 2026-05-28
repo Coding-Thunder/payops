@@ -1,46 +1,35 @@
 import { MarketingSection, AccentWord } from "../section";
 
 /**
- * "Trust" chapter — merges what used to be three separate sections
- * (WhyPayOps + EnterpriseChoose + AuditCompliance) into one
- * cream-toned editorial moment. The big stats up top earn the visit;
- * the bento below carries the dense substance.
+ * Trust chapter — editorial long-form instead of 6-card grid.
  *
- * File path kept as `enterprise-choose.tsx` so the page import doesn't
- * have to be renamed — the file *content* is now the Trust section.
+ * Reads as a written argument with a focal stat strip up top and six
+ * footnoted pillars below. The pillars sit in a two-column long-form
+ * list (margin-mono index + body paragraph), not perfect 3×2 cards.
+ * One pillar is intentionally lifted to read as the section's anchor
+ * point — the rest support it.
+ *
+ * Same content from the prior pillars, recomposed away from the
+ * "identical card syndrome" pattern.
  */
 
-const STATS: Array<{
-  label: string;
-  target: number;
-  suffix: string;
-  note: string;
-}> = [
-  {
-    label: "Webhook idempotency",
-    target: 100,
-    suffix: "%",
-    note: "every gateway event collapses to one transition",
-  },
-  {
-    label: "Drift between surfaces",
-    target: 0,
-    suffix: "",
-    note: "one record · realtime push + polling backstop",
-  },
-  {
-    label: "Evidence retention",
-    target: 0, // overridden visually below
-    suffix: "",
-    note: "paid, refunded, disputed — kept forever",
-  },
-];
+interface Pillar {
+  k: string;
+  title: string;
+  body: string;
+}
 
-const PILLARS: Array<{ k: string; title: string; body: string }> = [
+const ANCHOR: Pillar = {
+  k: "00",
+  title: "Compliance isn't an export feature. It's the schema.",
+  body: "Every record TraceTxn writes is shaped for the conversation finance has with auditors and banks. The data model carries actor identity, request context, hash linkage, and immutability proofs — not as a reporting layer, but as the storage primitives themselves.",
+};
+
+const PILLARS: Pillar[] = [
   {
     k: "01",
     title: "Backend authority, never UI optimism",
-    body: "Every badge derives from the canonical record. Dashboard, order detail, and dispute log can never disagree.",
+    body: "Every status badge derives from the canonical record. The dashboard, the order detail, and the dispute log read the same row at the same time.",
   },
   {
     k: "02",
@@ -69,6 +58,24 @@ const PILLARS: Array<{ k: string; title: string; body: string }> = [
   },
 ];
 
+const STATS: Array<{ label: string; value: string; note: string }> = [
+  {
+    label: "Webhook idempotency",
+    value: "100%",
+    note: "Every gateway event collapses to one transition.",
+  },
+  {
+    label: "Drift between surfaces",
+    value: "0",
+    note: "One record · realtime push + polling backstop.",
+  },
+  {
+    label: "Evidence retention",
+    value: "∞",
+    note: "Paid, refunded, disputed — kept forever.",
+  },
+];
+
 export function EnterpriseChoose() {
   return (
     <MarketingSection
@@ -82,93 +89,95 @@ export function EnterpriseChoose() {
           finance has with auditors and banks.
         </>
       }
-      description="Compliance isn't an export feature added later. It's the schema. Every record on PayOps was designed assuming someone might ask, two years from now, exactly what happened on a specific order."
+      description="Compliance is not added on. It is the schema. Every record TraceTxn writes assumes someone might ask, two years from now, exactly what happened on a specific order."
     >
-      {/* ── Hero stat strip ─────────────────────────────────────── */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      {/* ── Focal stat strip — flat, borderless, typographic only ─── */}
+      <dl
+        data-reveal
+        data-reveal-order={0}
+        className="grid grid-cols-1 gap-y-6 border-y py-7 sm:grid-cols-3 sm:gap-x-10"
+        style={{ borderColor: "var(--m-border)" }}
+      >
         {STATS.map((s, i) => (
           <div
             key={s.label}
             data-reveal
             data-reveal-order={i}
-            className="relative overflow-hidden rounded-2xl border p-7 backdrop-blur-sm"
-            style={{
-              borderColor: "var(--m-border)",
-              background: "var(--m-surface-strong)",
-            }}
+            className="space-y-1.5"
           >
-            <div
-              aria-hidden
-              className="pointer-events-none absolute -right-10 -top-10 size-40 rounded-full opacity-40 blur-2xl"
-              style={{
-                background:
-                  "radial-gradient(circle, var(--m-cream-accent) 0%, transparent 70%)",
-              }}
-            />
-            <p
-              className="font-mono text-[10.5px] uppercase tracking-[0.18em]"
+            <dt
+              className="text-[11px] font-medium uppercase tracking-[0.14em]"
               style={{ color: "var(--m-eyebrow)" }}
             >
               {s.label}
-            </p>
-            <p className="mt-4 font-mono text-[44px] font-semibold leading-none tracking-tight">
-              {i === 2 ? (
-                <span>∞</span>
-              ) : (
-                <span
-                  data-counter={s.target}
-                  data-counter-suffix={s.suffix}
-                >
-                  0{s.suffix}
-                </span>
-              )}
-            </p>
+            </dt>
+            <dd className="font-mono text-[40px] font-semibold leading-none tracking-tight tabular-nums">
+              {s.value}
+            </dd>
             <p
-              className="mt-3 text-[12.5px] leading-relaxed"
+              className="max-w-[34ch] text-[12.5px] leading-relaxed"
               style={{ color: "var(--m-fg-soft)" }}
             >
               {s.note}
             </p>
           </div>
         ))}
+      </dl>
+
+      {/* ── Anchor pillar (lifted) ──────────────────────────────── */}
+      <div
+        data-reveal
+        data-reveal-order={1}
+        className="mt-16 grid grid-cols-[3rem_1fr] items-baseline gap-x-4"
+      >
+        <span
+          className="font-mono text-[12px] tabular-nums"
+          style={{ color: "var(--m-eyebrow)" }}
+        >
+          {ANCHOR.k}
+        </span>
+        <div>
+          <h3 className="text-balance text-[22px] sm:text-[26px] font-semibold leading-[1.18] tracking-[-0.015em]">
+            {ANCHOR.title}
+          </h3>
+          <p
+            className="mt-4 max-w-[58ch] text-[15px] leading-relaxed"
+            style={{ color: "var(--m-fg-soft)" }}
+          >
+            {ANCHOR.body}
+          </p>
+        </div>
       </div>
 
-      {/* ── Pillars bento ───────────────────────────────────────── */}
-      <div className="mt-12 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {/* ── Six pillars — two-column footnoted list ─────────────── */}
+      <div
+        className="mt-14 grid grid-cols-1 gap-x-12 gap-y-10 border-t pt-12 md:grid-cols-2"
+        style={{ borderColor: "var(--m-border)" }}
+      >
         {PILLARS.map((p, i) => (
           <div
             key={p.k}
             data-reveal
-            data-reveal-order={i % 3}
-            className="group relative overflow-hidden rounded-2xl border p-7 transition-transform hover:-translate-y-px"
-            style={{
-              borderColor: "var(--m-border)",
-              background: "var(--m-surface)",
-            }}
+            data-reveal-order={i % 4}
+            className="grid grid-cols-[2.5rem_1fr] items-baseline gap-x-3"
           >
             <span
-              aria-hidden
-              className="absolute inset-x-0 top-0 h-px opacity-0 transition-opacity group-hover:opacity-100"
-              style={{
-                background:
-                  "linear-gradient(90deg, transparent 0%, var(--m-cream-accent) 50%, transparent 100%)",
-              }}
-            />
-            <p
-              className="font-mono text-[11px] uppercase tracking-[0.18em]"
+              className="font-mono text-[11px] tabular-nums"
               style={{ color: "var(--m-eyebrow)" }}
             >
               {p.k}
-            </p>
-            <h3 className="mt-3 text-[16.5px] font-semibold tracking-tight">
-              {p.title}
-            </h3>
-            <p
-              className="mt-2.5 text-[13px] leading-relaxed"
-              style={{ color: "var(--m-fg-soft)" }}
-            >
-              {p.body}
-            </p>
+            </span>
+            <div>
+              <h4 className="text-[14.5px] font-semibold tracking-tight">
+                {p.title}
+              </h4>
+              <p
+                className="mt-1.5 text-[13.5px] leading-relaxed"
+                style={{ color: "var(--m-fg-soft)" }}
+              >
+                {p.body}
+              </p>
+            </div>
           </div>
         ))}
       </div>
