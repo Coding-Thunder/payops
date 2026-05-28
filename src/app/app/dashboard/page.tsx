@@ -1,5 +1,12 @@
 import Link from "next/link";
-import { ArrowRightIcon, PlusIcon } from "lucide-react";
+import {
+  ArrowRightIcon,
+  ClockIcon,
+  DollarSignIcon,
+  PlusIcon,
+  TrendingUpIcon,
+  XCircleIcon,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -81,6 +88,8 @@ export default async function DashboardPage() {
         <FadeIn>
           <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
+              icon={DollarSignIcon}
+              iconTone="success"
               label="Revenue · 30d"
               value={formatCurrency(
                 analytics.totals.revenue,
@@ -90,6 +99,8 @@ export default async function DashboardPage() {
               trend={revenueTrend(analytics, priorAnalytics)}
             />
             <StatCard
+              icon={TrendingUpIcon}
+              iconTone="info"
               label="Conversion"
               value={`${analytics.totals.conversionRate}%`}
               caption={`${analytics.totals.ordersCreated} created`}
@@ -99,18 +110,20 @@ export default async function DashboardPage() {
               )}
             />
             <StatCard
+              icon={ClockIcon}
+              iconTone="warning"
               label="Outstanding"
               value={analytics.totals.ordersPending}
               caption="Awaiting customer payment"
-              variant={analytics.totals.ordersPending > 0 ? "warning" : "default"}
             />
             <StatCard
+              icon={XCircleIcon}
+              iconTone="destructive"
               label="Failed · Expired"
               value={
                 analytics.totals.ordersFailed + analytics.totals.ordersExpired
               }
               caption="Last 30 days"
-              variant="destructive"
             />
           </section>
         </FadeIn>

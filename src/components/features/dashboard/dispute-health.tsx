@@ -78,19 +78,30 @@ function Stat({
   value: number;
   tone: "neutral" | "warning" | "danger";
 }) {
-  const toneClass =
+  const accent =
+    tone === "warning"
+      ? "var(--warning)"
+      : tone === "danger"
+        ? "var(--destructive)"
+        : "var(--success)";
+  const number =
     tone === "warning"
       ? "text-warning-foreground"
       : tone === "danger"
         ? "text-destructive"
         : "text-foreground";
   return (
-    <div className="px-4 py-3.5">
+    <div className="relative px-4 py-3.5">
+      <span
+        aria-hidden
+        className="absolute inset-x-3 top-0 h-[2px] rounded-full"
+        style={{ background: accent }}
+      />
       <dt className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
         {label}
       </dt>
       <dd
-        className={`mt-1.5 font-mono text-[20px] font-semibold leading-none tabular-nums ${toneClass}`}
+        className={`mt-1.5 font-mono text-[22px] font-semibold leading-none tabular-nums ${number}`}
       >
         {value}
       </dd>
