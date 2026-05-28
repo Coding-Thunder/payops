@@ -9,6 +9,7 @@ import {
   KeyIcon,
   LayersIcon,
   MailIcon,
+  PackageIcon,
   PaletteIcon,
   ScrollTextIcon,
   SettingsIcon,
@@ -36,9 +37,20 @@ interface NavSection {
   items: NavItem[];
 }
 
+/**
+ * Sidebar information architecture — operational, not marketing.
+ *
+ *   OPERATIONS   the daily-use surfaces (dashboard, orders, disputes)
+ *   CATALOG      the merchant's product world (item types, items)
+ *   SETTINGS     team + integrations + brand + emails + audit + config
+ *
+ * Active selection is a 2px emerald rail on the left edge — the brand
+ * accent. No pulse animations, no decorative dots; this is an ops
+ * console and a steady left-edge rail is enough.
+ */
 const SECTIONS: NavSection[] = [
   {
-    label: "Workspace",
+    label: "Operations",
     items: [
       { href: "/app/dashboard", label: "Dashboard", icon: HomeIcon },
       {
@@ -47,17 +59,40 @@ const SECTIONS: NavSection[] = [
         icon: CreditCardIcon,
         permissions: [Permission.ORDER_VIEW_OWN, Permission.ORDER_VIEW_ALL],
       },
-    ],
-  },
-  {
-    label: "Admin",
-    items: [
+      {
+        href: "/app/admin/disputes",
+        label: "Disputes",
+        icon: ShieldAlertIcon,
+        permissions: [Permission.ORDER_VIEW_ALL],
+      },
       {
         href: "/app/admin/analytics",
         label: "Analytics",
         icon: BarChart3Icon,
         permissions: [Permission.ANALYTICS_VIEW],
       },
+    ],
+  },
+  {
+    label: "Catalog",
+    items: [
+      {
+        href: "/app/admin/item-types",
+        label: "Item types",
+        icon: LayersIcon,
+        permissions: [Permission.ITEM_TYPE_MANAGE],
+      },
+      {
+        href: "/app/admin/items",
+        label: "Catalog",
+        icon: PackageIcon,
+        permissions: [Permission.ITEM_MANAGE],
+      },
+    ],
+  },
+  {
+    label: "Settings",
+    items: [
       {
         href: "/app/admin/users",
         label: "Team",
@@ -65,26 +100,16 @@ const SECTIONS: NavSection[] = [
         permissions: [Permission.USER_VIEW],
       },
       {
-        href: "/app/admin/item-types",
-        label: "Item types",
-        icon: LayersIcon,
-        permissions: [Permission.ITEM_TYPE_MANAGE],
+        href: "/app/admin/gateways",
+        label: "Gateways",
+        icon: KeyIcon,
+        permissions: [Permission.GATEWAY_VIEW],
       },
-      // Pass 5g: rental-specific admin surfaces ("Providers", "Car library")
-      // are no longer reachable from the nav. The data behind them lives
-      // in `Order.lineItems[].attributes` for new orders; the catalog
-      // collections are kept (read-only) until Pass 5h's 30-day soak ends.
       {
         href: "/app/admin/branding",
         label: "Branding",
         icon: PaletteIcon,
         permissions: [Permission.BRANDING_VIEW],
-      },
-      {
-        href: "/app/admin/gateways",
-        label: "Gateways",
-        icon: KeyIcon,
-        permissions: [Permission.GATEWAY_VIEW],
       },
       {
         href: "/app/admin/email-templates",
@@ -97,12 +122,6 @@ const SECTIONS: NavSection[] = [
         label: "Email previews",
         icon: MailIcon,
         permissions: [Permission.SETTINGS_VIEW],
-      },
-      {
-        href: "/app/admin/disputes",
-        label: "Disputes",
-        icon: ShieldAlertIcon,
-        permissions: [Permission.ORDER_VIEW_ALL],
       },
       {
         href: "/app/admin/audit",
@@ -141,7 +160,7 @@ export function Sidebar({ role, brand, variant = "full" }: SidebarProps) {
       className={cn(
         "flex flex-col bg-sidebar text-sidebar-foreground",
         variant === "full"
-          ? "hidden md:flex md:w-[15rem] md:shrink-0 md:border-r md:border-sidebar-border"
+          ? "hidden md:flex md:w-[14.5rem] md:shrink-0 md:border-r md:border-sidebar-border"
           : "w-full",
       )}
     >
@@ -159,10 +178,10 @@ export function Sidebar({ role, brand, variant = "full" }: SidebarProps) {
         </div>
       ) : null}
 
-      <nav className="flex-1 overflow-y-auto px-2.5 py-5 space-y-6 scrollbar-thin">
+      <nav className="flex-1 overflow-y-auto px-2.5 py-5 space-y-5 scrollbar-thin">
         {visibleSections.map((section) => (
           <div key={section.label}>
-            <div className="mb-2 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/70">
+            <div className="mb-1.5 px-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/65">
               {section.label}
             </div>
             <ul className="space-y-px">
@@ -176,28 +195,23 @@ export function Sidebar({ role, brand, variant = "full" }: SidebarProps) {
                     <Link
                       href={item.href}
                       className={cn(
-                        "group relative flex items-center gap-2.5 px-2 py-[7px]",
-                        "text-[13px] leading-none tracking-[-0.005em]",
+                        "group relative flex items-center gap-2.5 px-2 py-1.5",
+                        "text-[13px] leading-tight tracking-[-0.005em]",
                         "transition-[background-color,color] duration-150",
                         "rounded-[6px]",
                         active
-                          ? "bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
+                          ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                           : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
                       )}
                     >
-                      {/* Active rail — 2px chromatic stripe on the
-                          left edge, tied to the telemetry-strip
-                          accent gradient. Reads as a deliberate
-                          ops-console selection, not a generic SaaS
-                          pill highlight. */}
+                      {/* Active rail — flat 2px emerald edge marker.
+                          No gradient, no pulse, no marketing accent;
+                          a single brand color line that just says
+                          "you are here". */}
                       {active ? (
                         <span
                           aria-hidden
-                          className="absolute -left-2.5 top-1/2 h-5 w-[2px] -translate-y-1/2 rounded-r-full"
-                          style={{
-                            background:
-                              "linear-gradient(180deg, var(--m-orange) 0%, var(--m-cobalt) 100%)",
-                          }}
+                          className="absolute -left-2.5 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-r-full bg-success"
                         />
                       ) : null}
                       <Icon
@@ -209,19 +223,6 @@ export function Sidebar({ role, brand, variant = "full" }: SidebarProps) {
                         )}
                       />
                       <span className="truncate">{item.label}</span>
-                      {/* Live indicator on the active item — pulses
-                          to communicate that this surface is the
-                          one receiving realtime updates. */}
-                      {active ? (
-                        <span
-                          aria-hidden
-                          className="ml-auto size-1.5 rounded-full bg-success"
-                          style={{
-                            animation:
-                              "pulse-soft 2.4s ease-in-out infinite",
-                          }}
-                        />
-                      ) : null}
                     </Link>
                   </li>
                 );
@@ -232,19 +233,10 @@ export function Sidebar({ role, brand, variant = "full" }: SidebarProps) {
       </nav>
 
       {variant === "full" ? (
-        <div className="border-t border-sidebar-border px-4 py-3">
-          <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/70">
-            <span>v1.0 · ops</span>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="size-1.5 rounded-full bg-success"
-                style={{
-                  animation: "pulse-soft 2.6s ease-in-out infinite",
-                }}
-              />
-              <span>online</span>
-            </span>
-          </div>
+        <div className="border-t border-sidebar-border px-4 py-2.5">
+          <p className="text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground/65 tabular-nums">
+            v1.0
+          </p>
         </div>
       ) : null}
     </aside>
