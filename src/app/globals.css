@@ -219,6 +219,14 @@
   --ink-navy: oklch(0.17 0.045 240);
   --ink-navy-soft: oklch(0.22 0.045 240);
 
+  /* Document atmosphere — barely-visible ledger grid pattern
+   * applied to the page body so the document has a hint of
+   * underlying structure (operational, not decorative). */
+  --doc-grid:
+    linear-gradient(to right, oklch(0.18 0.018 240 / 0.025) 1px, transparent 1px),
+    linear-gradient(to bottom, oklch(0.18 0.018 240 / 0.025) 1px, transparent 1px);
+  --doc-grid-size: 48px 48px;
+
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.158 0.005 286);
 

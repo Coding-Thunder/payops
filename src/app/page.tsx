@@ -47,20 +47,31 @@ export default function LandingPage() {
       <TopBand />
       <CoverBand />
 
-      <main className="mx-auto max-w-[1280px] px-6 lg:px-10">
-        <div className="grid grid-cols-1 gap-x-12 lg:grid-cols-[10rem_minmax(0,1fr)] lg:items-start">
-          <DocumentRail />
-          <div className="min-w-0">
-            <EvidenceRegion />
-            <LifecycleRegion />
-            <GatewaysRegion />
-            <IntegrityRegion />
-            <SetupRegion />
-            <ClosingRegion
-              turnstileSiteKey={
-                env.public.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null
-              }
-            />
+      {/* Document body — wrapped in a layer that paints the very
+          subtle ledger-grid atmosphere behind the regions. Reads as
+          an underlying transaction grid, not decoration. */}
+      <main
+        className="relative"
+        style={{
+          backgroundImage: "var(--doc-grid)",
+          backgroundSize: "var(--doc-grid-size)",
+        }}
+      >
+        <div className="mx-auto max-w-[1280px] px-6 lg:px-10">
+          <div className="grid grid-cols-1 gap-x-12 lg:grid-cols-[10rem_minmax(0,1fr)] lg:items-start">
+            <DocumentRail />
+            <div className="min-w-0">
+              <EvidenceRegion />
+              <LifecycleRegion />
+              <GatewaysRegion />
+              <IntegrityRegion />
+              <SetupRegion />
+              <ClosingRegion
+                turnstileSiteKey={
+                  env.public.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null
+                }
+              />
+            </div>
           </div>
         </div>
       </main>

@@ -1,28 +1,27 @@
 import Link from "next/link";
-import { ArrowRightIcon } from "lucide-react";
+import { ArrowRightIcon, CheckIcon } from "lucide-react";
 
 /**
- * Setup region — closes the document.
+ * Setup region — closes the document with a numbered procedure.
  *
- * Reads as the final part of an operational procedure: numbered
- * steps, what every workspace gets, and one path forward. No CTA
- * chrome, no Aurora, no centred "join us" pitch. The procedure IS
- * the conclusion.
+ * Sits in a soft inset surface for region rhythm + uses green
+ * numbered ring pills on the steps (same operational identity
+ * marker the reference's case-file timeline uses on its events).
  */
 
 const STEPS: Array<{ k: string; title: string; body: string }> = [
   {
-    k: "01",
+    k: "1",
     title: "Create your workspace",
     body: "Sign up, name your business, pick a vertical template — retail, services, rental, repair, dealership, generic. The catalog seeds itself; the operator console is live.",
   },
   {
-    k: "02",
+    k: "2",
     title: "Connect Stripe",
     body: "One-click test, auto-registered webhook endpoint, deep links into your Stripe dashboard. Razorpay and Authorize.net adapters slot in next.",
   },
   {
-    k: "03",
+    k: "3",
     title: "Run your first order",
     body: "Catalog → order → payment link → consent → paid. Every transition recorded on the evidence chain from minute one.",
   },
@@ -41,10 +40,17 @@ const INCLUDED: string[] = [
 
 export function SetupRegion() {
   return (
-    <section id="setup" className="scroll-mt-20 pt-20 sm:pt-28 pb-20">
+    <section
+      id="setup"
+      className="scroll-mt-20 mt-20 sm:mt-28 -mx-6 lg:-mx-10 px-6 lg:px-10 py-16 sm:py-20"
+      style={{ background: "var(--surface-1)" }}
+    >
       <div className="grid grid-cols-1 gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] lg:items-start">
         <div>
-          <p className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-success">
+          <p
+            className="font-mono text-[10.5px] uppercase tracking-[0.16em]"
+            style={{ color: "var(--success-strong)" }}
+          >
             Setup
           </p>
           <h2 className="mt-3 max-w-[20ch] text-balance text-[24px] sm:text-[28px] font-semibold leading-[1.15] tracking-[-0.018em]">
@@ -67,20 +73,32 @@ export function SetupRegion() {
           </Link>
         </div>
 
-        <ol className="space-y-7">
+        {/* Numbered procedure — green ring pills + connector line.
+            Same operational identity element the case-file timeline
+            uses on its events. */}
+        <ol className="relative space-y-6">
+          {/* Vertical green connector line behind the pills */}
+          <span
+            aria-hidden
+            className="pointer-events-none absolute left-[1.125rem] top-2 bottom-2 w-[2px] rounded-full"
+            style={{ background: "var(--success)" }}
+          />
           {STEPS.map((s) => (
             <li
               key={s.k}
-              className="grid grid-cols-[3rem_1fr] items-baseline gap-x-4"
+              className="relative grid grid-cols-[2.25rem_1fr] items-start gap-x-4"
             >
-              <span className="font-mono text-[12px] tabular-nums text-muted-foreground">
+              <span
+                className="relative z-10 grid size-9 place-items-center rounded-full text-[13px] font-semibold text-white shadow-[0_4px_12px_-4px_color-mix(in_oklch,var(--success)_55%,transparent)]"
+                style={{ background: "var(--success)" }}
+              >
                 {s.k}
               </span>
-              <div>
+              <div className="pt-1">
                 <h3 className="text-[15.5px] font-semibold tracking-tight">
                   {s.title}
                 </h3>
-                <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">
+                <p className="mt-1.5 max-w-[52ch] text-[13.5px] leading-relaxed text-muted-foreground">
                   {s.body}
                 </p>
               </div>
@@ -89,20 +107,21 @@ export function SetupRegion() {
         </ol>
       </div>
 
-      {/* What every workspace gets — bare list, no boxes */}
+      {/* What every workspace gets */}
       <div className="mt-16 border-t border-border pt-8">
         <p className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted-foreground">
           What every workspace gets
         </p>
-        <ul className="mt-4 grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2 lg:grid-cols-2">
+        <ul className="mt-4 grid grid-cols-1 gap-x-8 gap-y-2.5 sm:grid-cols-2 lg:grid-cols-2">
           {INCLUDED.map((item) => (
             <li
               key={item}
-              className="grid grid-cols-[0.75rem_1fr] items-baseline gap-x-2 text-[13.5px] leading-relaxed"
+              className="grid grid-cols-[1rem_1fr] items-baseline gap-x-2 text-[13.5px] leading-relaxed"
             >
-              <span
+              <CheckIcon
+                className="mt-[3px] size-3.5 shrink-0 text-success"
+                strokeWidth={2.5}
                 aria-hidden
-                className="mt-1.5 size-1 rounded-full bg-success"
               />
               <span>{item}</span>
             </li>

@@ -1,29 +1,39 @@
 /**
- * Integrity region — the "trust" content recomposed as document body,
- * not a feature grid.
+ * Integrity region — three semantically-toned stats + an anchor
+ * pillar + six footnoted pillars + commerce-shapes inline ledger.
  *
- * Three stats inline as a typographic strip, one anchor paragraph,
- * commerce shapes inline as a compact ledger, six pillars as a
- * footnoted list. Drops the previous Trust + Commerce Shapes sections
- * into one continuous region — the document doesn't need them
- * separated.
+ * The three stats each carry a distinct identity color (green /
+ * blue / amber) so the strip reads as multi-tonal operational
+ * truth, not green-monochrome. Each stat has a thin top accent in
+ * its semantic color — same compositional move as the dashboard
+ * reference's KPI tiles.
  */
 
-const STATS: Array<{ label: string; value: string; note: string }> = [
+interface Stat {
+  label: string;
+  value: string;
+  note: string;
+  tone: "success" | "info" | "warning";
+}
+
+const STATS: Stat[] = [
   {
     label: "Webhook idempotency",
     value: "100%",
     note: "Every gateway event collapses to one transition.",
+    tone: "success",
   },
   {
     label: "Drift between surfaces",
     value: "0",
     note: "One record · realtime push + polling backstop.",
+    tone: "info",
   },
   {
     label: "Evidence retention",
     value: "∞",
     note: "Paid, refunded, disputed — kept forever.",
+    tone: "warning",
   },
 ];
 
@@ -116,29 +126,66 @@ const PILLARS: Array<{ k: string; title: string; body: string }> = [
   },
 ];
 
+const TONE_MAP: Record<Stat["tone"], { label: string; bar: string; value: string }> = {
+  success: {
+    label: "var(--success-strong)",
+    bar: "var(--success)",
+    value: "var(--foreground)",
+  },
+  info: {
+    label: "var(--info)",
+    bar: "var(--info)",
+    value: "var(--foreground)",
+  },
+  warning: {
+    label: "oklch(0.52 0.15 78)",
+    bar: "var(--warning)",
+    value: "var(--foreground)",
+  },
+};
+
 export function IntegrityRegion() {
   return (
     <section id="integrity" className="scroll-mt-20 pt-20 sm:pt-28">
-      {/* Stats strip — flat typographic row, no boxes */}
-      <dl className="grid grid-cols-1 gap-y-6 border-y border-border py-8 sm:grid-cols-3 sm:gap-x-10">
-        {STATS.map((s) => (
-          <div key={s.label}>
-            <dt className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-success">
-              {s.label}
-            </dt>
-            <dd className="mt-2 font-mono text-[36px] font-semibold leading-none tracking-tight tabular-nums">
-              {s.value}
-            </dd>
-            <p className="mt-2 max-w-[36ch] text-[12.5px] leading-relaxed text-muted-foreground">
-              {s.note}
-            </p>
-          </div>
-        ))}
+      {/* Stats — three columns, each with a top accent bar in its
+          semantic tone. No card chrome; the accent + typography
+          carries the identity. */}
+      <dl className="grid grid-cols-1 gap-y-8 sm:grid-cols-3 sm:gap-x-10">
+        {STATS.map((s) => {
+          const tone = TONE_MAP[s.tone];
+          return (
+            <div key={s.label} className="relative pt-4">
+              <span
+                aria-hidden
+                className="absolute inset-x-0 top-0 h-[2px] rounded-full"
+                style={{ background: tone.bar }}
+              />
+              <dt
+                className="font-mono text-[10.5px] uppercase tracking-[0.14em]"
+                style={{ color: tone.label }}
+              >
+                {s.label}
+              </dt>
+              <dd
+                className="mt-2 font-mono text-[40px] font-semibold leading-none tracking-tight tabular-nums"
+                style={{ color: tone.value }}
+              >
+                {s.value}
+              </dd>
+              <p className="mt-2 max-w-[36ch] text-[12.5px] leading-relaxed text-muted-foreground">
+                {s.note}
+              </p>
+            </div>
+          );
+        })}
       </dl>
 
-      {/* Anchor paragraph */}
-      <div className="mt-14 grid grid-cols-[2.5rem_1fr] items-baseline gap-x-3">
-        <span className="font-mono text-[12px] tabular-nums text-success">
+      {/* Anchor pillar */}
+      <div className="mt-16 grid grid-cols-[2.5rem_1fr] items-baseline gap-x-3">
+        <span
+          className="font-mono text-[12px] tabular-nums"
+          style={{ color: "var(--success-strong)" }}
+        >
           00
         </span>
         <div>
@@ -154,7 +201,7 @@ export function IntegrityRegion() {
         </div>
       </div>
 
-      {/* Pillars — two-column footnoted list */}
+      {/* Pillars */}
       <div className="mt-12 grid grid-cols-1 gap-x-12 gap-y-8 border-t border-border pt-10 md:grid-cols-2">
         {PILLARS.map((p) => (
           <div
@@ -176,7 +223,7 @@ export function IntegrityRegion() {
         ))}
       </div>
 
-      {/* Commerce shapes — inline ledger of how the schema bends */}
+      {/* Commerce shapes inline ledger */}
       <div className="mt-16">
         <div className="flex items-baseline justify-between border-b border-border pb-2">
           <h3 className="text-[13px] font-semibold tracking-tight">
@@ -193,7 +240,10 @@ export function IntegrityRegion() {
               className="grid grid-cols-1 items-baseline gap-x-6 gap-y-1 py-2.5 md:grid-cols-[7rem_minmax(0,10rem)_minmax(0,1fr)_minmax(0,1.1fr)]"
             >
               <span className="text-[13px] font-medium">{s.vertical}</span>
-              <span className="font-mono text-[11.5px] text-success">
+              <span
+                className="font-mono text-[11.5px]"
+                style={{ color: "var(--success-strong)" }}
+              >
                 {s.itemTypeKey}
               </span>
               <span className="font-mono text-[11.5px] text-muted-foreground">
