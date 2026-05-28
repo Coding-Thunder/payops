@@ -1,45 +1,83 @@
 import Link from "next/link";
-import { ArrowRightIcon } from "lucide-react";
+import { ArrowRightIcon, CheckIcon } from "lucide-react";
 
 /**
- * Cover band — full-width dark moment at the head of the document.
+ * Cover band — the chargeback-document header style.
  *
- * Reads as the cover sheet of an operational artifact. Same visual
- * language as the in-app case-file header (dark obsidian, mono
- * metadata, emerald integrity dot). The "marketing hero" lives
- * inside this cover, not as a separate marketing layer above it.
+ * Bold block headline ("WHEN A CHARGEBACK LANDS / SIX WEEKS LATER, /
+ * THE EVIDENCE IS ALREADY FILED") with the closing phrase set in
+ * the reference's saturated emerald. Shield mark on the right side.
+ * Navy-tinted dark background, not obsidian — matches the
+ * reference's distinct blue cast.
  *
- * No CTA chrome on the cover itself — the utility CTAs live in the
- * top band that sits above. The cover is the document opening, not
- * a marketing pitch.
+ * No marketing eyebrows, no centered hero composition. This reads
+ * as the cover sheet of an operational artifact, not a SaaS hero.
  */
 export function CoverBand() {
   return (
-    <header className="bg-[oklch(0.13_0.012_286)] text-white">
-      <div className="mx-auto grid max-w-[1280px] grid-cols-1 gap-y-10 gap-x-12 px-6 py-14 sm:px-10 sm:py-16 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] lg:gap-y-0 lg:py-20">
-        {/* Left: document metadata + thesis */}
-        <div>
-          <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-white/55">
-            TraceTxn · operational payment infrastructure
+    <header
+      className="relative isolate overflow-hidden"
+      style={{ background: "var(--ink-navy)" }}
+    >
+      {/* Subtle ambient: a barely-there radial wash so the cover
+          has depth without becoming a marketing hero with effects. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-10"
+        style={{
+          background:
+            "radial-gradient(ellipse 60% 60% at 90% 30%, color-mix(in oklch, var(--success) 18%, transparent) 0%, transparent 70%)",
+        }}
+      />
+
+      <div className="mx-auto grid max-w-[1280px] grid-cols-1 gap-y-10 px-6 pt-16 pb-20 sm:px-10 sm:pt-20 sm:pb-24 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] lg:items-center lg:gap-x-10">
+        {/* Left: bold block headline */}
+        <div className="text-white">
+          <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-white/55">
+            TraceTxn · case file
           </p>
 
-          <h1 className="mt-7 max-w-[20ch] text-balance text-[clamp(2.4rem,5.6vw,4.2rem)] font-semibold leading-[1.02] tracking-[-0.025em] text-white">
-            When the chargeback lands six weeks later, the evidence is
-            already filed.
+          <h1 className="mt-7 text-balance text-[clamp(2.6rem,7vw,5.4rem)] font-bold leading-[0.96] tracking-[-0.03em] text-white">
+            When a chargeback{" "}
+            <br className="hidden sm:inline" />
+            lands six weeks later,{" "}
+            <br className="hidden sm:inline" />
+            <span
+              className="inline-flex items-baseline gap-3"
+              style={{ color: "oklch(0.74 0.18 148)" }}
+            >
+              evidence is filed.
+              <span
+                aria-hidden
+                className="inline-flex shrink-0 translate-y-[-4px] items-center justify-center rounded-full"
+                style={{
+                  background: "oklch(0.62 0.17 148)",
+                  width: "clamp(2rem,5vw,3.4rem)",
+                  height: "clamp(2rem,5vw,3.4rem)",
+                }}
+              >
+                <CheckIcon
+                  className="text-white"
+                  style={{ width: "55%", height: "55%" }}
+                  strokeWidth={3}
+                />
+              </span>
+            </span>
           </h1>
 
-          <p className="mt-7 max-w-[58ch] text-[15.5px] leading-relaxed text-white/72">
-            One operational backbone for the full transaction lifecycle —
-            lifecycle visibility, hashed evidence chain, hosted consent,
-            multi-gateway orchestration. Built for retail, services,
-            repair, dealership, B2B, and every commerce shape that takes
-            money seriously.
+          <p className="mt-6 max-w-[58ch] text-[15.5px] leading-relaxed text-white/72">
+            Complete evidence. Verified integrity. Case won. One
+            operational backbone for the full transaction lifecycle —
+            hashed evidence chain, hosted consent, multi-gateway
+            orchestration. Built for retail, services, repair,
+            dealership, B2B, and every commerce shape that takes money
+            seriously.
           </p>
 
-          <div className="mt-9 inline-flex items-center gap-4 text-[13px]">
+          <div className="mt-9 flex flex-wrap items-center gap-4 text-[13px]">
             <Link
               href="/signup"
-              className="group inline-flex items-center gap-2 rounded-md bg-white px-3.5 py-2 font-medium text-[oklch(0.13_0.012_286)] transition-all hover:-translate-y-px"
+              className="group inline-flex items-center gap-2 rounded-md bg-white px-4 py-2.5 font-semibold text-[oklch(0.17_0.045_240)] transition-all hover:-translate-y-px"
             >
               Start free
               <ArrowRightIcon className="size-3.5 transition-transform group-hover:translate-x-0.5" />
@@ -48,40 +86,73 @@ export function CoverBand() {
               href="#evidence"
               className="inline-flex items-center px-1 text-white/70 transition-colors hover:text-white"
             >
-              Read the evidence document ↓
+              Read a case file ↓
             </a>
           </div>
         </div>
 
-        {/* Right: document spec table — reads as "this is what the
-            artifact below contains", reframes the hero as the cover
-            of a real document. */}
-        <aside className="flex flex-col justify-center">
-          <p className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-white/55">
-            Document spec
-          </p>
-          <dl className="mt-3.5 grid grid-cols-[8rem_1fr] gap-y-2 font-mono text-[12px] tabular-nums text-white/70">
-            <dt className="text-white/45">Artifact</dt>
-            <dd className="text-white/90">case-file · v1</dd>
-            <dt className="text-white/45">Lifecycle</dt>
-            <dd className="text-white/90">10 canonical states</dd>
-            <dt className="text-white/45">Gateways</dt>
-            <dd className="text-white/90">stripe live · 4 next</dd>
-            <dt className="text-white/45">Integrity</dt>
-            <dd className="inline-flex items-center gap-1.5">
-              <span
-                aria-hidden
-                className="inline-block size-1.5 rounded-full bg-emerald-300"
-              />
-              <span className="text-emerald-300">sha-256 chained</span>
-            </dd>
-            <dt className="text-white/45">Retention</dt>
-            <dd className="text-white/90">paid · refunded · disputed · ∞</dd>
-            <dt className="text-white/45">Tenancy</dt>
-            <dd className="text-white/90">multi-tenant · isolated</dd>
-          </dl>
-        </aside>
+        {/* Right: shield mark — green, with radiating rays.
+            Matches the reference's decorative anchor on the cover. */}
+        <ShieldMark />
       </div>
     </header>
+  );
+}
+
+function ShieldMark() {
+  const green = "oklch(0.62 0.17 148)";
+  const greenSoft = "oklch(0.78 0.18 148)";
+  return (
+    <div className="relative mx-auto hidden h-[14rem] w-[14rem] items-center justify-center lg:flex">
+      {/* Radiating rays */}
+      <svg
+        aria-hidden
+        viewBox="0 0 224 224"
+        className="absolute inset-0"
+        fill="none"
+      >
+        {[
+          [112, 8, 112, 28],
+          [196, 28, 184, 44],
+          [216, 112, 196, 112],
+          [196, 196, 184, 184],
+          [28, 28, 40, 44],
+        ].map(([x1, y1, x2, y2], i) => (
+          <line
+            key={i}
+            x1={x1}
+            y1={y1}
+            x2={x2}
+            y2={y2}
+            stroke={greenSoft}
+            strokeWidth="2"
+            strokeLinecap="round"
+            opacity="0.7"
+          />
+        ))}
+      </svg>
+
+      {/* Shield body */}
+      <svg
+        viewBox="0 0 160 180"
+        className="relative h-[80%] w-[80%]"
+        fill="none"
+      >
+        <path
+          d="M 80 8 L 144 30 L 144 96 C 144 132 116 162 80 172 C 44 162 16 132 16 96 L 16 30 Z"
+          fill="oklch(0.17 0.045 240)"
+          stroke={green}
+          strokeWidth="3"
+        />
+        <path
+          d="M 56 92 L 74 110 L 110 70"
+          stroke={green}
+          strokeWidth="6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        />
+      </svg>
+    </div>
   );
 }
