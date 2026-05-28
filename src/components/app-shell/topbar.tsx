@@ -72,17 +72,11 @@ export function Topbar({ user, brand }: TopbarProps) {
         </SheetContent>
       </Sheet>
 
-      <div className="hidden md:flex items-center gap-2.5 text-[12.5px]">
-        <span className="font-semibold tracking-[-0.005em] text-foreground">
-          Payment operations
-        </span>
-        <span className="text-border/70" aria-hidden>
-          /
-        </span>
-        <span className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground">
-          control tower
-        </span>
-      </div>
+      {/* Topbar left side is intentionally bare — page context lives
+          inside each page's own header. The telemetry strip above
+          carries workspace + environment chrome; the topbar carries
+          only utility actions (search + account). */}
+      <div className="hidden md:block" aria-hidden />
 
       <div className="ml-auto flex items-center gap-2">
         <RealtimeIndicator className="md:hidden" withLabel={false} />

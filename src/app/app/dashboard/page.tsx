@@ -6,7 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ActivityFeed } from "@/components/features/activity/activity-feed";
 import { OrderTable } from "@/components/features/orders/order-table";
 import { SetupChecklist } from "@/components/features/onboarding/setup-checklist";
-import { Aurora } from "@/components/brand/aurora";
 import { FadeIn } from "@/components/motion/fade-in";
 import { PageHeader } from "@/components/common/page-header";
 import { StatCard } from "@/components/common/stat-card";
@@ -42,29 +41,21 @@ export default async function DashboardPage() {
     getOnboardingState(user.orgId),
   ]);
 
-  const firstName = user.name.split(" ")[0];
-
   return (
     <div className="space-y-8">
-      <div className="relative overflow-hidden rounded-2xl border border-border bg-card">
-        <Aurora />
-        <div className="relative px-5 py-5 sm:px-8 sm:py-7">
-          <PageHeader
-            eyebrow="Workspace"
-            title={`Welcome back, ${firstName}`}
-            description="Create payable orders and track every Stripe payment in one place."
-            className="border-0 pb-0"
-            actions={
-              <Button asChild>
-                <Link href="/app/orders/create">
-                  <PlusIcon className="size-3.5" />
-                  New order
-                </Link>
-              </Button>
-            }
-          />
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Workspace"
+        title="Dashboard"
+        description="Every order, every payment, every dispute — one operator surface."
+        actions={
+          <Button asChild>
+            <Link href="/app/orders/create">
+              <PlusIcon className="size-3.5" />
+              New order
+            </Link>
+          </Button>
+        }
+      />
 
       {!onboarding.complete ? (
         <FadeIn>
