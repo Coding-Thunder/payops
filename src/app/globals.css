@@ -198,14 +198,26 @@
 :root {
   --radius: 0.5rem;
 
-  /* Surfaces ────────────────────────────────────────────────── */
-  --background: oklch(1 0 0);
-  --surface-1: oklch(0.985 0.001 286);            /* subtle off-white panels */
-  --surface-2: oklch(0.97 0.002 286);             /* hover / muted blocks */
-  --foreground: oklch(0.158 0.005 286);
+  /* Surfaces ──────────────────────────────────────────────────
+   *
+   * Background is a warm, slightly cool off-white — the
+   * "operational document paper" tone the references use, not
+   * pure white. Cards are PURE white so they read as raised
+   * panels above the body. Surface-1/2 step down for inset
+   * regions (footnotes, muted blocks).
+   */
+  --background: oklch(0.985 0.003 240);           /* warm paper-white */
+  --surface-1: oklch(0.97 0.003 240);             /* inset panels */
+  --surface-2: oklch(0.95 0.003 240);             /* hover / muted */
+  --foreground: oklch(0.18 0.018 240);            /* deep navy-tinted ink */
 
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.158 0.005 286);
+  --card: oklch(1 0 0);                            /* pure white panels */
+  --card-foreground: oklch(0.18 0.018 240);
+
+  /* Operational dark surfaces — navy-tinted, NOT obsidian.
+   * Used for cover bands, document headers, footer strips. */
+  --ink-navy: oklch(0.17 0.045 240);
+  --ink-navy-soft: oklch(0.22 0.045 240);
 
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.158 0.005 286);
@@ -229,10 +241,14 @@
   --destructive-soft: oklch(0.97 0.04 22);
   --destructive-border: oklch(0.86 0.08 22);
 
-  --success: oklch(0.62 0.13 152);
+  /* Operational green — the reference's primary identity color.
+   * Saturated emerald, used confidently across success states,
+   * timeline nodes, integrity markers, and dispute outcomes. */
+  --success: oklch(0.62 0.17 148);
   --success-foreground: oklch(0.985 0 0);
-  --success-soft: oklch(0.965 0.04 152);
-  --success-border: oklch(0.86 0.07 152);
+  --success-soft: oklch(0.94 0.08 148);
+  --success-border: oklch(0.78 0.12 148);
+  --success-strong: oklch(0.52 0.18 148);          /* readable on light bg */
 
   --warning: oklch(0.78 0.13 78);
   --warning-foreground: oklch(0.205 0.01 80);
@@ -244,11 +260,13 @@
   --info-soft: oklch(0.97 0.04 259);
   --info-border: oklch(0.85 0.07 259);
 
-  /* Lines & focus ───────────────────────────────────────────── */
-  --border: oklch(0.93 0.003 286);
-  --border-strong: oklch(0.87 0.005 286);
-  --input: oklch(0.92 0.004 286);
-  --ring: oklch(0.62 0.012 286);
+  /* Lines & focus ──────────────────────────────────────────────
+   * Borders shift slightly cooler + a touch more visible so
+   * the document grid reads at the reference's enterprise density. */
+  --border: oklch(0.91 0.005 240);
+  --border-strong: oklch(0.84 0.008 240);
+  --input: oklch(0.9 0.006 240);
+  --ring: oklch(0.62 0.012 240);
 
   /* Charts ─────────────────────────────────────────────────── */
   --chart-1: oklch(0.6 0.18 259);
@@ -389,6 +407,9 @@
   --color-success-foreground: var(--success-foreground);
   --color-success-soft: var(--success-soft);
   --color-success-border: var(--success-border);
+  --color-success-strong: var(--success-strong);
+  --color-ink-navy: var(--ink-navy);
+  --color-ink-navy-soft: var(--ink-navy-soft);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
   --color-warning-soft: var(--warning-soft);
