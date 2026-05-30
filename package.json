@@ -28,7 +28,14 @@
     "test:smoke": "cross-env PAYOPS_TEST_MODE=smoke PLAYWRIGHT_USE_DEV=1 playwright test",
     "test:smoke:ui": "cross-env PAYOPS_TEST_MODE=smoke PLAYWRIGHT_USE_DEV=1 playwright test --ui",
     "test:smoke:report": "playwright show-report reports/playwright-html",
-    "test:all": "npm run test:unit && npm run test:integration && npm run test:smoke:build"
+    "test:all": "npm run test:unit && npm run test:integration && npm run test:smoke:build",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "eslint --fix"
+    ],
+    "*.{md,json,yaml,yml,css}": []
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -91,7 +98,9 @@
     "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
+    "husky": "^9.1.7",
     "jsdom": "^25.0.1",
+    "lint-staged": "^17.0.5",
     "mongodb-memory-server": "^10.4.3",
     "msw": "^2.14.6",
     "supertest": "^7.2.2",

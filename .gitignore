@@ -44,3 +44,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# DigitalOcean App Platform spec — real values stay local.
+# Commit .do/app.example.yaml instead.
+.do/app.yaml

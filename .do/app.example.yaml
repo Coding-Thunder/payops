@@ -1,0 +1,147 @@
+# =========================================================================
+# TraceTxn — DigitalOcean App Platform spec · TEMPLATE
+#
+# Copy to .do/app.yaml and fill in the placeholders. The real
+# .do/app.yaml is gitignored so secrets never land in git.
+#
+# Apply with:
+#   doctl apps create --spec .do/app.yaml                     # first time
+#   doctl apps update <app-id> --spec .do/app.yaml            # subsequent
+#
+# Or import via dashboard: Apps → Settings → App Spec → Edit → paste.
+#
+# Notes:
+#   - Secret values are PLACEHOLDERS — generate fresh per env.
+#   - Region "nyc" — change to one closer to your Mongo Atlas region.
+#   - Instance "basic-xxs" = $5/mo. Bump to basic-xs (1GB RAM) before
+#     real traffic — the @react-pdf/renderer evidence export can peak
+#     at ~250-400 MB heap.
+#   - Branch defaults to feat/general — change to main when shipping
+#     prod from main.
+# =========================================================================
+
+name: tracetxn
+region: nyc
+
+services:
+  - name: web
+    github:
+      repo: <your-gh-org>/<your-repo>
+      branch: feat/general
+      deploy_on_push: true
+
+    source_dir: /
+    build_command: npm run build
+    run_command: npm start
+    environment_slug: node-js
+
+    instance_size_slug: basic-xxs
+    instance_count: 1
+
+    http_port: 8080
+
+    routes:
+      - path: /
+
+    health_check:
+      http_path: /api/health
+      initial_delay_seconds: 10
+      period_seconds: 30
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
+
+    envs:
+      # ──── REQUIRED ──────────────────────────────────────────────────
+      - key: MONGODB_URI
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+        value: "mongodb+srv://USER:PASS@CLUSTER.mongodb.net/tracetxn?retryWrites=true&w=majority"
+
+      # openssl rand -base64 64
+      - key: JWT_SECRET
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+        value: "REPLACE_ME_WITH_OPENSSL_RAND_BASE64_64"
+
+      - key: STRIPE_SECRET_KEY
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+        value: "sk_live_or_test_…"
+
+      - key: STRIPE_WEBHOOK_SECRET
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+        value: "whsec_…"
+
+      # ──── STRONGLY RECOMMENDED ──────────────────────────────────────
+      # openssl rand -base64 32 — required the moment ANY tenant
+      # connects Stripe via /admin/gateways. Loss locks credentials.
+      - key: TRACETXN_MASTER_KEY
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+        value: "REPLACE_ME_WITH_OPENSSL_RAND_BASE64_32"
+
+      # ${APP_URL} is a DO placeholder for the live URL.
+      - key: APP_URL
+        scope: RUN_AND_BUILD_TIME
+        value: ${APP_URL}
+      - key: NEXT_PUBLIC_APP_URL
+        scope: RUN_AND_BUILD_TIME
+        value: ${APP_URL}
+
+      - key: APP_NAME
+        scope: RUN_AND_BUILD_TIME
+        value: TraceTxn
+      - key: NEXT_PUBLIC_APP_NAME
+        scope: RUN_AND_BUILD_TIME
+        value: TraceTxn
+
+      - key: MONGODB_DB
+        scope: RUN_AND_BUILD_TIME
+        value: tracetxn
+
+      - key: COOKIE_NAME
+        scope: RUN_AND_BUILD_TIME
+        value: tracetxn_session
+      - key: COOKIE_SECURE
+        scope: RUN_AND_BUILD_TIME
+        value: "true"
+
+      - key: NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+        scope: RUN_AND_BUILD_TIME
+        value: "pk_live_or_test_…"
+
+      # ──── OPTIONAL — SMTP (Gmail App Password) ──────────────────────
+      - key: SMTP_HOST
+        scope: RUN_AND_BUILD_TIME
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        scope: RUN_AND_BUILD_TIME
+        value: "587"
+      - key: SMTP_SECURE
+        scope: RUN_AND_BUILD_TIME
+        value: "false"
+      - key: SMTP_USER
+        scope: RUN_AND_BUILD_TIME
+        value: you@yourdomain.com
+      - key: SMTP_PASS
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+        value: "gmail-app-password"
+
+      - key: EMAIL_FROM
+        scope: RUN_AND_BUILD_TIME
+        value: "TraceTxn <no-reply@yourdomain.com>"
+      - key: EMAIL_REPLY_TO
+        scope: RUN_AND_BUILD_TIME
+        value: support@yourdomain.com
+
+      # ──── OPTIONAL — Cloudflare Turnstile ───────────────────────────
+      - key: NEXT_PUBLIC_TURNSTILE_SITE_KEY
+        scope: RUN_AND_BUILD_TIME
+        value: "0x4AAAAAA…"
+      - key: TURNSTILE_SECRET_KEY
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+        value: "0x4AAAAAA…"
