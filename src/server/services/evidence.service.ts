@@ -90,14 +90,18 @@ export async function recordEvidence(
   const orderObjectId = new Types.ObjectId(input.orderId);
   const occurredAt = input.occurredAt ?? new Date();
 
-  // Normalise the payload through a JSON round-trip BEFORE hashing.
-  // This:
-  //   - strips Mongoose subdoc parent-pointers / circular refs
-  //   - serialises Date instances + ObjectIds via their toJSON
-  //   - makes the persisted payload identical to what we hashed, so
-  //     verifyChain can recompute deterministically on re-read
-  const normalisedPayload = JSON.parse(
-    JSON.stringify(input.payload),
+  // Normalise the payload BEFORE hashing so the stored bytes and the
+  // hashed bytes agree. Two steps:
+  //   1. JSON round-trip — strips Mongoose subdoc parent-pointers
+  //      / circular refs, serialises Dates + ObjectIds via toJSON.
+  //   2. Strip empty objects / empty arrays — Mongoose's Schema.Types
+  //      .Mixed silently drops empty subobjects when it persists, so
+  //      a payload that hashes with `attributes: {}` would NOT match
+  //      after Mongo round-trip (which yields no `attributes` key at
+  //      all). Stripping them up-front means the hash matches what
+  //      verifyChainFromDocs will recompute on re-read.
+  const normalisedPayload = stripEmpty(
+    JSON.parse(JSON.stringify(input.payload)),
   ) as Record<string, unknown>;
 
   for (let attempt = 1; attempt <= MAX_APPEND_RETRIES; attempt += 1) {
@@ -722,4 +726,35 @@ function evidenceToDTO(
     hash: doc.hash,
     createdAt: (doc.createdAt ?? new Date()).toISOString(),
   };
+}
+
+/**
+ * Strip empty objects + empty arrays from a JSON-safe value. Mongoose's
+ * Schema.Types.Mixed silently drops empty subobjects on persist; the
+ * evidence-chain hash must match what's actually stored, so we strip
+ * them up-front. Applied to the normalised payload before hashing in
+ * `recordEvidence`.
+ */
+function stripEmpty(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(stripEmpty);
+  }
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      const stripped = stripEmpty(v);
+      // Drop empty objects entirely. Empty arrays + primitives stay.
+      if (
+        stripped !== null &&
+        typeof stripped === "object" &&
+        !Array.isArray(stripped) &&
+        Object.keys(stripped as Record<string, unknown>).length === 0
+      ) {
+        continue;
+      }
+      out[k] = stripped;
+    }
+    return out;
+  }
+  return value;
 }
