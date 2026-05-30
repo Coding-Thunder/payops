@@ -38,7 +38,9 @@ const serverSchema = z.object({
   STRIPE_WEBHOOK_SECRET: z
     .string()
     .min(1, "STRIPE_WEBHOOK_SECRET is required"),
-  STRIPE_PUBLISHABLE_KEY: z.string().optional(),
+  // Note: server-side STRIPE_PUBLISHABLE_KEY is intentionally not in
+  // the schema — the publishable key only matters to the browser and
+  // is sourced from NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY below.
 
   // ---- SMTP (Google Workspace + App Password) ----
   // Leave SMTP_HOST empty to disable email sending (failed sends become
@@ -58,6 +60,9 @@ const serverSchema = z.object({
   SUPPORT_EMAIL: z.string().default("vinaymaheshwari35@gmail.com"),
   SUPPORT_PHONE: z.string().default("+1-555-0100"),
 
+  // Seed defaults for the per-org Setting document. Per-tenant edits
+  // in /admin/settings override these; they only matter at the moment
+  // a new tenant's settings row is created.
   DEFAULT_CURRENCY: z.string().default("USD"),
   DEFAULT_PAYMENT_EXPIRY_HOURS: z.coerce.number().int().positive().default(24),
   DEFAULT_ORDER_PREFIX: z.string().default("ORD"),
