@@ -25,6 +25,14 @@ export interface UserDoc {
    *  membership and this points at it. Nullable during the legacy →
    *  multi-tenant migration; required once the backfill completes. */
   primaryOrgId?: Types.ObjectId | null;
+  /** External-auth bindings. Populated when the user signs in via a
+   *  third-party identity provider (Firebase Auth today) so future
+   *  sign-ins resolve to this Mongo User by the provider's stable id
+   *  rather than by email — which lets the user later change their
+   *  Firebase email without orphaning the row. */
+  externalAuth?: {
+    firebaseUid?: string | null;
+  } | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -69,6 +77,15 @@ const userSchema = new Schema<UserDoc>(
       default: null,
       index: true,
     },
+    externalAuth: {
+      type: new Schema(
+        {
+          firebaseUid: { type: String, default: null, sparse: true },
+        },
+        { _id: false },
+      ),
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -90,6 +107,19 @@ const userSchema = new Schema<UserDoc>(
 // separate index call is needed - declaring both creates a duplicate-index
 // warning at startup.
 userSchema.index({ status: 1, role: 1 });
+// Partial-unique on externalAuth.firebaseUid so the lookup path in
+// firebaseExchange returns at most one row. Sparse so legacy users
+// without Firebase linkage don't trip the unique constraint.
+userSchema.index(
+  { "externalAuth.firebaseUid": 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      "externalAuth.firebaseUid": { $type: "string" },
+    },
+    name: "users_firebaseUid_unique",
+  },
+);
 
 import { registerModel } from "./register";
 export const User: Model<UserDoc> = registerModel<UserDoc>("User", userSchema);

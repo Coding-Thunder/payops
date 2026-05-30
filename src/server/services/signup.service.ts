@@ -170,6 +170,137 @@ export async function signupFounder(
   return result;
 }
 
+/* ─────────────────────── Firebase-first signup ──────────────────────────── */
+
+export interface FirebaseSignupInput {
+  email: string;
+  name: string;
+  firebaseUid: string;
+}
+
+/**
+ * Atomic founder-onboarding for a user arriving via Firebase Auth.
+ * Same tenant-shape as signupFounder (Org + SUPER_ADMIN User +
+ * OrgMember + primaryOrgId stamp) but skips the bcrypt password — the
+ * Firebase UID is the credential, stored on `externalAuth.firebaseUid`.
+ *
+ * `passwordHash` gets a sentinel ("firebase:<uid>") to satisfy the
+ * required-field schema constraint. The bcrypt `verifyPassword` will
+ * never accept it as a valid hash, so the legacy bcrypt sign-in path
+ * can never authenticate a Firebase-only user by accident.
+ *
+ * The org name is synthesized from the user's display name or email
+ * local-part — the user can rename it later in /admin/settings.
+ */
+export async function signupFounderFromFirebase(
+  input: FirebaseSignupInput,
+  ctx: RequestContext | null,
+): Promise<SignupResult> {
+  await connectMongo();
+  const email = input.email.trim().toLowerCase();
+
+  // Race-safe email check — the unique index is authoritative.
+  const existing = await User.findOne({ email })
+    .select({ _id: 1 })
+    .lean<{ _id: unknown } | null>();
+  if (existing) {
+    throw new ConflictError(
+      "An account with that email already exists. Sign in instead.",
+    );
+  }
+
+  const synthOrgName = `${input.name.trim() || email.split("@")[0]}'s workspace`;
+  const slug = await uniqueOrgSlug(synthOrgName);
+
+  const result = await withTx(async (session) => {
+    const [userDoc] = await User.create(
+      [
+        {
+          name: input.name.trim(),
+          email,
+          // Sentinel; bcrypt.compare will reject it, so the legacy
+          // login route can never authenticate this user.
+          passwordHash: `firebase:${input.firebaseUid}`,
+          role: UserRole.SUPER_ADMIN,
+          status: RecordState.ACTIVE,
+          externalAuth: { firebaseUid: input.firebaseUid },
+        },
+      ],
+      sessionOpt(session),
+    );
+    const userId = userDoc._id as Types.ObjectId;
+
+    const [orgDoc] = await Organization.create(
+      [
+        {
+          slug,
+          name: synthOrgName,
+          ownerUserId: userId,
+          status: OrgStatus.ACTIVE,
+          verifiedAt: null,
+        },
+      ],
+      sessionOpt(session),
+    );
+    const orgId = orgDoc._id as Types.ObjectId;
+
+    await OrgMember.create(
+      [
+        {
+          orgId,
+          userId,
+          role: UserRole.SUPER_ADMIN,
+          status: RecordState.ACTIVE,
+          joinedAt: new Date(),
+        },
+      ],
+      sessionOpt(session),
+    );
+
+    await User.updateOne(
+      { _id: userId },
+      { $set: { primaryOrgId: orgId } },
+      sessionOpt(session),
+    );
+
+    await recordAudit(
+      {
+        action: AuditAction.USER_CREATED,
+        entityType: AuditEntity.USER,
+        entityId: String(userId),
+        orgId: String(orgId),
+        actor: {
+          userId: String(userId),
+          name: userDoc.name,
+          email: userDoc.email,
+          role: UserRole.SUPER_ADMIN,
+        },
+        request: ctx ?? null,
+        metadata: {
+          source: "signup_firebase",
+          orgSlug: slug,
+          orgName: orgDoc.name,
+          firebaseUid: input.firebaseUid,
+        },
+      },
+      session,
+    );
+
+    return {
+      user: {
+        id: String(userId),
+        name: userDoc.name,
+        email: userDoc.email,
+        role: userDoc.role,
+      },
+      orgId: String(orgId),
+      orgSlug: slug,
+    };
+  });
+
+  return result;
+}
+
 /* ───────────────────────────── Slug helpers ───────────────────────────── */
 
 /**

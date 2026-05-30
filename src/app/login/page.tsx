@@ -2,11 +2,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { CheckIcon } from "lucide-react";
 
+import { FirebaseAuthForm } from "@/components/auth/firebase-auth-form";
 import { LogoLockup, LogoMark } from "@/components/brand/logo";
 import { env } from "@/lib/env";
 import { getCurrentUser } from "@/server/auth/session";
-
-import { LoginForm } from "./_components/login-form";
 
 export const dynamic = "force-dynamic";
 
@@ -89,14 +88,11 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                 Sign in to your account
               </h1>
               <p className="text-[13px] leading-relaxed text-muted-foreground">
-                Use the credentials your administrator gave you.
+                Use Google or your work email + password.
               </p>
             </div>
           </div>
-          <LoginForm
-            nextPath={next}
-            turnstileSiteKey={env.public.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null}
-          />
+          <FirebaseAuthForm mode="signin" nextPath={next} />
           <p className="text-center text-[11px] leading-relaxed text-muted-foreground/80">
             Don&apos;t have an account yet?{" "}
             <Link

@@ -99,6 +99,19 @@ const serverSchema = z.object({
       (v) => !v || Buffer.from(v, "base64").length === 32,
       "TRACETXN_MASTER_KEY must decode to exactly 32 bytes (base64). Generate one with: openssl rand -base64 32",
     ),
+
+  /**
+   * Firebase Admin SDK service-account JSON, inlined as a single-line
+   * string. Required for the /api/auth/firebase-session route to verify
+   * ID tokens against the Firebase project. Generate from GCP Console →
+   * IAM → Service Accounts → Keys, then paste the entire JSON wrapped
+   * in single quotes:
+   *   FIREBASE_SERVICE_ACCOUNT='{"type":"service_account","project_id":"…",…}'
+   *
+   * Optional — when unset, the Firebase auth route returns 503 and the
+   * UI falls back to the legacy bcrypt sign-in path (which keeps working).
+   */
+  FIREBASE_SERVICE_ACCOUNT: z.string().optional(),
 });
 
 const clientSchema = z.object({
@@ -109,6 +122,17 @@ const clientSchema = z.object({
    *  forms render the Turnstile widget and pass its token through to
    *  the API. Server verification lives behind TURNSTILE_SECRET_KEY. */
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().optional(),
+
+  /** Firebase Web SDK config — public values, safe to ship to the
+   *  browser. All five must be set together; if any is missing the
+   *  Firebase auth UI falls back to "feature unavailable" and the
+   *  legacy bcrypt sign-in form is shown instead. */
+  NEXT_PUBLIC_FIREBASE_API_KEY: z.string().optional(),
+  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: z.string().optional(),
+  NEXT_PUBLIC_FIREBASE_PROJECT_ID: z.string().optional(),
+  NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: z.string().optional(),
+  NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: z.string().optional(),
+  NEXT_PUBLIC_FIREBASE_APP_ID: z.string().optional(),
 });
 
 type ServerEnv = z.infer<typeof serverSchema>;
@@ -138,6 +162,16 @@ function parseClient(): ClientEnv {
     NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:
       process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
     NEXT_PUBLIC_TURNSTILE_SITE_KEY: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
+    NEXT_PUBLIC_FIREBASE_API_KEY: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+    NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:
+      process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+    NEXT_PUBLIC_FIREBASE_PROJECT_ID:
+      process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+    NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET:
+      process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+    NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID:
+      process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+    NEXT_PUBLIC_FIREBASE_APP_ID: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
   });
   if (!parsed.success) {
     const formatted = parsed.error.issues

@@ -2,11 +2,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { CheckIcon } from "lucide-react";
 
+import { FirebaseAuthForm } from "@/components/auth/firebase-auth-form";
 import { LogoLockup, LogoMark } from "@/components/brand/logo";
 import { env } from "@/lib/env";
 import { getCurrentUser } from "@/server/auth/session";
-
-import { SignupForm } from "./_components/signup-form";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Create your TraceTxn account" };
@@ -96,9 +95,7 @@ export default async function SignupPage() {
               </p>
             </div>
           </div>
-          <SignupForm
-            turnstileSiteKey={env.public.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null}
-          />
+          <FirebaseAuthForm mode="signup" />
           <p className="text-center text-[11px] leading-relaxed text-muted-foreground/80">
             Already have an account?{" "}
             <Link
