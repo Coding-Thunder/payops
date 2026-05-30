@@ -10,16 +10,41 @@ records every transition into the per-order evidence chain.
 > Multi-tenant SaaS. Self-serve signup; per-org Stripe credentials;
 > dispute-grade evidence on every order.
 
+## What it does
+
+- **Universal commerce primitives** — `ItemType` (per-vertical schema) →
+  `Item` (catalog row) → `Order.lineItems[]` (multi-line cart). One
+  backbone for retail, services, repair, dealership, equipment, B2B,
+  rentals, custom commerce.
+- **Hashed evidence chain** — every transition on every order is hashed
+  against the previous event. A broken chain surfaces immediately;
+  exports are bank-grade PDFs.
+- **Hosted consent capture** — customer signs in-browser; IP, UA,
+  signed-name + timestamp recorded onto the chain.
+- **Multi-gateway orchestration** — Stripe live; Razorpay + Authorize.net
+  adapters scaffolded. One contract (`PaymentGateway`), one
+  `VerifiedPaymentEvent` shape across providers.
+- **Realtime SSE lifecycle** — operator surfaces push-update as
+  webhooks fire; polling backstop on disconnect.
+- **Org-isolated multi-tenant** — every read/write pins on orgId.
+  Cross-tenant id-guess always returns 404.
+
 ## Stack
 
-- **Next.js (App Router) + TypeScript strict** — single repo, server-first
-- **MongoDB + Mongoose** — connection caching, strict schemas, indexes
-- **Stripe Checkout** — `checkout.session.completed` is the source of truth
-- **Nodemailer (Google Workspace SMTP) + React Email** — one transactional template, sent via your existing Workspace mailbox using an App Password
-- **JWT (jose) + HTTP-only cookies** — verified at the edge in middleware
-- **Zod** — every API input is validated; route handlers throw `AppError`
-- **shadcn/ui + Tailwind v4** — clean, accessible primitives
-- **TanStack Query** — minimal client cache where truly needed
+- **Next.js 16 (App Router) + TypeScript strict** — single repo,
+  server-first
+- **MongoDB + Mongoose** — connection caching, strict schemas,
+  partial-unique indexes, per-org partition keys
+- **Stripe + per-org credentials** — secret material AES-256-GCM
+  encrypted at rest via `TRACETXN_MASTER_KEY`
+- **Nodemailer (Google Workspace SMTP) + React Email** — durable
+  outbox; emails recorded onto the evidence chain
+- **JWT (jose) + HTTP-only cookies** — verified at the edge in
+  middleware
+- **Zod** — every API input is validated; route handlers throw
+  `AppError`
+- **shadcn/ui + Tailwind v4** — restrained, semantic-token-driven
+- **TanStack Query** — minimal client cache for live surfaces
 - **bcryptjs** — 12-round password hashing
 
 ## Architecture
@@ -27,124 +52,141 @@ records every transition into the per-order evidence chain.
 ```
 src/
 ├── app/                    # App Router (pages, layouts, api routes)
-│   ├── (app)/              # Authenticated console shell
-│   ├── login/              # Public login page
-│   └── api/                # All route handlers (auth, orders, admin, webhooks)
+│   ├── (marketing)/        # Public landing (composed document, regions)
+│   ├── login/ signup/      # Public auth surfaces
+│   ├── app/                # Authenticated operator console
+│   │   ├── dashboard/      # KPI strip + dispute-anchored right rail
+│   │   ├── orders/         # Order list + detail + evidence view
+│   │   └── admin/          # Catalog, items, gateways, branding, etc.
+│   └── api/                # All route handlers
 ├── components/
+│   ├── marketing/          # Cover band, document chrome, regions, canvases
 │   ├── ui/                 # shadcn primitives
-│   ├── common/             # Reusable pieces (PageHeader, EmptyState, etc.)
-│   ├── features/           # Feature-driven components (orders/, users/, …)
-│   └── app-shell/          # Sidebar, topbar
+│   ├── common/             # PageHeader, EmptyState, StatCard, etc.
+│   ├── features/           # Feature-driven (orders/, items/, evidence/, …)
+│   └── app-shell/          # Sidebar, topbar, telemetry strip
 ├── lib/
 │   ├── constants/          # enums, labels, RBAC permission registry
-│   ├── validation/         # Zod schemas (auth, user, order, settings)
+│   ├── validation/         # Zod schemas per resource
+│   ├── crypto/             # AES-256-GCM envelope (gateway credentials)
 │   ├── errors.ts           # AppError hierarchy
-│   ├── format.ts           # Money / date formatters
-│   ├── api-client.ts       # Typed fetch wrapper (browser side)
-│   └── utils.ts            # cn() helper
+│   ├── format.ts           # currency, dates, UTC timestamps, hash short
+│   └── api-client.ts       # Typed fetch wrapper (browser)
 ├── server/
-│   ├── auth/               # JWT, password hashing, session, cookies, RBAC
-│   ├── api/                # Route helpers (withApi, respond, request-context)
-│   ├── db/                 # Mongoose connection + models
-│   ├── email/              # React Email templates + Nodemailer SMTP transporter
-│   ├── payments/           # Stripe client factory
-│   └── services/           # Business logic (orders, users, audit, settings,
-│                              email, analytics, webhook)
+│   ├── auth/               # JWT, password hashing, session, RBAC
+│   ├── api/                # withApi wrapper, request-context, security
+│   ├── db/                 # Mongoose connection + models + org-context
+│   ├── email/              # React Email templates + SMTP transporter
+│   ├── payments/           # Gateway registry + per-org credential loader
+│   ├── pdf/                # Server-side PDF rendering (evidence export)
+│   └── services/           # Business logic (orders, items, customers,
+│                              evidence, audit, settings, webhook, …)
 ├── types/                  # Shared DTO types
-├── middleware.ts           # Edge auth + RBAC guard
+├── proxy.ts                # Edge auth + route taxonomy
 scripts/
-└── seed.ts                 # Bootstrap super admin + settings doc
+├── cleanup-by-email.ts     # Dev: remove all records tied to an email
+├── cleanup-prod-data.ts    # Dev: drop operational data, preserve users
+└── check-order.ts          # Dev: inspect a single order in mongosh-like format
 ```
 
 ### Architectural rules
 
 - **Webhook is the only payment truth.** No success-page side effects.
 - **All payment ops are idempotent.** Per-order `processedWebhookEventIds`
-  guards repeated Stripe deliveries.
+  guards repeated gateway deliveries.
 - **No hard delete on financial data.** Orders carry a `state` of
-  `ACTIVE | ARCHIVED | DISABLED`.
-- **Strict enums everywhere.** All status / role / type values are sourced
-  from `src/lib/constants/enums.ts`.
+  `ACTIVE | ARCHIVED | DISABLED`. Refunded + paid orders never delete.
+- **Strict enums everywhere.** All status / role / type values are
+  sourced from `src/lib/constants/enums.ts`.
 - **Server validation is mandatory.** Frontend validation is UX only.
 - **RBAC is server-enforced.** The `Permission` registry plus
   `requirePermission()` guards every protected route.
-- **Audit log captures every meaningful action** (login, order creation,
-  payment success/failure, email send, settings update, etc.).
+- **Audit log captures every meaningful action.** Append-only; not
+  editable, even by admins.
+- **Evidence chain is the schema.** Compliance isn't an export feature
+  added later — it's the storage primitives themselves.
 
 ## Local development
 
+Defaults assume a local mongod on `127.0.0.1:27017` (override via
+`MONGODB_URI` in `.env.local`).
+
 ```bash
+brew services start mongodb-community     # if not already running
+cp .env.example .env.local                # fill in Stripe + JWT_SECRET
 npm install
-npm run seed                     # creates the bootstrap super admin
-npm run dev                      # http://localhost:3000
+npm run dev                                # http://localhost:3000
 ```
 
-In another terminal, forward Stripe events to the local webhook:
+Sign up at `/signup` to create the first workspace (super-admin role).
+Forward Stripe webhooks to the local route while testing:
 
 ```bash
-stripe listen --forward-to localhost:3000/api/webhooks/stripe
+stripe listen --forward-to localhost:3000/api/webhooks/stripe/<orgId>
 ```
 
-Sign in at `/login` with the bootstrap admin and start creating orders.
+(`<orgId>` is your workspace's id — admin/gateways auto-registers a
+unique endpoint per org when you connect Stripe.)
 
 ## Production checks
 
 ```bash
-npm run typecheck
-npm run lint
-npm run build
+npx tsc --noEmit                          # type safety
+npm run lint                              # static checks
+npm run build                             # full production build
+npx vitest run --no-file-parallelism      # integration + unit suites
 ```
 
 ## Email setup (Google Workspace SMTP)
 
-Confirmation emails are sent through your existing Google Workspace mailbox
-using an App Password — no third-party email service required.
+Confirmation + payment-request emails are sent through your Google
+Workspace mailbox via App Passwords — no third-party email service
+required.
 
 **One-time setup:**
 
 1. Workspace admin (admin.google.com) → Security → "Less secure apps" →
-   allow users to manage their App Passwords. (Required only if currently
-   blocked at the org level.)
-2. Sign in to the sending mailbox (e.g. `billing@rentalconfirmation.com`).
-3. Visit https://myaccount.google.com/security and turn on
-   **2-Step Verification** if it isn't already.
-4. Visit https://myaccount.google.com/apppasswords, create an App Password
-   named "PayOps" (or "PayOps prod" for production), and copy the 16-char
-   value.
-5. Paste that value into `SMTP_PASS` (spaces are stripped automatically).
-   No other env vars need to change.
+   allow users to manage their App Passwords.
+2. Sign in to the sending mailbox (e.g. `billing@yourdomain.com`).
+3. https://myaccount.google.com/security → turn on **2-Step Verification**.
+4. https://myaccount.google.com/apppasswords → create an App Password
+   named "TraceTxn" (or "TraceTxn prod") and copy the 16-char value.
+5. Paste into `SMTP_PASS` (spaces are stripped automatically).
 
-**Limits to keep in mind:**
-
-- Workspace mailbox limit: ~2,000 recipients/day per sender (more than
-  enough for one confirmation per paid order).
-- Per-message limit: ~500 recipients.
+**Limits:** ~2,000 recipients/day per sender, ~500 per single message.
 
 **If email is misconfigured** — sends become `EMAIL_FAILED` audit rows;
-order flow continues normally. Check `/admin/audit` for the exact error.
+order flow continues normally. Check `/app/admin/audit` for the error.
 
 ## Operational notes
 
-- **Stripe webhook expiry**: Stripe limits checkout session expiry to
-  ~24h. The order's `payment.expiresAt` is clamped accordingly.
-- **Email deliverability**: confirmation email send is gated by
-  `payment.confirmationEmailSentAt` so even simultaneous webhook deliveries
+- **Gateway expiry**: Stripe limits checkout-session expiry to ~24h. The
+  order's `payment.expiresAt` is clamped accordingly.
+- **Confirmation gate**: send is gated by
+  `payment.confirmationEmailSentAt` so simultaneous webhook deliveries
   can only send it once.
-- **Currency**: `pricing.amount` is stored in **major units** (e.g. dollars).
-  Stripe receives minor units (cents) - conversion lives in
-  `order.service.ts:toMinorUnits`.
-- **Soft delete**: Use Archive on the order detail page. Paid orders can
+- **Currency**: `pricing.amount` is in **major units** (e.g. dollars).
+  Gateways receive minor units (cents) — conversion in
+  `order.service:toMinorUnits` (zero-decimal currencies handled).
+- **Soft delete**: Archive on the order detail page. Paid orders can
   never be archived. Disabled/archived users retain their audit history.
-- **DigitalOcean App Platform**: target Node 20+, expose port 3000, route
-  `/api/webhooks/stripe` without auth (already excluded in middleware).
+- **Encryption key**: `TRACETXN_MASTER_KEY` must be set in any
+  environment that holds per-org gateway credentials. Generate with
+  `openssl rand -base64 32`. Loss of the key locks all encrypted
+  credentials.
 
-## Hardening checklist before going live
+## Pre-launch checklist
 
-- [ ] Configure the production webhook secret in the Stripe dashboard.
-- [ ] Replace the bootstrap admin password after first login.
-- [ ] Generate a production Google Workspace **App Password** for the
-      sending mailbox (`billing@…`) and set `SMTP_PASS`. Use a separate App
-      Password per environment so dev / staging / prod can be revoked
-      independently. Requires 2-Step Verification on the account
-      (https://myaccount.google.com/security) and Workspace admin must
-      permit App Passwords (Admin Console → Security → Less secure apps).
+- [ ] Rotate `MONGODB_URI` credentials (Atlas user + password)
+- [ ] Generate fresh `JWT_SECRET` per environment (never share dev → prod)
+- [ ] Configure `TRACETXN_MASTER_KEY` in prod env
+- [ ] Configure production webhook secret(s) in the Stripe dashboard
+- [ ] Replace any bootstrap admin password after first login
+- [ ] Generate a production Google Workspace App Password
+- [ ] Set `COOKIE_SECURE="true"` and `NODE_ENV="production"` in prod
+- [ ] Set `NEXT_PUBLIC_APP_URL` to the production HTTPS URL
+- [ ] Configure Cloudflare Turnstile (login + quotation bot-check) — set
+      both `NEXT_PUBLIC_TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY`
+- [ ] Verify the at-rest backup policy on the production MongoDB cluster
+- [ ] Set up Stripe Connect / per-org webhook endpoints for any tenants
+      onboarding with their own Stripe account
