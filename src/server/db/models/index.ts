@@ -49,6 +49,9 @@ export type {
   ItemPrice,
 } from "./item.model";
 
+export { Customer } from "./customer.model";
+export type { CustomerDoc, CustomerDocument } from "./customer.model";
+
 // Provider + CarLink models removed in Pass 5h.
 
 export { Branding, BRANDING_KEY } from "./branding.model";

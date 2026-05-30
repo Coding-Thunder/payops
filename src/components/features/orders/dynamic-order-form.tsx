@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
-import { PlusIcon, TrashIcon } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { PackageIcon, PlusIcon, TrashIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,11 +25,15 @@ import type {
   ItemTypeAttributeDTO,
   ItemTypeDTO,
 } from "@/server/services/item-type.service";
+import type { ItemDTO } from "@/server/services/item.service";
 
 import { AttributeField } from "./attribute-field";
 
 interface DynamicOrderFormProps {
   itemTypes: ItemTypeDTO[];
+  /** Pass 6c — pre-saved catalog rows the operator can pick instead of
+   *  re-typing line details. May be empty (catalog is optional). */
+  catalogItems?: ItemDTO[];
   defaultCurrency: Currency;
   allowedCurrencies: readonly Currency[];
 }
@@ -38,6 +42,10 @@ interface LineDraft {
   /** Local key for React; the server never sees this. */
   localId: string;
   itemTypeKey: string;
+  /** Optional pointer back into the catalog. Surfaces on the order
+   *  line so historical orders can link to the catalog row even after
+   *  it's been edited / archived. */
+  itemId?: string | null;
   name: string;
   description: string;
   quantity: number;
@@ -93,6 +101,7 @@ function findSpec(
  */
 export function DynamicOrderForm({
   itemTypes,
+  catalogItems = [],
   defaultCurrency,
   allowedCurrencies,
 }: DynamicOrderFormProps) {
@@ -102,12 +111,60 @@ export function DynamicOrderForm({
     for (const t of itemTypes) m.set(t.key, t);
     return m;
   }, [itemTypes]);
+  const itemsByTypeKey = useMemo(() => {
+    const m = new Map<string, ItemDTO[]>();
+    for (const it of catalogItems) {
+      if (!m.has(it.itemTypeKey)) m.set(it.itemTypeKey, []);
+      m.get(it.itemTypeKey)!.push(it);
+    }
+    return m;
+  }, [catalogItems]);
+  const itemById = useMemo(() => {
+    const m = new Map<string, ItemDTO>();
+    for (const it of catalogItems) m.set(it.id, it);
+    return m;
+  }, [catalogItems]);
 
   const [customer, setCustomer] = useState({
     name: "",
     email: "",
     phone: "",
   });
+  // Pass 6d — remember the last email we ran the saved-customer lookup
+  // for, so tabbing in/out of the email field doesn't re-fire the API
+  // call when the value hasn't actually changed.
+  const lastLookupEmail = useRef<string>("");
+
+  async function lookupCustomerForEmail(rawEmail: string): Promise<void> {
+    const email = rawEmail.trim().toLowerCase();
+    if (!email || !email.includes("@")) return;
+    if (email === lastLookupEmail.current) return;
+    lastLookupEmail.current = email;
+    try {
+      const { customer: found } = await api.get<{
+        customer: { name: string; phone: string } | null;
+      }>(`/api/customers/lookup?email=${encodeURIComponent(email)}`);
+      if (!found) return;
+      setCustomer((c) => {
+        const next = { ...c };
+        let filled = false;
+        if (!c.name.trim()) {
+          next.name = found.name;
+          filled = true;
+        }
+        if (!c.phone.trim()) {
+          next.phone = found.phone;
+          filled = true;
+        }
+        if (filled) {
+          toast.success("Pre-filled from your last order with this email");
+        }
+        return next;
+      });
+    } catch {
+      // Silent — prefill is a nicety, never block the form on it.
+    }
+  }
   const [currency, setCurrency] = useState<Currency>(defaultCurrency);
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<LineDraft[]>([]);
@@ -142,6 +199,32 @@ export function DynamicOrderForm({
     const t = byKey.get(itemTypeKey);
     if (!t) return;
     setLines((prev) => [...prev, newLine(t)]);
+  }
+
+  /** Pass 6c — pre-fill a line from a catalog Item row. Carries
+   *  itemId back-pointer so the persisted order line can link to the
+   *  catalog entry. */
+  function addLineFromCatalogItem(itemId: string): void {
+    const it = itemById.get(itemId);
+    if (!it) return;
+    const t = byKey.get(it.itemTypeKey);
+    if (!t) return;
+    setLines((prev) => [
+      ...prev,
+      {
+        localId:
+          typeof crypto !== "undefined" && "randomUUID" in crypto
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random()}`,
+        itemTypeKey: it.itemTypeKey,
+        itemId: it.id,
+        name: it.name,
+        description: it.description ?? "",
+        quantity: 1,
+        unitPrice: it.basePrice?.amount ?? 0,
+        attributes: { ...(it.attributes ?? {}) },
+      },
+    ]);
   }
 
   function updateLine(localId: string, patch: Partial<LineDraft>): void {
@@ -196,6 +279,7 @@ export function DynamicOrderForm({
         }
         return {
           itemTypeKey: l.itemTypeKey,
+          itemId: l.itemId ?? null,
           name: l.name,
           description: l.description.trim() || null,
           quantity: l.quantity,
@@ -283,6 +367,9 @@ export function DynamicOrderForm({
               onChange={(e) =>
                 setCustomer((c) => ({ ...c, email: e.target.value }))
               }
+              onBlur={(e) => {
+                void lookupCustomerForEmail(e.target.value);
+              }}
             />
           </div>
           <div className="space-y-1.5">
@@ -302,17 +389,27 @@ export function DynamicOrderForm({
 
       {/* ── Line items ─────────────────────────────────────────────── */}
       <section className="space-y-3 rounded-lg border border-border p-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
           <h3 className="text-[14px] font-semibold">Line items</h3>
-          <ItemTypePicker
-            itemTypes={itemTypes}
-            onSelect={(key) => addLine(key)}
-          />
+          <div className="flex items-center gap-2">
+            {catalogItems.length > 0 ? (
+              <CatalogPicker
+                items={catalogItems}
+                onSelect={addLineFromCatalogItem}
+              />
+            ) : null}
+            <ItemTypePicker
+              itemTypes={itemTypes}
+              onSelect={(key) => addLine(key)}
+            />
+          </div>
         </div>
 
         {lines.length === 0 ? (
           <p className="text-[12.5px] text-muted-foreground">
-            Pick an item type above to add the first line.
+            {catalogItems.length > 0
+              ? "Pick from your catalog or add a new line by item type."
+              : "Pick an item type above to add the first line."}
           </p>
         ) : null}
 
@@ -325,9 +422,17 @@ export function DynamicOrderForm({
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <Badge variant="secondary" className="font-mono text-[11px]">
-                    {line.itemTypeKey}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="font-mono text-[11px]">
+                      {line.itemTypeKey}
+                    </Badge>
+                    {line.itemId ? (
+                      <Badge variant="outline" className="text-[10.5px] gap-1">
+                        <PackageIcon className="size-2.5" />
+                        From catalog
+                      </Badge>
+                    ) : null}
+                  </div>
                   {itemType ? (
                     <p className="text-[11.5px] text-muted-foreground mt-1">
                       {itemType.name}
@@ -534,6 +639,63 @@ export function DynamicOrderForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+function CatalogPicker({
+  items,
+  onSelect,
+}: {
+  items: ItemDTO[];
+  onSelect: (id: string) => void;
+}) {
+  const [value, setValue] = useState<string>("");
+  // Group by itemTypeKey so a tenant who runs multiple verticals
+  // sees their catalog organised, not as a flat list.
+  const grouped = useMemo(() => {
+    const m = new Map<string, ItemDTO[]>();
+    for (const it of items) {
+      if (!m.has(it.itemTypeKey)) m.set(it.itemTypeKey, []);
+      m.get(it.itemTypeKey)!.push(it);
+    }
+    return [...m.entries()];
+  }, [items]);
+
+  return (
+    <Select
+      value={value}
+      onValueChange={(v) => {
+        setValue(v);
+        onSelect(v);
+        setValue("");
+      }}
+    >
+      <SelectTrigger className="w-56">
+        <PackageIcon className="size-3.5" />
+        <SelectValue placeholder="Pick from catalog…" />
+      </SelectTrigger>
+      <SelectContent>
+        {grouped.map(([typeKey, rows]) => (
+          <div key={typeKey}>
+            <div className="px-2 py-1 text-[10.5px] font-medium uppercase tracking-wider text-muted-foreground">
+              {typeKey}
+            </div>
+            {rows.map((it) => (
+              <SelectItem key={it.id} value={it.id}>
+                <span className="flex items-baseline gap-2">
+                  <span>{it.name}</span>
+                  {it.sku ? (
+                    <span className="text-[11px] text-muted-foreground">
+                      ({it.sku})
+                    </span>
+                  ) : null}
+                </span>
+              </SelectItem>
+            ))}
+          </div>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 

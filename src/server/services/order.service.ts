@@ -58,6 +58,7 @@ import { generateOrderNumber } from "./order-number";
 import { getBranding } from "./branding.service";
 import { applyCheckoutPaid } from "./webhook.service";
 import { validateLineAttributes } from "./attribute-validator.service";
+import { upsertCustomerFromOrder } from "./customer.service";
 
 const ZERO_DECIMAL_CURRENCIES = new Set([
   "BIF",
@@ -494,6 +495,27 @@ export async function createOrder(
       customerName: created.customer.name,
     },
   });
+
+  // Saved customer record (Pass 6d). Best-effort — never blocks the
+  // order. A failed upsert just means the operator re-types next time.
+  if (ctx.orgId) {
+    try {
+      await upsertCustomerFromOrder(
+        ctx.orgId,
+        {
+          name: created.customer.name,
+          email: created.customer.email,
+          phone: created.customer.phone,
+        },
+        { countAsOrder: true },
+      );
+    } catch (err) {
+      logger.warn("customer.upsert_failed", {
+        orderId: String(created._id),
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   return {
     order: orderToDTO(
@@ -1366,6 +1388,24 @@ export async function updateOrderCustomer(
     request: ctx.request ?? null,
     metadata: { action: "customer_patch", changed: applied },
   });
+
+  // Refresh the saved customer record so next time the operator types
+  // this email, the corrected name/phone show up. Best-effort.
+  if (ctx.orgId) {
+    try {
+      await upsertCustomerFromOrder(ctx.orgId, {
+        name: doc.customer.name,
+        email: doc.customer.email,
+        phone: doc.customer.phone,
+      });
+    } catch (err) {
+      logger.warn("customer.upsert_failed", {
+        orderId: String(doc._id),
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   return {
     order: orderToDTO(doc.toObject() as OrderDoc & { _id: Types.ObjectId }),
     applied,

@@ -51,6 +51,14 @@ export const Permission = {
    *  email-block layout drive every order written against the type. */
   ITEM_TYPE_VIEW: "item_type:view",
   ITEM_TYPE_MANAGE: "item_type:manage",
+
+  /** Pass 6c — per-tenant reusable product catalog (one row per SKU /
+   *  service / rental asset). Listing is open to anyone who can create
+   *  orders so the dynamic create-order form can offer "Pick from
+   *  catalog". Editing is admin-only — the catalog is the source of
+   *  truth for SKUs + base prices. */
+  ITEM_VIEW: "item:view",
+  ITEM_MANAGE: "item:manage",
 } as const;
 export type Permission = (typeof Permission)[keyof typeof Permission];
 
@@ -68,6 +76,9 @@ const STAFF_PERMISSIONS: readonly Permission[] = [
   // Dynamic create-order form must list this tenant's ItemTypes
   // to render the right attribute inputs. View-only for staff.
   Permission.ITEM_TYPE_VIEW,
+  // Same flow needs the product catalog to render the "Pick from
+  // catalog" affordance. View-only for staff; admin owns the catalog.
+  Permission.ITEM_VIEW,
   // Agents need to see whether the customer they're chasing has already
   // acknowledged the request — gates the "ready to charge" call.
   Permission.CONSENT_VIEW,
@@ -89,6 +100,7 @@ const ADMIN_ONLY_PERMISSIONS: readonly Permission[] = [
   Permission.BRANDING_VIEW,
   Permission.BRANDING_MANAGE,
   Permission.ITEM_TYPE_MANAGE,
+  Permission.ITEM_MANAGE,
   Permission.EMAIL_TEMPLATE_VIEW,
   Permission.EMAIL_TEMPLATE_MANAGE,
   Permission.AUDIT_VIEW,
