@@ -99,7 +99,10 @@ describe("LoginForm", () => {
     await user.type(screen.getByLabelText(/password/i), "Hunter2!");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
-    await waitFor(() => expect(replace).toHaveBeenCalledWith("/dashboard"));
+    // Unsafe // path → falls back to the canonical authed root.
+    await waitFor(() =>
+      expect(replace).toHaveBeenCalledWith("/app/dashboard"),
+    );
   });
 
   it("surfaces a server error message inline", async () => {
