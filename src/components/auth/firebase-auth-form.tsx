@@ -248,10 +248,22 @@ function humanizeAuthError(err: unknown, mode: "signin" | "signup"): string {
       return "Network error reaching Firebase. Check your connection and try again.";
     case "auth/too-many-requests":
       return "Too many failed attempts. Wait a moment and try again.";
-    default:
-      return mode === "signup"
-        ? "Could not create the account. Please try again."
-        : "Could not sign in. Please try again.";
+    case "auth/unauthorized-domain":
+      return "This domain is not authorized in the Firebase project. Add it to Authentication → Settings → Authorized domains.";
+    case "auth/operation-not-allowed":
+      return "This sign-in method is not enabled in the Firebase project. Enable it under Authentication → Sign-in method.";
+    case "auth/account-exists-with-different-credential":
+      return "An account already exists with this email but a different sign-in method. Use that method instead.";
+    case "auth/internal-error":
+      return "Firebase internal error. Check the Firebase project configuration and try again.";
+    default: {
+      // Surface the raw Firebase code so unknown failures are
+      // self-diagnosing rather than hidden behind a generic message.
+      const verb = mode === "signup" ? "create the account" : "sign in";
+      return code
+        ? `Could not ${verb} (${code}). Check the Firebase project configuration.`
+        : `Could not ${verb}. Please try again.`;
+    }
   }
 }
 
