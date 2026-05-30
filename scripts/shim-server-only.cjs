@@ -16,9 +16,21 @@ for (const file of [".env.local", ".env.prod"]) {
   try {
     const raw = fs.readFileSync(path.resolve(process.cwd(), file), "utf8");
     for (const line of raw.split(/\r?\n/)) {
-      const m = /^\s*([A-Z_][A-Z0-9_]*)\s*=\s*"?(.*?)"?\s*$/i.exec(line);
+      const m = /^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/i.exec(line);
       if (!m || m[1].startsWith("#")) continue;
-      if (!(m[1] in process.env)) process.env[m[1]] = m[2];
+      let value = m[2].trim();
+      // Strip a single matching pair of surrounding " or ' quotes. We
+      // can't naively strip per-side because FIREBASE_SERVICE_ACCOUNT
+      // is wrapped in single quotes around JSON whose values use
+      // double quotes — a per-side strip would mangle it.
+      if (value.length >= 2) {
+        const first = value[0];
+        const last = value[value.length - 1];
+        if ((first === '"' || first === "'") && first === last) {
+          value = value.slice(1, -1);
+        }
+      }
+      if (!(m[1] in process.env)) process.env[m[1]] = value;
     }
     break;
   } catch {
