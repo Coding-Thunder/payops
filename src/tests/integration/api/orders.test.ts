@@ -1,13 +1,41 @@
+import { Types } from "mongoose";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { UserRole } from "@/lib/constants/enums";
+import { ItemPricingModel } from "@/lib/constants/items";
+import { ItemType } from "@/server/db/models";
 import { GET as listRoute, POST as createRoute } from "@/app/api/orders/route";
+import type { AuthenticatedUser } from "@/server/auth/session";
 import { actorFor, mockSession } from "@/tests/utils/auth";
 import { buildRequest, expectErr, expectOk, jsonBody } from "@/tests/utils/api";
 import { mockNextHeaders } from "@/tests/utils/next-headers";
 import { createSettings } from "@/tests/factories/settings.factory";
 import { ensureMongo } from "@/tests/utils/db";
 import { validCreateOrderInput } from "@/tests/fixtures/order-input.fixture";
+
+/**
+ * Seeds the `rental_booking` ItemType for the actor's org. The
+ * canonical fixture (`validCreateOrderInput`) references this key,
+ * and the universal create-order path refuses orders whose item
+ * type isn't defined in the org's catalog.
+ *
+ * Per-test seed is correct: `actorFor()` mints a fresh orgId every
+ * call, so a beforeEach-level seed against a static orgId wouldn't
+ * line up with any given test's session.
+ */
+async function seedRentalBookingFor(actor: AuthenticatedUser): Promise<void> {
+  if (!actor.orgId) return;
+  await ItemType.create({
+    orgId: new Types.ObjectId(actor.orgId),
+    key: "rental_booking",
+    name: "Rental booking",
+    pricingModel: ItemPricingModel.FIXED,
+    requiresScheduling: true,
+    inventoryTracked: false,
+    attributeSchema: [],
+    confirmationEmailBlocks: [],
+  });
+}
 
 /**
  * /api/orders — exercises the route handler boundary including:
@@ -40,6 +68,7 @@ afterEach(async () => {
 describe("POST /api/orders", () => {
   it("creates an order in NOT_INITIATED state with no Stripe session yet", async () => {
     sessionMock = await mockSession(actorFor(UserRole.ADMIN));
+    await seedRentalBookingFor(sessionMock.user);
 
     const req = buildRequest("/api/orders", {
       method: "POST",
@@ -87,6 +116,7 @@ describe("POST /api/orders", () => {
 
   it("STAFF role can create orders", async () => {
     sessionMock = await mockSession(actorFor(UserRole.STAFF));
+    await seedRentalBookingFor(sessionMock.user);
     const req = buildRequest("/api/orders", {
       method: "POST",
       body: validCreateOrderInput(),
@@ -100,6 +130,7 @@ describe("GET /api/orders", () => {
   it("returns a paginated list scoped to the actor", async () => {
     const actor = actorFor(UserRole.STAFF);
     sessionMock = await mockSession(actor);
+    await seedRentalBookingFor(sessionMock.user);
     // Create one through the service so it gets the right createdBy
     await createRoute(
       buildRequest("/api/orders", {
