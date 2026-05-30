@@ -1,7 +1,14 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuditAction, OrderStatus } from "@/lib/constants/enums";
-import { AuditLog, Order } from "@/server/db/models";
+import {
+  AuditLog,
+  Order,
+  PendingEmail,
+  PendingEmailStatus,
+} from "@/server/db/models";
+import { drainOnePendingEmail } from "@/server/services/email-outbox.service";
+import * as emailService from "@/server/services/email.service";
 import { processStripeEvent } from "@/server/services/webhook.service";
 import {
   asyncPaymentFailedWebhook,
@@ -77,7 +84,15 @@ describe("checkout.session.completed", () => {
     ).toBe(1);
   });
 
-  it("claims the confirmation email exactly once even on concurrent delivery", async () => {
+  it("enqueues exactly one PendingEmail row on concurrent delivery + drainer stamps the order", async () => {
+    // New outbox contract (replaces the old in-tx claim):
+    //   1. processStripeEvent enqueues one PendingEmail row inside
+    //      the same tx as the PAID flip. The duplicate delivery is a
+    //      no-op — no second row.
+    //   2. The drainer sends the email + stamps the order's
+    //      `confirmationEmailSentAt`. SMTP isn't configured in tests,
+    //      so the send is treated as a soft no-op (returns id: null,
+    //      writes EMAIL_FAILED audit) and the row resolves as SENT.
     const order = await factoryCreateOrder({});
     const event = completedWebhook({
       orderId: String(order._id),
@@ -91,59 +106,99 @@ describe("checkout.session.completed", () => {
     ]);
     expect([a.duplicate, b.duplicate].sort()).toEqual([false, true]);
 
-    const updated = await Order.findById(order._id);
-    expect(updated?.payment.confirmationEmailSentAt).toBeInstanceOf(Date);
-    // No SMTP in tests — should have logged an EMAIL_FAILED row.
+    // Before the drainer runs, the order is PAID but the email hasn't
+    // been sent yet — exactly one outbox row is sitting there waiting.
+    const beforeDrain = await Order.findById(order._id);
+    expect(beforeDrain?.status).toBe(OrderStatus.PAID);
+    expect(beforeDrain?.payment.confirmationEmailSentAt).toBeNull();
+
+    const pendingRows = await PendingEmail.find({ orderId: order._id });
+    expect(pendingRows).toHaveLength(1);
+    expect(pendingRows[0].status).toBe(PendingEmailStatus.PENDING);
+
+    // Drain — the outbox picks up the row, calls sendPaymentConfirmation
+    // (which soft-fails with no SMTP), then conditionally stamps the
+    // order. The row resolves as SENT because the send returned cleanly.
+    const drained = await drainOnePendingEmail();
+    expect(drained?.status).toBe(PendingEmailStatus.SENT);
+
+    const afterDrain = await Order.findById(order._id);
+    expect(afterDrain?.payment.confirmationEmailSentAt).toBeInstanceOf(Date);
+
+    // The no-SMTP path writes one EMAIL_FAILED audit row per send
+    // attempt. Exactly one — never doubled by the duplicate webhook.
     expect(
       await AuditLog.countDocuments({ action: AuditAction.EMAIL_FAILED }),
     ).toBe(1);
+
+    // Idempotency: a second drain finds no work.
+    const secondDrain = await drainOnePendingEmail();
+    expect(secondDrain).toBeNull();
   });
 
-  it("retries the confirmation email when a duplicate event arrives but the previous send failed", async () => {
-    // Simulate the state we'd reach if delivery #1 marked the order PAID
-    // but the SMTP send failed and rolled back the email claim. Delivery
-    // #2 should detect the gap and re-attempt the send rather than
-    // silently no-op.
-    const order = await factoryCreateOrder({
-      status: OrderStatus.PAID,
-      payment: {
-        status: OrderStatus.PAID,
-        paidAt: new Date(),
-        amountReceived: 100,
-        // The event id is already in the array from delivery #1.
-        processedWebhookEventIds: ["evt_test_retry_email"],
-        confirmationEmailSentAt: null,
-      },
-    });
+  it("retries with backoff when the send throws + caps at MAX_ATTEMPTS=5", async () => {
+    // New outbox retry contract (replaces the old duplicate-webhook
+    // retry path):
+    //   - A failing send leaves the row PENDING with attempts++ and
+    //     nextAttemptAt pushed into the future.
+    //   - After MAX_ATTEMPTS retries, the row resolves as FAILED.
+    // Verified by making sendPaymentConfirmationEmail throw on every
+    // call and draining the row repeatedly.
+    const sendSpy = vi
+      .spyOn(emailService, "sendPaymentConfirmationEmail")
+      .mockRejectedValue(new Error("smtp: connection refused"));
 
+    const order = await factoryCreateOrder({});
     const event = completedWebhook({
       orderId: String(order._id),
       orderNumber: order.orderNumber,
     });
-    event.eventId = "evt_test_retry_email";
+    await processStripeEvent(event);
 
-    const before = await AuditLog.countDocuments({
-      action: AuditAction.EMAIL_FAILED,
-    });
-    const result = await processStripeEvent(event);
+    const enqueued = await PendingEmail.findOne({ orderId: order._id });
+    expect(enqueued?.status).toBe(PendingEmailStatus.PENDING);
+    expect(enqueued?.attempts).toBe(0);
 
-    expect(result).toMatchObject({
-      handled: true,
-      duplicate: true,
-      orderId: String(order._id),
-    });
+    // First drain — fails, row goes back to PENDING with backoff.
+    const r1 = await drainOnePendingEmail();
+    expect(r1?.status).toBe(PendingEmailStatus.PENDING);
+    const afterFirst = await PendingEmail.findById(enqueued?._id);
+    expect(afterFirst?.attempts).toBe(1);
+    expect(afterFirst?.lastError).toMatch(/connection refused/);
+    expect(afterFirst?.nextAttemptAt.getTime()).toBeGreaterThan(Date.now());
 
-    // No SMTP configured → another EMAIL_FAILED row was written (rather
-    // than silently skipping the retry).
-    const after = await AuditLog.countDocuments({
-      action: AuditAction.EMAIL_FAILED,
-    });
-    expect(after - before).toBe(1);
+    // To exercise the retry loop without waiting through real backoff,
+    // bump nextAttemptAt back to the past after each failure.
+    async function rewindAndDrain() {
+      await PendingEmail.updateOne(
+        { _id: enqueued?._id },
+        { $set: { nextAttemptAt: new Date(Date.now() - 1000) } },
+      );
+      return drainOnePendingEmail();
+    }
 
-    // The order's confirmationEmailSentAt is now stamped (claimed) so a
-    // subsequent duplicate won't re-attempt.
-    const updated = await Order.findById(order._id);
-    expect(updated?.payment.confirmationEmailSentAt).toBeInstanceOf(Date);
+    // attempts 2, 3, 4 → still PENDING after each failure
+    for (let i = 2; i <= 4; i += 1) {
+      const r = await rewindAndDrain();
+      expect(r?.status).toBe(PendingEmailStatus.PENDING);
+      const row = await PendingEmail.findById(enqueued?._id);
+      expect(row?.attempts).toBe(i);
+    }
+
+    // 5th attempt — caps out, row resolves as FAILED.
+    const final = await rewindAndDrain();
+    expect(final?.status).toBe(PendingEmailStatus.FAILED);
+    const dead = await PendingEmail.findById(enqueued?._id);
+    expect(dead?.attempts).toBe(5);
+    expect(dead?.status).toBe(PendingEmailStatus.FAILED);
+    expect(dead?.lastError).toMatch(/connection refused/);
+
+    // The order's confirmationEmailSentAt remains null — the outbox
+    // never stamped it because every send failed.
+    const orderAfter = await Order.findById(order._id);
+    expect(orderAfter?.payment.confirmationEmailSentAt).toBeNull();
+
+    sendSpy.mockRestore();
   });
 
   it("returns order_not_found when no matching order exists", async () => {
