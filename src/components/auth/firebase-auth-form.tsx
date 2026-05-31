@@ -260,12 +260,26 @@ function safeNext(value?: string): string {
 }
 
 function humanizeAuthError(err: unknown, mode: "signin" | "signup"): string {
+  // Log the full error to the console so DevTools shows everything —
+  // stack, message, code, customData. The on-screen string is a
+  // summary; the console is the source of truth.
+   
+  console.error("[firebase-auth-form] caught:", err);
+
   // Server-side exchange error (after Firebase succeeded).
   if (err instanceof ApiClientError) return err.message;
-  // Firebase Auth errors carry stable code strings.
+  // Firebase Auth errors carry stable code strings AND, for many
+  // failures, the raw Identity Toolkit JSON payload at
+  // err.customData.serverResponse — the most useful diagnostic field.
   const code =
     (err as AuthError | undefined)?.code ??
     (err as { code?: string } | undefined)?.code;
+  const serverResponse = (
+    err as { customData?: { serverResponse?: unknown } } | undefined
+  )?.customData?.serverResponse;
+  const serverHint = serverResponse
+    ? ` · server: ${JSON.stringify(serverResponse).slice(0, 220)}`
+    : "";
   switch (code) {
     case "auth/invalid-email":
       return "That email looks wrong.";
@@ -293,12 +307,13 @@ function humanizeAuthError(err: unknown, mode: "signin" | "signup"): string {
     case "auth/account-exists-with-different-credential":
       return "An account already exists with this email but a different sign-in method. Use that method instead.";
     case "auth/internal-error":
-      return "Firebase internal error. Check the Firebase project configuration and try again.";
+      return `Firebase internal error.${serverHint || " Open DevTools console for the full payload."}`;
     default: {
       const verb = mode === "signup" ? "create the account" : "sign in";
-      return code
-        ? `Could not ${verb} (${code}). Check the Firebase project configuration.`
-        : `Could not ${verb}. Please try again.`;
+      const base = code
+        ? `Could not ${verb} (${code}).`
+        : `Could not ${verb}.`;
+      return `${base}${serverHint}`;
     }
   }
 }
