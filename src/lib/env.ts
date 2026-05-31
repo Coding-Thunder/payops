@@ -8,7 +8,14 @@ const serverSchema = z.object({
     .default("development"),
 
   APP_NAME: z.string().min(1).default("TraceTxn"),
-  CUSTOMER_BRAND_NAME: z.string().min(1).default("Rental Confirmation"),
+  /**
+   * Deprecated. Was the platform-wide customer brand name baked into
+   * every tenant's emails before the multi-tenant branding fix.
+   * Empty default now — per-org Branding.brandName is the source of
+   * truth. Kept on the schema only for the legacy singleton path
+   * (no-orgId fallback) used during the multi-tenant migration window.
+   */
+  CUSTOMER_BRAND_NAME: z.string().default(""),
   APP_URL: z.string().url().default("http://localhost:3000"),
 
   MONGODB_URI: z.string().min(1, "MONGODB_URI is required"),
@@ -57,8 +64,16 @@ const serverSchema = z.object({
     .string()
     .default("TraceTxn <no-reply@tracetxn.example.com>"),
   EMAIL_REPLY_TO: z.string().optional(),
-  SUPPORT_EMAIL: z.string().default("vinaymaheshwari35@gmail.com"),
-  SUPPORT_PHONE: z.string().default("+1-555-0100"),
+  /**
+   * Deprecated platform-wide support contacts. Empty defaults — each
+   * tenant's Branding.supportEmail / supportPhone is the source of
+   * truth. Only used by the legacy-singleton fallback in
+   * branding.service.platformFallback (no-orgId path) and by
+   * quotation.service for marketing-form replies. New tenants never
+   * inherit these.
+   */
+  SUPPORT_EMAIL: z.string().default(""),
+  SUPPORT_PHONE: z.string().default(""),
 
   // Seed defaults for the per-org Setting document. Per-tenant edits
   // in /admin/settings override these; they only matter at the moment

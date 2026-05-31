@@ -7,8 +7,13 @@ import "../globals.css";
 // Token-bound customer surface — never index. Single-use URLs, no
 // SEO value, and `session_id` query params would otherwise leak into
 // Google's index.
+//
+// Layout title is intentionally generic — the per-tenant brand is
+// rendered in the header at runtime via `branding.brandName`. Pages
+// under /pay/* that know the order's orgId can override this via
+// generateMetadata to put the tenant brand in the browser tab.
 export const metadata = {
-  title: "Rental Confirmation",
+  title: "Payment",
   robots: { index: false, follow: false, nocache: true },
 };
 export const dynamic = "force-dynamic";
