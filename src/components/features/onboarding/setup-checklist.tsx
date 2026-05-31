@@ -95,6 +95,14 @@ export function SetupChecklist({ state }: SetupChecklistProps) {
           A few quick steps before you can start collecting payments.
           Each step takes a couple of minutes.
         </p>
+        <div className="pt-2">
+          <Button asChild size="sm" className="gap-1.5">
+            <Link href="/app/onboarding">
+              Open setup wizard
+              <ArrowRightIcon className="size-3.5" />
+            </Link>
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="pt-0">
         <ul className="divide-y divide-border/60">
