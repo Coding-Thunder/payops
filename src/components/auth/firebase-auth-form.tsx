@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import {
   GoogleAuthProvider,
@@ -52,7 +51,6 @@ export function FirebaseAuthForm({
   nextPath,
   turnstileSiteKey,
 }: FirebaseAuthFormProps) {
-  const router = useRouter();
   const configured = isFirebaseConfigured();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -84,8 +82,12 @@ export function FirebaseAuthForm({
         // attempt regardless of outcome (see the catch/finally below).
         { idToken, cfToken: cfToken ?? undefined },
       );
-      router.replace(safeNext(nextPath));
-      router.refresh();
+      // Hard navigation (not router.replace) so the browser issues a
+      // fresh request that carries the newly-set session cookie. A soft
+      // client-side navigation reuses the current document's auth
+      // context and the app code-paths that check `getCurrentUser()` in
+      // a server component end up seeing no cookie on the first render.
+      window.location.assign(safeNext(nextPath));
     } finally {
       setCfToken(null);
     }
