@@ -29,10 +29,13 @@ export const saveGatewayCredentialSchema = z.object({
     .trim()
     .min(10, "Webhook secret looks too short")
     .max(500, "Webhook secret looks too long"),
+  // Same silent-validation-fail pattern as connectStripeSchema —
+  // empty string from an unfilled form field would block the click
+  // without a visible error. Drop .min(1) and let the transform
+  // normalize empty → null.
   publishableKey: z
     .string()
     .trim()
-    .min(1)
     .max(200)
     .optional()
     .nullable()
@@ -40,7 +43,6 @@ export const saveGatewayCredentialSchema = z.object({
   accountId: z
     .string()
     .trim()
-    .min(1)
     .max(64)
     .optional()
     .nullable()
@@ -66,10 +68,13 @@ export const connectStripeSchema = z.object({
     .trim()
     .min(10, "Secret key looks too short")
     .max(500, "Secret key looks too long"),
+  // publishableKey + accountId are OPTIONAL — drop .min(1) so an
+  // empty string (react-hook-form's default for an unfilled field)
+  // doesn't fail validation silently and prevent the Connect button
+  // from firing. Transform converts empty / whitespace → null.
   publishableKey: z
     .string()
     .trim()
-    .min(1)
     .max(200)
     .optional()
     .nullable()
@@ -77,7 +82,6 @@ export const connectStripeSchema = z.object({
   accountId: z
     .string()
     .trim()
-    .min(1)
     .max(64)
     .optional()
     .nullable()
