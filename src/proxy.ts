@@ -28,6 +28,12 @@ const PUBLIC_PATHS = [
   "/api/auth/signup",
   "/api/auth/forgot-password",
   "/api/auth/reset-password",
+  // Firebase ID-token → session cookie exchange. The caller has a
+  // verified Firebase ID token but no TraceTxn cookie yet (this is
+  // the endpoint that mints it). Must be unauthenticated to be
+  // reachable — token verification is the trust boundary inside
+  // the route handler.
+  "/api/auth/firebase-session",
   "/api/webhooks/stripe",
   "/api/health",
   "/api/quotations",
