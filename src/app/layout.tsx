@@ -172,13 +172,12 @@ export const metadata: Metadata = {
       "max-video-preview": -1,
     },
   },
-  icons: {
-    icon: [
-      { url: "/icon.svg", type: "image/svg+xml" },
-      { url: "/favicon.ico", sizes: "any" },
-    ],
-    apple: [{ url: "/apple-icon.svg", sizes: "180x180" }],
-  },
+  // Icons are auto-injected from the file-convention assets:
+  //   - src/app/icon.svg          -> <link rel="icon" href="/icon">
+  //   - src/app/apple-icon.tsx    -> <link rel="apple-touch-icon" href="/apple-icon">
+  // Don't override `icons` here — explicit overrides win over the
+  // conventions and the prior list pointed at /favicon.ico and
+  // /apple-icon.svg, neither of which exist.
   appleWebApp: {
     capable: true,
     title: SITE_NAME,

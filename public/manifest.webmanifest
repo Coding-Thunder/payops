@@ -1,15 +1,15 @@
 {
-  "name": "PayOps — Payment Operations Platform",
-  "short_name": "PayOps",
-  "description": "Lifecycle visibility, hashed dispute evidence, and multi-gateway orchestration. Privately deployed on a domain you own.",
+  "name": "TraceTxn — Payment Operations Platform",
+  "short_name": "TraceTxn",
+  "description": "Lifecycle visibility, hashed dispute evidence, and per-org Stripe orchestration. The operational console between you and your payment processor.",
   "id": "/?source=pwa",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone"],
   "orientation": "any",
-  "background_color": "#0A0A0A",
-  "theme_color": "#0A0A0A",
+  "background_color": "#F8FAFC",
+  "theme_color": "#0F172A",
   "categories": ["business", "finance", "productivity"],
   "lang": "en-US",
   "dir": "ltr",
@@ -19,12 +19,6 @@
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
-    },
-    {
-      "src": "/apple-icon.svg",
-      "sizes": "180x180",
-      "type": "image/svg+xml",
-      "purpose": "maskable"
     }
   ],
   "screenshots": [
