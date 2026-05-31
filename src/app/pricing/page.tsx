@@ -41,7 +41,7 @@ const TIERS: Tier[] = [
     blurb:
       "Everything a solo operator needs to take payments and resolve disputes — without an enterprise contract.",
     ordersLabel: "Up to 30 active orders at a time",
-    usersLabel: "1 user",
+    usersLabel: "Solo operator",
     highlights: [
       "Hashed evidence chain on every order",
       "Full audit trail + payment lifecycle tracking",
@@ -59,7 +59,7 @@ const TIERS: Tier[] = [
     blurb:
       "The conversion tier — 5–10× cheaper than enterprise dispute tools for the same core need.",
     ordersLabel: "Up to 150 active orders at a time",
-    usersLabel: "3 users",
+    usersLabel: "Up to 3 team members",
     highlights: [
       "Everything in Starter",
       "Webhook delivery monitoring",
@@ -79,7 +79,7 @@ const TIERS: Tier[] = [
     blurb:
       "For teams where one won dispute per month more than covers the cost. Immediate ROI.",
     ordersLabel: "Unlimited orders",
-    usersLabel: "Unlimited users",
+    usersLabel: "Unlimited team members",
     highlights: [
       "Everything in Growth",
       "Full analytics suite",
@@ -104,7 +104,7 @@ interface MatrixRow {
 
 const MATRIX: MatrixRow[] = [
   { label: "Active orders at a time", starter: "30", growth: "150", scale: "Unlimited" },
-  { label: "Team seats", starter: "1", growth: "3", scale: "Unlimited" },
+  { label: "Team members", starter: "Solo operator", growth: "Up to 3", scale: "Unlimited" },
   { label: "Hashed evidence chain", starter: true, growth: true, scale: true },
   { label: "Audit trail", starter: true, growth: true, scale: true },
   { label: "Payment lifecycle tracking", starter: true, growth: true, scale: true },
