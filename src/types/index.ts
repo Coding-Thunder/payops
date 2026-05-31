@@ -401,6 +401,10 @@ export interface BrandingDTO {
   brandName: string;
   supportEmail: string;
   supportPhone: string;
+  /** Tenant-chosen From address for outbound transactional emails.
+   *  Empty string means "use the platform default" — appropriate for
+   *  tenants who haven't completed SPF/DKIM for their own domain. */
+  senderEmail: string;
   logo: string;
   primaryColor: string;
   footerTagline: string;

@@ -13,7 +13,13 @@ import {
 } from "@/lib/constants/enums";
 import { ValidationError } from "@/lib/errors";
 import { env } from "@/lib/env";
-import { Branding, BRANDING_KEY, type BrandingDoc } from "@/server/db/models";
+import {
+  Branding,
+  BRANDING_KEY,
+  Organization,
+  User,
+  type BrandingDoc,
+} from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 import { loadScopedSingleton } from "@/server/db/org/scoped-singleton";
 import { orgIdFilter } from "@/server/db/org/org-context";
@@ -63,6 +69,7 @@ function toDTO(doc: BrandingDoc): BrandingDTO {
     brandName: doc.brandName,
     supportEmail: doc.supportEmail,
     supportPhone: doc.supportPhone,
+    senderEmail: doc.senderEmail ?? "",
     logo: doc.logo ?? "",
     primaryColor: doc.primaryColor,
     footerTagline: doc.footerTagline ?? "",
@@ -70,42 +77,85 @@ function toDTO(doc: BrandingDoc): BrandingDTO {
   };
 }
 
-// ─── Env-seeded defaults ───────────────────────────────────────────────────
+// ─── Legacy single-tenant defaults (back-compat shim) ──────────────────────
+//
+// Used ONLY by the no-orgId path, which is preserved for un-migrated
+// callers and the legacy `{ key: "default" }` singleton row. The
+// multi-tenant seed path below does NOT read these — every tenant's
+// brand is derived from their own Organization + founder data.
 
-function envDefaults(): Omit<BrandingDTO, "updatedAt"> {
+function platformFallback(): Omit<BrandingDTO, "updatedAt"> {
   const e = env.server;
   return {
     brandName: e.CUSTOMER_BRAND_NAME,
     supportEmail: e.SUPPORT_EMAIL,
     supportPhone: e.SUPPORT_PHONE,
+    senderEmail: "",
     logo: "",
     primaryColor: "#0B1220",
     footerTagline: "",
   };
 }
 
-/** Build the seed payload that lazy-provisioning passes into a fresh
- *  per-org branding row. MUST NOT include `key`. */
-function seedBrandingFields(
-  legacy: Pick<
-    BrandingDoc,
-    | "brandName"
-    | "supportEmail"
-    | "supportPhone"
-    | "primaryColor"
-    | "logo"
-    | "footerTagline"
-  > | null,
-): Record<string, unknown> {
-  const defaults = envDefaults();
+/** Build the seed payload for a fresh per-org branding row using ONLY
+ *  data owned by that tenant — never env defaults. The tenant's
+ *  business identity (brand name, support email, support phone, logo,
+ *  colors, footer) is fully theirs from row #1; cross-tenant env
+ *  defaults would leak the platform's previous tenant brand into
+ *  every newly provisioned org's emails.
+ *
+ *  Seed sources:
+ *    - brandName     ← Organization.name (collected at signup)
+ *    - supportEmail  ← founder User.email (the owner who signed up)
+ *    - supportPhone  ← empty (admin fills in /app/admin/branding)
+ *    - primaryColor  ← neutral platform-default (#0B1220) — not a
+ *                      brand decision, just a placeholder until the
+ *                      admin picks one. Safe because it doesn't
+ *                      identify any specific tenant.
+ *    - logo          ← empty (admin uploads in /app/admin/branding)
+ *    - footerTagline ← empty
+ *
+ *  MUST NOT include `key`. */
+function seedBrandingFromOrg(input: {
+  orgName: string;
+  founderEmail: string;
+}): Record<string, unknown> {
   return {
-    brandName: legacy?.brandName ?? defaults.brandName,
-    supportEmail: legacy?.supportEmail ?? defaults.supportEmail,
-    supportPhone: legacy?.supportPhone ?? defaults.supportPhone,
-    primaryColor: legacy?.primaryColor ?? defaults.primaryColor,
-    logo: legacy?.logo ?? "",
-    footerTagline: legacy?.footerTagline ?? "",
+    brandName: input.orgName.trim(),
+    supportEmail: input.founderEmail.trim().toLowerCase(),
+    supportPhone: "",
+    // senderEmail empty means "use platform default From". The tenant
+    // can switch to their own address once SPF/DKIM is set up.
+    senderEmail: "",
+    primaryColor: "#0B1220",
+    logo: "",
+    footerTagline: "",
   };
+}
+
+/** Fetch the org name + founder email needed to seed a fresh per-org
+ *  branding row. Throws if either piece is missing — a tenant without
+ *  a name or founder is a corrupt provisioning, not a recoverable
+ *  state, and silently falling back to env would re-introduce the
+ *  cross-tenant leak this whole refactor exists to prevent. */
+async function readOrgSeedSource(
+  orgId: string,
+): Promise<{ orgName: string; founderEmail: string }> {
+  const org = await Organization.findById(orgId)
+    .select({ name: 1, ownerUserId: 1 })
+    .lean<{ name: string; ownerUserId: unknown }>();
+  if (!org) {
+    throw new Error(`Cannot seed branding: Organization ${orgId} not found`);
+  }
+  const owner = await User.findById(org.ownerUserId)
+    .select({ email: 1 })
+    .lean<{ email: string }>();
+  if (!owner) {
+    throw new Error(
+      `Cannot seed branding: founder for org ${orgId} not found`,
+    );
+  }
+  return { orgName: org.name, founderEmail: owner.email };
 }
 
 /**
@@ -123,11 +173,24 @@ export async function ensureBrandingDocument(
 ): Promise<BrandingDoc> {
   await connectMongo();
   if (orgId) {
+    // Fast-path: per-org row already exists. Read it directly so the
+    // happy case (every email send for an established tenant) doesn't
+    // pay the seed-source fetch cost.
+    const existing = await Branding.findOne({
+      orgId: orgIdFilter(orgId),
+    }).lean<BrandingDoc>();
+    if (existing) return existing;
+
+    // Slow path (first access for this tenant): fetch the seed source
+    // and provision. loadScopedSingleton handles the concurrency race
+    // on the orgId unique index — two parallel first-access calls
+    // won't produce duplicate rows.
+    const seedSource = await readOrgSeedSource(orgId);
     const doc = await loadScopedSingleton<BrandingDoc>(Branding, {
       orgId,
       legacyKeyField: "key",
       legacyKeyValue: BRANDING_KEY,
-      seedFor: (legacy) => seedBrandingFields(legacy),
+      seedFor: () => seedBrandingFromOrg(seedSource),
     });
     if (!doc) throw new Error("Failed to load branding document for org");
     return doc;
@@ -135,7 +198,7 @@ export async function ensureBrandingDocument(
   // Late import keeps this service stand-alone for tests that don't load
   // the Settings model.
   const { Setting, SETTINGS_KEY } = await import("@/server/db/models");
-  const defaults = envDefaults();
+  const defaults = platformFallback();
 
   const legacySettings = await Setting.findOne({ key: SETTINGS_KEY }).lean<{
     supportEmail?: string;
@@ -186,6 +249,7 @@ export async function updateBranding(
     "brandName",
     "supportEmail",
     "supportPhone",
+    "senderEmail",
     "primaryColor",
     "footerTagline",
     "logo",

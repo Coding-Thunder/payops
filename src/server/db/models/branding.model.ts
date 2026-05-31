@@ -26,6 +26,13 @@ export interface BrandingDoc {
   brandName: string;
   supportEmail: string;
   supportPhone: string;
+  /** Friendly From address the tenant wants on outbound transactional
+   *  emails. Stored as a full RFC-5322-style header value or bare
+   *  address; the sender uses it as the From mailbox + friendly name.
+   *  Empty falls back to the platform default (EMAIL_FROM env), which
+   *  is the right behaviour for tenants who haven't completed SPF/DKIM
+   *  for their own domain. */
+  senderEmail: string;
   /** Public path to the brand mark (e.g. `/branding/logo-ab12.png`).
    *  Empty string disables the logo on customer surfaces. */
   logo: string;
@@ -60,6 +67,7 @@ const brandingSchema = new Schema<BrandingDoc>(
       maxlength: 254,
     },
     supportPhone: { type: String, required: true, trim: true, maxlength: 32 },
+    senderEmail: { type: String, default: "", trim: true, maxlength: 254 },
     logo: { type: String, default: "", maxlength: 200 },
     primaryColor: {
       type: String,

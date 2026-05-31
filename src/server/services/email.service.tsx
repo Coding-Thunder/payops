@@ -49,6 +49,44 @@ interface SendArgs {
   text?: string;
   kind: EmailKind;
   orderId?: string | null;
+  /** Tenant brand name used as the friendly-name portion of the From
+   *  header. Mailbox stays platform-controlled (SPF/DKIM aligned with
+   *  the relay), but the part the recipient SEES — "TenantBrand
+   *  <noreply@platform.com>" — comes from the tenant's Branding doc.
+   *  When omitted, falls back to whatever's in EMAIL_FROM (which is
+   *  only correct for the legacy single-tenant deployment). */
+  fromName?: string | null;
+  /** Tenant support email used as the Reply-To header so customer
+   *  replies route to that tenant's inbox, not the platform's. */
+  replyTo?: string | null;
+  /** Tenant-chosen From mailbox. When empty/null, falls back to
+   *  EMAIL_FROM (platform default). When set, the tenant takes
+   *  responsibility for SPF/DKIM alignment on the relay. */
+  senderEmail?: string | null;
+}
+
+/** Extract the mailbox portion of an RFC-5322 address header so we can
+ *  rebuild it with a per-tenant friendly name. Handles both
+ *  `"Name" <addr@x>` and bare `addr@x` forms. Returns the input
+ *  unchanged when no mailbox is parseable — safer than throwing on a
+ *  send path. */
+function extractMailbox(headerValue: string): string {
+  const angle = headerValue.match(/<([^>]+)>/);
+  if (angle?.[1]) return angle[1].trim();
+  return headerValue.trim();
+}
+
+function buildFromHeader(
+  defaultHeader: string,
+  fromName: string | null | undefined,
+): string {
+  const name = fromName?.trim();
+  if (!name) return defaultHeader;
+  const mailbox = extractMailbox(defaultHeader);
+  // Quote the friendly name so commas / unicode / quotes can't break
+  // header parsing on the recipient side.
+  const escapedName = name.replace(/"/g, '\\"');
+  return `"${escapedName}" <${mailbox}>`;
 }
 
 /** Reduce a full email to `a***@example.com` for logger output — keeps
@@ -66,8 +104,17 @@ function maskEmail(addr: string): string {
 
 async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
   const mailer = getMailer();
-  const fromAddress = env.server.EMAIL_FROM;
-  const replyTo = env.server.EMAIL_REPLY_TO;
+  // Per-tenant overrides (when supplied) take precedence over the
+  // platform defaults. Mailbox-level overrides require the tenant to
+  // have aligned SPF/DKIM for the relay; we let the operator make
+  // that call rather than gating on a verification flow today.
+  const defaultFrom = env.server.EMAIL_FROM;
+  const tenantSender = args.senderEmail?.trim();
+  const fromAddress = buildFromHeader(
+    tenantSender ? tenantSender : defaultFrom,
+    args.fromName ?? null,
+  );
+  const replyTo = args.replyTo?.trim() || env.server.EMAIL_REPLY_TO;
 
   if (!mailer) {
     logger.warn("email.skipped_no_smtp_config", {
@@ -189,8 +236,6 @@ export async function sendPaymentConfirmationEmail(
   });
   const finalSubject =
     tpl?.subject?.trim() || defaultConfirmationSubject(order, brandName);
-  const fromAddress = env.server.EMAIL_FROM;
-  const replyTo = env.server.EMAIL_REPLY_TO || null;
   const recipient = order.customer.email;
   const sent = await sendEmail({
     to: recipient,
@@ -199,7 +244,18 @@ export async function sendPaymentConfirmationEmail(
     text,
     kind: EmailKind.PAYMENT_CONFIRMATION,
     orderId: order.id,
+    fromName: brandName,
+    replyTo: branding.supportEmail || null,
+    senderEmail: branding.senderEmail || null,
   });
+  // Resolve the final From / Reply-To headers the same way sendEmail
+  // did so the evidence chain records what the customer actually
+  // received, not a stale env-default snapshot.
+  const fromAddress = buildFromHeader(
+    (branding.senderEmail?.trim() || env.server.EMAIL_FROM),
+    brandName,
+  );
+  const replyTo = branding.supportEmail || env.server.EMAIL_REPLY_TO || null;
   // Evidence chain: capture the rendered confirmation HTML BEFORE the
   // template can drift. Even if the send went out without an SMTP
   // configured, we still want the exact bytes the customer would have
@@ -552,6 +608,9 @@ export async function sendPaymentRequestEmail(
     text,
     kind: EmailKind.PAYMENT_LINK,
     orderId: order.id,
+    fromName: branding.brandName,
+    replyTo: branding.supportEmail || null,
+    senderEmail: branding.senderEmail || null,
   });
 
   // Evidence chain: capture the rendered payment-request HTML the customer
@@ -575,8 +634,11 @@ export async function sendPaymentRequestEmail(
     payload: {
       kind: EmailKind.PAYMENT_LINK,
       subject,
-      from: env.server.EMAIL_FROM,
-      replyTo: env.server.EMAIL_REPLY_TO || null,
+      from: buildFromHeader(
+        branding.senderEmail?.trim() || env.server.EMAIL_FROM,
+        branding.brandName,
+      ),
+      replyTo: branding.supportEmail || env.server.EMAIL_REPLY_TO || null,
       to: toAddress,
       messageId: sent.id,
       brand: {

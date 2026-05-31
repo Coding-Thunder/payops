@@ -16,6 +16,11 @@ export const updateBrandingSchema = z.object({
     .regex(phoneRegex, "Enter a valid phone number")
     .max(32)
     .optional(),
+  // Tenant-chosen From address. Empty string is allowed (= "fall back
+  // to platform default"); any non-empty value must parse as an email.
+  senderEmail: z
+    .union([z.literal(""), z.string().email("Enter a valid email")])
+    .optional(),
   primaryColor: hexColor.optional(),
   footerTagline: z.string().trim().max(200).optional(),
   /** Allows resetting the logo back to "no image" by sending an empty string. */
