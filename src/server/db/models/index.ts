@@ -15,6 +15,14 @@ export type {
 export { OrgMember } from "./org-member.model";
 export type { OrgMemberDoc, OrgMemberDocument } from "./org-member.model";
 
+export { Workflow } from "./workflow.model";
+export type {
+  WorkflowDoc,
+  WorkflowDocument,
+  WorkflowStatusSpec,
+  WorkflowTransitionSpec,
+} from "./workflow.model";
+
 export {
   GatewayCredential,
   GatewayMode,
