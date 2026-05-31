@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import {
   GoogleAuthProvider,
@@ -258,6 +259,26 @@ export function FirebaseAuthForm({
           {mode === "signup" ? "Create account" : "Sign in"}
         </LoadingButton>
       </form>
+
+      {mode === "signup" ? (
+        <p className="text-center text-[11px] leading-relaxed text-muted-foreground/85">
+          By creating an account, you agree to our{" "}
+          <Link
+            href="/terms"
+            className="text-foreground underline-offset-4 hover:underline"
+          >
+            Terms of Service
+          </Link>{" "}
+          and{" "}
+          <Link
+            href="/privacy"
+            className="text-foreground underline-offset-4 hover:underline"
+          >
+            Privacy Policy
+          </Link>
+          .
+        </p>
+      ) : null}
     </div>
   );
 }
