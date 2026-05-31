@@ -18,7 +18,7 @@ export function BrandFooter() {
   return (
     <footer className="border-t border-border bg-[color:var(--background)]">
       <div className="mx-auto max-w-[1280px] px-6 py-16 lg:px-10">
-        <div className="grid grid-cols-1 gap-12 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
+        <div className="grid grid-cols-1 gap-12 lg:grid-cols-[1.4fr_1fr_1fr_1fr_1fr]">
           <div className="max-w-sm">
             <LogoLockup size="md" />
             <p className="mt-4 text-[13px] leading-relaxed text-muted-foreground">
@@ -60,6 +60,15 @@ export function BrandFooter() {
             links={[
               { label: "Security", href: "/security" },
               { label: "Contact", href: "/contact" },
+            ]}
+          />
+          <FooterColumn
+            title="Legal"
+            links={[
+              { label: "Terms", href: "/terms" },
+              { label: "Privacy", href: "/privacy" },
+              { label: "Refunds", href: "/refunds" },
+              { label: "DPA", href: "/dpa" },
             ]}
           />
         </div>
