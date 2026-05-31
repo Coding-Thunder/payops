@@ -28,7 +28,11 @@ export interface QuotationDoc {
   notes: string;
   /** Status tracked by sales — pending until someone picks it up. */
   status: "PENDING" | "CONTACTED" | "QUALIFIED" | "ARCHIVED";
-  source: "landing" | "contact_sales" | "email_requirements";
+  source:
+    | "landing"
+    | "contact_sales"
+    | "email_requirements"
+    | "waitlist";
   /** Email delivery state for the internal notification — separate from
    *  the record itself so a transient SMTP outage never drops the
    *  inbound lead. */
@@ -84,7 +88,12 @@ const quotationSchema = new Schema<QuotationDoc>(
     },
     source: {
       type: String,
-      enum: ["landing", "contact_sales", "email_requirements"],
+      enum: [
+        "landing",
+        "contact_sales",
+        "email_requirements",
+        "waitlist",
+      ],
       default: "landing",
     },
     notificationStatus: {

@@ -41,7 +41,12 @@ export const quotationSchema = z.object({
   customRequirements: z.string().trim().max(4000).default(""),
   notes: z.string().trim().max(4000).default(""),
   source: z
-    .enum(["landing", "contact_sales", "email_requirements"])
+    .enum([
+      "landing",
+      "contact_sales",
+      "email_requirements",
+      "waitlist",
+    ])
     .default("landing"),
   /** Cloudflare Turnstile token from the marketing page widget.
    *  Optional so non-browser callers (and dev without keys) still work;

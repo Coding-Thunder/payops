@@ -52,13 +52,14 @@ export function BrandFooter() {
             links={[
               { label: "Open a workspace", href: "/signup" },
               { label: "Sign in", href: "/login" },
+              { label: "Join waitlist", href: "/waitlist" },
             ]}
           />
           <FooterColumn
             title="Company"
             links={[
-              { label: "Security", href: "#security" },
-              { label: "Contact", href: "#contact" },
+              { label: "Security", href: "/security" },
+              { label: "Contact", href: "/contact" },
             ]}
           />
         </div>
