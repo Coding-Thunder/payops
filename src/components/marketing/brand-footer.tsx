@@ -41,10 +41,10 @@ export function BrandFooter() {
           <FooterColumn
             title="Product"
             links={[
-              { label: "Features", href: "#features" },
-              { label: "Evidence chain", href: "#evidence" },
-              { label: "Integrations", href: "#integrations" },
-              { label: "Pricing", href: "#pricing" },
+              { label: "Features", href: "/features" },
+              { label: "Pricing", href: "/pricing" },
+              { label: "Evidence chain", href: "/#evidence" },
+              { label: "Integrations", href: "/#integrations" },
             ]}
           />
           <FooterColumn

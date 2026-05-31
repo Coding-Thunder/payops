@@ -19,10 +19,10 @@ import { cn } from "@/lib/utils";
  */
 
 const NAV_LINKS = [
-  { href: "#features", label: "Features" },
-  { href: "#evidence", label: "Evidence" },
-  { href: "#integrations", label: "Integrations" },
-  { href: "#pricing", label: "Pricing" },
+  { href: "/features", label: "Features" },
+  { href: "/pricing", label: "Pricing" },
+  { href: "/#evidence", label: "Evidence" },
+  { href: "/#integrations", label: "Integrations" },
 ] as const;
 
 export function BrandNav() {
