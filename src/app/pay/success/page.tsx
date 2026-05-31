@@ -20,7 +20,6 @@ export default async function PaymentSuccessPage({
   searchParams,
 }: SuccessPageProps) {
   const { order: orderNumber, session_id: sessionId } = await searchParams;
-  const branding = await getBranding();
 
   // Defensive: require BOTH order and Stripe session id, and verify the
   // pair matches before rendering anything. The session id is server-
@@ -32,6 +31,12 @@ export default async function PaymentSuccessPage({
   if (order && order.payment.paymentSessionId !== (sessionId ?? null)) {
     order = null;
   }
+
+  // Pull THIS order's tenant branding (not the legacy singleton). When
+  // the order pairing fails above, fall back to the no-orgId path which
+  // returns neutral empty defaults — the page below already handles a
+  // missing-order state, so the brand isn't rendered in that case.
+  const branding = await getBranding(order?.orgId ?? null);
 
   // Self-heal the local-dev / dropped-webhook case at first render.
   // Stripe just sent the customer here, which means the session SHOULD

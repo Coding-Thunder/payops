@@ -7,6 +7,7 @@ import { getBranding } from "@/server/services/branding.service";
 import {
   getPublicConsentView,
   recordConsentFromToken,
+  resolveOrderOrgIdFromConsentToken,
 } from "@/server/services/consent.service";
 
 export const runtime = "nodejs";
@@ -26,7 +27,10 @@ interface Params {
  */
 export const GET = withApi(async (_req: NextRequest, { params }: Params) => {
   const { token } = await params;
-  const branding = await getBranding();
+  // CRITICAL: resolve the order's orgId from the consent token so we
+  // read THAT tenant's branding, not the legacy singleton (env defaults).
+  const orgId = await resolveOrderOrgIdFromConsentToken(token);
+  const branding = await getBranding(orgId);
   const view = await getPublicConsentView(token, {
     brandName: branding.brandName,
   });
@@ -39,7 +43,10 @@ export const POST = withApi(
     const body = await req.json().catch(() => ({}));
     const input = recordConsentSchema.parse(body);
     const reqCtx = await getRequestContext();
-    const branding = await getBranding();
+    // CRITICAL: resolve the order's orgId from the consent token so we
+  // read THAT tenant's branding, not the legacy singleton (env defaults).
+  const orgId = await resolveOrderOrgIdFromConsentToken(token);
+  const branding = await getBranding(orgId);
     const view = await recordConsentFromToken(
       {
         token,

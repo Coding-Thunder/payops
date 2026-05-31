@@ -45,11 +45,14 @@ interface EmailsPageProps {
 export default async function AdminEmailsPage({
   searchParams,
 }: EmailsPageProps) {
-  await requirePermission(Permission.SETTINGS_VIEW);
+  const user = await requirePermission(Permission.SETTINGS_VIEW);
 
+  // Per-tenant: branding + settings come from THIS admin's workspace,
+  // not the legacy singleton (which would env-default to "Rental
+  // Confirmation" et al).
   const [branding, settings] = await Promise.all([
-    getBranding(),
-    ensureSettingsDocument(),
+    getBranding(user.orgId),
+    ensureSettingsDocument(user.orgId),
   ]);
 
   const params = await searchParams;

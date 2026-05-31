@@ -9,7 +9,10 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminBrandingPage() {
   const user = await requirePermission(Permission.BRANDING_VIEW);
-  const branding = await getBranding();
+  // CRITICAL: pass user.orgId so this admin reads/edits THEIR tenant's
+  // branding doc, not the legacy {key:"default"} singleton which is
+  // env-default-seeded.
+  const branding = await getBranding(user.orgId);
   const canEdit = roleHasPermission(user.role, Permission.BRANDING_MANAGE);
 
   return (

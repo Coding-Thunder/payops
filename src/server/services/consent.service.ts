@@ -304,6 +304,28 @@ async function loadConsentByTokenOrThrow(token: string) {
 }
 
 /**
+ * Resolve the originating order's orgId from a consent token. Used by
+ * the public /api/consent/[token] route so it can load the RIGHT
+ * tenant's branding (per-org), not the legacy {key:"default"} singleton
+ * that falls back to env-default brand names.
+ *
+ * Returns null when the order is un-migrated and has no orgId yet —
+ * caller passes null to getBranding which falls back to the legacy
+ * path (acceptable; that path is only hit by the single legacy tenant
+ * during the multi-tenant migration window).
+ */
+export async function resolveOrderOrgIdFromConsentToken(
+  token: string,
+): Promise<string | null> {
+  const doc = await loadConsentByTokenOrThrow(token);
+  const order = await Order.findById(doc.orderId)
+    .select({ orgId: 1 })
+    .lean<{ orgId?: unknown }>();
+  if (!order?.orgId) return null;
+  return String(order.orgId);
+}
+
+/**
  * Load a consent record for the public-facing hosted page. Returns the
  * trimmed view shape so we never leak audit metadata (IP, UA, verifier)
  * to the customer.

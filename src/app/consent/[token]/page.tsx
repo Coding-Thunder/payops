@@ -1,7 +1,10 @@
 import { notFound } from "next/navigation";
 
 import { getBranding } from "@/server/services/branding.service";
-import { getPublicConsentView } from "@/server/services/consent.service";
+import {
+  getPublicConsentView,
+  resolveOrderOrgIdFromConsentToken,
+} from "@/server/services/consent.service";
 import { AppError } from "@/lib/errors";
 
 import { ConsentForm } from "./consent-form";
@@ -21,7 +24,10 @@ interface ConsentPageProps {
  */
 export default async function ConsentPage({ params }: ConsentPageProps) {
   const { token } = await params;
-  const branding = await getBranding();
+  // Resolve THIS order's tenant before fetching branding — never the
+  // legacy singleton.
+  const orgId = await resolveOrderOrgIdFromConsentToken(token);
+  const branding = await getBranding(orgId);
 
   let view;
   try {

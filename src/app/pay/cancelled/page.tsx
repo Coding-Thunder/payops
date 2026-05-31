@@ -1,13 +1,19 @@
-import { getBranding } from "@/server/services/branding.service";
-
 export const metadata = { title: "Payment cancelled" };
 export const dynamic = "force-dynamic";
 
-export default async function PaymentCancelledPage() {
-  const branding = await getBranding();
-  const brand = branding.brandName;
-  const supportEmail = branding.supportEmail;
-
+/**
+ * Generic cancellation page — no per-tenant branding is rendered
+ * here because Stripe's cancel URL doesn't carry an order id and
+ * we deliberately don't expose the legacy {key:"default"} singleton's
+ * env-defaulted brand (which would be wrong for every tenant except
+ * the legacy one).
+ *
+ * To add tenant branding to this page, the Stripe checkout's
+ * cancel_url needs an `?order=<orderNumber>` param appended at session
+ * creation time, then we can resolve the order's tenant the same way
+ * pay/success does.
+ */
+export default function PaymentCancelledPage() {
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="bg-gradient-to-br from-amber-50 via-white to-white px-8 pt-10 pb-8 text-center">
@@ -30,21 +36,15 @@ export default async function PaymentCancelledPage() {
           Payment not completed
         </h1>
         <p className="mt-2 text-sm text-slate-600">
-          You closed the secure payment window before finishing. {brand} has
-          not charged your card. You can use the same payment link to try
-          again, or ask us to send a new one.
+          You closed the secure payment window before finishing. Your card
+          has not been charged. You can use the same payment link to try
+          again, or contact the merchant for a new one.
         </p>
       </div>
 
       <div className="border-t border-slate-100 bg-slate-50 px-8 py-5 text-center text-xs text-slate-500">
-        Need help? Email{" "}
-        <a
-          href={`mailto:${supportEmail}`}
-          className="font-medium text-slate-700 underline-offset-2 hover:underline"
-        >
-          {supportEmail}
-        </a>
-        .
+        Reply to the original payment email if you need help completing
+        this order.
       </div>
     </div>
   );

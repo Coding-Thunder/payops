@@ -9,8 +9,10 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminSettingsPage() {
   const user = await requirePermission(Permission.SETTINGS_VIEW);
-  await ensureSettingsDocument();
-  const settings = await getSettings();
+  // Per-tenant settings: pass user.orgId so admin reads/edits THEIR
+  // workspace's row, not the legacy singleton (env-seeded).
+  await ensureSettingsDocument(user.orgId);
+  const settings = await getSettings(user.orgId);
   const canEdit = roleHasPermission(user.role, Permission.SETTINGS_UPDATE);
 
   return (
