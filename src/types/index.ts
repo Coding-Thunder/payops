@@ -60,7 +60,10 @@ export interface OrderPayment {
   /** Provider's payment-intent id (or equivalent). Some gateways
    *  don't expose this separately; null in that case. */
   paymentIntentId: string | null;
-  status: OrderStatus;
+  /** Tenant-configurable workflow status key. Free string; valid
+   *  values come from the org's Workflow document. Default tenants
+   *  see the legacy enum values unchanged. */
+  status: string;
   paidAt: string | null;
   expiresAt: string | null;
   amountReceived: number | null;
@@ -148,7 +151,10 @@ export interface OrderDTO {
    *  DTO was first read. Production rows always have it set. */
   orgId: string | null;
   orderNumber: string;
-  status: OrderStatus;
+  /** Tenant-configurable workflow status key. Free string; valid
+   *  values come from the org's Workflow document. Default tenants
+   *  see the legacy enum values unchanged. */
+  status: string;
   state: RecordState;
   customer: OrderCustomer;
   pricing: OrderPricing;
@@ -335,7 +341,10 @@ export interface OrderEvidenceChainDTO {
     orderNumber: string;
     customer: OrderCustomer;
     pricing: OrderPricing;
-    status: OrderStatus;
+    /** Tenant-configurable workflow status key. Free string; valid
+   *  values come from the org's Workflow document. Default tenants
+   *  see the legacy enum values unchanged. */
+  status: string;
     state: RecordState;
     /** Universal commerce — line items snapshot for the evidence page. */
     lineItems: OrderLineItemDTO[];

@@ -30,6 +30,28 @@ import {
 } from "@/server/db/transaction";
 
 import { recordAudit } from "./audit.service";
+import { getOrCreateDefaultWorkflow } from "./workflow.service";
+
+/** Resolve the order's tenant-configured "payment succeeded" status
+ *  key. Defaults to "PAID" for tenants who haven't visited the
+ *  workflow builder. Used by the webhook handlers so a tenant that
+ *  renamed their paid status to e.g. "SETTLED" still gets correctly
+ *  transitioned by Stripe events. */
+async function resolvePaymentSuccessStatusKey(
+  order: { orgId?: Types.ObjectId | null },
+): Promise<string> {
+  if (!order.orgId) return "PAID";
+  const wf = await getOrCreateDefaultWorkflow(String(order.orgId));
+  return wf.paymentSuccessStatusKey;
+}
+
+async function resolvePaymentFailureStatusKey(
+  order: { orgId?: Types.ObjectId | null },
+): Promise<string> {
+  if (!order.orgId) return "FAILED";
+  const wf = await getOrCreateDefaultWorkflow(String(order.orgId));
+  return wf.paymentFailureStatusKey;
+}
 import {
   enqueueEmail,
   kickPostCommitDrain,
@@ -214,13 +236,19 @@ export async function applyCheckoutPaid(
   input: PaidTransitionInput,
 ): Promise<ProcessEventResult> {
   const gatewayKey = order.payment.gateway ?? "STRIPE";
+  // Resolve the tenant's paid-status-key from their workflow. Defaults
+  // to "PAID" for tenants who haven't customized — so the existing
+  // dashboard rollups + email triggers that key off status === "PAID"
+  // keep working until those callers are migrated to read isPaid from
+  // the workflow.
+  const paidStatusKey = await resolvePaymentSuccessStatusKey(order);
 
   type TxOutcome =
     | { duplicate: true }
     | {
         duplicate: false;
         didTransition: boolean;
-        previousStatus: OrderStatus;
+        previousStatus: string;
         updated: OrderDoc & { _id: Types.ObjectId };
         amountReceived: number;
       };
@@ -241,14 +269,14 @@ export async function applyCheckoutPaid(
       return { duplicate: true };
     }
 
-    const isAlreadyPaid = order.status === OrderStatus.PAID;
+    const isAlreadyPaid = order.status === paidStatusKey;
     const amountReceived =
       typeof input.amountTotal === "number"
         ? input.amountTotal / 100
         : order.pricing.amount;
 
-    // 2. Conditional update — flips PENDING/LINK_GENERATED → PAID
-    // exactly once. The `status: { $ne: PAID }` guard is the
+    // 2. Conditional update — flips current → workflow.paymentSuccess
+    // exactly once. The `status: { $ne: paidStatusKey }` guard is the
     // serialization point against webhook-vs-reconcile races that
     // synthesize DIFFERENT dedupe keys (`evt_xyz` vs `reconcile:cs_xyz`)
     // — both pass the ProcessedWebhookEvent claim, but only one can
@@ -260,13 +288,13 @@ export async function applyCheckoutPaid(
     const updated = await Order.findOneAndUpdate(
       {
         _id: order._id,
-        status: { $ne: OrderStatus.PAID },
+        status: { $ne: paidStatusKey },
         "payment.processedWebhookEventIds": { $ne: input.eventId },
       },
       {
         $set: {
-          status: OrderStatus.PAID,
-          "payment.status": OrderStatus.PAID,
+          status: paidStatusKey,
+          "payment.status": paidStatusKey,
           "payment.paidAt": new Date(input.paidAtMs),
           "payment.amountReceived": amountReceived,
           "payment.paymentIntentId":
@@ -587,7 +615,13 @@ async function failOrder(
   event: VerifiedPaymentEvent,
   reason: string,
 ): Promise<ProcessEventResult> {
-  if (order.status === OrderStatus.PAID) {
+  // Tenant-defined paid + failed status keys. A failed Stripe event for
+  // an already-paid order is a duplicate (no rollback). The failure
+  // target is whatever the tenant chose as paymentFailureStatusKey.
+  const paidStatusKey = await resolvePaymentSuccessStatusKey(order);
+  const failedStatusKey = await resolvePaymentFailureStatusKey(order);
+
+  if (order.status === paidStatusKey) {
     return { handled: true, duplicate: true, orderId: String(order._id) };
   }
 
@@ -611,13 +645,13 @@ async function failOrder(
     const updated = await Order.findOneAndUpdate(
       {
         _id: order._id,
-        status: { $ne: OrderStatus.PAID },
+        status: { $ne: paidStatusKey },
         "payment.processedWebhookEventIds": { $ne: event.eventId },
       },
       {
         $set: {
-          status: OrderStatus.FAILED,
-          "payment.status": OrderStatus.FAILED,
+          status: failedStatusKey,
+          "payment.status": failedStatusKey,
           "payment.failureReason": reason,
         },
         $push: {

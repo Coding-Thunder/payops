@@ -293,9 +293,22 @@ export async function createOrder(
   ctx: OrderContext,
 ): Promise<CreateOrderResult> {
   await connectMongo();
-  // Read settings + policy snapshot from the caller's org so Tenant #2
-  // doesn't inherit Tenant #1's cancellation policy text.
+  // Read settings + workflow + policy snapshot from the caller's org so
+  // Tenant #2 doesn't inherit Tenant #1's cancellation policy text or
+  // legacy status enum. The workflow's initialStatusKey is what the
+  // tenant designated as "where a fresh order starts" — defaults to
+  // "NOT_INITIATED" for tenants who never opened the workflow builder,
+  // but a tenant can rename it to "DRAFT" or "QUOTED" without code.
   const settings = await getSettings(ctx.orgId);
+  // Workflow lookup is per-org. Legacy callers (no orgId) keep using
+  // the hardcoded NOT_INITIATED so the single-tenant migration window
+  // isn't broken.
+  let initialStatusKey: string = OrderStatus.NOT_INITIATED;
+  if (ctx.orgId) {
+    const { getOrCreateDefaultWorkflow } = await import("./workflow.service");
+    const workflow = await getOrCreateDefaultWorkflow(ctx.orgId);
+    initialStatusKey = workflow.initialStatusKey;
+  }
 
   const currency = input.pricing.currency ?? settings.defaultCurrency;
   const orderId = new Types.ObjectId();
@@ -367,14 +380,14 @@ export async function createOrder(
           _id: orderId,
           orgId: orderOrgId,
           orderNumber,
-          status: OrderStatus.NOT_INITIATED,
+          status: initialStatusKey,
           state: RecordState.ACTIVE,
           customer: input.customer,
           lineItems: validatedLines,
           scheduling: schedulingToPersist,
           pricing: { amount: input.pricing.amount, currency },
           payment: {
-            status: OrderStatus.NOT_INITIATED,
+            status: initialStatusKey,
             processedWebhookEventIds: [],
           },
           createdBy: {

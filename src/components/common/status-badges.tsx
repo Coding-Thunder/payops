@@ -17,8 +17,15 @@ import {
 } from "@/lib/constants/enums";
 import { cn } from "@/lib/utils";
 
-export function OrderStatusBadge({ status }: { status: OrderStatus }) {
-  const variant = OrderStatusBadgeVariant[status];
+export function OrderStatusBadge({ status }: { status: string }) {
+  // status is now a tenant-defined workflow key. For the default
+  // workflow it matches the legacy OrderStatus enum 1:1, so the
+  // existing variant/label maps still work. Custom statuses fall
+  // back to neutral styling + the raw key as the label until the
+  // workflow-aware badge picks up color + label from the workflow doc.
+  const variant =
+    OrderStatusBadgeVariant[status as OrderStatus] ?? "secondary";
+  const label = OrderStatusLabel[status as OrderStatus] ?? status;
   const pending = status === OrderStatus.PAYMENT_PENDING;
   return (
     <Badge variant={variant} className={cn(pending && "gap-1.5")}>
@@ -31,7 +38,7 @@ export function OrderStatusBadge({ status }: { status: OrderStatus }) {
           <span className="size-1.5 rounded-full bg-warning" />
         </span>
       ) : null}
-      {OrderStatusLabel[status]}
+      {label}
     </Badge>
   );
 }

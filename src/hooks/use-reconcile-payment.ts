@@ -24,7 +24,7 @@ interface ReconcileResponse {
 interface UseReconcilePaymentArgs {
   orderId: string;
   /** Current cached status — drives whether we auto-trigger once. */
-  status: OrderStatus | undefined;
+  status: string | undefined;
   /** True iff the order has a Stripe session id to reconcile against.
    *  Auto-trigger is skipped without one. */
   hasSession: boolean;

@@ -14,7 +14,6 @@ import {
   DISPUTE_STATUSES,
   DisputeOutcome,
   DisputeStatus,
-  ORDER_STATUSES,
   OrderStatus,
   PAYMENT_GATEWAY_KEYS,
   PaymentGatewayKey,
@@ -34,7 +33,10 @@ export interface OrderDoc {
    *  one and every write site has been migrated to `OrgScopedRepo`. */
   orgId?: Types.ObjectId | null;
   orderNumber: string;
-  status: OrderStatus;
+  /** Workflow status key. Free string (validated at the workflow
+   *  service layer, not the schema), so tenants can define their own
+   *  status values. Defaults map 1:1 to the legacy OrderStatus enum. */
+  status: string;
   state: RecordState;
 
   customer: {
@@ -59,7 +61,10 @@ export interface OrderDoc {
     stripeSessionId?: string | null;
     paymentIntentId?: string | null;
     checkoutUrl?: string | null;
-    status: OrderStatus;
+    /** Workflow status key. Free string (validated at the workflow
+   *  service layer, not the schema), so tenants can define their own
+   *  status values. Defaults map 1:1 to the legacy OrderStatus enum. */
+  status: string;
     paidAt?: Date | null;
     expiresAt?: Date | null;
     /** When the gateway session was created — order moves NOT_INITIATED
@@ -251,7 +256,12 @@ const paymentSchema = new Schema(
     stripeSessionId: { type: String, default: null, index: true, sparse: true },
     paymentIntentId: { type: String, default: null, index: true, sparse: true },
     checkoutUrl: { type: String, default: null },
-    status: { type: String, enum: ORDER_STATUSES, required: true },
+    // Status validation moved from the schema enum to the workflow
+    // service: tenants pick their own status keys, so the constraint
+    // lives at the per-tenant config layer (workflow.service.resolveTransition)
+    // not on the platform-wide model. Keep maxlength as a defensive
+    // cap so a corrupt write can't blow out the index.
+    status: { type: String, required: true, maxlength: 48 },
     paidAt: { type: Date, default: null },
     expiresAt: { type: Date, default: null },
     initiatedAt: { type: Date, default: null },
@@ -420,12 +430,16 @@ const orderSchema = new Schema<OrderDoc>(
       index: true,
       maxlength: 32,
     },
+    // Same as payment.status above: validation lives on the workflow
+    // service, not the schema. The default "PAYMENT_PENDING" stays
+    // here because this is a fallback for the legacy single-tenant
+    // path; new orders are created with workflow.initialStatusKey.
     status: {
       type: String,
-      enum: ORDER_STATUSES,
       required: true,
       default: "PAYMENT_PENDING",
       index: true,
+      maxlength: 48,
     },
     state: {
       type: String,
