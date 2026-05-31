@@ -7,6 +7,7 @@ import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
 import { ArchiveOrderButton } from "@/components/features/orders/archive-order-button";
 import { OrderConsentCard } from "@/components/features/orders/order-consent-card";
 import { OrderDetailsCard } from "@/components/features/orders/order-details-card";
+import { OrderDocumentsCard } from "@/components/features/orders/order-documents-card";
 import { OrderEvidenceCard } from "@/components/features/orders/order-evidence-card";
 import { OrderPaymentCard } from "@/components/features/orders/order-payment-card";
 import { OrderStatusTimeline } from "@/components/features/orders/order-status-timeline";
@@ -217,6 +218,11 @@ export function OrderDetailPageContent({
         </div>
         <div className="space-y-6">
           <OrderPaymentCard order={order} canRegenerate={canRegenerate} />
+          <OrderDocumentsCard
+            orderId={order.id}
+            canIssue={role === "ADMIN" || role === "SUPER_ADMIN"}
+            isPaid={Boolean(order.payment.paidAt)}
+          />
           <OrderEvidenceCard orderId={order.id} role={role} />
           <OrderConsentCard order={order} role={role} />
         </div>

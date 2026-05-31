@@ -24,6 +24,19 @@ export type {
 } from "./workflow.model";
 
 export {
+  Document,
+  DocumentSequence,
+  DocumentKind,
+  DOCUMENT_KINDS,
+} from "./document.model";
+export type {
+  DocumentDoc,
+  DocumentDocument,
+  DocumentSnapshot,
+  DocumentSequenceDoc,
+} from "./document.model";
+
+export {
   GatewayCredential,
   GatewayMode,
   GATEWAY_MODES,

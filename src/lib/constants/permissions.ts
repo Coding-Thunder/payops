@@ -67,6 +67,14 @@ export const Permission = {
    *  reshaping order lifecycles. */
   WORKFLOW_VIEW: "workflow:view",
   WORKFLOW_MANAGE: "workflow:manage",
+
+  /** Per-order accounting documents — invoices, receipts. Viewing is
+   *  open to anyone who can see the order (staff for their own
+   *  orders, admin for all); issuing is admin-only because the
+   *  document carries the tenant's identity + a permanent number
+   *  that can't be retracted. */
+  DOCUMENT_VIEW: "document:view",
+  DOCUMENT_ISSUE: "document:issue",
 } as const;
 export type Permission = (typeof Permission)[keyof typeof Permission];
 
@@ -87,6 +95,10 @@ const STAFF_PERMISSIONS: readonly Permission[] = [
   // Same flow needs the product catalog to render the "Pick from
   // catalog" affordance. View-only for staff; admin owns the catalog.
   Permission.ITEM_VIEW,
+  // Staff can see documents already issued against an order they
+  // own (so they can forward a receipt to a customer). Issuance is
+  // admin-only — see ADMIN_ONLY_PERMISSIONS.
+  Permission.DOCUMENT_VIEW,
   // Agents need to see whether the customer they're chasing has already
   // acknowledged the request — gates the "ready to charge" call.
   Permission.CONSENT_VIEW,
@@ -111,6 +123,7 @@ const ADMIN_ONLY_PERMISSIONS: readonly Permission[] = [
   Permission.ITEM_MANAGE,
   Permission.WORKFLOW_VIEW,
   Permission.WORKFLOW_MANAGE,
+  Permission.DOCUMENT_ISSUE,
   Permission.EMAIL_TEMPLATE_VIEW,
   Permission.EMAIL_TEMPLATE_MANAGE,
   Permission.AUDIT_VIEW,
