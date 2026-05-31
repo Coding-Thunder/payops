@@ -17,6 +17,19 @@ const nextConfig: NextConfig = {
     },
   },
   serverExternalPackages: ["mongoose", "bcryptjs"],
+  async redirects() {
+    // Legacy URLs from the pre-/app/ layout — still bookmarked, still
+    // linked from operator-internal docs. Permanent 308 so browsers
+    // cache the new location and external referrers learn the new URL.
+    return [
+      { source: "/dashboard", destination: "/app/dashboard", permanent: true },
+      {
+        source: "/dashboard/:path*",
+        destination: "/app/dashboard/:path*",
+        permanent: true,
+      },
+    ];
+  },
   async headers() {
     // CSP is intentionally strict on `default-src`/`object-src`/`base-uri`
     // — `script-src 'self'` would break Next 16's inline hydration helpers,

@@ -263,11 +263,15 @@ export function FirebaseAuthForm({
 }
 
 function safeNext(value?: string): string {
-  if (!value) return "/app/dashboard";
-  if (!value.startsWith("/")) return "/app/dashboard";
-  if (value.startsWith("//")) return "/app/dashboard";
-  if (value.startsWith("/login")) return "/app/dashboard";
-  if (value.startsWith("/signup")) return "/app/dashboard";
+  const fallback = "/app/dashboard";
+  if (!value) return fallback;
+  if (!value.startsWith("/")) return fallback;
+  if (value.startsWith("//")) return fallback;
+  // Only allow landings under the authenticated product surface. This
+  // both blocks open-redirect attacks (no off-site or marketing
+  // landings via ?next=) AND catches legacy paths like /dashboard that
+  // would 404 because the app moved under /app/.
+  if (!value.startsWith("/app/") && value !== "/app") return fallback;
   return value;
 }
 
