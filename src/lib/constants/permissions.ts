@@ -59,6 +59,14 @@ export const Permission = {
    *  truth for SKUs + base prices. */
   ITEM_VIEW: "item:view",
   ITEM_MANAGE: "item:manage",
+
+  /** Per-tenant order workflow — list of statuses + transitions an order
+   *  can move through. Viewing is admin-only (the workflow page surfaces
+   *  every status key + transition spec); editing is admin-only too.
+   *  Staff doesn't see it because we don't want operators casually
+   *  reshaping order lifecycles. */
+  WORKFLOW_VIEW: "workflow:view",
+  WORKFLOW_MANAGE: "workflow:manage",
 } as const;
 export type Permission = (typeof Permission)[keyof typeof Permission];
 
@@ -101,6 +109,8 @@ const ADMIN_ONLY_PERMISSIONS: readonly Permission[] = [
   Permission.BRANDING_MANAGE,
   Permission.ITEM_TYPE_MANAGE,
   Permission.ITEM_MANAGE,
+  Permission.WORKFLOW_VIEW,
+  Permission.WORKFLOW_MANAGE,
   Permission.EMAIL_TEMPLATE_VIEW,
   Permission.EMAIL_TEMPLATE_MANAGE,
   Permission.AUDIT_VIEW,

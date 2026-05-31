@@ -392,6 +392,131 @@ export async function addTransition(
   return toDTO(wfDoc.toObject() as WorkflowDoc & { _id: unknown });
 }
 
+/* ─────────────────── Edit / delete (safety-guarded) ──────────────────── */
+
+interface EditStatusInput {
+  label?: string;
+  color?: string;
+  isTerminal?: boolean;
+  isPaid?: boolean;
+}
+
+/** Edit a status's display fields. The `key` is immutable — renaming a
+ *  status would orphan every Order.status currently pointing at it.
+ *  Operators who want a different key delete + recreate (which the UI
+ *  blocks anyway, since the platform-required keys are referenced from
+ *  payment mappings + transitions). */
+export async function editStatus(
+  orgId: string,
+  statusKey: string,
+  input: EditStatusInput,
+  actor: { id: string },
+): Promise<WorkflowDTO> {
+  await connectMongo();
+  const wfDoc = await Workflow.findOne({ orgId: new Types.ObjectId(orgId) });
+  if (!wfDoc) throw new NotFoundError("Workflow not found");
+
+  const status = wfDoc.statuses.find((s) => s.key === statusKey);
+  if (!status) {
+    throw new NotFoundError(`Status "${statusKey}" not found`);
+  }
+
+  if (input.label !== undefined) status.label = input.label;
+  if (input.color !== undefined) status.color = input.color;
+  if (input.isTerminal !== undefined) status.isTerminal = input.isTerminal;
+  // isPaid toggle has financial implications — guard against turning
+  // OFF the flag for the status currently mapped as payment-success;
+  // that would silently drop paid orders from the dashboard rollup.
+  if (input.isPaid !== undefined) {
+    if (
+      input.isPaid === false &&
+      wfDoc.paymentSuccessStatusKey === statusKey
+    ) {
+      throw new ValidationError(
+        `Cannot clear isPaid on "${statusKey}" — it's the current payment-success target. Re-point payment mapping first.`,
+      );
+    }
+    status.isPaid = input.isPaid;
+  }
+
+  wfDoc.updatedBy = new Types.ObjectId(actor.id);
+  wfDoc.markModified("statuses");
+  await wfDoc.save();
+  return toDTO(wfDoc.toObject() as WorkflowDoc & { _id: unknown });
+}
+
+/** Delete a status. Refuses when the status is load-bearing:
+ *  - referenced by a transition (would orphan the edge)
+ *  - mapped as payment-success or payment-failure target
+ *  - the workflow's initialStatusKey
+ *  - the ONLY initial status remaining
+ *
+ *  This service does NOT check whether live orders are currently in
+ *  this status — that's the route's job (it has access to Order
+ *  models without dragging the import into the workflow service). */
+export async function removeStatus(
+  orgId: string,
+  statusKey: string,
+  actor: { id: string },
+): Promise<WorkflowDTO> {
+  await connectMongo();
+  const wfDoc = await Workflow.findOne({ orgId: new Types.ObjectId(orgId) });
+  if (!wfDoc) throw new NotFoundError("Workflow not found");
+
+  const status = wfDoc.statuses.find((s) => s.key === statusKey);
+  if (!status) throw new NotFoundError(`Status "${statusKey}" not found`);
+
+  if (wfDoc.initialStatusKey === statusKey) {
+    throw new ValidationError(
+      `Cannot delete "${statusKey}" — it's the workflow's initial status. Set a different initial status first.`,
+    );
+  }
+  if (wfDoc.paymentSuccessStatusKey === statusKey) {
+    throw new ValidationError(
+      `Cannot delete "${statusKey}" — it's the payment-success target. Re-point payment mapping first.`,
+    );
+  }
+  if (wfDoc.paymentFailureStatusKey === statusKey) {
+    throw new ValidationError(
+      `Cannot delete "${statusKey}" — it's the payment-failure target. Re-point payment mapping first.`,
+    );
+  }
+  const referencingTransitions = wfDoc.transitions.filter(
+    (t) => t.fromKey === statusKey || t.toKey === statusKey,
+  );
+  if (referencingTransitions.length > 0) {
+    const labels = referencingTransitions.map((t) => t.label).join(", ");
+    throw new ValidationError(
+      `Cannot delete "${statusKey}" — it's referenced by transition(s): ${labels}. Delete those first.`,
+    );
+  }
+
+  wfDoc.statuses = wfDoc.statuses.filter((s) => s.key !== statusKey);
+  wfDoc.updatedBy = new Types.ObjectId(actor.id);
+  await wfDoc.save();
+  return toDTO(wfDoc.toObject() as WorkflowDoc & { _id: unknown });
+}
+
+/** Delete a transition by id. Always safe — transitions are pure edges
+ *  with no downstream references. */
+export async function removeTransition(
+  orgId: string,
+  transitionId: string,
+  actor: { id: string },
+): Promise<WorkflowDTO> {
+  await connectMongo();
+  const wfDoc = await Workflow.findOne({ orgId: new Types.ObjectId(orgId) });
+  if (!wfDoc) throw new NotFoundError("Workflow not found");
+  const before = wfDoc.transitions.length;
+  wfDoc.transitions = wfDoc.transitions.filter((t) => t.id !== transitionId);
+  if (wfDoc.transitions.length === before) {
+    throw new NotFoundError(`Transition "${transitionId}" not found`);
+  }
+  wfDoc.updatedBy = new Types.ObjectId(actor.id);
+  await wfDoc.save();
+  return toDTO(wfDoc.toObject() as WorkflowDoc & { _id: unknown });
+}
+
 /**
  * Update the payment-success / payment-failure status mappings. These
  * are what the webhook handler writes into — renaming a status without

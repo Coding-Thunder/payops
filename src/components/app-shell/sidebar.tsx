@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   BarChart3Icon,
   CreditCardIcon,
+  GitBranchIcon,
   HomeIcon,
   KeyIcon,
   LayersIcon,
@@ -104,6 +105,12 @@ const SECTIONS: NavSection[] = [
         label: "Gateways",
         icon: KeyIcon,
         permissions: [Permission.GATEWAY_VIEW],
+      },
+      {
+        href: "/app/admin/workflow",
+        label: "Order workflow",
+        icon: GitBranchIcon,
+        permissions: [Permission.WORKFLOW_VIEW],
       },
       {
         href: "/app/admin/branding",

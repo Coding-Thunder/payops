@@ -18,6 +18,7 @@ export * from "./evidence";
 export * from "./quotation";
 export * from "./gateway";
 export * from "./signup";
+export * from "./workflow";
 export * from "./password-reset";
 export * from "./item-type";
 export * from "./business-setup";
