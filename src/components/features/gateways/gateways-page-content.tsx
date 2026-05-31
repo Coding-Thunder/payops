@@ -6,10 +6,13 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
+  AlertTriangleIcon,
   CheckCircle2Icon,
   ExternalLinkIcon,
   KeyIcon,
+  RefreshCwIcon,
   ShieldCheckIcon,
+  WrenchIcon,
   XCircleIcon,
 } from "lucide-react";
 
@@ -213,10 +216,260 @@ function ConnectedStripeCard({
           <dt className="text-muted-foreground">Connected</dt>
           <dd>{new Date(credential.configuredAt).toLocaleString()}</dd>
         </dl>
+
+        <WebhookHealthPanel canEdit={canEdit} />
       </CardContent>
     </Card>
   );
 }
+
+/* ────────────────────── Webhook verify + repair ───────────────────────── */
+
+interface WebhookHealthReport {
+  status:
+    | "healthy"
+    | "missing_events"
+    | "disabled"
+    | "not_found"
+    | "auth_failed"
+    | "unreachable";
+  endpointId: string | null;
+  expectedUrl: string;
+  livemode: boolean | null;
+  subscribedEvents: string[];
+  missingEvents: string[];
+  extraEvents: string[];
+  summary: string;
+}
+
+interface HealthResponse {
+  configured: boolean;
+  requiredEvents: string[];
+  report?: WebhookHealthReport;
+}
+
+function WebhookHealthPanel({ canEdit }: { canEdit: boolean }) {
+  const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [repairing, setRepairing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function verify() {
+    setVerifying(true);
+    setError(null);
+    try {
+      const res = await api.get<HealthResponse>(
+        "/api/admin/gateways/stripe/health",
+      );
+      setHealth(res);
+    } catch (err) {
+      setError(
+        err instanceof ApiClientError ? err.message : "Couldn't verify webhook",
+      );
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  async function repair() {
+    setRepairing(true);
+    setError(null);
+    try {
+      const res = await api.post<{
+        subscribedEvents: string[];
+        requiredEvents: string[];
+      }>("/api/admin/gateways/stripe/repair-webhook", {});
+      toast.success(
+        `Webhook updated — ${res.subscribedEvents.length} events subscribed`,
+      );
+      // Re-verify so the panel reflects the now-healthy state.
+      await verify();
+    } catch (err) {
+      setError(
+        err instanceof ApiClientError ? err.message : "Repair failed",
+      );
+    } finally {
+      setRepairing(false);
+    }
+  }
+
+  // Initial render: prompt + button. After verify, show the diff.
+  return (
+    <div className="space-y-3 rounded-md border bg-muted/30 p-3.5">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-[12.5px] font-semibold">Webhook health</div>
+          <div className="text-[11.5px] text-muted-foreground">
+            Confirm Stripe is sending us payment, refund, and dispute events.
+          </div>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={verify}
+          disabled={verifying || !canEdit}
+          className="gap-1.5"
+        >
+          <RefreshCwIcon
+            className={`size-3.5 ${verifying ? "animate-spin" : ""}`}
+          />
+          {verifying ? "Verifying…" : health ? "Re-verify" : "Verify"}
+        </Button>
+      </div>
+
+      {error ? (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {health?.report ? (
+        <WebhookHealthReportPanel
+          report={health.report}
+          requiredEvents={health.requiredEvents}
+          repairing={repairing}
+          onRepair={repair}
+          canEdit={canEdit}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function WebhookHealthReportPanel({
+  report,
+  requiredEvents,
+  repairing,
+  onRepair,
+  canEdit,
+}: {
+  report: WebhookHealthReport;
+  requiredEvents: string[];
+  repairing: boolean;
+  onRepair: () => void;
+  canEdit: boolean;
+}) {
+  const statusMeta = WEBHOOK_STATUS_META[report.status];
+  const canRepair =
+    canEdit &&
+    (report.status === "missing_events" || report.status === "not_found");
+
+  return (
+    <div className="space-y-3">
+      <div
+        className={`flex items-start gap-2 rounded-md border px-3 py-2 text-[12.5px] ${statusMeta.tone}`}
+      >
+        <statusMeta.Icon className="mt-0.5 size-4 shrink-0" />
+        <div className="flex-1">
+          <div className="font-semibold">{statusMeta.label}</div>
+          <div className="text-[12px] opacity-90">{report.summary}</div>
+        </div>
+        {canRepair ? (
+          <Button
+            size="sm"
+            onClick={onRepair}
+            disabled={repairing}
+            className="gap-1.5"
+          >
+            <WrenchIcon
+              className={`size-3.5 ${repairing ? "animate-spin" : ""}`}
+            />
+            {repairing ? "Repairing…" : "Repair"}
+          </Button>
+        ) : null}
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+          Events required by TraceTxn
+        </div>
+        <ul className="grid grid-cols-1 gap-y-1 sm:grid-cols-2">
+          {requiredEvents.map((e) => {
+            const present =
+              report.subscribedEvents.includes(e) ||
+              report.subscribedEvents.includes("*");
+            return (
+              <li
+                key={e}
+                className="flex items-center gap-2 text-[12px] font-mono"
+              >
+                {present ? (
+                  <CheckCircle2Icon className="size-3.5 text-emerald-600 shrink-0" />
+                ) : (
+                  <XCircleIcon className="size-3.5 text-destructive shrink-0" />
+                )}
+                <span className={present ? "" : "text-muted-foreground"}>
+                  {e}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+
+      {report.extraEvents.length > 0 ? (
+        <details className="text-[11.5px] text-muted-foreground">
+          <summary className="cursor-pointer">
+            {report.extraEvents.length} extra event
+            {report.extraEvents.length === 1 ? "" : "s"} subscribed (not
+            required by TraceTxn)
+          </summary>
+          <ul className="mt-1 ml-4 font-mono">
+            {report.extraEvents.map((e) => (
+              <li key={e}>· {e}</li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+
+      <div className="border-t pt-2 text-[11px] text-muted-foreground">
+        <div>
+          Webhook URL:{" "}
+          <code className="font-mono text-[10.5px]">{report.expectedUrl}</code>
+        </div>
+        {report.endpointId ? (
+          <div>
+            Endpoint id:{" "}
+            <code className="font-mono text-[10.5px]">{report.endpointId}</code>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+const WEBHOOK_STATUS_META = {
+  healthy: {
+    label: "Healthy",
+    tone: "border-emerald-200/60 bg-emerald-50/50 text-emerald-900",
+    Icon: CheckCircle2Icon,
+  },
+  missing_events: {
+    label: "Missing required events",
+    tone: "border-amber-200/60 bg-amber-50/60 text-amber-900",
+    Icon: AlertTriangleIcon,
+  },
+  disabled: {
+    label: "Endpoint disabled on Stripe",
+    tone: "border-amber-200/60 bg-amber-50/60 text-amber-900",
+    Icon: AlertTriangleIcon,
+  },
+  not_found: {
+    label: "No webhook registered",
+    tone: "border-destructive/40 bg-destructive/5 text-destructive",
+    Icon: XCircleIcon,
+  },
+  auth_failed: {
+    label: "Stripe rejected the saved key",
+    tone: "border-destructive/40 bg-destructive/5 text-destructive",
+    Icon: XCircleIcon,
+  },
+  unreachable: {
+    label: "Couldn't reach Stripe",
+    tone: "border-destructive/40 bg-destructive/5 text-destructive",
+    Icon: XCircleIcon,
+  },
+} as const;
 
 /* ────────────────────────────── Connect form ────────────────────────── */
 

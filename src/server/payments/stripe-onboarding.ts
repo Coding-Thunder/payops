@@ -233,3 +233,193 @@ export function buildStripeWebhookCallbackUrl(
 ): string {
   return `${appUrl.replace(/\/$/, "")}/api/webhooks/stripe/${orgId}`;
 }
+
+/* ──────────────────── Verify + repair (admin diagnostics) ─────────────────── */
+
+export type WebhookHealthStatus =
+  /** Endpoint found at our callback URL, status=enabled, all required
+   *  events subscribed. */
+  | "healthy"
+  /** Endpoint found but some required events missing. UI exposes a
+   *  "Repair" affordance to backfill them in-place. */
+  | "missing_events"
+  /** Endpoint exists but Stripe has it disabled. Common when an
+   *  operator paused it from the Stripe dashboard. */
+  | "disabled"
+  /** No endpoint at our callback URL. Either the operator deleted it
+   *  from Stripe, or we never finished the connect flow. */
+  | "not_found"
+  /** Stripe rejected our key — auth failure, revoked key, etc. */
+  | "auth_failed"
+  /** Couldn't reach Stripe at all. */
+  | "unreachable";
+
+export interface WebhookHealthReport {
+  status: WebhookHealthStatus;
+  /** Stripe webhook endpoint id when present. */
+  endpointId: string | null;
+  /** Callback URL we expected to find. Always populated so the UI
+   *  can show it next to the diagnostic. */
+  expectedUrl: string;
+  /** Live mode flag from the Stripe account (mismatch between this
+   *  and our stored GatewayMode is surfaced as a warning). */
+  livemode: boolean | null;
+  /** Events the endpoint is currently subscribed to (sorted). */
+  subscribedEvents: string[];
+  /** Events TraceTxn relies on that are NOT on the endpoint. */
+  missingEvents: string[];
+  /** Events subscribed but not in TraceTxn's required list — only
+   *  informational. Doesn't block "healthy" status. */
+  extraEvents: string[];
+  /** Human-readable summary for surfacing in the UI alert. */
+  summary: string;
+}
+
+/** Sort + dedupe. Stripe returns events in registration order which
+ *  isn't useful for UI diffing. */
+function normalize(events: readonly string[]): string[] {
+  return Array.from(new Set(events)).sort();
+}
+
+/**
+ * Probe the operator's Stripe account: confirm the key still works,
+ * find our webhook endpoint at the canonical URL, diff its subscribed
+ * events against TRACETXN_STRIPE_EVENTS. Returns a structured report
+ * the admin UI renders verbatim.
+ *
+ * Pure read — no mutation. Repair lives in `repairStripeWebhookEvents`.
+ */
+export async function verifyStripeWebhookHealth(args: {
+  secretKey: string;
+  callbackUrl: string;
+}): Promise<WebhookHealthReport> {
+  const required = normalize(TRACETXN_STRIPE_EVENTS);
+  const base: WebhookHealthReport = {
+    status: "unreachable",
+    endpointId: null,
+    expectedUrl: args.callbackUrl,
+    livemode: null,
+    subscribedEvents: [],
+    missingEvents: [...required],
+    extraEvents: [],
+    summary: "",
+  };
+
+  const stripe = getStripeForSecret(args.secretKey);
+
+  // 1. Key health probe — same call we use during initial verify so
+  // failure modes surface identically.
+  let livemode: boolean | null = null;
+  try {
+    const balance = await stripe.balance.retrieve();
+    livemode = Boolean(balance.livemode);
+  } catch (err) {
+    const mapped = mapStripeError(err);
+    return {
+      ...base,
+      status:
+        mapped.code === "AUTH_FAILED" || mapped.code === "PERMISSION_DENIED"
+          ? "auth_failed"
+          : "unreachable",
+      livemode: null,
+      summary: mapped.message,
+    };
+  }
+
+  // 2. List webhooks + find ours by URL.
+  let endpoint: Stripe.WebhookEndpoint | null = null;
+  try {
+    const all = await stripe.webhookEndpoints.list({ limit: 100 });
+    endpoint = all.data.find((ep) => ep.url === args.callbackUrl) ?? null;
+  } catch (err) {
+    const mapped = mapStripeError(err);
+    return {
+      ...base,
+      status: "unreachable",
+      livemode,
+      summary: `Couldn't list Stripe webhooks: ${mapped.message}`,
+    };
+  }
+
+  if (!endpoint) {
+    return {
+      ...base,
+      status: "not_found",
+      livemode,
+      summary:
+        "No Stripe webhook is registered for this workspace yet. Click Repair to register one.",
+    };
+  }
+
+  const subscribed = normalize(endpoint.enabled_events ?? []);
+  // "*" means "all events" — Stripe accepts it as a wildcard; treat
+  // it as covering every required event.
+  const isWildcard = subscribed.includes("*");
+  const missing = isWildcard
+    ? []
+    : required.filter((e) => !subscribed.includes(e));
+  const extra = subscribed.filter(
+    (e) => e !== "*" && !required.includes(e),
+  );
+
+  if (endpoint.status === "disabled") {
+    return {
+      ...base,
+      status: "disabled",
+      endpointId: endpoint.id,
+      livemode,
+      subscribedEvents: subscribed,
+      missingEvents: missing,
+      extraEvents: extra,
+      summary:
+        "Stripe shows this endpoint as disabled. Re-enable it in the Stripe dashboard, or re-connect from TraceTxn to register a fresh one.",
+    };
+  }
+
+  if (missing.length > 0) {
+    return {
+      ...base,
+      status: "missing_events",
+      endpointId: endpoint.id,
+      livemode,
+      subscribedEvents: subscribed,
+      missingEvents: missing,
+      extraEvents: extra,
+      summary: `Webhook is live but missing ${missing.length} event${
+        missing.length === 1 ? "" : "s"
+      } TraceTxn relies on. Click Repair to add them.`,
+    };
+  }
+
+  return {
+    ...base,
+    status: "healthy",
+    endpointId: endpoint.id,
+    livemode,
+    subscribedEvents: subscribed,
+    missingEvents: [],
+    extraEvents: extra,
+    summary: `Webhook is live and subscribed to all ${required.length} events TraceTxn needs.`,
+  };
+}
+
+/**
+ * Backfill missing events onto an existing webhook endpoint in place.
+ * Idempotent: re-running is safe; Stripe accepts the full event list
+ * and just updates `enabled_events` to that set.
+ *
+ * Does NOT change the endpoint id or signing secret — so our encrypted
+ * webhookSecret in `gateway_credentials` keeps validating signatures.
+ */
+export async function repairStripeWebhookEvents(args: {
+  secretKey: string;
+  endpointId: string;
+}): Promise<{ subscribedEvents: string[] }> {
+  const stripe = getStripeForSecret(args.secretKey);
+  const updated = await stripe.webhookEndpoints.update(args.endpointId, {
+    enabled_events: [
+      ...TRACETXN_STRIPE_EVENTS,
+    ] as unknown as Stripe.WebhookEndpointUpdateParams.EnabledEvent[],
+  });
+  return { subscribedEvents: normalize(updated.enabled_events ?? []) };
+}

@@ -450,6 +450,90 @@ export async function testStripeSecret(
  * Lists every per-org credential row (without decrypting anything).
  * Useful for the admin UI to render the "configured gateways" list.
  */
+/* ───────────────── Stripe webhook health diagnostics ──────────────────── */
+
+/**
+ * Probe the org's saved Stripe credential and return a webhook-health
+ * report — what's subscribed vs what TraceTxn needs vs what's extra.
+ * Pure read; safe to call repeatedly from the admin UI.
+ *
+ * Pulls the per-org webhook endpoint id off the saved credential
+ * (stored on connect) so subsequent verify calls don't have to re-list
+ * the operator's Stripe webhooks just to find ours by URL — though
+ * verifyStripeWebhookHealth also does that fallback.
+ */
+export async function probeStripeWebhookForOrg(args: {
+  orgId: string;
+  appUrl: string;
+}): Promise<
+  | { ok: false; reason: "no_credential" }
+  | { ok: true; report: import("./stripe-onboarding").WebhookHealthReport }
+> {
+  requireOrgId(args.orgId);
+  const resolved = await loadGatewayCredential(
+    args.orgId,
+    "STRIPE" as PaymentGatewayKey,
+  );
+  if (!resolved) {
+    return { ok: false, reason: "no_credential" };
+  }
+  const callbackUrl = buildStripeWebhookCallbackUrl(args.appUrl, args.orgId);
+  const { verifyStripeWebhookHealth } = await import("./stripe-onboarding");
+  const report = await verifyStripeWebhookHealth({
+    secretKey: resolved.secretKey,
+    callbackUrl,
+  });
+  return { ok: true, report };
+}
+
+/**
+ * Backfill missing events on the org's existing Stripe webhook
+ * endpoint. Mutating sibling to probeStripeWebhookForOrg: same lookup,
+ * same idempotency guarantees, but issues an updateWebhookEndpoint
+ * call instead of a list. Returns the post-repair event list.
+ */
+export async function repairStripeWebhookForOrg(args: {
+  orgId: string;
+  appUrl: string;
+}): Promise<
+  | { ok: false; reason: "no_credential" | "no_endpoint" }
+  | { ok: true; subscribedEvents: string[] }
+> {
+  requireOrgId(args.orgId);
+  const resolved = await loadGatewayCredential(
+    args.orgId,
+    "STRIPE" as PaymentGatewayKey,
+  );
+  if (!resolved) return { ok: false, reason: "no_credential" };
+
+  // Need the endpointId — try the saved credential first, fall back to
+  // a live lookup against the operator's Stripe account.
+  const doc = await GatewayCredential.findOne({
+    orgId: orgIdFilter(args.orgId),
+    gateway: "STRIPE",
+  })
+    .select({ webhookEndpointId: 1 })
+    .lean<{ webhookEndpointId?: string | null }>();
+  let endpointId = doc?.webhookEndpointId ?? null;
+  if (!endpointId) {
+    const callbackUrl = buildStripeWebhookCallbackUrl(args.appUrl, args.orgId);
+    const { verifyStripeWebhookHealth } = await import("./stripe-onboarding");
+    const report = await verifyStripeWebhookHealth({
+      secretKey: resolved.secretKey,
+      callbackUrl,
+    });
+    endpointId = report.endpointId;
+  }
+  if (!endpointId) return { ok: false, reason: "no_endpoint" };
+
+  const { repairStripeWebhookEvents } = await import("./stripe-onboarding");
+  const out = await repairStripeWebhookEvents({
+    secretKey: resolved.secretKey,
+    endpointId,
+  });
+  return { ok: true, subscribedEvents: out.subscribedEvents };
+}
+
 export async function listGatewayCredentialsForOrg(
   orgId: string,
 ): Promise<SavedCredentialDTO[]> {
