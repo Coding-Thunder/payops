@@ -58,6 +58,7 @@ export function FirebaseAuthForm({
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState<null | "email" | "google">(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [cfToken, setCfToken] = useState<string | null>(null);
 
   const requiresToken = Boolean(turnstileSiteKey);
@@ -117,6 +118,7 @@ export function FirebaseAuthForm({
       await exchangeIdTokenForSession(idToken);
     } catch (err) {
       setError(humanizeAuthError(err, mode));
+      setErrorDetails(dumpErrorForUi(err));
     } finally {
       setBusy(null);
     }
@@ -139,6 +141,7 @@ export function FirebaseAuthForm({
       await exchangeIdTokenForSession(idToken);
     } catch (err) {
       setError(humanizeAuthError(err, mode));
+      setErrorDetails(dumpErrorForUi(err));
     } finally {
       setBusy(null);
     }
@@ -151,7 +154,14 @@ export function FirebaseAuthForm({
           <AlertTitle>
             {mode === "signup" ? "Sign-up failed" : "Sign-in failed"}
           </AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>
+            <div>{error}</div>
+            {errorDetails ? (
+              <pre className="mt-3 max-h-64 overflow-auto rounded bg-black/20 p-2 text-[10px] leading-snug whitespace-pre-wrap break-all font-mono">
+                {errorDetails}
+              </pre>
+            ) : null}
+          </AlertDescription>
         </Alert>
       ) : null}
 
@@ -257,6 +267,35 @@ function safeNext(value?: string): string {
   if (value.startsWith("/login")) return "/app/dashboard";
   if (value.startsWith("/signup")) return "/app/dashboard";
   return value;
+}
+
+/** Renders every interesting field of a caught error as a single
+ *  inspectable string. Goal: never need DevTools to debug a failed
+ *  auth attempt — the whole payload appears under the inline alert. */
+function dumpErrorForUi(err: unknown): string {
+  const e = err as {
+    name?: string;
+    code?: string;
+    message?: string;
+    customData?: unknown;
+    stack?: string;
+  } | null;
+  if (!e) return "(no error object)";
+  return [
+    `name:    ${e.name ?? "(unknown)"}`,
+    `code:    ${e.code ?? "(no code)"}`,
+    `message: ${e.message ?? "(no message)"}`,
+    `customData: ${safeStringify(e.customData)}`,
+    `stack:\n${e.stack ?? "(no stack)"}`,
+  ].join("\n");
+}
+
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2) ?? "(undefined)";
+  } catch (err) {
+    return `(unstringifiable: ${err instanceof Error ? err.message : String(err)})`;
+  }
 }
 
 function humanizeAuthError(err: unknown, mode: "signin" | "signup"): string {
