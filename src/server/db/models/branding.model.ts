@@ -33,9 +33,21 @@ export interface BrandingDoc {
    *  is the right behaviour for tenants who haven't completed SPF/DKIM
    *  for their own domain. */
   senderEmail: string;
-  /** Public path to the brand mark (e.g. `/branding/logo-ab12.png`).
+  /** Public URL to the brand mark. New uploads land at
+   *  `/api/branding/logo/{orgId}/{hash}.{ext}` and are served by the
+   *  per-org logo route handler from `logoBytes` below. Legacy values
+   *  starting with `/branding/...` are disk-served files from the
+   *  pre-Mongo era — they continue to work as long as the file is on
+   *  disk, but are replaced by Mongo-backed URLs on the next upload.
    *  Empty string disables the logo on customer surfaces. */
   logo: string;
+  /** Raw bytes for the brand mark, stored on the Branding doc itself so
+   *  the file survives deploys and is shared across app instances. Only
+   *  populated when `logo` is a Mongo-backed URL. Capped at 512 KB at
+   *  the upload service. Served by the public per-org route handler. */
+  logoBytes?: Buffer | null;
+  /** MIME type matched against bytesMatchMime sniffing at upload time. */
+  logoMimeType?: string | null;
   primaryColor: string;
   /** Optional one-liner shown on /pay/success + /pay/cancelled below
    *  the brand name. Empty string hides it. */
@@ -69,6 +81,8 @@ const brandingSchema = new Schema<BrandingDoc>(
     supportPhone: { type: String, default: "", trim: true, maxlength: 32 },
     senderEmail: { type: String, default: "", trim: true, maxlength: 254 },
     logo: { type: String, default: "", maxlength: 200 },
+    logoBytes: { type: Buffer, default: null, select: false },
+    logoMimeType: { type: String, default: null, maxlength: 64 },
     primaryColor: {
       type: String,
       required: true,

@@ -1,8 +1,6 @@
 import "server-only";
 
-import { promises as fs } from "node:fs";
-import path from "node:path";
-import { randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 
 import { Types } from "mongoose";
 
@@ -58,9 +56,6 @@ const ALLOWED_MIME: ReadonlyMap<string, string> = new Map([
   ["image/webp", "webp"],
   ["image/gif", "gif"],
 ]);
-
-const PUBLIC_DIR = path.join(process.cwd(), "public");
-const BRANDING_DIR = path.join(PUBLIC_DIR, "branding");
 
 // ─── Mapping ───────────────────────────────────────────────────────────────
 
@@ -297,7 +292,16 @@ interface SaveLogoInput {
   mimeType: string;
 }
 
-async function saveBrandingLogoFile(input: SaveLogoInput): Promise<string> {
+interface ValidatedLogo {
+  buffer: Buffer;
+  mimeType: string;
+  ext: string;
+  /** Content hash — used as the URL's cache-busting segment so updates
+   *  invalidate aggressively-cached customer-facing copies. */
+  hash: string;
+}
+
+function validateLogoUpload(input: SaveLogoInput): ValidatedLogo {
   if (!ALLOWED_MIME.has(input.mimeType)) {
     throw new ValidationError(
       "Unsupported image type. Use PNG, JPEG, WebP, or GIF.",
@@ -312,26 +316,29 @@ async function saveBrandingLogoFile(input: SaveLogoInput): Promise<string> {
     );
   }
   // The browser-supplied `mimeType` is attacker-controlled. Sniff the
-  // bytes and confirm they actually match the declared type before
-  // writing the file — without this, an HTML/SVG payload labelled as
-  // image/png lands on a public path and becomes stored XSS the moment
+  // bytes and confirm they match the declared type before storing — an
+  // HTML/SVG payload labelled image/png that the route hands back with
+  // the declared Content-Type would otherwise be stored XSS the moment
   // anyone opens the URL directly.
   if (!bytesMatchMime(input.buffer, input.mimeType)) {
-    throw new ValidationError("Uploaded file does not match the declared image type");
+    throw new ValidationError(
+      "Uploaded file does not match the declared image type",
+    );
   }
   const ext = ALLOWED_MIME.get(input.mimeType)!;
-  const suffix = randomBytes(4).toString("hex");
-  const fileName = `workspace-${suffix}.${ext}`;
-  const fullPath = path.join(BRANDING_DIR, fileName);
-  const resolved = path.resolve(fullPath);
-  // Defensive: ensure we stay inside BRANDING_DIR even though the file
-  // name we built can't escape today.
-  if (!resolved.startsWith(path.resolve(BRANDING_DIR) + path.sep)) {
-    throw new ValidationError("Invalid file path");
-  }
-  await fs.mkdir(BRANDING_DIR, { recursive: true });
-  await fs.writeFile(resolved, input.buffer);
-  return `/branding/${fileName}`;
+  const hash = createHash("sha256")
+    .update(input.buffer)
+    .digest("hex")
+    .slice(0, 16);
+  return { buffer: input.buffer, mimeType: input.mimeType, ext, hash };
+}
+
+function buildLogoUrl(orgId: string | null, hash: string, ext: string): string {
+  // Per-org URL. The hash + ext are cosmetic — they're cache-busters,
+  // not part of the lookup. The route always serves the current bytes
+  // stored on the Branding doc for that orgId.
+  const key = orgId ?? BRANDING_KEY;
+  return `/api/branding/logo/${key}/${hash}.${ext}`;
 }
 
 export async function replaceBrandingLogo(
@@ -340,7 +347,8 @@ export async function replaceBrandingLogo(
 ): Promise<BrandingDTO> {
   const existing = await ensureBrandingDocument(ctx.orgId ?? null);
   const previousLogo = existing.logo;
-  const nextLogo = await saveBrandingLogoFile(file);
+  const validated = validateLogoUpload(file);
+  const nextLogo = buildLogoUrl(ctx.orgId ?? null, validated.hash, validated.ext);
 
   const updateFilter = ctx.orgId
     ? { orgId: orgIdFilter(ctx.orgId) }
@@ -348,7 +356,12 @@ export async function replaceBrandingLogo(
   const updated = await Branding.findOneAndUpdate(
     updateFilter,
     {
-      $set: { logo: nextLogo, updatedBy: new Types.ObjectId(ctx.actor.id) },
+      $set: {
+        logo: nextLogo,
+        logoBytes: validated.buffer,
+        logoMimeType: validated.mimeType,
+        updatedBy: new Types.ObjectId(ctx.actor.id),
+      },
     },
     { returnDocument: "after" },
   ).lean<BrandingDoc>();
