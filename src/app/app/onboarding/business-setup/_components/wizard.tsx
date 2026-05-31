@@ -815,6 +815,7 @@ function Step4Preview({
         id: "preview",
         key: state.itemTypeKey || "preview",
         name: state.itemTypeName || "Item",
+        displayName: state.itemTypeName || "Item",
         description: state.itemTypeDescription || null,
         pricingModel: state.vertical
           ? BUSINESS_TEMPLATES[state.vertical].itemType.pricingModel

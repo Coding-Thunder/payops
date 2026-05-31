@@ -6,6 +6,7 @@ import { useMemo, useRef, useState } from "react";
 import { PackageIcon, PlusIcon, TrashIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { getItemTypeDisplayName } from "@/lib/display/item-type";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -176,18 +177,17 @@ export function DynamicOrderForm({
     (l) => byKey.get(l.itemTypeKey)?.requiresScheduling,
   );
 
-  // Lazy-init the scheduling block when the first time-windowed line
-  // arrives. Default window: tomorrow + 1 day.
-  if (requiresScheduling && scheduling === null) {
+  /** Default scheduling window: tomorrow → day after. Generated lazily
+   *  in event handlers (NOT during render) so the render function
+   *  stays pure under React 19's purity rule. */
+  function defaultScheduling(): SchedulingDraft {
     const start = new Date(Date.now() + 86_400_000);
     const end = new Date(Date.now() + 2 * 86_400_000);
-    setScheduling({
+    return {
       type: SchedulingType.FIXED_WINDOW,
       startsAt: toLocalInput(start),
       endsAt: toLocalInput(end),
-    });
-  } else if (!requiresScheduling && scheduling !== null) {
-    setScheduling(null);
+    };
   }
 
   const grandTotal = lines.reduce(
@@ -199,6 +199,12 @@ export function DynamicOrderForm({
     const t = byKey.get(itemTypeKey);
     if (!t) return;
     setLines((prev) => [...prev, newLine(t)]);
+    // Lazy-init the scheduling window when the first scheduling-
+    // required line lands. Replaces a render-side mutation block that
+    // tripped React 19's purity rule.
+    if (t.requiresScheduling && scheduling === null) {
+      setScheduling(defaultScheduling());
+    }
   }
 
   /** Pass 6c — pre-fill a line from a catalog Item row. Carries
@@ -225,6 +231,9 @@ export function DynamicOrderForm({
         attributes: { ...(it.attributes ?? {}) },
       },
     ]);
+    if (t.requiresScheduling && scheduling === null) {
+      setScheduling(defaultScheduling());
+    }
   }
 
   function updateLine(localId: string, patch: Partial<LineDraft>): void {
@@ -234,7 +243,16 @@ export function DynamicOrderForm({
   }
 
   function removeLine(localId: string): void {
-    setLines((prev) => prev.filter((l) => l.localId !== localId));
+    setLines((prev) => {
+      const next = prev.filter((l) => l.localId !== localId);
+      const stillNeedsScheduling = next.some(
+        (l) => byKey.get(l.itemTypeKey)?.requiresScheduling,
+      );
+      if (!stillNeedsScheduling && scheduling !== null) {
+        setScheduling(null);
+      }
+      return next;
+    });
   }
 
   function updateLineAttribute(
@@ -423,8 +441,8 @@ export function DynamicOrderForm({
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <Badge variant="secondary" className="font-mono text-[11px]">
-                      {line.itemTypeKey}
+                    <Badge variant="secondary" className="text-[11px]">
+                      {getItemTypeDisplayName(itemType ?? null)}
                     </Badge>
                     {line.itemId ? (
                       <Badge variant="outline" className="text-[10.5px] gap-1">

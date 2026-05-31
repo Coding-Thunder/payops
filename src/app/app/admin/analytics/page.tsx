@@ -17,8 +17,11 @@ export const metadata = { title: "Analytics" };
 export const dynamic = "force-dynamic";
 
 export default async function AdminAnalyticsPage() {
-  await requirePermission(Permission.ANALYTICS_VIEW);
-  const summary = await getAnalyticsSummary();
+  const user = await requirePermission(Permission.ANALYTICS_VIEW);
+  // Pass orgId so analytics is tenant-scoped + the per-item-type
+  // breakdown can join against THIS tenant's ItemType catalog to
+  // resolve display names.
+  const summary = await getAnalyticsSummary({}, { orgId: user.orgId });
 
   return (
     <div className="space-y-8">
@@ -90,8 +93,8 @@ export default async function AdminAnalyticsPage() {
                     key={b.itemTypeKey}
                     className="flex items-center justify-between py-2"
                   >
-                    <span className="text-foreground font-mono text-[12px]">
-                      {b.itemTypeKey}
+                    <span className="text-foreground text-[13px]">
+                      {b.displayName}
                     </span>
                     <span className="text-muted-foreground tabular-nums">
                       {b.count} orders ·{" "}

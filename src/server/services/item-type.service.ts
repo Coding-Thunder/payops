@@ -48,6 +48,13 @@ export interface ItemTypeDTO {
   id: string;
   key: string;
   name: string;
+  /** Pre-resolved display label. Mirrors `name` for now; carried as
+   *  a separate field so every UI surface reads `displayName` (the
+   *  stable operator-facing slot) and never `key` (the internal id).
+   *  Helps make the leak class extinct via type discipline rather
+   *  than convention. Route all renders through
+   *  `getItemTypeDisplayName()` from `@/lib/display/item-type`. */
+  displayName: string;
   description: string | null;
   pricingModel: ItemPricingModel;
   requiresScheduling: boolean;
@@ -66,6 +73,7 @@ function toDTO(
     id: String(doc._id),
     key: doc.key,
     name: doc.name,
+    displayName: doc.name?.trim() || "Unknown item type",
     description: doc.description ?? null,
     pricingModel: doc.pricingModel,
     requiresScheduling: doc.requiresScheduling,

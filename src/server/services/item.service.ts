@@ -45,6 +45,13 @@ import { validateLineAttributes } from "./attribute-validator.service";
 export interface ItemDTO {
   id: string;
   itemTypeKey: string;
+  /** Pre-resolved tenant-curated label for the ItemType this item
+   *  belongs to. Populated by the service when listing/looking-up
+   *  items so the UI can render the operator-facing label without
+   *  fetching the catalog separately. Falls back to "Unknown item
+   *  type" if the referenced ItemType has been deleted. Never let
+   *  the UI render `itemTypeKey` directly. */
+  itemTypeDisplayName: string;
   name: string;
   description: string | null;
   basePrice: { amount: number; currency: Currency } | null;
@@ -57,10 +64,14 @@ export interface ItemDTO {
   updatedAt: string;
 }
 
-function toDTO(doc: ItemDoc & { _id: Types.ObjectId }): ItemDTO {
+function toDTO(
+  doc: ItemDoc & { _id: Types.ObjectId },
+  itemTypeDisplayName: string,
+): ItemDTO {
   return {
     id: String(doc._id),
     itemTypeKey: doc.itemTypeKey,
+    itemTypeDisplayName,
     name: doc.name,
     description: doc.description ?? null,
     basePrice: doc.basePrice
@@ -90,6 +101,44 @@ export interface ItemContext {
   actorName: string;
 }
 
+/**
+ * Resolve display names for a set of itemTypeKeys against a tenant's
+ * ItemType catalog. Returns a Map keyed by itemTypeKey →
+ * tenant-curated label. Keys with no matching ItemType (deleted /
+ * never defined) fall back to "Unknown item type" at the call site.
+ *
+ * One indexed lookup; called by every list/get function that returns
+ * ItemDTO so the UI never has to fetch the catalog separately just
+ * to render labels. */
+async function loadItemTypeNamesByKey(
+  orgId: string,
+  keys: readonly string[],
+): Promise<Map<string, string>> {
+  if (keys.length === 0) return new Map();
+  const unique = Array.from(new Set(keys));
+  const docs = await ItemType.find({
+    orgId: orgIdFilter(orgId),
+    key: { $in: unique },
+  })
+    .select({ key: 1, name: 1 })
+    .lean<{ key: string; name: string }[]>();
+  const map = new Map<string, string>();
+  for (const d of docs) {
+    if (d?.name?.trim()) map.set(d.key, d.name.trim());
+  }
+  return map;
+}
+
+function dtoWithDisplayName(
+  doc: ItemDoc & { _id: Types.ObjectId },
+  nameByKey: Map<string, string>,
+): ItemDTO {
+  return toDTO(
+    doc,
+    nameByKey.get(doc.itemTypeKey) ?? "Unknown item type",
+  );
+}
+
 /* ────────────────────────── Read helpers ─────────────────────────────── */
 
 /** Per-org active catalog list. Used by the create-order form's
@@ -109,7 +158,11 @@ export async function listActiveItems(
   const docs = await Item.find(query)
     .sort({ name: 1 })
     .lean<(ItemDoc & { _id: Types.ObjectId })[]>();
-  return docs.map(toDTO);
+  const nameByKey = await loadItemTypeNamesByKey(
+    scopedOrgId,
+    docs.map((d) => d.itemTypeKey),
+  );
+  return docs.map((d) => dtoWithDisplayName(d, nameByKey));
 }
 
 /** Admin list — includes ARCHIVED + DISABLED rows so admins can audit
@@ -124,7 +177,11 @@ export async function listAllItems(
   const docs = await Item.find(query)
     .sort({ status: 1, name: 1 })
     .lean<(ItemDoc & { _id: Types.ObjectId })[]>();
-  return docs.map(toDTO);
+  const nameByKey = await loadItemTypeNamesByKey(
+    ctx.orgId,
+    docs.map((d) => d.itemTypeKey),
+  );
+  return docs.map((d) => dtoWithDisplayName(d, nameByKey));
 }
 
 export async function getItemById(
@@ -141,7 +198,8 @@ export async function getItemById(
     orgId: orgIdFilter(ctx.orgId),
   }).lean<ItemDoc & { _id: Types.ObjectId }>();
   if (!doc) throw new NotFoundError("Item not found");
-  return toDTO(doc);
+  const nameByKey = await loadItemTypeNamesByKey(ctx.orgId, [doc.itemTypeKey]);
+  return dtoWithDisplayName(doc, nameByKey);
 }
 
 /* ────────────────────────── Write paths ──────────────────────────────── */
@@ -209,7 +267,9 @@ export async function createItem(
       },
       updatedBy: new Types.ObjectId(ctx.actorId),
     });
-    return toDTO(created.toObject() as ItemDoc & { _id: Types.ObjectId });
+    const doc = created.toObject() as ItemDoc & { _id: Types.ObjectId };
+    const nameByKey = await loadItemTypeNamesByKey(ctx.orgId, [doc.itemTypeKey]);
+    return dtoWithDisplayName(doc, nameByKey);
   } catch (err) {
     if (
       err &&
@@ -280,7 +340,8 @@ export async function updateItem(
       { new: true, runValidators: true },
     ).lean<ItemDoc & { _id: Types.ObjectId }>();
     if (!updated) throw new NotFoundError("Item not found");
-    return toDTO(updated);
+    const nameByKey = await loadItemTypeNamesByKey(ctx.orgId, [updated.itemTypeKey]);
+    return dtoWithDisplayName(updated, nameByKey);
   } catch (err) {
     if (
       err &&
@@ -318,7 +379,8 @@ export async function archiveItem(
     { new: true },
   ).lean<ItemDoc & { _id: Types.ObjectId }>();
   if (!updated) throw new NotFoundError("Item not found");
-  return toDTO(updated);
+  const nameByKey = await loadItemTypeNamesByKey(ctx.orgId, [updated.itemTypeKey]);
+  return dtoWithDisplayName(updated, nameByKey);
 }
 
 export async function restoreItem(
@@ -341,5 +403,6 @@ export async function restoreItem(
     { new: true },
   ).lean<ItemDoc & { _id: Types.ObjectId }>();
   if (!updated) throw new NotFoundError("Item not found");
-  return toDTO(updated);
+  const nameByKey = await loadItemTypeNamesByKey(ctx.orgId, [updated.itemTypeKey]);
+  return dtoWithDisplayName(updated, nameByKey);
 }

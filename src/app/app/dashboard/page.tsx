@@ -52,11 +52,11 @@ export default async function DashboardPage() {
         { actor: user, orgId: user.orgId },
       ),
       canSeeAnalytics
-        ? getAnalyticsSummary({ from: thirtyAgo, to: now })
+        ? getAnalyticsSummary({ from: thirtyAgo, to: now }, { orgId: user.orgId })
         : null,
       // Prior 30-day window — drives the trend deltas on the KPI row.
       canSeeAnalytics
-        ? getAnalyticsSummary({ from: sixtyAgo, to: thirtyAgo })
+        ? getAnalyticsSummary({ from: sixtyAgo, to: thirtyAgo }, { orgId: user.orgId })
         : null,
       canSeeAll ? listAtRiskOrders(user.orgId) : [],
       getOnboardingState(user.orgId),

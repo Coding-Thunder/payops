@@ -4,8 +4,10 @@ import {
   OrderStatus,
   RecordState,
 } from "@/lib/constants/enums";
-import { Order } from "@/server/db/models";
+import { ItemType, Order } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
+import { orgIdFilter } from "@/server/db/org/org-context";
+import { Types } from "mongoose";
 
 export interface AnalyticsRange {
   from?: Date;
@@ -31,7 +33,14 @@ export interface DailyPoint {
 }
 
 export interface ItemTypeBreakdown {
+  /** Stable internal identifier — kept for analytics joins / future
+   *  drill-downs. NEVER render this directly in the UI. */
   itemTypeKey: string;
+  /** Operator-facing label resolved by joining each aggregation
+   *  bucket against the tenant's per-org ItemType catalog. Falls
+   *  back to "Unknown item type" when an order references a key no
+   *  longer defined (e.g. ItemType deleted after order creation). */
+  displayName: string;
   count: number;
   revenue: number;
 }
@@ -59,13 +68,20 @@ function resolveRange(range: AnalyticsRange): { from: Date; to: Date } {
 
 export async function getAnalyticsSummary(
   range: AnalyticsRange = {},
+  ctx: { orgId?: string | null } = {},
 ): Promise<AnalyticsSummary> {
   await connectMongo();
   const { from, to } = resolveRange(range);
-  const baseMatch = {
+  // Tenant scope: when an orgId is supplied, every aggregation is
+  // pinned to that org. Legacy callers (no orgId) keep the old
+  // cross-tenant behavior — phased out as callers migrate.
+  const baseMatch: Record<string, unknown> = {
     state: RecordState.ACTIVE,
     createdAt: { $gte: from, $lte: to },
   };
+  if (ctx.orgId && Types.ObjectId.isValid(ctx.orgId)) {
+    baseMatch.orgId = new Types.ObjectId(ctx.orgId);
+  }
 
   const [statusAgg, dailyAgg, bookingAgg, staffAgg] = await Promise.all([
     Order.aggregate<{
@@ -216,11 +232,14 @@ export async function getAnalyticsSummary(
       revenue: round2(d.revenue),
       orders: d.orders,
     })),
-    itemTypes: bookingAgg.map((b) => ({
-      itemTypeKey: b._id,
-      count: b.count,
-      revenue: round2(b.revenue),
-    })),
+    itemTypes: await resolveItemTypeDisplayNames(
+      bookingAgg.map((b) => ({
+        itemTypeKey: b._id,
+        count: b.count,
+        revenue: round2(b.revenue),
+      })),
+      ctx.orgId ?? null,
+    ),
     topStaff: staffAgg.map((s) => ({
       userId: String(s._id.userId),
       name: s._id.name,
@@ -232,4 +251,40 @@ export async function getAnalyticsSummary(
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/**
+ * Join analytics buckets against the tenant's ItemType catalog to
+ * populate `displayName`. Single round-trip lookup keyed by the
+ * distinct itemTypeKeys seen in the aggregation.
+ *
+ * Why this lives at the service layer (not the UI): the UI must
+ * NEVER render `itemTypeKey` directly — that's how the internal
+ * "engagement" key leaked into customer screens. By resolving here,
+ * the DTO carries a stable, operator-facing `displayName` and the
+ * UI is free of any fallback logic.
+ *
+ * Missing-name handling: if an Order references an itemTypeKey that
+ * no longer exists in the catalog (deleted ItemType, cross-tenant
+ * legacy data), we surface "Unknown item type" — never the raw key.
+ */
+async function resolveItemTypeDisplayNames(
+  buckets: Array<Omit<ItemTypeBreakdown, "displayName">>,
+  orgId: string | null,
+): Promise<ItemTypeBreakdown[]> {
+  if (buckets.length === 0) return [];
+  const keys = Array.from(new Set(buckets.map((b) => b.itemTypeKey)));
+  const filter: Record<string, unknown> = { key: { $in: keys } };
+  if (orgId) filter.orgId = orgIdFilter(orgId);
+  const docs = await ItemType.find(filter)
+    .select({ key: 1, name: 1 })
+    .lean<{ key: string; name: string }[]>();
+  const byKey = new Map<string, string>();
+  for (const d of docs) {
+    if (d?.name?.trim()) byKey.set(d.key, d.name.trim());
+  }
+  return buckets.map((b) => ({
+    ...b,
+    displayName: byKey.get(b.itemTypeKey) ?? "Unknown item type",
+  }));
 }

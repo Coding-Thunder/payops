@@ -103,8 +103,8 @@ export function ItemTable({ items }: ItemTableProps) {
               )}
             </TableCell>
             <TableCell>
-              <Badge variant="secondary" className="font-mono text-[11px]">
-                {it.itemTypeKey}
+              <Badge variant="secondary" className="text-[11px]">
+                {it.itemTypeDisplayName}
               </Badge>
             </TableCell>
             <TableCell>
