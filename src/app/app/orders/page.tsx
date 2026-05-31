@@ -25,7 +25,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
 
   const sp = await searchParams;
   const params = listOrdersQuerySchema.parse(flatten(sp));
-  const data = await listOrders(params, { actor: user });
+  const data = await listOrders(params, { actor: user, orgId: user.orgId });
 
   return (
     <div className="space-y-6">

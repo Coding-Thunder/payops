@@ -37,7 +37,7 @@ export function LogoPickerRow({
   altText,
   fileInputRef,
   onPick,
-  hint = "PNG, JPEG, WebP, GIF, or SVG · up to 512KB.",
+  hint = "PNG, JPEG, WebP, or GIF · up to 512KB.",
   size = 56,
   className,
 }: LogoPickerRowProps) {
@@ -69,7 +69,7 @@ export function LogoPickerRow({
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+        accept="image/png,image/jpeg,image/webp,image/gif"
         className="hidden"
         onChange={(e) => onPick(e.target.files?.[0] ?? null)}
       />

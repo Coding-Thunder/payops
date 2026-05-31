@@ -24,7 +24,7 @@ export default async function EmailComposeRoute({
   const user = await requirePermission(Permission.ORDER_VIEW_OWN);
   const { id } = await params;
   try {
-    await getOrderById(id, { actor: user });
+    await getOrderById(id, { actor: user, orgId: user.orgId });
   } catch (err) {
     if (err instanceof NotFoundError) notFound();
     if (err instanceof ForbiddenError) notFound();
