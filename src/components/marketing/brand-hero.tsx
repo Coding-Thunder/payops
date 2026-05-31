@@ -4,42 +4,58 @@ import { ArrowRightIcon, CheckCircle2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 /**
- * Brand-v1 hero — replaces the obsidian CoverBand. Light-mode-first
- * per the brand spec (no pure-black backgrounds, no random gradients).
+ * Brand-v1 hero — layered dark composition over an Unsplash analytics
+ * photo, lifted from the earlier CoverBand treatment.
  *
- * Anatomy:
- *   - eyebrow chip: status-pill style
- *   - headline:    DM Sans display, big, tight tracking, balanced
- *                  to two lines on desktop
- *   - sub:         Geist body, secondary slate
- *   - dual CTA:    primary "Get started" + secondary "See evidence flow"
- *   - trust strip: small list of operational guarantees, each with a
- *                  small emerald check — the brand's voice of "this
- *                  is operational infrastructure, not marketing"
+ * Layer stack:
+ *   -z-20  Unsplash analytics-dashboard photo (filter darkens it so it
+ *          sits BEHIND the type rather than competing with it).
+ *   -z-10  Dark navy gradient — pins the headline area dark for
+ *          contrast, lightens toward the right where the emerald wash
+ *          sits.
+ *    -z-0  Emerald radial wash — single accent, brand-aligned.
  *
- * Right column is a quiet diagrammatic illustration that picks up
- * the four-node trace from the logo — same vocabulary scaled up.
- * Stripe / Linear / Ramp restraint: one accent color, generous
- * whitespace, no oversized shadows.
+ * Single column (no right-side diagram). All copy is white / slate
+ * over the dark cover; the chip + CTAs are inverted to match.
  */
 export function BrandHero() {
   return (
-    <section className="relative overflow-hidden border-b border-border bg-[color:var(--background)]">
-      {/* Quiet Cloud → White wash so the hero has subtle depth without
-          a marketing gradient. */}
+    <section
+      className="relative isolate overflow-hidden border-b border-border"
+      style={{ background: "var(--ink-navy)" }}
+    >
+      {/* Photo layer — operational, not promotional. To swap: change URL. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-20 bg-cover bg-center"
+        style={{
+          backgroundImage:
+            "url(https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1920&q=80)",
+          filter: "brightness(0.42) saturate(0.9)",
+        }}
+      />
+      {/* Dark gradient overlay — keeps the headline area highest-contrast. */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 -z-10"
         style={{
           background:
-            "linear-gradient(180deg, #F8FAFC 0%, #FFFFFF 100%)",
+            "linear-gradient(110deg, color-mix(in oklch, var(--ink-navy) 92%, transparent) 0%, color-mix(in oklch, var(--ink-navy) 72%, transparent) 55%, color-mix(in oklch, var(--ink-navy) 55%, transparent) 100%)",
+        }}
+      />
+      {/* Emerald radial wash — single brand accent. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-0"
+        style={{
+          background:
+            "radial-gradient(ellipse 55% 55% at 88% 28%, color-mix(in oklch, var(--success) 20%, transparent) 0%, transparent 70%)",
         }}
       />
 
-      <div className="mx-auto grid max-w-[1280px] grid-cols-1 gap-y-12 px-6 pt-20 pb-24 sm:px-10 sm:pt-24 sm:pb-28 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:items-center lg:gap-x-16">
-        {/* Left — copy */}
-        <div className="max-w-2xl">
-          <p className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-3 py-1 font-display text-[10.5px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+      <div className="mx-auto max-w-[1280px] px-6 pt-24 pb-28 text-white sm:px-10 sm:pt-28 sm:pb-32">
+        <div className="max-w-3xl">
+          <p className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/5 px-3 py-1 font-display text-[10.5px] font-medium uppercase tracking-[0.16em] text-white/85 backdrop-blur-sm">
             <span
               aria-hidden
               className="size-1.5 rounded-full"
@@ -48,14 +64,14 @@ export function BrandHero() {
             The operating system for payment ops
           </p>
 
-          <h1 className="mt-7 font-display text-[clamp(2.4rem,6.5vw,4.6rem)] font-medium leading-[1.05] tracking-[-0.025em] text-foreground">
+          <h1 className="mt-7 font-display text-[clamp(2.4rem,6.5vw,4.6rem)] font-medium leading-[1.05] tracking-[-0.025em] text-white">
             Track every transaction.{" "}
-            <span className="block text-[color:var(--brand-emerald)] font-semibold">
+            <span className="block font-semibold text-[color:var(--brand-emerald)]">
               Evidence built automatically.
             </span>
           </h1>
 
-          <p className="mt-6 max-w-xl text-[15px] leading-relaxed text-muted-foreground">
+          <p className="mt-6 max-w-xl text-[15px] leading-relaxed text-white/75">
             TraceTxn is the operational console between you and your payment
             processor. Lifecycle visibility on every order, a hashed
             evidence chain on every transition, hosted consent before the
@@ -70,12 +86,17 @@ export function BrandHero() {
                 <ArrowRightIcon className="size-4" />
               </Link>
             </Button>
-            <Button asChild size="lg" variant="outline">
+            <Button
+              asChild
+              size="lg"
+              variant="outline"
+              className="border-white/30 bg-white/5 text-white backdrop-blur-sm hover:bg-white/10 hover:text-white"
+            >
               <Link href="#evidence">See evidence flow</Link>
             </Button>
           </div>
 
-          <ul className="mt-10 grid grid-cols-1 gap-y-2 text-[12.5px] text-muted-foreground sm:grid-cols-2 sm:gap-x-6">
+          <ul className="mt-10 grid grid-cols-1 gap-y-2 text-[12.5px] text-white/75 sm:grid-cols-2 sm:gap-x-6">
             {[
               "Hashed evidence chain per order",
               "Per-org Stripe routing — your keys, encrypted",
@@ -92,177 +113,7 @@ export function BrandHero() {
             ))}
           </ul>
         </div>
-
-        {/* Right — diagrammatic trace illustration. Same vocabulary as
-            the logo, scaled up to a hero-sized graphic. Calm, no
-            decoration. Reads as "this is what the platform records." */}
-        <div className="relative">
-          <HeroTraceDiagram />
-        </div>
       </div>
     </section>
-  );
-}
-
-function HeroTraceDiagram() {
-  // viewBox 600×420 — 1.43:1 landscape. Mirrors the four-node trace
-  // from the logo but adds labelled event tags off each node so the
-  // diagram doubles as a product preview: order → request → consent
-  // → payment → evidence.
-  const NODES: Array<{
-    x: number;
-    y: number;
-    label: string;
-    eyebrow: string;
-    accent?: boolean;
-  }> = [
-    { x: 70, y: 200, eyebrow: "01", label: "Order created" },
-    { x: 220, y: 200, eyebrow: "02", label: "Payment requested" },
-    { x: 370, y: 280, eyebrow: "03", label: "Consent verified", accent: true },
-    { x: 520, y: 200, eyebrow: "04", label: "Charge settled" },
-  ];
-
-  return (
-    <div className="relative mx-auto max-w-[640px]">
-      {/* Card chrome — Cloud surface with hairline border. Single
-          restrained shadow per brand spec. */}
-      <div className="overflow-hidden rounded-2xl border border-border bg-white p-6 shadow-sm">
-        <div className="flex items-center justify-between border-b border-border pb-4">
-          <div className="flex items-center gap-2">
-            <span
-              aria-hidden
-              className="size-2 rounded-full"
-              style={{ background: "var(--brand-emerald)" }}
-            />
-            <span className="font-display text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground">
-              Trace · order ORD-260601-A3F8
-            </span>
-          </div>
-          <span className="font-mono text-[10.5px] text-muted-foreground">
-            evidence chain
-          </span>
-        </div>
-
-        <svg
-          viewBox="0 0 600 420"
-          className="mt-5 w-full"
-          aria-hidden
-        >
-          {/* Backing grid — extremely subtle ledger tone */}
-          <defs>
-            <pattern
-              id="grid"
-              width="40"
-              height="40"
-              patternUnits="userSpaceOnUse"
-            >
-              <path
-                d="M 40 0 L 0 0 0 40"
-                fill="none"
-                stroke="#E2E8F0"
-                strokeWidth="0.5"
-              />
-            </pattern>
-          </defs>
-          <rect width="600" height="420" fill="url(#grid)" />
-
-          {/* Trace path */}
-          <path
-            d={`M ${NODES[0]!.x} ${NODES[0]!.y} L ${NODES[1]!.x} ${NODES[1]!.y} L ${NODES[2]!.x} ${NODES[2]!.y} L ${NODES[3]!.x} ${NODES[3]!.y}`}
-            stroke="#0F172A"
-            strokeWidth="2.5"
-            strokeLinecap="square"
-            strokeLinejoin="miter"
-            fill="none"
-          />
-          {/* Drop line on the consent node — emerald, matches logo */}
-          <path
-            d={`M ${NODES[2]!.x} ${NODES[2]!.y} V ${NODES[2]!.y + 50}`}
-            stroke="#10B981"
-            strokeWidth="2.5"
-            strokeLinecap="square"
-          />
-
-          {/* Nodes */}
-          {NODES.map((n) => (
-            <g key={`${n.x}-${n.y}`}>
-              <circle
-                cx={n.x}
-                cy={n.y}
-                r="9"
-                fill={n.accent ? "#10B981" : "#0F172A"}
-              />
-              <circle
-                cx={n.x}
-                cy={n.y}
-                r="14"
-                fill="none"
-                stroke={n.accent ? "#10B981" : "#0F172A"}
-                strokeOpacity="0.18"
-                strokeWidth="1"
-              />
-            </g>
-          ))}
-
-          {/* Node labels */}
-          {NODES.map((n) => {
-            const above = n.y < 240;
-            const labelY = above ? n.y - 28 : n.y + 38;
-            const subY = above ? n.y - 44 : n.y + 56;
-            return (
-              <g key={`label-${n.x}`} textAnchor="middle">
-                <text
-                  x={n.x}
-                  y={subY}
-                  fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
-                  fontSize="10"
-                  fill="#94A3B8"
-                  letterSpacing="0.12em"
-                >
-                  {n.eyebrow}
-                </text>
-                <text
-                  x={n.x}
-                  y={labelY}
-                  fontFamily="ui-sans-serif, system-ui, sans-serif"
-                  fontSize="13"
-                  fontWeight={n.accent ? 600 : 500}
-                  fill="#0F172A"
-                >
-                  {n.label}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
-
-        <div className="mt-5 grid grid-cols-3 gap-3 border-t border-border pt-4 text-[11px] text-muted-foreground">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground/70">
-              Status
-            </div>
-            <div className="mt-1 font-semibold text-foreground">
-              Settled
-            </div>
-          </div>
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground/70">
-              Hash
-            </div>
-            <div className="mt-1 font-mono text-foreground truncate">
-              0x4a2b…f81e
-            </div>
-          </div>
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground/70">
-              Events
-            </div>
-            <div className="mt-1 font-semibold text-foreground">
-              7
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }
