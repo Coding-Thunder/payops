@@ -22,15 +22,39 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   return (
     <div className="grid min-h-screen w-full grid-cols-1 lg:grid-cols-[1.05fr_1fr]">
-      {/* Left panel — same dark navy cover sheet as signup. Shared
-          brand language across all unauthed entry surfaces. */}
+      {/* Left panel — Unsplash photo behind a dark gradient overlay
+          so the white brand text + accents stay readable. To swap the
+          photo, change the `unsplashUrl` constant. */}
       <section
         className="relative hidden flex-col justify-between overflow-hidden p-12 text-white lg:flex"
         style={{ background: "var(--ink-navy)" }}
       >
+        {/* Bottom layer: Unsplash photo (cover-fit, slightly desaturated
+            via brightness so the brand emerald reads on top). */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 -z-20 bg-cover bg-center"
+          style={{
+            backgroundImage:
+              "url(https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=1600&q=80)",
+            filter: "brightness(0.55) saturate(0.85)",
+          }}
+        />
+        {/* Middle layer: dark gradient so text remains legible at the
+            top-left + bottom-left where copy lives. */}
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 -z-10"
+          style={{
+            background:
+              "linear-gradient(135deg, color-mix(in oklch, var(--ink-navy) 88%, transparent) 0%, color-mix(in oklch, var(--ink-navy) 55%, transparent) 60%, color-mix(in oklch, var(--ink-navy) 88%, transparent) 100%)",
+          }}
+        />
+        {/* Top layer: existing emerald radial wash — unchanged so the
+            brand accent still reads through the photo. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 -z-0"
           style={{
             background:
               "radial-gradient(ellipse 55% 50% at 85% 25%, color-mix(in oklch, var(--success) 18%, transparent) 0%, transparent 70%)",

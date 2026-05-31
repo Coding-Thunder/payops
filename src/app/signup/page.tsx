@@ -19,17 +19,33 @@ export default async function SignupPage() {
 
   return (
     <div className="grid min-h-screen w-full grid-cols-1 lg:grid-cols-[1.05fr_1fr]">
-      {/* Left panel — dark navy cover sheet, same brand language as
-          the landing's hero CoverBand. Replaces the prior Aurora +
-          DotGrid marketing chrome. */}
+      {/* Left panel — Unsplash photo behind a dark gradient overlay.
+          Same treatment as the login cover so signup ↔ login feels
+          consistent. To swap the photo, change the URL below. */}
       <section
         className="relative hidden flex-col justify-between overflow-hidden p-12 text-white lg:flex"
         style={{ background: "var(--ink-navy)" }}
       >
-        {/* Subtle radial wash for depth (matches CoverBand) */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 -z-20 bg-cover bg-center"
+          style={{
+            backgroundImage:
+              "url(https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=1600&q=80)",
+            filter: "brightness(0.55) saturate(0.85)",
+          }}
+        />
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 -z-10"
+          style={{
+            background:
+              "linear-gradient(135deg, color-mix(in oklch, var(--ink-navy) 88%, transparent) 0%, color-mix(in oklch, var(--ink-navy) 55%, transparent) 60%, color-mix(in oklch, var(--ink-navy) 88%, transparent) 100%)",
+          }}
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 -z-0"
           style={{
             background:
               "radial-gradient(ellipse 55% 50% at 85% 25%, color-mix(in oklch, var(--success) 18%, transparent) 0%, transparent 70%)",

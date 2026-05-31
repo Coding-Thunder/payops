@@ -19,11 +19,35 @@ export function CoverBand() {
       className="relative isolate overflow-hidden"
       style={{ background: "var(--ink-navy)" }}
     >
-      {/* Subtle ambient: a barely-there radial wash so the cover
-          has depth without becoming a marketing hero with effects. */}
+      {/* Background: Unsplash analytics-dashboard photo, darkened so
+          the cover-sheet headline + emerald accent still read like
+          an operational artifact rather than a marketing hero.
+          To swap: change the URL below. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-20 bg-cover bg-center"
+        style={{
+          backgroundImage:
+            "url(https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1920&q=80)",
+          filter: "brightness(0.45) saturate(0.9)",
+        }}
+      />
+      {/* Dark gradient: pin the headline area dark so the bold block
+          type stays high-contrast. Lighter towards the right where
+          the emerald shield accent sits. */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 -z-10"
+        style={{
+          background:
+            "linear-gradient(110deg, color-mix(in oklch, var(--ink-navy) 92%, transparent) 0%, color-mix(in oklch, var(--ink-navy) 70%, transparent) 55%, color-mix(in oklch, var(--ink-navy) 55%, transparent) 100%)",
+        }}
+      />
+      {/* Emerald radial wash: preserved from the original cover band
+          so the brand color still pulls through. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-0"
         style={{
           background:
             "radial-gradient(ellipse 60% 60% at 90% 30%, color-mix(in oklch, var(--success) 18%, transparent) 0%, transparent 70%)",
