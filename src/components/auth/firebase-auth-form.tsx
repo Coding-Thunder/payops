@@ -3,30 +3,42 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import {
+  GoogleAuthProvider,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  signInWithPopup,
   type AuthError,
 } from "firebase/auth";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LoadingButton } from "@/components/ui/loading-button";
+import { TurnstileWidget } from "@/components/common/turnstile-widget";
 import { api, ApiClientError } from "@/lib/api-client";
 import { getFirebaseAuth, isFirebaseConfigured } from "@/lib/firebase/client";
 
 /**
- * Firebase-backed email + password form for sign-in / sign-up.
+ * Firebase-backed sign-in + sign-up form.
  *
- * Google OAuth was removed pending sorted-out API-key referer
- * restrictions in GCP. If we re-introduce social sign-in later, add
- * the button + handler back here and re-import GoogleAuthProvider /
- * signInWithPopup from firebase/auth.
+ * Two paths: Google OAuth (popup) and email + password. Both go
+ * through the same /api/auth/firebase-session exchange so downstream
+ * session machinery (JWT cookie, RBAC, audit) doesn't care which the
+ * user picked. Mode is set by the caller — "signup" creates a fresh
+ * Firebase user + provisions a TraceTxn workspace on first exchange,
+ * "signin" only authenticates existing accounts.
  */
 
 interface FirebaseAuthFormProps {
   mode: "signin" | "signup";
   nextPath?: string;
+  /** Cloudflare Turnstile site key. When provided the widget renders
+   *  and submit is gated on a verified token; when null/undefined the
+   *  widget is omitted entirely (matches the legacy LoginForm contract).
+   *  Token is also forwarded to /api/auth/firebase-session for server-
+   *  side re-verification so client tampering can't bypass the check. */
+  turnstileSiteKey?: string | null;
 }
 
 interface FirebaseSessionResponse {
@@ -35,13 +47,21 @@ interface FirebaseSessionResponse {
   orgId: string | null;
 }
 
-export function FirebaseAuthForm({ mode, nextPath }: FirebaseAuthFormProps) {
+export function FirebaseAuthForm({
+  mode,
+  nextPath,
+  turnstileSiteKey,
+}: FirebaseAuthFormProps) {
   const router = useRouter();
   const configured = isFirebaseConfigured();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<null | "email" | "google">(null);
   const [error, setError] = useState<string | null>(null);
+  const [cfToken, setCfToken] = useState<string | null>(null);
+
+  const requiresToken = Boolean(turnstileSiteKey);
+  const captchaReady = !requiresToken || Boolean(cfToken);
 
   if (!configured) {
     return (
@@ -56,24 +76,38 @@ export function FirebaseAuthForm({ mode, nextPath }: FirebaseAuthFormProps) {
   }
 
   async function exchangeIdTokenForSession(idToken: string): Promise<void> {
-    const result = await api.post<FirebaseSessionResponse>(
-      "/api/auth/firebase-session",
-      { idToken },
-    );
-    router.replace(safeNext(nextPath));
-    router.refresh();
-    return void result;
+    try {
+      await api.post<FirebaseSessionResponse>(
+        "/api/auth/firebase-session",
+        // Turnstile token is single-use, so we always clear it after the
+        // attempt regardless of outcome (see the catch/finally below).
+        { idToken, cfToken: cfToken ?? undefined },
+      );
+      router.replace(safeNext(nextPath));
+      router.refresh();
+    } finally {
+      setCfToken(null);
+    }
+  }
+
+  function captchaGate(): boolean {
+    if (requiresToken && !cfToken) {
+      setError("Please complete the verification challenge first.");
+      return false;
+    }
+    return true;
   }
 
   async function handleEmailSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!captchaGate()) return;
     const auth = getFirebaseAuth();
     if (!auth) {
       setError("Firebase Auth client failed to initialize");
       return;
     }
-    setBusy(true);
+    setBusy("email");
     try {
       const credential =
         mode === "signup"
@@ -84,7 +118,29 @@ export function FirebaseAuthForm({ mode, nextPath }: FirebaseAuthFormProps) {
     } catch (err) {
       setError(humanizeAuthError(err, mode));
     } finally {
-      setBusy(false);
+      setBusy(null);
+    }
+  }
+
+  async function handleGoogle() {
+    setError(null);
+    if (!captchaGate()) return;
+    const auth = getFirebaseAuth();
+    if (!auth) {
+      setError("Firebase Auth client failed to initialize");
+      return;
+    }
+    setBusy("google");
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+      const credential = await signInWithPopup(auth, provider);
+      const idToken = await credential.user.getIdToken();
+      await exchangeIdTokenForSession(idToken);
+    } catch (err) {
+      setError(humanizeAuthError(err, mode));
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -99,6 +155,32 @@ export function FirebaseAuthForm({ mode, nextPath }: FirebaseAuthFormProps) {
         </Alert>
       ) : null}
 
+      <Button
+        type="button"
+        variant="outline"
+        className="w-full gap-2 h-10"
+        onClick={handleGoogle}
+        disabled={busy !== null || !captchaReady}
+      >
+        <GoogleIcon className="size-4" aria-hidden />
+        {busy === "google"
+          ? "Opening Google…"
+          : mode === "signup"
+            ? "Sign up with Google"
+            : "Continue with Google"}
+      </Button>
+
+      <div className="relative">
+        <div className="absolute inset-0 flex items-center" aria-hidden>
+          <span className="w-full border-t border-border" />
+        </div>
+        <div className="relative flex justify-center">
+          <span className="bg-background px-2 text-[10.5px] uppercase tracking-[0.16em] text-muted-foreground">
+            or with email
+          </span>
+        </div>
+      </div>
+
       <form className="space-y-4" onSubmit={handleEmailSubmit} noValidate>
         <div className="space-y-1.5">
           <Label htmlFor="fb-email">Work email</Label>
@@ -108,7 +190,7 @@ export function FirebaseAuthForm({ mode, nextPath }: FirebaseAuthFormProps) {
             autoComplete="email"
             inputMode="email"
             placeholder="you@company.com"
-            disabled={busy}
+            disabled={busy !== null}
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -136,7 +218,7 @@ export function FirebaseAuthForm({ mode, nextPath }: FirebaseAuthFormProps) {
             placeholder={
               mode === "signup" ? "At least 8 characters" : "••••••••"
             }
-            disabled={busy}
+            disabled={busy !== null}
             required
             minLength={mode === "signup" ? 8 : undefined}
             value={password}
@@ -144,11 +226,22 @@ export function FirebaseAuthForm({ mode, nextPath }: FirebaseAuthFormProps) {
           />
         </div>
 
+        {requiresToken ? (
+          <TurnstileWidget
+            siteKey={turnstileSiteKey}
+            onVerify={(t) => setCfToken(t)}
+            onExpire={() => setCfToken(null)}
+            onError={() => setCfToken(null)}
+            className="flex justify-center"
+          />
+        ) : null}
+
         <LoadingButton
           type="submit"
           className="w-full"
-          loading={busy}
+          loading={busy === "email"}
           loadingText={mode === "signup" ? "Creating account" : "Signing in"}
+          disabled={!captchaReady}
         >
           {mode === "signup" ? "Create account" : "Sign in"}
         </LoadingButton>
@@ -184,6 +277,11 @@ function humanizeAuthError(err: unknown, mode: "signin" | "signup"): string {
       return "An account with that email already exists. Sign in instead.";
     case "auth/weak-password":
       return "Pick a stronger password (8+ characters).";
+    case "auth/popup-closed-by-user":
+    case "auth/cancelled-popup-request":
+      return "Google sign-in was cancelled.";
+    case "auth/popup-blocked":
+      return "Your browser blocked the Google sign-in popup. Allow popups for this site and try again.";
     case "auth/network-request-failed":
       return "Network error reaching Firebase. Check your connection and try again.";
     case "auth/too-many-requests":
@@ -191,7 +289,9 @@ function humanizeAuthError(err: unknown, mode: "signin" | "signup"): string {
     case "auth/unauthorized-domain":
       return "This domain is not authorized in the Firebase project. Add it to Authentication → Settings → Authorized domains.";
     case "auth/operation-not-allowed":
-      return "Email/Password sign-in is not enabled in the Firebase project. Enable it under Authentication → Sign-in method.";
+      return "This sign-in method is not enabled in the Firebase project. Enable it under Authentication → Sign-in method.";
+    case "auth/account-exists-with-different-credential":
+      return "An account already exists with this email but a different sign-in method. Use that method instead.";
     case "auth/internal-error":
       return "Firebase internal error. Check the Firebase project configuration and try again.";
     default: {
@@ -201,4 +301,27 @@ function humanizeAuthError(err: unknown, mode: "signin" | "signup"): string {
         : `Could not ${verb}. Please try again.`;
     }
   }
+}
+
+function GoogleIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 18 18" className={className} aria-hidden>
+      <path
+        fill="#4285F4"
+        d="M17.64 9.205c0-.638-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.717v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.616z"
+      />
+      <path
+        fill="#34A853"
+        d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"
+      />
+      <path
+        fill="#EA4335"
+        d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"
+      />
+    </svg>
+  );
 }

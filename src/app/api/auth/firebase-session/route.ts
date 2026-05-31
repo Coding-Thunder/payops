@@ -7,6 +7,7 @@ import { logger } from "@/lib/logger";
 import { getRequestContext } from "@/server/api/request-context";
 import { jsonOk, withApi } from "@/server/api/respond";
 import { setSessionCookie } from "@/server/auth/cookies";
+import { verifyTurnstile } from "@/server/auth/turnstile";
 import { firebaseExchange } from "@/server/services/auth.service";
 
 export const runtime = "nodejs";
@@ -29,6 +30,11 @@ export const dynamic = "force-dynamic";
 
 const bodySchema = z.object({
   idToken: z.string().min(20, "idToken is required"),
+  // Cloudflare Turnstile token. Optional in the schema so dev / not-
+  // configured environments still post a valid body; `verifyTurnstile`
+  // no-ops when TURNSTILE_SECRET_KEY is unset and throws when it IS
+  // set but the token is missing or invalid.
+  cfToken: z.string().optional(),
 });
 
 export const POST = withApi(
@@ -46,7 +52,15 @@ export const POST = withApi(
     }
 
     const body = await req.json();
-    const { idToken } = bodySchema.parse(body);
+    const { idToken, cfToken } = bodySchema.parse(body);
+
+    // Bot-check BEFORE the Firebase verify call so we don't burn
+    // Identity Toolkit quota / latency on a request that's about to
+    // be rejected. No-ops when TURNSTILE_SECRET_KEY isn't set.
+    await verifyTurnstile({
+      token: cfToken ?? null,
+      remoteIp: ctx.ip ?? null,
+    });
 
     let decoded: { uid: string; email?: string; name?: string };
     try {

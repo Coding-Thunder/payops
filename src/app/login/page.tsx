@@ -6,6 +6,7 @@ import { FirebaseAuthForm } from "@/components/auth/firebase-auth-form";
 import { LogoLockup, LogoMark } from "@/components/brand/logo";
 import { env } from "@/lib/env";
 import { getCurrentUser } from "@/server/auth/session";
+import { turnstileSiteKey } from "@/server/auth/turnstile";
 
 export const dynamic = "force-dynamic";
 
@@ -92,7 +93,11 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               </p>
             </div>
           </div>
-          <FirebaseAuthForm mode="signin" nextPath={next} />
+          <FirebaseAuthForm
+            mode="signin"
+            nextPath={next}
+            turnstileSiteKey={turnstileSiteKey()}
+          />
           <p className="text-center text-[11px] leading-relaxed text-muted-foreground/80">
             Don&apos;t have an account yet?{" "}
             <Link
