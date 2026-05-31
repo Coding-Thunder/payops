@@ -28,6 +28,20 @@ const nextConfig: NextConfig = {
     // Cloudflare Turnstile loads its API script + widget iframe from
     // `challenges.cloudflare.com`; whitelist it under script-src and
     // frame-src so the bot-check on /login + /api/quotations works.
+    //
+    // Firebase Auth needs three families of origins:
+    //   - script-src: apis.google.com + www.gstatic.com (SDK + Google
+    //     OAuth helpers), accounts.google.com (popup).
+    //   - connect-src: identitytoolkit / securetoken / googleapis for
+    //     REST + token refresh, *.firebaseapp.com for the hidden auth
+    //     iframe's postMessage channel.
+    //   - frame-src: *.firebaseapp.com (the reCAPTCHA-protected auth
+    //     iframe used by createUserWithEmailAndPassword), and
+    //     accounts.google.com (Google sign-in popup is technically a
+    //     window, but some Firebase flows embed it as a frame).
+    // Without these, the SDK iframe load hits CSP, fires el.onerror,
+    // and the call throws auth/internal-error with no server response.
+    //
     // `'unsafe-eval'` is dev-only: React uses eval() for debug helpers
     // (callstack reconstruction). Production builds never eval.
     const isDev = process.env.NODE_ENV !== "production";
@@ -37,6 +51,9 @@ const nextConfig: NextConfig = {
       "'unsafe-inline'",
       isDev ? "'unsafe-eval'" : null,
       "https://challenges.cloudflare.com",
+      "https://apis.google.com",
+      "https://www.gstatic.com",
+      "https://accounts.google.com",
     ]
       .filter(Boolean)
       .join(" ");
@@ -49,9 +66,24 @@ const nextConfig: NextConfig = {
       "font-src 'self' data:",
       "style-src 'self' 'unsafe-inline'",
       scriptSrc,
-      "connect-src 'self' https://api.stripe.com https://challenges.cloudflare.com",
+      [
+        "connect-src 'self'",
+        "https://api.stripe.com",
+        "https://challenges.cloudflare.com",
+        "https://identitytoolkit.googleapis.com",
+        "https://securetoken.googleapis.com",
+        "https://www.googleapis.com",
+        "https://*.firebaseapp.com",
+        "https://accounts.google.com",
+      ].join(" "),
       "form-action 'self' https://*.stripe.com",
-      "frame-src 'self' https://*.stripe.com https://challenges.cloudflare.com",
+      [
+        "frame-src 'self'",
+        "https://*.stripe.com",
+        "https://challenges.cloudflare.com",
+        "https://*.firebaseapp.com",
+        "https://accounts.google.com",
+      ].join(" "),
     ].join("; ");
 
     return [
@@ -67,8 +99,14 @@ const nextConfig: NextConfig = {
             value: "camera=(), microphone=(), geolocation=()",
           },
           {
+            // `same-origin-allow-popups` (not `same-origin`) is the
+            // strictest COOP value that still allows Firebase's
+            // signInWithPopup to postMessage back to the opener
+            // window. Tightening to `same-origin` silently breaks the
+            // Google sign-in flow with a swallowed postMessage and
+            // surfaces as a hanging popup.
             key: "Cross-Origin-Opener-Policy",
-            value: "same-origin",
+            value: "same-origin-allow-popups",
           },
           {
             key: "Cross-Origin-Resource-Policy",
