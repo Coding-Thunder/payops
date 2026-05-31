@@ -14,7 +14,8 @@ export type ErrorCode =
   | "INTERNAL_ERROR"
   | "PAYMENT_ERROR"
   | "EXTERNAL_SERVICE_ERROR"
-  | "BOT_CHECK_FAILED";
+  | "BOT_CHECK_FAILED"
+  | "QUOTA_EXCEEDED";
 
 export class AppError extends Error {
   readonly code: ErrorCode;
@@ -90,6 +91,29 @@ export class ExternalServiceError extends AppError {
   constructor(message = "Upstream service failed", cause?: unknown) {
     super("EXTERNAL_SERVICE_ERROR", message, 502, { cause });
     this.name = "ExternalServiceError";
+  }
+}
+
+/**
+ * Plan quota hit (e.g. concurrent-active-orders cap). Status 402 so the
+ * client can distinguish billing pressure from generic 4xx (validation,
+ * auth, not-found) and render an upgrade panel instead of a toast. The
+ * details payload always carries `{ plan, limit, current, resource }`
+ * so the UI can render an exact "12 / 30 active orders" line without
+ * re-fetching usage.
+ */
+export class QuotaExceededError extends AppError {
+  constructor(
+    message: string,
+    details: {
+      plan: string;
+      resource: string;
+      limit: number;
+      current: number;
+    },
+  ) {
+    super("QUOTA_EXCEEDED", message, 402, { details });
+    this.name = "QuotaExceededError";
   }
 }
 

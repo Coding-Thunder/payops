@@ -293,6 +293,11 @@ export async function createOrder(
   ctx: OrderContext,
 ): Promise<CreateOrderResult> {
   await connectMongo();
+  // Plan gate. Throws QuotaExceededError (HTTP 402) when the tenant
+  // has hit their active-orders cap. Sits at the top of every
+  // create path so the UI can't bypass it by routing differently.
+  const { assertCanCreateOrder } = await import("./billing.service");
+  await assertCanCreateOrder(ctx.orgId ?? null);
   // Read settings + workflow + policy snapshot from the caller's org so
   // Tenant #2 doesn't inherit Tenant #1's cancellation policy text or
   // legacy status enum. The workflow's initialStatusKey is what the

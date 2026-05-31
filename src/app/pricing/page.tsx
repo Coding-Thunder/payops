@@ -40,7 +40,7 @@ const TIERS: Tier[] = [
     cadence: "per month",
     blurb:
       "Everything a solo operator needs to take payments and resolve disputes — without an enterprise contract.",
-    ordersLabel: "Up to 30 active orders / month",
+    ordersLabel: "Up to 30 active orders at a time",
     usersLabel: "1 user",
     highlights: [
       "Hashed evidence chain on every order",
@@ -58,7 +58,7 @@ const TIERS: Tier[] = [
     cadence: "per month",
     blurb:
       "The conversion tier — 5–10× cheaper than enterprise dispute tools for the same core need.",
-    ordersLabel: "Up to 150 active orders / month",
+    ordersLabel: "Up to 150 active orders at a time",
     usersLabel: "3 users",
     highlights: [
       "Everything in Starter",
@@ -103,7 +103,7 @@ interface MatrixRow {
 }
 
 const MATRIX: MatrixRow[] = [
-  { label: "Active orders / month", starter: "30", growth: "150", scale: "Unlimited" },
+  { label: "Active orders at a time", starter: "30", growth: "150", scale: "Unlimited" },
   { label: "Team seats", starter: "1", growth: "3", scale: "Unlimited" },
   { label: "Hashed evidence chain", starter: true, growth: true, scale: true },
   { label: "Audit trail", starter: true, growth: true, scale: true },
