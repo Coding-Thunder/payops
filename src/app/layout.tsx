@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { DM_Sans, Geist, Geist_Mono } from "next/font/google";
 
 import { AppProviders } from "@/components/providers/app-providers";
 
@@ -15,6 +15,17 @@ const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
   display: "swap",
+});
+
+/** Brand-v1 display typeface — DM Sans. Used on the wordmark + on
+ *  display-scale headings via the Tailwind `font-display` utility
+ *  (token `--font-display`, declared in globals.css). Body copy
+ *  stays on Geist for legibility at small sizes. */
+const dmSans = DM_Sans({
+  variable: "--font-dm-sans",
+  subsets: ["latin"],
+  display: "swap",
+  weight: ["400", "500", "600", "700"],
 });
 
 /**
@@ -191,8 +202,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#FFFFFF" },
-    { media: "(prefers-color-scheme: dark)", color: "#0A0A0A" },
+    { media: "(prefers-color-scheme: light)", color: "#F8FAFC" },
+    { media: "(prefers-color-scheme: dark)", color: "#0F172A" },
   ],
   width: "device-width",
   initialScale: 1,
@@ -207,7 +218,7 @@ export default function RootLayout({
     <html
       lang="en"
       dir="ltr"
-      className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${dmSans.variable} antialiased`}
       suppressHydrationWarning
     >
       <body

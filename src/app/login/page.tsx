@@ -70,7 +70,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         />
 
         <div className="relative max-w-md space-y-7">
-          <LogoMark className="size-9 text-white" decorated />
+          <LogoMark className="size-9 text-white" monochrome />
           <h2 className="text-balance text-[28px] font-bold leading-[1.12] tracking-tight">
             Reliable, auditable payment operations.
           </h2>

@@ -61,7 +61,7 @@ export default async function SignupPage() {
         />
 
         <div className="relative max-w-md space-y-7">
-          <LogoMark className="size-9 text-white" decorated />
+          <LogoMark className="size-9 text-white" monochrome />
           <h2 className="text-balance text-[28px] font-bold leading-[1.12] tracking-tight">
             Run your first paid order
             <br />

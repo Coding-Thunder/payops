@@ -1,43 +1,63 @@
 import { cn } from "@/lib/utils";
 
+/**
+ * TraceTxn Brand v1 — primary mark + wordmark.
+ *
+ * The mark is a four-node transaction trace:
+ *
+ *     ●──●──●──●         (line + 4 dots, viewBox 40×40)
+ *
+ * Reading left-to-right: source → intent → settlement (emerald) →
+ * destination. The third node is the operational moment — the only
+ * one that's emerald — the "trace head" where evidence is captured.
+ *
+ * Wordmark: "Trace" in body weight + Deep Navy, "Txn" in semibold +
+ * Emerald (default) or Deep Navy (monochrome). DM Sans throughout
+ * with tight tracking. These pairings come straight from the brand-v1
+ * system; do not drift from them without re-spec'ing the identity.
+ */
+
+const BRAND_NAVY = "#0F172A";
+const BRAND_EMERALD = "#10B981";
+
 interface LogoMarkProps {
   className?: string;
-  /** Render with a circular accent ring. Useful on dark backgrounds. */
-  decorated?: boolean;
+  /** When true, every node + line draws in `currentColor` so the mark
+   *  can sit on dark backgrounds (white-on-navy variant). When false
+   *  (default), uses the brand-v1 spec colors: navy + emerald accent. */
+  monochrome?: boolean;
 }
 
-/**
- * The TraceTxn brand mark. Bold "T" glyph with an emerald trace-head
- * dot at the right edge of the horizontal bar — the dot reads as the
- * live edge of the order's evidence chain, where the latest event
- * lives. Mono on `currentColor`; the accent stays emerald regardless
- * of context tone.
- */
-export function LogoMark({ className, decorated = false }: LogoMarkProps) {
+export function LogoMark({ className, monochrome = false }: LogoMarkProps) {
+  const stroke = monochrome ? "currentColor" : BRAND_NAVY;
+  const accent = monochrome ? "currentColor" : BRAND_EMERALD;
   return (
     <svg
-      viewBox="0 0 48 48"
+      viewBox="0 0 40 40"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
-      className={cn("size-6", className)}
+      className={cn("size-6 shrink-0", className)}
     >
-      {decorated ? (
-        <circle
-          cx="24"
-          cy="24"
-          r="23"
-          stroke="currentColor"
-          strokeOpacity="0.18"
-          strokeWidth="1"
-        />
-      ) : null}
-      {/* Horizontal bar — the trace */}
-      <rect x="10" y="13" width="28" height="5" rx="2.5" fill="currentColor" />
-      {/* Vertical stem — the transaction */}
-      <rect x="21.5" y="13" width="5" height="24" rx="2.5" fill="currentColor" />
-      {/* Trace-head accent — emerald, live edge of the chain */}
-      <circle cx="38" cy="15.5" r="2.4" fill="oklch(0.74 0.15 152)" />
+      {/* Main trace: source → intent → settlement → destination */}
+      <path
+        d="M6 14L16 14L24 20L34 14"
+        stroke={stroke}
+        strokeWidth="2"
+        strokeLinecap="square"
+        strokeLinejoin="miter"
+      />
+      {/* Drop line: the operational moment off the settlement node */}
+      <path
+        d="M16 14V24"
+        stroke={accent}
+        strokeWidth="2"
+        strokeLinecap="square"
+      />
+      <circle cx="6" cy="14" r="3" fill={stroke} />
+      <circle cx="16" cy="14" r="3" fill={stroke} />
+      <circle cx="24" cy="20" r="3" fill={accent} />
+      <circle cx="34" cy="14" r="3" fill={stroke} />
     </svg>
   );
 }
@@ -48,50 +68,81 @@ interface LogoLockupProps {
   subtitle?: string;
   size?: "sm" | "md" | "lg";
   tone?: "default" | "inverted";
+  /** When true (default), only the FIRST occurrence of "Txn" in the
+   *  brand string is emerald — mirrors the brand-v1 wordmark.
+   *  Tenants whose workspace name doesn't include "Txn" just see a
+   *  single-tone wordmark in the appropriate color. */
+  twoTone?: boolean;
 }
 
-/** Logo mark + wordmark + optional subtitle. */
+/**
+ * Brand wordmark. Renders the LogoMark + the brand label as a
+ * two-tone wordmark — "Trace" navy + "Txn" emerald — when the brand
+ * string is the platform name. Other workspace names render as a
+ * single-tone label.
+ */
 export function LogoLockup({
   className,
   brand = "TraceTxn",
   subtitle,
   size = "md",
   tone = "default",
+  twoTone = true,
 }: LogoLockupProps) {
   const markSize =
-    size === "lg" ? "size-8" : size === "sm" ? "size-5" : "size-6";
+    size === "lg" ? "size-9" : size === "sm" ? "size-6" : "size-7";
   const brandSize =
-    size === "lg" ? "text-lg" : size === "sm" ? "text-xs" : "text-sm";
+    size === "lg"
+      ? "text-[20px]"
+      : size === "sm"
+        ? "text-[13px]"
+        : "text-[15px]";
+
+  // Two-tone applies ONLY when the wordmark contains "Txn" — the
+  // brand-v1 accented suffix. Otherwise the whole thing renders in
+  // a single tone matching the surface.
+  const txnIndex = twoTone ? brand.lastIndexOf("Txn") : -1;
+  const head = txnIndex > 0 ? brand.slice(0, txnIndex) : brand;
+  const tail = txnIndex > 0 ? brand.slice(txnIndex) : null;
+
   return (
     <div
       className={cn(
         "flex items-center gap-2.5",
-        tone === "inverted" ? "text-primary-foreground" : "text-foreground",
+        tone === "inverted" ? "text-white" : "text-foreground",
         className,
       )}
     >
-      <span
-        className={cn(
-          "inline-flex items-center justify-center rounded-md shrink-0",
-          tone === "inverted"
-            ? "bg-primary-foreground/10 text-primary-foreground"
-            : "bg-primary/10 text-primary",
-          size === "lg" ? "size-10" : size === "sm" ? "size-7" : "size-8",
-        )}
-      >
-        <LogoMark className={markSize} />
-      </span>
+      <LogoMark
+        className={markSize}
+        monochrome={tone === "inverted"}
+      />
       <span className="flex flex-col leading-tight min-w-0">
-        <span className={cn("font-semibold tracking-tight truncate", brandSize)}>
-          {brand}
+        <span
+          className={cn(
+            "flex items-baseline font-display tracking-[-0.02em] truncate",
+            brandSize,
+          )}
+        >
+          <span className="font-medium">{head}</span>
+          {tail ? (
+            <span
+              className={cn(
+                "font-semibold",
+                tone === "inverted"
+                  ? "text-white"
+                  : "text-[color:var(--brand-emerald)]",
+              )}
+            >
+              {tail}
+            </span>
+          ) : null}
         </span>
         {subtitle ? (
           <span
             className={cn(
-              "text-[11px] tracking-wider uppercase truncate",
-              tone === "inverted"
-                ? "text-primary-foreground/70"
-                : "text-muted-foreground",
+              "text-[10.5px] tracking-[0.14em] uppercase truncate font-medium",
+              tone === "inverted" ? "text-white/60" : "text-muted-foreground",
             )}
           >
             {subtitle}

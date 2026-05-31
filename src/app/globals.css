@@ -198,26 +198,33 @@
 :root {
   --radius: 0.5rem;
 
+  /* ─────────────────────────────────────────────────────────────
+   * TraceTxn Brand v1 — aligned to the brand-spec palette:
+   *   Deep Navy  #0F172A   Charcoal  #1E293B
+   *   Emerald    #10B981   Slate     #94A3B8
+   *   Cloud      #F8FAFC   White     #FFFFFF
+   * Hex values declared inline alongside each OKLCH so the file
+   * stays self-documenting against the brand spec.
+   * ───────────────────────────────────────────────────────────── */
+
   /* Surfaces ──────────────────────────────────────────────────
-   *
-   * Background is a warm, slightly cool off-white — the
-   * "operational document paper" tone the references use, not
-   * pure white. Cards are PURE white so they read as raised
-   * panels above the body. Surface-1/2 step down for inset
-   * regions (footnotes, muted blocks).
+   * Cloud (#F8FAFC) as the page body — paper-like, not pure white.
+   * Cards are pure white so they read as raised panels above it.
+   * Surface-1/2 step down for inset regions (footnotes, muted blocks).
    */
-  --background: oklch(0.985 0.003 240);           /* warm paper-white */
-  --surface-1: oklch(0.97 0.003 240);             /* inset panels */
-  --surface-2: oklch(0.95 0.003 240);             /* hover / muted */
-  --foreground: oklch(0.18 0.018 240);            /* deep navy-tinted ink */
+  --background: #F8FAFC;                          /* Cloud */
+  --surface-1: oklch(0.97 0.003 247);             /* inset panels */
+  --surface-2: oklch(0.95 0.003 247);             /* hover / muted */
+  --foreground: #0F172A;                          /* Deep Navy */
 
-  --card: oklch(1 0 0);                            /* pure white panels */
-  --card-foreground: oklch(0.18 0.018 240);
+  --card: #FFFFFF;                                 /* pure white panels */
+  --card-foreground: #0F172A;
 
-  /* Operational dark surfaces — navy-tinted, NOT obsidian.
-   * Used for cover bands, document headers, footer strips. */
-  --ink-navy: oklch(0.17 0.045 240);
-  --ink-navy-soft: oklch(0.22 0.045 240);
+  /* Dark surfaces — brand-spec Deep Navy + Charcoal.
+   * Used for cover bands, document headers, footer strips,
+   * marketing hero, and the login/signup left panels. */
+  --ink-navy: #0F172A;                            /* Deep Navy */
+  --ink-navy-soft: #1E293B;                       /* Charcoal */
 
   /* Document atmosphere — barely-visible ledger grid pattern
    * applied to the page body so the document has a hint of
@@ -237,8 +244,10 @@
   --secondary: oklch(0.97 0.002 286);
   --secondary-foreground: oklch(0.205 0.006 286);
 
-  --muted: oklch(0.97 0.002 286);
-  --muted-foreground: oklch(0.5 0.012 286);
+  --muted: oklch(0.97 0.002 247);
+  /* Brand-v1 Slate (#94A3B8) for muted text — secondary copy,
+   * labels, helper text, footer chrome. */
+  --muted-foreground: #64748B;                     /* one step darker than slate for AAA contrast */
 
   --accent: oklch(0.97 0.002 286);
   --accent-foreground: oklch(0.205 0.006 286);
@@ -249,14 +258,24 @@
   --destructive-soft: oklch(0.97 0.04 22);
   --destructive-border: oklch(0.86 0.08 22);
 
-  /* Operational green — the reference's primary identity color.
-   * Saturated emerald, used confidently across success states,
-   * timeline nodes, integrity markers, and dispute outcomes. */
-  --success: oklch(0.62 0.17 148);
-  --success-foreground: oklch(0.985 0 0);
-  --success-soft: oklch(0.94 0.08 148);
-  --success-border: oklch(0.78 0.12 148);
-  --success-strong: oklch(0.52 0.18 148);          /* readable on light bg */
+  /* Brand-v1 Emerald (#10B981). Doubles as the platform success
+   * color across timelines, status pills, dispute outcomes, and as
+   * the wordmark accent on the "Txn" suffix. The `--brand-emerald`
+   * alias is what the logo + accent surfaces read; the --success
+   * family stays for semantic state use. */
+  --brand-emerald: #10B981;
+  --brand-emerald-strong: oklch(0.62 0.16 162);  /* slightly darker for hover */
+  --brand-emerald-soft: oklch(0.95 0.05 162);    /* tinted backgrounds */
+  --brand-emerald-border: oklch(0.82 0.09 162);
+
+  --success: #10B981;
+  --success-foreground: #FFFFFF;
+  --success-soft: oklch(0.95 0.05 162);
+  --success-border: oklch(0.82 0.09 162);
+  --success-strong: oklch(0.55 0.14 162);           /* readable on light bg */
+
+  /* Slate (#94A3B8) — brand-spec secondary text. */
+  --brand-slate: #94A3B8;
 
   --warning: oklch(0.78 0.13 78);
   --warning-foreground: oklch(0.205 0.01 80);
@@ -283,18 +302,17 @@
   --chart-4: oklch(0.55 0.22 303);
   --chart-5: oklch(0.62 0.21 16);
 
-  /* Sidebar (separate so we can tune it independently) ──────── */
-  /* Sidebar — shifted to the navy hue family (240) so the app
-   * shell shares the same color DNA as the landing's warm-paper
-   * background + cover band, not a purple-gray of its own. */
-  --sidebar: oklch(0.97 0.005 240);
-  --sidebar-foreground: oklch(0.18 0.018 240);
-  --sidebar-primary: oklch(0.22 0.025 240);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.94 0.012 240);
-  --sidebar-accent-foreground: oklch(0.18 0.018 240);
-  --sidebar-border: oklch(0.9 0.008 240);
-  --sidebar-ring: oklch(0.62 0.012 240);
+  /* Sidebar — brand-v1 Cloud surface, Deep Navy ink, Emerald
+   * active-rail. Reads as the operational chrome the brand spec
+   * describes (Stripe / Linear / Ramp restraint, not purple-gray). */
+  --sidebar: #F8FAFC;                              /* Cloud */
+  --sidebar-foreground: #0F172A;                   /* Deep Navy */
+  --sidebar-primary: #0F172A;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: oklch(0.94 0.005 247);
+  --sidebar-accent-foreground: #0F172A;
+  --sidebar-border: oklch(0.91 0.005 247);
+  --sidebar-ring: #10B981;                         /* Emerald focus */
 
   /* Shadow scale — layered, restrained. Each step blends a hairline
      contact-shadow (sharp, 1px) with a soft ambient halo. Avoids the
@@ -467,6 +485,10 @@
   /* Typography */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  /* Brand-v1 display typeface — DM Sans, applied via `font-display`
+   * (Tailwind utility) on the wordmark + on display-scale headings.
+   * Body copy stays on Geist for legibility. */
+  --font-display: var(--font-dm-sans);
 }
 
 @layer base {
