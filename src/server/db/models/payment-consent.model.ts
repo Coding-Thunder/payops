@@ -31,6 +31,13 @@ import {
 
 export interface PaymentConsentDoc {
   orderId: Types.ObjectId;
+  /** Tenant boundary — denormalised from the parent Order so admin
+   *  consent lists can scope by orgId without a JOIN. The public
+   *  /consent/[token] surface is HMAC-token authed (not session
+   *  authed), so orgId here is a tenant-isolation primitive for the
+   *  admin-facing queries, not a customer-facing access gate.
+   *  Nullable during the multi-tenant migration window. */
+  orgId?: Types.ObjectId | null;
   /** Denormalised lookup field — matches Order.orderNumber. Lets the
    *  hosted page render a recognisable header without a second query. */
   orderNumber: string;
@@ -129,6 +136,12 @@ const paymentConsentSchema = new Schema<PaymentConsentDoc>(
       type: Schema.Types.ObjectId,
       ref: "Order",
       required: true,
+      index: true,
+    },
+    orgId: {
+      type: Schema.Types.ObjectId,
+      ref: "Organization",
+      default: null,
       index: true,
     },
     orderNumber: {

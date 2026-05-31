@@ -70,6 +70,12 @@ function summarize(
 
 interface ActorCtx {
   actor: SessionUser;
+  /** Tenant boundary — required for new drafts so they pin to the
+   *  org the operator is currently in. Optional in the type for
+   *  legacy callers; the service falls back to null (which means
+   *  the draft can't be cross-tenant since reads filter by ownerId
+   *  too, but per-tenant draft lists won't include it). */
+  orgId?: string | null;
 }
 
 export async function listDrafts({
@@ -103,12 +109,13 @@ export interface CreateDraftInput {
 
 export async function createDraft(
   { data = {} }: CreateDraftInput,
-  { actor }: ActorCtx,
+  { actor, orgId }: ActorCtx,
 ): Promise<OrderDraftDTO> {
   await connectMongo();
   const summary = summarize(data);
   const doc = await OrderDraft.create({
     ownerId: new Types.ObjectId(actor.id),
+    orgId: orgId ? new Types.ObjectId(orgId) : null,
     data,
     summary,
     revision: 1,

@@ -26,6 +26,12 @@ export interface ProcessedWebhookEventDoc {
   gatewayEventId: string;
   gateway: string;
   orderId?: Types.ObjectId | null;
+  /** Tenant boundary — denormalised from the targeted Order. Lets
+   *  per-tenant ops queries (recent webhook events, processing
+   *  latency by tenant) scope cleanly. Nullable for system events
+   *  that don't bind to a specific order (e.g. account-level Stripe
+   *  events). */
+  orgId?: Types.ObjectId | null;
   processedAt: Date;
 }
 
@@ -43,6 +49,12 @@ const processedWebhookEventSchema = new Schema<ProcessedWebhookEventDoc>(
     },
     gateway: { type: String, required: true, maxlength: 32 },
     orderId: { type: Schema.Types.ObjectId, ref: "Order", default: null },
+    orgId: {
+      type: Schema.Types.ObjectId,
+      ref: "Organization",
+      default: null,
+      index: true,
+    },
     processedAt: { type: Date, required: true, default: () => new Date() },
   },
   {
@@ -92,6 +104,11 @@ const PENDING_EMAIL_STATUSES = Object.values(PendingEmailStatus);
 
 export interface PendingEmailDoc {
   orderId: Types.ObjectId;
+  /** Tenant boundary — denormalised from the parent Order so the
+   *  drainer can per-tenant rate-limit / kill-switch failed sends
+   *  without joining through Order. Required for new rows; nullable
+   *  during the multi-tenant migration window. */
+  orgId?: Types.ObjectId | null;
   kind: EmailKind;
   /** Captured for visibility on the admin jobs view. Actual send
    *  re-resolves the recipient from the order at drain time. */
@@ -119,6 +136,12 @@ const pendingEmailSchema = new Schema<PendingEmailDoc>(
       type: Schema.Types.ObjectId,
       ref: "Order",
       required: true,
+      index: true,
+    },
+    orgId: {
+      type: Schema.Types.ObjectId,
+      ref: "Organization",
+      default: null,
       index: true,
     },
     kind: { type: String, required: true, maxlength: 64 },

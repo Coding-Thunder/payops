@@ -262,6 +262,7 @@ export async function applyCheckoutPaid(
         gatewayEventId: input.eventId,
         gateway: gatewayKey,
         orderId: String(order._id),
+        orgId: order.orgId ? String(order.orgId) : null,
       },
       session,
     );
@@ -382,6 +383,7 @@ export async function applyCheckoutPaid(
       await enqueueEmail(
         {
           orderId: String(updated._id),
+          orgId: updated.orgId ? String(updated.orgId) : null,
           kind: EmailKind.PAYMENT_CONFIRMATION,
           recipient: updated.customer.email,
         },
@@ -484,6 +486,7 @@ async function handleCheckoutExpired(
         gatewayEventId: event.eventId,
         gateway: gatewayKey,
         orderId: String(order._id),
+        orgId: order.orgId ? String(order.orgId) : null,
       },
       session,
     );
@@ -637,6 +640,7 @@ async function failOrder(
         gatewayEventId: event.eventId,
         gateway: gatewayKey,
         orderId: String(order._id),
+        orgId: order.orgId ? String(order.orgId) : null,
       },
       session,
     );
@@ -808,6 +812,7 @@ async function handleDisputeCreated(
         gatewayEventId: event.eventId,
         gateway: gatewayKey,
         orderId: String(order._id),
+        orgId: order.orgId ? String(order.orgId) : null,
       },
       session,
     );
@@ -847,6 +852,9 @@ async function handleDisputeCreated(
         [
           {
             orderId: order._id,
+            // Denormalise tenant boundary from the parent Order so
+            // per-tenant dispute queries don't need a JOIN.
+            orgId: order.orgId ?? null,
             orderNumber: order.orderNumber,
             gateway: gatewayKey,
             gatewayDisputeId: d.gatewayDisputeId,
@@ -1319,6 +1327,7 @@ async function handleRefundCreated(
         gatewayEventId: event.eventId,
         gateway: gatewayKey,
         orderId: String(order._id),
+        orgId: order.orgId ? String(order.orgId) : null,
       },
       session,
     );

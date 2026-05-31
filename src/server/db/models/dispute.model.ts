@@ -33,6 +33,12 @@ import {
  */
 export interface DisputeDoc {
   orderId: Types.ObjectId;
+  /** Tenant boundary — denormalised from the parent Order at create
+   *  time so dispute queries can scope by orgId without a JOIN, and
+   *  cross-tenant id-guesses fail at the find filter rather than
+   *  relying on the parent Order's orgId pin alone. Nullable during
+   *  the multi-tenant migration window; required for new rows. */
+  orgId?: Types.ObjectId | null;
   /** Denormalised lookup so admin views can render order context
    *  without a JOIN. Frozen at creation. */
   orderNumber: string;
@@ -80,6 +86,12 @@ const disputeSchema = new Schema<DisputeDoc>(
       type: Schema.Types.ObjectId,
       ref: "Order",
       required: true,
+      index: true,
+    },
+    orgId: {
+      type: Schema.Types.ObjectId,
+      ref: "Organization",
+      default: null,
       index: true,
     },
     orderNumber: { type: String, required: true, maxlength: 32 },
@@ -137,6 +149,8 @@ const disputeSchema = new Schema<DisputeDoc>(
 );
 
 disputeSchema.index({ orderId: 1, openedAt: -1 });
+// Tenant-scoped admin queries (dispute list per workspace).
+disputeSchema.index({ orgId: 1, openedAt: -1 });
 disputeSchema.index({ status: 1, openedAt: -1 });
 
 import { registerModel } from "./register";

@@ -20,6 +20,11 @@ import { getOrderById } from "./order.service";
 
 interface EnqueueInput {
   orderId: string;
+  /** Parent order's orgId. Denormalised onto the outbox row so the
+   *  drainer + ops queries can per-tenant rate-limit / kill-switch
+   *  without a JOIN. Pass null for legacy callers; the column stays
+   *  nullable until backfilled. */
+  orgId?: string | null;
   kind: EmailKind;
   recipient: string;
   metadata?: Record<string, unknown> | null;
@@ -44,6 +49,7 @@ export async function enqueueEmail(
     [
       {
         orderId: new Types.ObjectId(input.orderId),
+        orgId: input.orgId ? new Types.ObjectId(input.orgId) : null,
         kind: input.kind,
         recipient: input.recipient.toLowerCase(),
         status: PendingEmailStatus.PENDING,

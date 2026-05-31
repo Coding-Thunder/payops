@@ -90,6 +90,20 @@ export async function recordEvidence(
   const orderObjectId = new Types.ObjectId(input.orderId);
   const occurredAt = input.occurredAt ?? new Date();
 
+  // Resolve the parent Order's orgId so we can denormalise it onto
+  // the evidence row. Single small projection; the lookup is cheap
+  // and lets per-tenant evidence queries skip the JOIN.
+  const orderLookupQuery = Order.findById(orderObjectId).select({ orgId: 1 });
+  const parentOrder = await (session
+    ? orderLookupQuery.session(session)
+    : orderLookupQuery
+  ).lean<{ orgId?: unknown }>();
+  const evidenceOrgId =
+    parentOrder?.orgId &&
+    Types.ObjectId.isValid(String(parentOrder.orgId))
+      ? new Types.ObjectId(String(parentOrder.orgId))
+      : null;
+
   // Normalise the payload BEFORE hashing so the stored bytes and the
   // hashed bytes agree. Two steps:
   //   1. JSON round-trip — strips Mongoose subdoc parent-pointers
@@ -129,6 +143,7 @@ export async function recordEvidence(
         [
           {
             orderId: orderObjectId,
+            orgId: evidenceOrgId,
             orderNumber: input.orderNumber,
             sequence,
             eventType: input.eventType,
@@ -415,10 +430,34 @@ export async function getEvidenceEvent(
   }
   await connectMongo();
   if (!Types.ObjectId.isValid(eventId)) return null;
-  const doc = await OrderEvidence.findById(eventId).lean<
+  // Pin BOTH _id AND orgId so a Tenant-A admin guessing an event id
+  // from Tenant B gets a clean "not found" instead of a real event.
+  // Backfilled rows without orgId fall back to a parent-Order check
+  // (verifyOrgViaParent) so we don't regress on legacy data.
+  const filter: Record<string, unknown> = { _id: eventId };
+  if (ctx.orgId) filter.orgId = new Types.ObjectId(ctx.orgId);
+  const doc = await OrderEvidence.findOne(filter).lean<
     OrderEvidenceDoc & { _id: Types.ObjectId }
   >();
-  return doc ? evidenceToDTO(doc) : null;
+  if (doc) return evidenceToDTO(doc);
+  // Fallback for not-yet-backfilled legacy rows: an evidence row
+  // without orgId is reachable only if its parent Order belongs to
+  // ctx.orgId. One extra read on the cold-data path.
+  if (ctx.orgId) {
+    const legacy = await OrderEvidence.findOne({
+      _id: eventId,
+      orgId: { $exists: false },
+    }).lean<OrderEvidenceDoc & { _id: Types.ObjectId }>();
+    if (legacy) {
+      const parent = await Order.findById(legacy.orderId)
+        .select({ orgId: 1 })
+        .lean<{ orgId?: unknown }>();
+      if (parent?.orgId && String(parent.orgId) === ctx.orgId) {
+        return evidenceToDTO(legacy);
+      }
+    }
+  }
+  return null;
 }
 
 /**

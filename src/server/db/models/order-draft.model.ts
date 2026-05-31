@@ -16,6 +16,11 @@ import { registerModel } from "./register";
  */
 export interface OrderDraftDoc {
   ownerId: Types.ObjectId;
+  /** Tenant boundary — drafts belong to the org the operator was in
+   *  at save time. Pinned on every read so a user moving between orgs
+   *  doesn't see a previous org's drafts. Nullable during the
+   *  multi-tenant migration; required for new rows. */
+  orgId?: Types.ObjectId | null;
   /**
    * Raw form snapshot — exactly what react-hook-form has at the moment of
    * autosave. Shape mirrors `CreateOrderInput` but with all fields optional.
@@ -44,6 +49,12 @@ const orderDraftSchema = new Schema<OrderDraftDoc>(
       type: Schema.Types.ObjectId,
       ref: "User",
       required: true,
+      index: true,
+    },
+    orgId: {
+      type: Schema.Types.ObjectId,
+      ref: "Organization",
+      default: null,
       index: true,
     },
     data: {
@@ -82,6 +93,8 @@ orderDraftSchema.index(
   { expireAfterSeconds: 60 * 60 * 24 * 30 },
 );
 orderDraftSchema.index({ ownerId: 1, lastEditedAt: -1 });
+// Tenant-scoped drafts list (drafts picker in the create-order UI).
+orderDraftSchema.index({ orgId: 1, ownerId: 1, lastEditedAt: -1 });
 
 export const OrderDraft: Model<OrderDraftDoc> = registerModel<OrderDraftDoc>(
   "OrderDraft",

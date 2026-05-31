@@ -205,6 +205,7 @@ export async function requestConsent(
   } else {
     const created = await PaymentConsent.create({
       orderId: orderObjectId,
+      orgId: order.orgId ?? null,
       orderNumber: order.orderNumber,
       status: ConsentStatus.REQUESTED,
       customerEmail: input.customerEmail,

@@ -77,6 +77,10 @@ export async function tryClaimGatewayEvent(
     gatewayEventId: string;
     gateway: string;
     orderId?: string | null;
+    /** Parent order's orgId. Denormalised so per-tenant webhook
+     *  history queries don't need a JOIN. Optional for legacy
+     *  callers; column stays nullable until backfilled. */
+    orgId?: string | null;
   },
   session: ClientSession | null,
 ): Promise<boolean> {
@@ -94,6 +98,7 @@ export async function tryClaimGatewayEvent(
           gatewayEventId: input.gatewayEventId,
           gateway: input.gateway,
           orderId: input.orderId ?? null,
+          orgId: input.orgId ?? null,
           processedAt: new Date(),
         },
       },

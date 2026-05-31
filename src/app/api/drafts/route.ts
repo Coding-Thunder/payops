@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 export const GET = withApi(async () => {
   const actor = await requirePermission(Permission.ORDER_CREATE);
-  const drafts = await listDrafts({ actor });
+  const drafts = await listDrafts({ actor, orgId: actor.orgId });
   return jsonOk({ items: drafts });
 });
 
@@ -22,7 +22,10 @@ export const POST = withApi(async (req: NextRequest) => {
   const actor = await requirePermission(Permission.ORDER_CREATE);
   const body = await safeJson(req);
   const input = createDraftSchema.parse(body ?? {});
-  const draft = await createDraft({ data: input.data }, { actor });
+  const draft = await createDraft(
+    { data: input.data },
+    { actor, orgId: actor.orgId },
+  );
   return jsonOk(draft, { status: 201 });
 });
 

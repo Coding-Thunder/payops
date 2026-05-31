@@ -66,6 +66,11 @@ export interface OrderEvidenceRefs {
 
 export interface OrderEvidenceDoc {
   orderId: Types.ObjectId;
+  /** Tenant boundary — denormalised from the parent Order so the
+   *  evidence chain can be scoped by orgId without joining through
+   *  Order on every read. Nullable during the multi-tenant migration
+   *  window; required for new rows. */
+  orgId?: Types.ObjectId | null;
   orderNumber: string;
   /** 1..N per order. Unique with orderId so concurrent writers can race
    *  safely on the unique index. */
@@ -140,6 +145,12 @@ const orderEvidenceSchema = new Schema<OrderEvidenceDoc>(
       type: Schema.Types.ObjectId,
       ref: "Order",
       required: true,
+      index: true,
+    },
+    orgId: {
+      type: Schema.Types.ObjectId,
+      ref: "Organization",
+      default: null,
       index: true,
     },
     orderNumber: { type: String, required: true, maxlength: 32, index: true },
