@@ -13,8 +13,13 @@ interface EmailFooterProps {
 
 /**
  * Bottom-of-email legal block. Muted, single column, no marketing
- * fluff. Always shows: copyright, automated-mail disclosure, "Powered
- * by Stripe" attribution.
+ * fluff. Always shows: tenant copyright + automated-mail disclosure.
+ *
+ * Payment-processor attribution (e.g. "Powered by Stripe") was
+ * removed: TraceTxn is BYOS Stripe today but the email frame stays
+ * processor-agnostic so the same component renders correctly when a
+ * tenant later adds a different gateway, and so a customer's receipt
+ * doesn't promote a third-party brand alongside the tenant's.
  */
 export function EmailFooter({
   brandName,
@@ -47,7 +52,7 @@ export function EmailFooter({
         }}
       >
         © {year} {brandName}. Automated payment receipt — replies route to
-        our support team. Powered by Stripe.
+        our support team.
       </Text>
       {supportEmail || legalAddress ? (
         <Text

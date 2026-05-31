@@ -75,7 +75,11 @@ describe("createOrder", () => {
     expect(stored?.payment.checkoutUrl ?? null).toBeNull();
     expect(stored?.payment.initiatedAt ?? null).toBeNull();
     expect(stored?.payment.expiresAt ?? null).toBeNull();
-    expect(stored?.policy.text.length).toBeGreaterThan(20);
+    // Policy is opt-in per tenant. Default is empty — tenants set
+    // their refund/cancellation terms in /app/admin/settings during
+    // onboarding. Empty means the receipt email's policy block
+    // renders nothing instead of platform-generic legalese.
+    expect(stored?.policy.text).toBe("");
     expect(stored?.policy.version).toBe("v1");
 
     // Stripe was NOT called — the whole point of decoupling creation.

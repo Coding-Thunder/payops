@@ -19,13 +19,24 @@ export const SETTINGS_KEY = "default" as const;
  * the settings document is created and shown to admins so they have a
  * reasonable starting point to edit from.
  */
-export const DEFAULT_CANCELLATION_POLICY = [
-  "Cancellations made more than 24 hours before pick-up are eligible for a full refund.",
-  "Cancellations made within 24 hours of pick-up forfeit the deposit.",
-  "Modification fees (date or vehicle changes) are non-refundable once paid.",
-  "Refunds are processed within 5-10 business days to the original payment method.",
-  "To request a refund, reply to this email or contact our support team using the details below.",
-].join("\n");
+/**
+ * Default cancellation / refund policy text shown to customers on the
+ * payment receipt and snapshotted onto every order at create-time.
+ *
+ * Empty by design — refund policies are tenant-specific and legally
+ * sensitive (a generic platform default like "refunds within 5–10
+ * business days" can mislead customers if a tenant operates under
+ * different terms). New tenants set this in /app/admin/settings during
+ * onboarding; until they do, the email's policy block renders nothing
+ * (see email/blocks/index.tsx — block early-returns on empty text).
+ *
+ * Prior history: this used to ship hardcoded car-rental terms
+ * ("pick-up", "vehicle changes", "deposit forfeit"). Replaced as part
+ * of the multi-tenant cleanup so a SaaS or hospitality tenant doesn't
+ * accidentally send rental-flavored refund language to their
+ * customers.
+ */
+export const DEFAULT_CANCELLATION_POLICY = "";
 
 /**
  * Default copy for the customer acknowledgement statement. Intentionally
@@ -118,7 +129,9 @@ const settingSchema = new Schema<SettingDoc>(
     cancelRedirectUrl: { type: String, required: true },
     cancellationPolicy: {
       type: String,
-      required: true,
+      // Empty allowed: tenants set this in /app/admin/settings during
+      // onboarding. When empty, the email's policy block early-returns
+      // and renders nothing instead of platform-generic legalese.
       default: DEFAULT_CANCELLATION_POLICY,
       maxlength: 4000,
     },

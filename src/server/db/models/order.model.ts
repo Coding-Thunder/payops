@@ -292,7 +292,10 @@ const policySchema = new Schema(
   {
     acceptedAt: { type: Date, required: true, default: Date.now },
     version: { type: String, required: true, maxlength: 16, default: "v1" },
-    text: { type: String, required: true, maxlength: 4000, default: "" },
+    // Empty allowed: tenant may not have set a cancellation policy
+    // during onboarding. Email's policy block early-returns on empty
+    // so the receipt simply omits the section.
+    text: { type: String, default: "", maxlength: 4000 },
   },
   { _id: false },
 );

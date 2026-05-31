@@ -289,14 +289,16 @@ function SchedulingWindowBlock({
 }
 
 function ItemHeroBlock({ ctx }: BlockProps): React.ReactElement | null {
-  // First line's image attribute. Rental orders carry `vehicle_image_url`
-  // (auto-seeded backfill); other verticals can populate `image_url`.
+  // First line's image attribute. Generic key is `image_url`; legacy
+  // rental orders carry `vehicle_image_url` (kept as a back-compat
+  // fallback so existing receipts still render their hero image).
+  // New ItemType definitions should use `image_url`.
   const line = ctx.order.lineItems[0];
   if (!line) return null;
   const attrs = line.attributes ?? {};
   const url =
-    (attrs.vehicle_image_url as string | null | undefined) ??
     (attrs.image_url as string | null | undefined) ??
+    (attrs.vehicle_image_url as string | null | undefined) ??
     null;
   if (!url) return null;
   return (
