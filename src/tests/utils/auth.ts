@@ -1,13 +1,14 @@
 import { Types } from "mongoose";
 import { vi } from "vitest";
 
-import { UserRole } from "@/lib/constants/enums";
+import { RecordState, UserRole } from "@/lib/constants/enums";
 import { ForbiddenError, UnauthorizedError } from "@/lib/errors";
 import {
   type Permission,
   roleHasAnyPermission,
   roleHasPermission,
 } from "@/lib/constants/permissions";
+import { Organization, User } from "@/server/db/models";
 import type { AuthenticatedUser } from "@/server/auth/session";
 
 /**
@@ -45,6 +46,47 @@ export function actorFor(
     orgId,
     orgIds: [orgId],
   };
+}
+
+/**
+ * Persist an Organization + owner User for an actor's orgId so tenant-
+ * aware services (Branding, Workflow, etc.) that lazy-seed from the
+ * Org/founder data have something to read. Idempotent — safe to call
+ * multiple times for the same actor.
+ *
+ * Tests that exercise any flow touching branding/workflow/email seeds
+ * should call this in `beforeEach`. Tests that only exercise tenant-
+ * agnostic pure logic don't need it.
+ */
+export async function persistOrgFixture(
+  actor: AuthenticatedUser,
+): Promise<void> {
+  if (!actor.orgId) return;
+  const orgId = new Types.ObjectId(actor.orgId);
+
+  // Idempotent: if the Org already exists, we're done. Stops repeat
+  // calls from inserting duplicate users that collide on the email
+  // unique index.
+  const existing = await Organization.findById(orgId).select({ _id: 1 }).lean();
+  if (existing) return;
+
+  const userId = new Types.ObjectId(actor.id);
+  await User.create({
+    _id: userId,
+    name: actor.name,
+    email: actor.email,
+    passwordHash: "test:placeholder",
+    role: actor.role,
+    status: RecordState.ACTIVE,
+    primaryOrgId: orgId,
+  });
+  await Organization.create({
+    _id: orgId,
+    slug: `test-${orgId.toString().slice(-8)}`,
+    name: `${actor.name}'s Workspace`,
+    ownerUserId: userId,
+    status: "ACTIVE",
+  });
 }
 
 export interface MockSessionHandle {

@@ -66,7 +66,7 @@ const brandingSchema = new Schema<BrandingDoc>(
       trim: true,
       maxlength: 254,
     },
-    supportPhone: { type: String, required: true, trim: true, maxlength: 32 },
+    supportPhone: { type: String, default: "", trim: true, maxlength: 32 },
     senderEmail: { type: String, default: "", trim: true, maxlength: 254 },
     logo: { type: String, default: "", maxlength: 200 },
     primaryColor: {

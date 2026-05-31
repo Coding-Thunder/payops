@@ -65,6 +65,36 @@ afterEach(() => {
   _resetLegacyOrgIdForTesting();
 });
 
+/** Persist a real Organization + owner User for a per-test orgId so
+ *  tenant-aware services (branding seed, workflow seed) have real
+ *  data to read instead of failing on missing-org. */
+async function seedOrg(orgId: string): Promise<void> {
+  const oid = new Types.ObjectId(orgId);
+  // If an Org doc already exists for this orgId we're done — repeat
+  // seedOrg(sameOrgId) calls inside a single test must be a no-op so
+  // we don't double-write owner users with colliding emails.
+  const existingOrg = await Organization.findById(oid).select({ _id: 1 }).lean();
+  if (existingOrg) return;
+
+  const ownerId = new Types.ObjectId();
+  await User.create({
+    _id: ownerId,
+    name: "Test Owner",
+    email: `owner-${oid.toString()}@x.test`,
+    passwordHash: "x".repeat(60),
+    role: UserRole.SUPER_ADMIN,
+    status: "ACTIVE",
+    primaryOrgId: oid,
+  });
+  await Organization.create({
+    _id: oid,
+    slug: `o-${oid.toString().slice(-8)}`,
+    name: "Test Org",
+    ownerUserId: ownerId,
+    status: OrgStatus.ACTIVE,
+  });
+}
+
 /** Seed the legacy org so `isLegacyTenant` resolves true for the
  *  returned id — required for Pass 5a's env-fallback gate. */
 async function seedLegacyOrg(): Promise<string> {
@@ -148,6 +178,7 @@ function orderInput() {
 describe("createOrder — tenant boundary", () => {
   it("persists order.orgId from ctx", async () => {
     const orgA = new Types.ObjectId().toString();
+    await seedOrg(orgA);
     await seedServiceVisitType(orgA);
     const { order } = await createOrder(orderInput(), {
       actor: actor(),
@@ -166,6 +197,8 @@ describe("createOrder — tenant boundary", () => {
     // Setting rows directly (faster than going through updateSettings).
     const orgA = new Types.ObjectId().toString();
     const orgB = new Types.ObjectId().toString();
+    await seedOrg(orgA);
+    await seedOrg(orgB);
     await Setting.create({
       orgId: new Types.ObjectId(orgA),
       paymentExpiryHours: 24,
@@ -193,6 +226,7 @@ describe("createOrder — tenant boundary", () => {
       consentMessage: "x",
     });
 
+    await seedOrg(orgA);
     await seedServiceVisitType(orgA);
     await seedServiceVisitType(orgB);
     const { order: a } = await createOrder(orderInput(), {
@@ -234,6 +268,7 @@ describe("initiatePayment — per-org gateway routing", () => {
       { actor: { id: actor().id, name: "Ada", role: UserRole.ADMIN }, orgId: orgA, request: null },
     );
 
+    await seedOrg(orgA);
     await seedServiceVisitType(orgA);
     const { order } = await createOrder(orderInput(), {
       actor: actor(),
@@ -277,6 +312,7 @@ describe("initiatePayment — per-org gateway routing", () => {
   it("REFUSES env-fallback for a non-legacy tenant without per-org creds (Pass 5a security gate)", async () => {
     await seedLegacyOrg();
     const newTenant = new Types.ObjectId().toString();
+    await seedOrg(newTenant);
     await seedServiceVisitType(newTenant);
     const { order } = await createOrder(orderInput(), {
       actor: actor(),

@@ -19,7 +19,7 @@ import {
 } from "@/server/services/order.service";
 import { saveGatewayCredential } from "@/server/payments/gateway-credentials.service";
 import type { AuthenticatedUser } from "@/server/auth/session";
-import { actorFor } from "@/tests/utils/auth";
+import { actorFor, persistOrgFixture } from "@/tests/utils/auth";
 import { ensureMongo } from "@/tests/utils/db";
 import { createSettings } from "@/tests/factories/settings.factory";
 import { validCreateOrderInput } from "@/tests/fixtures/order-input.fixture";
@@ -38,6 +38,10 @@ const masterKey = randomBytes(32).toString("base64");
  */
 async function seedOrgScaffold(actor: AuthenticatedUser): Promise<void> {
   if (!actor.orgId) return;
+  // Persist the Organization + owner User backing this actor so
+  // tenant-aware services (branding, workflow) can seed from real
+  // tenant data.
+  await persistOrgFixture(actor);
   await ItemType.create({
     orgId: new Types.ObjectId(actor.orgId),
     key: "rental_booking",

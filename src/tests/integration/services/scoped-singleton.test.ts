@@ -1,7 +1,7 @@
 import { Types } from "mongoose";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { Branding, BRANDING_KEY, Setting, SETTINGS_KEY } from "@/server/db/models";
+import { Branding, BRANDING_KEY, Organization, Setting, SETTINGS_KEY, User } from "@/server/db/models";
 import { ensureBrandingDocument, getBranding, updateBranding } from "@/server/services/branding.service";
 import { getSettings, updateSettings } from "@/server/services/settings.service";
 import { ensureMongo, resetDatabase } from "@/tests/utils/db";
@@ -176,37 +176,42 @@ describe("branding — scoped singleton + lazy provisioning", () => {
     expect(out.brandName).toBe("LegacyBrand");
   });
 
-  it("lazy-provisions per-org row cloning legacy values", async () => {
+  it("lazy-provisions per-org row from the org's OWN data (NOT the legacy singleton)", async () => {
+    // Cross-tenant leak guard: even if a legacy singleton exists with
+    // some other tenant's brand, a fresh tenant's seed must come from
+    // THEIR Organization + founder data — never from the singleton.
     await Branding.create({
       key: BRANDING_KEY,
-      brandName: "LegacyBrand",
+      brandName: "PlatformLegacyBrand",
       supportEmail: "support@legacy.example",
       supportPhone: "+1-555-0000",
       primaryColor: "#FF0000",
       footerTagline: "the legacy tagline",
     });
-    const orgA = newOrgId();
-    const out = await getBranding(orgA);
-    expect(out.brandName).toBe("LegacyBrand");
-    expect(out.footerTagline).toBe("the legacy tagline");
+    const { orgId, ownerEmail, orgName } = await createOrgWithOwner(
+      "Acme Bicycles",
+    );
+    const out = await getBranding(orgId);
+    expect(out.brandName).toBe(orgName); // NOT "PlatformLegacyBrand"
+    expect(out.supportEmail).toBe(ownerEmail);
 
     const perOrg = await Branding.findOne({
-      orgId: new Types.ObjectId(orgA),
+      orgId: new Types.ObjectId(orgId),
     }).lean<{ key?: string | null; brandName: string }>();
     expect(perOrg?.key).toBeFalsy();
-    expect(perOrg?.brandName).toBe("LegacyBrand");
+    expect(perOrg?.brandName).toBe(orgName);
   });
 
-  it("updateBranding writes to per-org row only", async () => {
+  it("updateBranding writes to per-org row only, never the legacy singleton", async () => {
     await Branding.create({
       key: BRANDING_KEY,
-      brandName: "LegacyBrand",
+      brandName: "PlatformLegacyBrand",
       supportEmail: "support@legacy.example",
       supportPhone: "+1-555-0000",
       primaryColor: "#FF0000",
     });
-    const orgA = newOrgId();
-    await ensureBrandingDocument(orgA);
+    const { orgId } = await createOrgWithOwner("TenantA");
+    await ensureBrandingDocument(orgId);
 
     await updateBranding(
       { brandName: "TenantABrand" },
@@ -216,18 +221,18 @@ describe("branding — scoped singleton + lazy provisioning", () => {
           name: "Ada",
           role: UserRole.ADMIN,
         },
-        orgId: orgA,
+        orgId,
         request: null,
       },
     );
 
-    const a = await getBranding(orgA);
+    const a = await getBranding(orgId);
     expect(a.brandName).toBe("TenantABrand");
 
     const legacy = await Branding.findOne({ key: BRANDING_KEY }).lean<{
       brandName: string;
     }>();
-    expect(legacy?.brandName).toBe("LegacyBrand");
+    expect(legacy?.brandName).toBe("PlatformLegacyBrand");
   });
 
   it("concurrent first-access doesn't produce duplicate per-org rows", async () => {
@@ -237,26 +242,49 @@ describe("branding — scoped singleton + lazy provisioning", () => {
     // Mongoose's lazy autoIndex hasn't necessarily built it before the
     // first concurrent insert fires.
     await Branding.syncIndexes();
-    await Branding.create({
-      key: BRANDING_KEY,
-      brandName: "LegacyBrand",
-      supportEmail: "x@x.com",
-      supportPhone: "+1",
-      primaryColor: "#000000",
-    });
-    const orgA = newOrgId();
+    const { orgId, orgName } = await createOrgWithOwner("RaceCondition Co");
     // Fire 5 concurrent first-access reads against the same orgId.
     const results = await Promise.all(
-      Array.from({ length: 5 }, () => getBranding(orgA)),
+      Array.from({ length: 5 }, () => getBranding(orgId)),
     );
-    // All five return the same brand name.
+    // All five return the same brand name (the tenant's own org name).
     expect(new Set(results.map((r) => r.brandName))).toEqual(
-      new Set(["LegacyBrand"]),
+      new Set([orgName]),
     );
     // Exactly one per-org row exists.
     const rows = await Branding.find({
-      orgId: new Types.ObjectId(orgA),
+      orgId: new Types.ObjectId(orgId),
     }).lean();
     expect(rows.length).toBe(1);
   });
 });
+
+/** Create a real Organization + owner User so branding seed has tenant
+ *  data to read. Returns the identifiers the asserting tests need. */
+async function createOrgWithOwner(orgName: string): Promise<{
+  orgId: string;
+  ownerEmail: string;
+  orgName: string;
+}> {
+  const ownerId = new Types.ObjectId();
+  const ownerEmail = `owner-${ownerId.toString().slice(-6)}@x.test`;
+  await User.create({
+    _id: ownerId,
+    name: "Founder",
+    email: ownerEmail,
+    passwordHash: "x".repeat(60),
+    role: UserRole.SUPER_ADMIN,
+    status: "ACTIVE",
+  });
+  const org = await Organization.create({
+    slug: `s-${ownerId.toString().slice(-8)}`,
+    name: orgName,
+    ownerUserId: ownerId,
+    status: "ACTIVE",
+  });
+  return {
+    orgId: String(org._id),
+    ownerEmail,
+    orgName,
+  };
+}
