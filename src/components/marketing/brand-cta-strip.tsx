@@ -62,6 +62,12 @@ export function BrandCtaStrip() {
               >
                 Already have an account? Sign in →
               </Link>
+              <Link
+                href="/waitlist"
+                className="text-[12px] text-white/55 underline-offset-4 hover:text-white/85 hover:underline"
+              >
+                Not ready yet? Join the waitlist →
+              </Link>
             </div>
           </div>
         </div>
