@@ -68,10 +68,8 @@ const TIERS: Tier[] = [
     usersLabel: "Up to 3 team members",
     highlights: [
       "Everything in Starter",
-      "Webhook delivery monitoring",
-      "Reason code analytics and dispute trends",
-      "Custom order stages and status automation",
-      "Custom branding on payment and consent pages",
+      "Up to 3 team members in one workspace",
+      "5x the active-order headroom",
       "Priority email support with 48 hour response",
     ],
     ctaLabel: "Start with Growth",
@@ -89,9 +87,8 @@ const TIERS: Tier[] = [
     usersLabel: "Unlimited team members",
     highlights: [
       "Everything in Growth",
-      "Full analytics suite including revenue trends, conversion tracking, and staff performance",
-      "API access to read orders, pull evidence chains, and push events to your own systems",
-      "Custom branding on PDF evidence exports",
+      "Unlimited active orders, no soft caps",
+      "Unlimited team members",
       "Dedicated onboarding session plus 30 day check-in call",
       "Priority support with 12 hour SLA",
     ],
@@ -110,25 +107,32 @@ interface MatrixRow {
   scale: boolean | string;
 }
 
+/* What actually differs between tiers, capacity and the human-side
+ * commitments. Every feature in the product (evidence chain, audit
+ * trail, consent flow, Stripe connect, workflow customisation, PDF
+ * export, analytics) is available on every plan today and listed
+ * once in the tier cards above. We don't pad this table with
+ * ✓✓✓ rows that would lie about gating, the upgrade story is
+ * capacity and support, not a feature-flag fence. */
 const MATRIX: MatrixRow[] = [
-  { label: "Active orders at a time", starter: "30", growth: "150", scale: "Unlimited" },
-  { label: "Team members", starter: "Solo operator", growth: "Up to 3", scale: "Unlimited" },
-  { label: "Dispute-ready evidence chain", starter: true, growth: true, scale: true },
-  { label: "Audit trail", starter: true, growth: true, scale: true },
-  { label: "Payment lifecycle tracking", starter: true, growth: true, scale: true },
-  { label: "Customer consent flow (timestamp + IP)", starter: true, growth: true, scale: true },
-  { label: "PDF invoice + receipt export", starter: true, growth: true, scale: true },
-  { label: "PDF evidence export", starter: true, growth: true, scale: true },
-  { label: "Real-time Stripe payment monitoring", starter: true, growth: true, scale: true },
-  { label: "Stripe connection (encrypted keys)", starter: true, growth: true, scale: true },
-  { label: "Webhook delivery monitoring", starter: false, growth: true, scale: true },
-  { label: "Reason code analytics", starter: false, growth: true, scale: true },
-  { label: "Custom order stages + status automation", starter: false, growth: true, scale: true },
-  { label: "Custom-branded payment + consent pages", starter: false, growth: true, scale: true },
-  { label: "Full analytics suite", starter: false, growth: false, scale: true },
-  { label: "API access", starter: false, growth: false, scale: true },
-  { label: "Custom-branded PDF evidence", starter: false, growth: false, scale: true },
-  { label: "Dedicated onboarding + 30 day check-in", starter: false, growth: false, scale: true },
+  {
+    label: "Active orders at a time",
+    starter: "30",
+    growth: "150",
+    scale: "Unlimited",
+  },
+  {
+    label: "Team members",
+    starter: "Solo operator",
+    growth: "Up to 3",
+    scale: "Unlimited",
+  },
+  {
+    label: "Dedicated onboarding + 30 day check-in",
+    starter: false,
+    growth: false,
+    scale: true,
+  },
   {
     label: "Support",
     starter: "Email",
