@@ -2,7 +2,14 @@ import "server-only";
 
 import { Types } from "mongoose";
 
-import { Customer, type CustomerDoc } from "@/server/db/models";
+import { RecordState } from "@/lib/constants/enums";
+import { NotFoundError } from "@/lib/errors";
+import {
+  Customer,
+  Order,
+  type CustomerDoc,
+  type OrderDoc,
+} from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 import { orgIdFilter, requireOrgId } from "@/server/db/org/org-context";
 
@@ -97,4 +104,75 @@ export async function findCustomerByEmail(
     email: normalised,
   }).lean<CustomerDoc & { _id: Types.ObjectId }>();
   return doc ? toDTO(doc) : null;
+}
+
+/* ─── Customer detail surface ──────────────────────────────────────────── */
+
+/**
+ * Look up a saved customer by its Mongo id. Cross-tenant guard:
+ * filter pins both `_id` AND `orgId` so an admin of org A holding
+ * a guessed id from org B gets a clean 404, not the wrong row.
+ */
+export async function getCustomerById(
+  orgId: string | null | undefined,
+  customerId: string,
+): Promise<CustomerDTO> {
+  const scopedOrgId = requireOrgId(orgId);
+  await connectMongo();
+  if (!Types.ObjectId.isValid(customerId)) {
+    throw new NotFoundError("Customer not found");
+  }
+  const doc = await Customer.findOne({
+    _id: new Types.ObjectId(customerId),
+    orgId: orgIdFilter(scopedOrgId),
+  }).lean<CustomerDoc & { _id: Types.ObjectId }>();
+  if (!doc) throw new NotFoundError("Customer not found");
+  return toDTO(doc);
+}
+
+export interface CustomerOrderRowDTO {
+  id: string;
+  orderNumber: string;
+  status: string;
+  amount: number;
+  currency: string;
+  createdAt: string;
+  paidAt: string | null;
+}
+
+/**
+ * Recent orders associated with a saved customer, looked up by
+ * (orgId, customer.email). Joining on email rather than a
+ * customerId field on Order means historical orders predating the
+ * customer record still surface — operator-friendly.
+ *
+ * Capped at 50 by default; the customer detail page renders a
+ * paginated table if a tenant needs deeper history.
+ */
+export async function listOrdersForCustomer(
+  orgId: string | null | undefined,
+  email: string,
+  limit = 50,
+): Promise<CustomerOrderRowDTO[]> {
+  const scopedOrgId = requireOrgId(orgId);
+  await connectMongo();
+  const normalised = email.toLowerCase().trim();
+  if (!normalised) return [];
+  const docs = await Order.find({
+    orgId: orgIdFilter(scopedOrgId),
+    state: { $ne: RecordState.ARCHIVED },
+    "customer.email": normalised,
+  })
+    .sort({ createdAt: -1 })
+    .limit(Math.min(200, Math.max(1, limit)))
+    .lean<(OrderDoc & { _id: Types.ObjectId })[]>();
+  return docs.map((d) => ({
+    id: String(d._id),
+    orderNumber: d.orderNumber,
+    status: d.status,
+    amount: d.pricing.amount,
+    currency: d.pricing.currency,
+    createdAt: d.createdAt.toISOString(),
+    paidAt: d.payment?.paidAt ? d.payment.paidAt.toISOString() : null,
+  }));
 }

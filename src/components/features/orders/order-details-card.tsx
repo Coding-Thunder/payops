@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import {
   Card,
   CardContent,
@@ -26,9 +28,12 @@ export function OrderDetailsCard({ order }: OrderDetailsCardProps) {
             value={
               <>
                 <div className="font-medium">{order.customer.name}</div>
-                <div className="text-xs text-muted-foreground">
+                <Link
+                  href={`/app/customers/by-email/${encodeURIComponent(order.customer.email)}`}
+                  className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                >
                   {order.customer.email}
-                </div>
+                </Link>
                 <div className="text-xs text-muted-foreground">
                   {order.customer.phone}
                 </div>
