@@ -77,9 +77,14 @@ async function main(): Promise<void> {
     return;
   }
 
+  // Clear trialWarnEmailSentAt at the same time so the heads-up
+  // email fires again when the new window enters the 3-day warn
+  // band, otherwise an extended tenant would miss the second nudge.
   await Organization.updateOne(
     { _id: org._id },
-    { $set: { trialStartsAt: next } },
+    {
+      $set: { trialStartsAt: next, trialWarnEmailSentAt: null },
+    },
   );
   console.log(`Updated. Trial now expires on ${new Date(next.getTime() + 15 * 24 * 60 * 60 * 1000).toISOString()}.`);
 

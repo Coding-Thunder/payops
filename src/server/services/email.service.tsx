@@ -31,6 +31,7 @@ import {
   type CustomTemplateEmailProps,
 } from "@/server/email/templates/custom-template-email";
 import { WelcomeEmail } from "@/server/email/templates/welcome-email";
+import { TrialEndingSoonEmail } from "@/server/email/templates/trial-ending-soon-email";
 import {
   isSystemTemplateKey,
   SYSTEM_TEMPLATE_LABELS,
@@ -914,6 +915,55 @@ export async function sendWelcomeEmail(args: {
     html,
     text,
     kind: EmailKind.ACCOUNT_WELCOME,
+    orderId: null,
+    fromName: accountsName,
+    senderEmail: accountsMailbox,
+    replyTo: supportEmail,
+  });
+}
+
+// ─── Trial-ending-soon email ────────────────────────────────────────────
+
+export async function sendTrialEndingSoonEmail(args: {
+  to: string;
+  customerName: string;
+  workspaceName: string;
+  daysRemaining: number;
+}): Promise<{ id: string | null }> {
+  const dashboardUrl = `${env.server.APP_URL.replace(/\/$/, "")}/app/dashboard`;
+  const supportEmail = env.server.SUPPORT_EMAIL || "support@tracetxn.com";
+  // Hard-coded: the trial-extension request mailbox lives at
+  // earlyaccess@. Keeping it inline so a future env tweak to
+  // SUPPORT_EMAIL doesn't accidentally redirect extension requests.
+  const extendEmail = "earlyaccess@tracetxn.com";
+
+  const props = {
+    customerName: args.customerName,
+    workspaceName: args.workspaceName,
+    daysRemaining: Math.max(1, args.daysRemaining),
+    dashboardUrl,
+    supportEmail,
+    extendEmail,
+  };
+  const html = await render(<TrialEndingSoonEmail {...props} />);
+  const text = await render(<TrialEndingSoonEmail {...props} />, {
+    plainText: true,
+  });
+
+  const fromHeader = env.server.EMAIL_FROM_ACCOUNTS;
+  const angle = fromHeader.match(/<([^>]+)>/);
+  const accountsMailbox = (angle?.[1] ?? fromHeader).trim();
+  const accountsName =
+    fromHeader.match(/^"?([^"<]+?)"?\s*</)?.[1].trim() ||
+    "TraceTxn Accounts";
+
+  const dayWord = props.daysRemaining === 1 ? "day" : "days";
+  return sendEmail({
+    to: args.to,
+    subject: `${props.daysRemaining} ${dayWord} left on your TraceTxn trial`,
+    html,
+    text,
+    kind: EmailKind.TRIAL_ENDING_SOON,
     orderId: null,
     fromName: accountsName,
     senderEmail: accountsMailbox,

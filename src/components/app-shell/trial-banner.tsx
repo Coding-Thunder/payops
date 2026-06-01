@@ -1,6 +1,10 @@
 import { ClockIcon, MailIcon } from "lucide-react";
 
-import { getTrialState } from "@/server/services/billing.service";
+import { logger } from "@/lib/logger";
+import {
+  getTrialState,
+  maybeFireTrialEndingSoonEmail,
+} from "@/server/services/billing.service";
 
 interface TrialBannerProps {
   orgId: string | null;
@@ -13,11 +17,29 @@ interface TrialBannerProps {
  * "X days left" hint inside the warn window, and a red expired bar
  * once the gate has slammed shut. Server component so the banner
  * paints on first navigation without a flash from a client fetch.
+ *
+ * Side effect: when atRisk for the first time, atomically claims
+ * Organization.trialWarnEmailSentAt + fires the one-shot trial-
+ * ending-soon email. Banner-triggered (rather than cron-driven) is
+ * acceptable for the current scale; the claim is atomic so concurrent
+ * page loads won't double-send.
  */
 export async function TrialBanner({ orgId }: TrialBannerProps) {
   const trial = await getTrialState(orgId);
   if (!trial) return null;
   if (!trial.expired && !trial.atRisk) return null;
+
+  // Fire-and-forget heads-up email. Atomic claim inside the helper
+  // guards against double-send on concurrent renders. Failure logs but
+  // doesn't break the banner.
+  if (trial.atRisk && orgId) {
+    void maybeFireTrialEndingSoonEmail(orgId).catch((err) => {
+      logger.error("trial.warn_email_dispatch_failed", {
+        err: err instanceof Error ? err.message : String(err),
+        orgId,
+      });
+    });
+  }
 
   if (trial.expired) {
     const dayLabel = Math.abs(trial.daysRemaining);

@@ -4,8 +4,10 @@ import { Types } from "mongoose";
 
 import { OrderStatus } from "@/lib/constants/enums";
 import { QuotaExceededError } from "@/lib/errors";
-import { Order, Organization } from "@/server/db/models";
+import { logger } from "@/lib/logger";
+import { Order, Organization, User } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
+import { sendTrialEndingSoonEmail } from "./email.service";
 
 /**
  * Billing + plan enforcement.
@@ -200,4 +202,69 @@ export async function assertCanCreateOrder(orgId: string | null): Promise<void> 
       current: snapshot.current,
     },
   );
+}
+
+/**
+ * One-shot dispatch of the trial-ending-soon notification.
+ *
+ * Idempotent via an atomic Mongo update on `trialWarnEmailSentAt`:
+ * the filter says "only orgs where this field is still null"; the
+ * winning request gets `modifiedCount === 1` and fires the email,
+ * every other concurrent caller sees 0 and quietly skips. No locks,
+ * no de-duplication table.
+ *
+ * Triggered lazily from the in-app TrialBanner so we don't need a
+ * scheduled cron yet. An inactive workspace owner who never opens
+ * the dashboard during the warn window won't get the email, that's
+ * acceptable for now, when a real cron lands we move the call site
+ * and keep the same atomic claim.
+ */
+export async function maybeFireTrialEndingSoonEmail(
+  orgId: string,
+): Promise<void> {
+  await connectMongo();
+  const trial = await getTrialState(orgId);
+  if (!trial || !trial.atRisk) return;
+
+  // Atomic claim. Only the request that flips the field from null to
+  // a real date wins; every concurrent caller's update misses the
+  // filter and sees modifiedCount = 0.
+  const claim = await Organization.updateOne(
+    {
+      _id: new Types.ObjectId(orgId),
+      $or: [
+        { trialWarnEmailSentAt: null },
+        { trialWarnEmailSentAt: { $exists: false } },
+      ],
+    },
+    { $set: { trialWarnEmailSentAt: new Date() } },
+  );
+  if (claim.modifiedCount !== 1) return;
+
+  // Resolve recipient + workspace name. Both come off the org's owner
+  // user record; if either lookup fails the email simply doesn't fire
+  // (we already flipped the flag, so we won't retry, the tenant
+  // still has the in-app banner).
+  const org = await Organization.findById(orgId)
+    .select({ name: 1, ownerUserId: 1 })
+    .lean<{ name: string; ownerUserId: Types.ObjectId }>();
+  if (!org?.ownerUserId) return;
+  const owner = await User.findById(org.ownerUserId)
+    .select({ name: 1, email: 1 })
+    .lean<{ name: string; email: string }>();
+  if (!owner?.email) return;
+
+  try {
+    await sendTrialEndingSoonEmail({
+      to: owner.email,
+      customerName: owner.name || owner.email,
+      workspaceName: org.name,
+      daysRemaining: trial.daysRemaining,
+    });
+  } catch (err) {
+    logger.error("trial.warn_email_failed", {
+      err: err instanceof Error ? err.message : String(err),
+      orgId,
+    });
+  }
 }

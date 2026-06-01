@@ -208,6 +208,9 @@ export const EmailKind = {
   /** Platform-side welcome email fired from signup.service the
    *  moment a new workspace lands. Sent from EMAIL_FROM_ACCOUNTS. */
   ACCOUNT_WELCOME: "ACCOUNT_WELCOME",
+  /** Platform-side heads-up sent once when a tenant's trial enters
+   *  the 3-day warn window. Sent from EMAIL_FROM_ACCOUNTS. */
+  TRIAL_ENDING_SOON: "TRIAL_ENDING_SOON",
 } as const;
 export type EmailKind = (typeof EmailKind)[keyof typeof EmailKind];
 

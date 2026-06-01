@@ -51,6 +51,13 @@ export interface OrganizationDoc {
    *  that touches createdAt. Operators can extend a tenant's trial
    *  manually by pushing this date forward. */
   trialStartsAt?: Date | null;
+  /** Timestamp when the platform fired the "trial ending soon"
+   *  notification. Used as a one-shot idempotency flag, an atomic
+   *  Mongo update guarded by `trialWarnEmailSentAt: null` claims the
+   *  slot, only the winning request fires the email. Cleared via
+   *  scripts/extend-trial.ts when an operator extends the trial so
+   *  the heads-up fires again on the next window. */
+  trialWarnEmailSentAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -85,6 +92,7 @@ const organizationSchema = new Schema<OrganizationDoc>(
     },
     verifiedAt: { type: Date, default: null },
     trialStartsAt: { type: Date, default: null, index: true },
+    trialWarnEmailSentAt: { type: Date, default: null },
   },
   {
     timestamps: true,
