@@ -119,12 +119,17 @@ interface DeleteAuditActor {
 
 interface DeleteAuditContext {
   actor: DeleteAuditActor;
+  /** Active org. Required: deletion by raw _id without orgId scoping
+   *  would let an AUDIT_DELETE admin in org A purge another tenant's
+   *  audit trail by guessing ids. */
+  orgId: string;
   request?: RequestContext | null;
 }
 
 /**
- * Hard-deletes audit log entries by id. Records its own audit row capturing
- * which entries were purged so the deletion itself is traceable.
+ * Hard-deletes audit log entries by id, scoped to the actor's org.
+ * Records its own audit row capturing which entries were purged so
+ * the deletion itself is traceable.
  */
 export async function deleteAuditLogs(
   ids: string[],
@@ -134,7 +139,10 @@ export async function deleteAuditLogs(
   const valid = ids.filter((id) => Types.ObjectId.isValid(id));
   if (valid.length === 0) return { deleted: 0 };
   const objectIds = valid.map((id) => new Types.ObjectId(id));
-  const res = await AuditLog.deleteMany({ _id: { $in: objectIds } });
+  const res = await AuditLog.deleteMany({
+    _id: { $in: objectIds },
+    orgId: new Types.ObjectId(ctx.orgId),
+  });
 
   await recordAudit({
     action: AuditAction.AUDIT_LOG_DELETED,

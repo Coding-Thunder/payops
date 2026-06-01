@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { ForbiddenError } from "@/lib/errors";
 import { Permission } from "@/lib/constants/permissions";
 import { jsonOk, withApi } from "@/server/api/respond";
 import { requirePermission } from "@/server/auth/session";
@@ -25,10 +26,11 @@ interface Params {
  */
 export const GET = withApi(async (_req: NextRequest, { params }: Params) => {
   const actor = await requirePermission(Permission.CONSENT_VIEW);
+  if (!actor.orgId) throw new ForbiddenError("Active organization required");
   const { id } = await params;
   // Order existence + access check goes through the same path as the
   // detail page so RBAC stays uniform.
-  await getOrderById(id, { actor });
-  const items = await listConsentsForOrder(id, { actor });
+  await getOrderById(id, { actor, orgId: actor.orgId });
+  const items = await listConsentsForOrder(id, { actor, orgId: actor.orgId });
   return jsonOk({ items });
 });

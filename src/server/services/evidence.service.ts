@@ -605,7 +605,12 @@ export async function searchEvidence(
     conditions.push({ "refs.messageId": q });
   }
 
-  const docs = await OrderEvidence.find({ $or: conditions })
+  // Tenant pin. Without it any EVIDENCE_VIEW admin in org A could
+  // type a guessed customer email / session id and pull evidence
+  // rows from org B back into the search results.
+  const filter: Record<string, unknown> = { $or: conditions };
+  if (ctx.orgId) filter.orgId = new Types.ObjectId(ctx.orgId);
+  const docs = await OrderEvidence.find(filter)
     .sort({ createdAt: -1 })
     .limit(limit)
     .lean<(OrderEvidenceDoc & { _id: Types.ObjectId })[]>();

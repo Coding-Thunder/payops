@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { render } from "@react-email/render";
 
+import { ForbiddenError } from "@/lib/errors";
 import { Permission } from "@/lib/constants/permissions";
 import { sendPaymentRequestSchema } from "@/lib/validation";
 import { jsonOk, withApi } from "@/server/api/respond";
@@ -31,11 +32,12 @@ interface Params {
  */
 export const POST = withApi(async (req: NextRequest, { params }: Params) => {
   const actor = await requirePermission(Permission.ORDER_VIEW_OWN);
+  if (!actor.orgId) throw new ForbiddenError("Active organization required");
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
   const input = sendPaymentRequestSchema.parse(body);
 
-  const order = await getOrderById(id, { actor });
+  const order = await getOrderById(id, { actor, orgId: actor.orgId });
   // Overlay any edited customer name into the email's "Hi <name>"
   // greeting without persisting it. Email address / phone don't appear
   // in the body, so we only need to handle name here.

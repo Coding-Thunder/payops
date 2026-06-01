@@ -5,6 +5,7 @@ import {
   AuditAction,
   AuditEntity,
 } from "@/lib/constants/enums";
+import { ForbiddenError } from "@/lib/errors";
 import { Permission } from "@/lib/constants/permissions";
 import { deleteByIdsSchema } from "@/lib/validation";
 import { getRequestContext } from "@/server/api/request-context";
@@ -47,9 +48,14 @@ export const GET = withApi(async (req: NextRequest) => {
 
 export const DELETE = withApi(async (req: NextRequest) => {
   const actor = await requirePermission(Permission.AUDIT_DELETE);
+  if (!actor.orgId) throw new ForbiddenError("Active organization required");
   const body = await req.json().catch(() => ({}));
   const { ids } = deleteByIdsSchema.parse(body);
   const ctx = await getRequestContext();
-  const result = await deleteAuditLogs(ids, { actor, request: ctx });
+  const result = await deleteAuditLogs(ids, {
+    actor,
+    orgId: actor.orgId,
+    request: ctx,
+  });
   return jsonOk(result);
 });

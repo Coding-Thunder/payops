@@ -536,7 +536,14 @@ export async function recordConsentFromToken(
  */
 export async function verifyConsent(
   consentId: string,
-  ctx: { actor: ConsentActor; request?: RequestContext | null },
+  ctx: {
+    actor: ConsentActor;
+    /** Active org. Required: looking up consent by raw _id without
+     *  orgId scoping would let a CONSENT_VERIFY admin in org A flip
+     *  consent records in org B by guessing ids. */
+    orgId: string;
+    request?: RequestContext | null;
+  },
 ): Promise<PaymentConsentDTO> {
   if (!roleHasPermission(ctx.actor.role, Permission.CONSENT_VERIFY)) {
     throw new ForbiddenError("You do not have permission to verify consent");
@@ -545,7 +552,10 @@ export async function verifyConsent(
   if (!Types.ObjectId.isValid(consentId)) {
     throw new ValidationError("Invalid consent id");
   }
-  const doc = await PaymentConsent.findById(consentId);
+  const doc = await PaymentConsent.findOne({
+    _id: new Types.ObjectId(consentId),
+    orgId: new Types.ObjectId(ctx.orgId),
+  });
   if (!doc) throw new NotFoundError("Consent record not found");
   if (doc.status === ConsentStatus.NOT_REQUESTED) {
     throw new ConflictError("Cannot verify a consent that was never requested");
@@ -624,7 +634,12 @@ export async function verifyConsent(
 /** List all consent records associated with an order (history view). */
 export async function listConsentsForOrder(
   orderId: string,
-  ctx: { actor: ConsentActor },
+  ctx: {
+    actor: ConsentActor;
+    /** Active org. Required so an admin in org A can't list consents
+     *  for an order in org B by guessing the orderId. */
+    orgId: string;
+  },
 ): Promise<PaymentConsentDTO[]> {
   if (!roleHasPermission(ctx.actor.role, Permission.CONSENT_VIEW)) {
     throw new ForbiddenError("You do not have permission to view consent records");
@@ -633,6 +648,7 @@ export async function listConsentsForOrder(
   if (!Types.ObjectId.isValid(orderId)) return [];
   const docs = await PaymentConsent.find({
     orderId: new Types.ObjectId(orderId),
+    orgId: new Types.ObjectId(ctx.orgId),
   })
     .sort({ createdAt: -1 })
     .lean();

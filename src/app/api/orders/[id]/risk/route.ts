@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { ForbiddenError } from "@/lib/errors";
 import { Permission } from "@/lib/constants/permissions";
 import { flagOrderSchema } from "@/lib/validation";
 import { getRequestContext } from "@/server/api/request-context";
@@ -20,10 +21,15 @@ interface Params {
  */
 export const POST = withApi(async (req: NextRequest, { params }: Params) => {
   const actor = await requirePermission(Permission.ORDER_UPDATE);
+  if (!actor.orgId) throw new ForbiddenError("Active organization required");
   const { id } = await params;
   const body = await req.json();
   const input = flagOrderSchema.parse(body);
   const ctx = await getRequestContext();
-  const data = await setOrderRiskFlag(id, input, { actor, request: ctx });
+  const data = await setOrderRiskFlag(id, input, {
+    actor,
+    orgId: actor.orgId,
+    request: ctx,
+  });
   return jsonOk(data);
 });

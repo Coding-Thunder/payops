@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { ForbiddenError } from "@/lib/errors";
 import { Permission } from "@/lib/constants/permissions";
 import { evidenceSearchSchema } from "@/lib/validation";
 import { jsonOk, withApi } from "@/server/api/respond";
@@ -18,12 +19,13 @@ export const dynamic = "force-dynamic";
  */
 export const GET = withApi(async (req: NextRequest) => {
   const actor = await requirePermission(Permission.EVIDENCE_VIEW);
+  if (!actor.orgId) throw new ForbiddenError("Active organization required");
   const url = new URL(req.url);
   const input = evidenceSearchSchema.parse({
     q: url.searchParams.get("q") ?? "",
     field: url.searchParams.get("field") ?? undefined,
     limit: url.searchParams.get("limit") ?? undefined,
   });
-  const results = await searchEvidence(input, { actor });
+  const results = await searchEvidence(input, { actor, orgId: actor.orgId });
   return jsonOk({ results });
 });
