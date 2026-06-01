@@ -26,6 +26,14 @@ import {
   UniversalOrderEmail,
   type UniversalOrderEmailProps,
 } from "@/server/email/templates/universal-order-email";
+import {
+  CustomTemplateEmail,
+  type CustomTemplateEmailProps,
+} from "@/server/email/templates/custom-template-email";
+import {
+  isSystemTemplateKey,
+  SYSTEM_TEMPLATE_LABELS,
+} from "@/lib/constants/email-templates";
 import type { EmailBlockContext } from "@/server/email/blocks";
 import { formatEmailDate, formatMoney } from "@/server/email/format";
 import { buildConsentMailto } from "@/server/email/consent-mailto";
@@ -707,3 +715,153 @@ export async function sendPaymentRequestEmail(
   return { id: sent.id, consentToken };
 }
 
+
+// ─── Manual template send (operator-fired, no automation) ────────────────
+
+export interface SendCustomTemplateOverrides {
+  /** Override the active version's subject. */
+  subject?: string | null;
+  /** Override the greeting / intro / note paragraphs the active
+   *  version persisted. Useful for the agent's send-time tweaks
+   *  without burning a new version. */
+  greeting?: string | null;
+  intro?: string | null;
+  note?: string | null;
+  footerNote?: string | null;
+}
+
+export interface SendCustomTemplateContext {
+  actor: {
+    id: string;
+    name: string;
+    email: string;
+    role: UserRole;
+  };
+  /** Active org. Required, every send is scoped per tenant so the
+   *  right Branding + active template version load. */
+  orgId: string;
+  /** Optional source record. Used for evidence-row attribution; when
+   *  set, the send records an EMAIL_SENT evidence event against the
+   *  order so the chain captures it. */
+  source?:
+    | { kind: "order"; orderId: string; orderNumber: string }
+    | { kind: "customer"; customerId: string }
+    | null;
+  request?: {
+    ip: string | null;
+    userAgent: string | null;
+    requestId: string | null;
+  } | null;
+}
+
+export interface SendCustomTemplateInput {
+  templateKey: string;
+  to: string;
+  overrides?: SendCustomTemplateOverrides;
+}
+
+/**
+ * Render and dispatch a tenant-defined (or system) template manually.
+ *
+ * Pre-requisites:
+ *   - The template must have an active version for this tenant. System
+ *     kinds always have a virtual default (the code template) but we
+ *     still require an active row so the manual-send copy carries the
+ *     tenant's own greeting/intro tone; the admin saves a version
+ *     before they can ad-hoc fire one.
+ *
+ * Side effects:
+ *   - Audit row via the existing sendEmail helper (EMAIL_SENT).
+ *   - Evidence row when the source is an order so the chain captures
+ *     the manual touchpoint.
+ */
+export async function sendCustomTemplateManually(
+  input: SendCustomTemplateInput,
+  ctx: SendCustomTemplateContext,
+): Promise<{ id: string | null }> {
+  const to = input.to.trim();
+  if (!to || !/^.+@.+\..+$/.test(to)) {
+    throw new Error("A valid recipient email is required");
+  }
+
+  const [branding, tpl] = await Promise.all([
+    getBranding(ctx.orgId),
+    getActiveTemplateContent(input.templateKey, ctx.orgId),
+  ]);
+  if (!tpl) {
+    throw new Error(
+      "No active version found for this template. Save the template first, then fire it.",
+    );
+  }
+
+  const subject =
+    input.overrides?.subject?.trim() ||
+    tpl.subject?.trim() ||
+    `${branding.brandName} update`;
+  const eyebrow = isSystemTemplateKey(input.templateKey)
+    ? SYSTEM_TEMPLATE_LABELS[input.templateKey]
+    : input.templateKey
+        .split("-")
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+
+  const templateProps: CustomTemplateEmailProps = {
+    brandName: branding.brandName,
+    eyebrow,
+    preview: subject,
+    greeting:
+      input.overrides?.greeting?.trim() ?? tpl.greeting?.trim() ?? null,
+    intro: input.overrides?.intro?.trim() ?? tpl.intro?.trim() ?? null,
+    note: input.overrides?.note?.trim() ?? tpl.note?.trim() ?? null,
+    supportEmail: branding.supportEmail || null,
+    footerNote:
+      input.overrides?.footerNote?.trim() ?? tpl.footerNote?.trim() ?? null,
+  };
+
+  const html = await render(<CustomTemplateEmail {...templateProps} />);
+  const text = await render(<CustomTemplateEmail {...templateProps} />, {
+    plainText: true,
+  });
+
+  const sent = await sendEmail({
+    to,
+    subject,
+    html,
+    text,
+    kind: EmailKind.TEMPLATE_MANUAL,
+    orderId: ctx.source?.kind === "order" ? ctx.source.orderId : null,
+    fromName: branding.brandName,
+    replyTo: branding.supportEmail || null,
+    senderEmail: branding.senderEmail || null,
+  });
+
+  // Evidence chain: any manual touchpoint against an order goes into
+  // the chain so the dispute artifact reflects the full agent timeline.
+  if (ctx.source?.kind === "order") {
+    await captureEvidenceSafe({
+      orderId: ctx.source.orderId,
+      orderNumber: ctx.source.orderNumber,
+      eventType: OrderEvidenceEventType.PAYMENT_REQUEST_EMAIL_SENT,
+      actor: {
+        type: OrderEvidenceActorType.AGENT,
+        userId: ctx.actor.id,
+        name: ctx.actor.name,
+        email: ctx.actor.email,
+        role: ctx.actor.role,
+      },
+      request: ctx.request ?? null,
+      payload: {
+        templateKey: input.templateKey,
+        subject,
+        recipient: to,
+        messageId: sent.id,
+      },
+      refs: {
+        customerEmail: to,
+        messageId: sent.id ?? null,
+      },
+    });
+  }
+
+  return { id: sent.id };
+}

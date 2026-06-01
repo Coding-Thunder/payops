@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { ForbiddenError } from "@/lib/errors";
 import { Permission } from "@/lib/constants/permissions";
 import {
   createEmailTemplateVersionSchema,
@@ -9,6 +10,7 @@ import { getRequestContext } from "@/server/api/request-context";
 import { jsonOk, withApi } from "@/server/api/respond";
 import { requirePermission } from "@/server/auth/session";
 import {
+  archiveCustomTemplate,
   createTemplateVersion,
   listTemplateVersions,
 } from "@/server/services/email-template.service";
@@ -45,4 +47,21 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
     request: ctx,
   });
   return jsonOk(version, { status: 201 });
+});
+
+/** Archive a custom template. Soft-delete; the rows stay for audit +
+ *  future trigger replay but the template stops appearing in pickers.
+ *  Service refuses if `templateKey` is a system kind. */
+export const DELETE = withApi(async (_req: NextRequest, { params }: Params) => {
+  const actor = await requirePermission(Permission.EMAIL_TEMPLATE_MANAGE);
+  if (!actor.orgId) throw new ForbiddenError("Active organization required");
+  const { key } = await params;
+  const templateKey = templateKeyParam.parse(key);
+  const ctx = await getRequestContext();
+  await archiveCustomTemplate(templateKey, {
+    actor,
+    orgId: actor.orgId,
+    request: ctx,
+  });
+  return jsonOk({ archived: true });
 });

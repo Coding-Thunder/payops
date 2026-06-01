@@ -201,6 +201,10 @@ export const ORDER_EVIDENCE_ACTOR_TYPES = Object.values(
 export const EmailKind = {
   PAYMENT_CONFIRMATION: "PAYMENT_CONFIRMATION",
   PAYMENT_LINK: "PAYMENT_LINK",
+  /** Manual operator-fired template (custom or system) dispatched
+   *  from the order / customer / payment detail surfaces. The
+   *  specific templateKey rides in audit metadata. */
+  TEMPLATE_MANUAL: "TEMPLATE_MANUAL",
 } as const;
 export type EmailKind = (typeof EmailKind)[keyof typeof EmailKind];
 

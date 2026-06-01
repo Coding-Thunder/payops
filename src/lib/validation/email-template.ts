@@ -108,3 +108,73 @@ export const renameCustomTemplateSchema = z.object({
 export type RenameCustomTemplateInput = z.infer<
   typeof renameCustomTemplateSchema
 >;
+
+/** Body for POST /api/admin/email-templates/[key]/send, manual operator
+ *  dispatch from order / customer / payment surfaces. */
+export const sendCustomTemplateSchema = z.object({
+  to: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .email("Recipient must be a valid email address")
+    .max(254),
+  /** Optional source context. When orderId is supplied, the send
+   *  records an evidence event against the order so the dispute
+   *  artifact captures the manual touchpoint. */
+  source: z
+    .union([
+      z.object({
+        kind: z.literal("order"),
+        orderId: z.string().trim().min(1).max(120),
+      }),
+      z.object({
+        kind: z.literal("customer"),
+        customerId: z.string().trim().min(1).max(120),
+      }),
+    ])
+    .optional()
+    .nullable(),
+  /** Per-send copy overrides without burning a new template version. */
+  overrides: z
+    .object({
+      subject: z
+        .string()
+        .trim()
+        .max(200)
+        .optional()
+        .nullable()
+        .transform((v) => (v && v.length > 0 ? v : null)),
+      greeting: z
+        .string()
+        .trim()
+        .max(200)
+        .optional()
+        .nullable()
+        .transform((v) => (v && v.length > 0 ? v : null)),
+      intro: z
+        .string()
+        .trim()
+        .max(2000)
+        .optional()
+        .nullable()
+        .transform((v) => (v && v.length > 0 ? v : null)),
+      note: z
+        .string()
+        .trim()
+        .max(2000)
+        .optional()
+        .nullable()
+        .transform((v) => (v && v.length > 0 ? v : null)),
+      footerNote: z
+        .string()
+        .trim()
+        .max(500)
+        .optional()
+        .nullable()
+        .transform((v) => (v && v.length > 0 ? v : null)),
+    })
+    .optional(),
+});
+export type SendCustomTemplateRequest = z.infer<
+  typeof sendCustomTemplateSchema
+>;
