@@ -30,6 +30,7 @@ import {
   CustomTemplateEmail,
   type CustomTemplateEmailProps,
 } from "@/server/email/templates/custom-template-email";
+import { WelcomeEmail } from "@/server/email/templates/welcome-email";
 import {
   isSystemTemplateKey,
   SYSTEM_TEMPLATE_LABELS,
@@ -864,4 +865,58 @@ export async function sendCustomTemplateManually(
   }
 
   return { id: sent.id };
+}
+
+// ─── Platform welcome email ──────────────────────────────────────────────
+
+/**
+ * Send the "your workspace is live" welcome email immediately after a
+ * new signup completes. From address is EMAIL_FROM_ACCOUNTS, so even
+ * tenants who haven't customised their branding get a platform-
+ * identified introduction. Pure platform mail, never goes through any
+ * tenant override.
+ *
+ * Best-effort: signup.service wraps the call in try/catch so an SMTP
+ * outage doesn't fail the signup transaction.
+ */
+export async function sendWelcomeEmail(args: {
+  to: string;
+  customerName: string;
+  workspaceName: string;
+}): Promise<{ id: string | null }> {
+  const dashboardUrl = `${env.server.APP_URL.replace(/\/$/, "")}/app/dashboard`;
+  const supportEmail = env.server.SUPPORT_EMAIL || "support@tracetxn.com";
+
+  const props = {
+    customerName: args.customerName,
+    workspaceName: args.workspaceName,
+    dashboardUrl,
+    supportEmail,
+  };
+  const html = await render(<WelcomeEmail {...props} />);
+  const text = await render(<WelcomeEmail {...props} />, {
+    plainText: true,
+  });
+
+  // Override the standard EMAIL_FROM via senderEmail so this lands
+  // from accounts@tracetxn.com regardless of tenant branding. We
+  // pull the From string apart and only pass the mailbox portion,
+  // friendly name comes from fromName.
+  const fromHeader = env.server.EMAIL_FROM_ACCOUNTS;
+  const angle = fromHeader.match(/<([^>]+)>/);
+  const accountsMailbox = (angle?.[1] ?? fromHeader).trim();
+  const accountsName = fromHeader.match(/^"?([^"<]+?)"?\s*</)?.[1].trim() ||
+    "TraceTxn Accounts";
+
+  return sendEmail({
+    to: args.to,
+    subject: `Welcome to TraceTxn — your 15-day trial just started`,
+    html,
+    text,
+    kind: EmailKind.ACCOUNT_WELCOME,
+    orderId: null,
+    fromName: accountsName,
+    senderEmail: accountsMailbox,
+    replyTo: supportEmail,
+  });
 }

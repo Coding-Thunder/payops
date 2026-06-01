@@ -19,11 +19,13 @@ import {
 import { connectMongo } from "@/server/db/mongoose";
 import { sessionOpt, withTx } from "@/server/db/transaction";
 import { hashPassword } from "@/server/auth/password";
+import { logger } from "@/lib/logger";
 import type { SignupInput } from "@/lib/validation";
 import type { RequestContext } from "@/server/api/request-context";
 import type { SessionUser } from "@/types";
 
 import { recordAudit } from "./audit.service";
+import { sendWelcomeEmail } from "./email.service";
 
 /**
  * Public signup result. Caller (`POST /api/auth/signup`) issues a JWT
@@ -54,6 +56,9 @@ export async function signupFounder(
 ): Promise<SignupResult> {
   await connectMongo();
   const email = input.email.trim().toLowerCase();
+  // Capture the workspace name out of the transaction so the post-commit
+  // welcome-email side effect doesn't need to re-query the Organization
+  // doc. Set inside withTx, read after commit.
 
   // Pre-flight email uniqueness check OUTSIDE the transaction. The
   // unique index on `User.email` is the authoritative guard, this
@@ -74,7 +79,7 @@ export async function signupFounder(
   const passwordHash = await hashPassword(input.password);
   const slug = await uniqueOrgSlug(input.orgName);
 
-  const result = await withTx(async (session) => {
+  const { result, workspaceName } = await withTx(async (session) => {
     // 1. User first, Org needs `ownerUserId` to point at a real row.
     const [userDoc] = await User.create(
       [
@@ -160,15 +165,33 @@ export async function signupFounder(
     );
 
     return {
-      user: {
-        id: String(userId),
-        name: userDoc.name,
-        email: userDoc.email,
-        role: userDoc.role,
-      },
-      orgId: String(orgId),
-      orgSlug: slug,
+      result: {
+        user: {
+          id: String(userId),
+          name: userDoc.name,
+          email: userDoc.email,
+          role: userDoc.role,
+        },
+        orgId: String(orgId),
+        orgSlug: slug,
+      } satisfies SignupResult,
+      workspaceName: orgDoc.name,
     };
+  });
+
+  // Welcome email is a best-effort side effect AFTER the transaction
+  // commits — a Resend outage or misconfigured SMTP must not roll back
+  // the signup. Failures are logged + audited via sendEmail's own
+  // recordAudit path; the user still lands on /app/dashboard.
+  void sendWelcomeEmail({
+    to: result.user.email,
+    customerName: result.user.name,
+    workspaceName,
+  }).catch((err) => {
+    logger.error("signup.welcome_email_failed", {
+      err: err instanceof Error ? err.message : String(err),
+      orgId: result.orgId,
+    });
   });
 
   return result;
@@ -216,7 +239,7 @@ export async function signupFounderFromFirebase(
   const synthOrgName = `${input.name.trim() || email.split("@")[0]}'s workspace`;
   const slug = await uniqueOrgSlug(synthOrgName);
 
-  const result = await withTx(async (session) => {
+  const { result, workspaceName } = await withTx(async (session) => {
     const [userDoc] = await User.create(
       [
         {
@@ -295,15 +318,31 @@ export async function signupFounderFromFirebase(
     );
 
     return {
-      user: {
-        id: String(userId),
-        name: userDoc.name,
-        email: userDoc.email,
-        role: userDoc.role,
-      },
-      orgId: String(orgId),
-      orgSlug: slug,
+      result: {
+        user: {
+          id: String(userId),
+          name: userDoc.name,
+          email: userDoc.email,
+          role: userDoc.role,
+        },
+        orgId: String(orgId),
+        orgSlug: slug,
+      } satisfies SignupResult,
+      workspaceName: orgDoc.name,
     };
+  });
+
+  // Best-effort welcome email after commit — see signupFounder for
+  // the rationale on why this lives outside the transaction.
+  void sendWelcomeEmail({
+    to: result.user.email,
+    customerName: result.user.name,
+    workspaceName,
+  }).catch((err) => {
+    logger.error("signup.welcome_email_failed", {
+      err: err instanceof Error ? err.message : String(err),
+      orgId: result.orgId,
+    });
   });
 
   return result;

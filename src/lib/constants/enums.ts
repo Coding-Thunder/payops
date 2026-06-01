@@ -205,6 +205,9 @@ export const EmailKind = {
    *  from the order / customer / payment detail surfaces. The
    *  specific templateKey rides in audit metadata. */
   TEMPLATE_MANUAL: "TEMPLATE_MANUAL",
+  /** Platform-side welcome email fired from signup.service the
+   *  moment a new workspace lands. Sent from EMAIL_FROM_ACCOUNTS. */
+  ACCOUNT_WELCOME: "ACCOUNT_WELCOME",
 } as const;
 export type EmailKind = (typeof EmailKind)[keyof typeof EmailKind];
 
