@@ -39,7 +39,7 @@ describe("JWT session", () => {
     const stash = process.env.JWT_SECRET;
     try {
       process.env.JWT_SECRET = "an-entirely-different-secret-of-sufficient-length-32";
-      // The internal key cache is set on first use — bust by re-importing.
+      // The internal key cache is set on first use, bust by re-importing.
       vi.resetModules();
       const { signSession: badSign } = await import("@/server/auth/jwt");
       const otherToken = await badSign(payload);

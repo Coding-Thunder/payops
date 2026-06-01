@@ -17,7 +17,7 @@ const renameSchema = z.object({
   name: z.string().trim().min(1).max(120),
 });
 
-/** GET /api/admin/organization — return the current org. */
+/** GET /api/admin/organization, return the current org. */
 export const GET = withApi(async () => {
   const actor = await requirePermission(Permission.SETTINGS_VIEW);
   if (!actor.orgId) {
@@ -27,7 +27,7 @@ export const GET = withApi(async () => {
   return jsonOk({ organization: org });
 });
 
-/** PATCH /api/admin/organization — rename. Slug is intentionally
+/** PATCH /api/admin/organization, rename. Slug is intentionally
  *  immutable post-creation. */
 export const PATCH = withApi(async (req: NextRequest) => {
   const actor = await requirePermission(Permission.SETTINGS_UPDATE);

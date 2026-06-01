@@ -42,7 +42,7 @@ interface SummaryResponse {
  * preempt the render to avoid noisy network errors).
  *
  * The summary endpoint returns just integrity + event count + last
- * event — full chain stays on `/orders/:id/evidence`.
+ * event, full chain stays on `/orders/:id/evidence`.
  */
 export function OrderEvidenceCard({
   orderId,

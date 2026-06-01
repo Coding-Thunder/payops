@@ -24,7 +24,7 @@ export const dynamic = "force-dynamic";
  * downstream auth surface (middleware, getCurrentUser, RBAC, audit)
  * keeps working unchanged.
  *
- * Returns 503 when Firebase Admin isn't configured — the UI can fall
+ * Returns 503 when Firebase Admin isn't configured, the UI can fall
  * back to the legacy bcrypt sign-in path in that case.
  */
 

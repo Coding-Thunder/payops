@@ -1,10 +1,10 @@
 import "../globals.css";
 
-// Token-bound customer surface — never index. Single-use URLs, no
+// Token-bound customer surface, never index. Single-use URLs, no
 // SEO value, and `session_id` query params would otherwise leak into
 // Google's index.
 //
-// Layout is intentionally chrome-only (background + container) — NO
+// Layout is intentionally chrome-only (background + container), NO
 // per-tenant brand at the layout level. Layouts can't see child route
 // params in App Router without hacky `headers()` reads, and serving the
 // legacy {key:"default"} singleton's env-default brand would leak the

@@ -6,7 +6,7 @@ import {
 } from "mongoose";
 
 /**
- * Customer-facing workspace branding. Singleton (`key: "default"`) — there
+ * Customer-facing workspace branding. Singleton (`key: "default"`), there
  * is exactly one row for the entire deployment.
  *
  * Owns the brand name, contact details, and visual identity surfaced on
@@ -37,7 +37,7 @@ export interface BrandingDoc {
    *  `/api/branding/logo/{orgId}/{hash}.{ext}` and are served by the
    *  per-org logo route handler from `logoBytes` below. Legacy values
    *  starting with `/branding/...` are disk-served files from the
-   *  pre-Mongo era — they continue to work as long as the file is on
+   *  pre-Mongo era, they continue to work as long as the file is on
    *  disk, but are replaced by Mongo-backed URLs on the next upload.
    *  Empty string disables the logo on customer surfaces. */
   logo: string;
@@ -116,7 +116,7 @@ brandingSchema.index(
     name: "branding_orgId_unique",
   },
 );
-// Legacy {key:"default"} singleton — partial-unique exempts per-org
+// Legacy {key:"default"} singleton, partial-unique exempts per-org
 // rows that omit `key`.
 brandingSchema.index(
   { key: 1 },

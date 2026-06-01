@@ -14,12 +14,12 @@ interface Params {
 }
 
 /**
- * GET /api/orders/[id]/consent — full audit trail of consent records
+ * GET /api/orders/[id]/consent, full audit trail of consent records
  * attached to this order. The Order DTO already carries a denormalised
  * pointer; this endpoint exists for the order-detail timeline / admin
  * view where multiple historical records matter.
  *
- * There is no POST here any more — the only path to record consent is
+ * There is no POST here any more, the only path to record consent is
  * the customer-facing hosted page (POST /api/consent/[token]), which
  * captures a signed name + IP + UA and auto-promotes to VERIFIED.
  */

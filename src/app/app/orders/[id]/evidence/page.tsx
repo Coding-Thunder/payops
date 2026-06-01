@@ -18,12 +18,12 @@ interface EvidencePageProps {
 
 /**
  * Server-rendered evidence page. The whole point of dispute defense is
- * that the page is rendered fresh against the database at view time —
+ * that the page is rendered fresh against the database at view time -
  * no client-side caches, no stale data, no derived state. The verify
  * step recomputes every hash so the integrity badge reflects the
  * current state of the chain in mongo.
  *
- * RBAC: EVIDENCE_VIEW (admin + super admin). Staff get a 404 — we
+ * RBAC: EVIDENCE_VIEW (admin + super admin). Staff get a 404, we
  * don't reveal which orders exist as evidence-tracked.
  */
 export default async function OrderEvidencePage({

@@ -24,7 +24,7 @@ export const signupSchema = z.object({
     .max(120, "Business name must be 120 characters or fewer"),
 
   /** Bot-check token (same surface as login). Optional in schema so
-   *  non-browser clients keep working — the server verifier no-ops
+   *  non-browser clients keep working, the server verifier no-ops
    *  when `TURNSTILE_SECRET_KEY` is unset. */
   cfToken: z.string().max(2048).optional(),
 });

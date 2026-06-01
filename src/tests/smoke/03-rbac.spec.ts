@@ -3,7 +3,7 @@ import { test, expect } from "@playwright/test";
 import { getSmokeCreds, loginAs, loginAsApi } from "./_helpers";
 
 /**
- * RBAC smoke — the security boundary the middleware enforces.
+ * RBAC smoke, the security boundary the middleware enforces.
  *
  *   - An anonymous visitor to /admin is redirected to /login.
  *   - A STAFF user reaching /admin is bounced to /dashboard.

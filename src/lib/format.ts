@@ -15,9 +15,9 @@ export function formatDate(
   value: string | Date | null | undefined,
   opts: Intl.DateTimeFormatOptions = {},
 ): string {
-  if (!value) return "—";
+  if (!value) return "-";
   const d = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(d.getTime())) return "—";
+  if (Number.isNaN(d.getTime())) return "-";
   return new Intl.DateTimeFormat("en-US", {
     year: "numeric",
     month: "short",
@@ -42,9 +42,9 @@ export function formatDateTime(
 export function formatUtcTimestamp(
   value: string | Date | null | undefined,
 ): string {
-  if (!value) return "—";
+  if (!value) return "-";
   const d = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(d.getTime())) return "—";
+  if (Number.isNaN(d.getTime())) return "-";
   const yyyy = d.getUTCFullYear();
   const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
   const dd = String(d.getUTCDate()).padStart(2, "0");
@@ -61,9 +61,9 @@ export function formatUtcTimestamp(
 export function formatUtcTime(
   value: string | Date | null | undefined,
 ): string {
-  if (!value) return "—";
+  if (!value) return "-";
   const d = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(d.getTime())) return "—";
+  if (Number.isNaN(d.getTime())) return "-";
   const hh = String(d.getUTCHours()).padStart(2, "0");
   const mi = String(d.getUTCMinutes()).padStart(2, "0");
   const ss = String(d.getUTCSeconds()).padStart(2, "0");
@@ -78,15 +78,15 @@ export function formatHashShort(
   value: string | null | undefined,
   leading = 12,
 ): string {
-  if (!value) return "—";
+  if (!value) return "-";
   if (value.length <= leading) return value;
   return `${value.slice(0, leading)}…`;
 }
 
 export function formatRelative(value: string | Date | null | undefined): string {
-  if (!value) return "—";
+  if (!value) return "-";
   const d = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(d.getTime())) return "—";
+  if (Number.isNaN(d.getTime())) return "-";
   const diff = (Date.now() - d.getTime()) / 1000;
   const abs = Math.abs(diff);
   const rtf = new Intl.RelativeTimeFormat("en-US", { numeric: "auto" });
@@ -100,12 +100,12 @@ export function formatRelative(value: string | Date | null | undefined): string 
  * Renders an IP for an operator scanning evidence:
  *   - "::1" / "127.0.0.1" → "localhost (…)" so loopback hits in dev /
  *     staging don't look like missing data
- *   - "::ffff:1.2.3.4" → "1.2.3.4" — strips the IPv4-mapped-IPv6 prefix
+ *   - "::ffff:1.2.3.4" → "1.2.3.4", strips the IPv4-mapped-IPv6 prefix
  *     Node sometimes hands us behind dual-stack listeners
  *   - otherwise passes through verbatim
  */
 export function formatIp(value: string | null | undefined): string {
-  if (!value) return "—";
+  if (!value) return "-";
   const trimmed = value.trim();
   if (
     trimmed === "::1" ||

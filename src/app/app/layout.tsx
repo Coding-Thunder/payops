@@ -49,7 +49,7 @@ export default async function AuthenticatedLayout({
           </div>
           {/* Shell padding lives inside main so every page gets a
               consistent inset on all four sides without a coloured
-              gutter strip — same bg both sides of the seam, the gap
+              gutter strip, same bg both sides of the seam, the gap
               is purely spacing. Scales 16 → 20 → 24 px on md / lg /
               xl, same rhythm horizontally and vertically. The `print:`
               overrides drop overflow and padding so the printed

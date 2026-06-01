@@ -1,6 +1,6 @@
 /**
  * Client-safe enum of email template keys. Mirrors the array on the
- * server-side EmailTemplate model — kept here so validation schemas
+ * server-side EmailTemplate model, kept here so validation schemas
  * (loaded into client bundles via `lib/validation`) don't drag in
  * Mongoose.
  */

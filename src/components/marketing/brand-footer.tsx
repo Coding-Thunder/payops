@@ -3,12 +3,12 @@ import Link from "next/link";
 import { LogoLockup } from "@/components/brand/logo";
 
 /**
- * Brand-v1 footer — calm, operational, no marketing fluff.
+ * Brand-v1 footer, calm, operational, no marketing fluff.
  *
  * Three-column structure: brand + tagline on the left, two link
  * columns (Product / Resources) on the right. Hairline dividers,
  * generous whitespace. Single emerald dot on the system-status pill
- * — the only accent in the entire footer.
+ *, the only accent in the entire footer.
  *
  * Avoids the "11 columns of footer links" pattern most B2B SaaS sites
  * fall into. We're an ops tool, not a corporate portal.
@@ -23,7 +23,7 @@ export function BrandFooter() {
             <LogoLockup size="md" />
             <p className="mt-4 text-[13px] leading-relaxed text-muted-foreground">
               The operating system for payment operations. Lifecycle
-              visibility, hashed evidence, hosted consent — built so your
+              visibility, hashed evidence, hosted consent, built so your
               team can resolve disputes faster.
             </p>
             <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-border bg-white px-3 py-1 text-[11px] text-muted-foreground">

@@ -13,7 +13,7 @@ interface Params {
   params: Promise<{ key: string }>;
 }
 
-/** PATCH /api/admin/workflow/statuses/:key — edit a status's display
+/** PATCH /api/admin/workflow/statuses/:key, edit a status's display
  *  fields (label / color / terminal / paid). The status key itself is
  *  immutable to avoid orphaning every Order.status pointing at it. */
 export const PATCH = withApi(async (req: NextRequest, { params }: Params) => {
@@ -27,7 +27,7 @@ export const PATCH = withApi(async (req: NextRequest, { params }: Params) => {
   return jsonOk({ workflow });
 });
 
-/** DELETE /api/admin/workflow/statuses/:key — remove a status. Service
+/** DELETE /api/admin/workflow/statuses/:key, remove a status. Service
  *  refuses for load-bearing statuses (initial, payment mappings, or
  *  referenced by transitions). */
 export const DELETE = withApi(

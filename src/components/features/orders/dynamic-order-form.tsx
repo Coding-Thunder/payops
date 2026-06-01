@@ -32,7 +32,7 @@ import { AttributeField } from "./attribute-field";
 
 interface DynamicOrderFormProps {
   itemTypes: ItemTypeDTO[];
-  /** Pass 6c — pre-saved catalog rows the operator can pick instead of
+  /** Pass 6c, pre-saved catalog rows the operator can pick instead of
    *  re-typing line details. May be empty (catalog is optional). */
   catalogItems?: ItemDTO[];
   defaultCurrency: Currency;
@@ -83,7 +83,7 @@ function findSpec(
 }
 
 /**
- * Pass 5e — Dynamic create-order form.
+ * Pass 5e, Dynamic create-order form.
  *
  * Universal flow:
  *   1. Pick an ItemType. Re-uses the per-tenant catalog the admin
@@ -96,7 +96,7 @@ function findSpec(
  *      schedule one delivery / appointment / pickup per order).
  *
  * On submit posts `lineItems[]` to the polymorphic POST /api/orders
- * route (Pass 5d's createOrder). The legacy rental form is gone — the
+ * route (Pass 5d's createOrder). The legacy rental form is gone, the
  * auto-seeded `rental_booking` type is now just another option in the
  * picker.
  */
@@ -131,7 +131,7 @@ export function DynamicOrderForm({
     email: "",
     phone: "",
   });
-  // Pass 6d — remember the last email we ran the saved-customer lookup
+  // Pass 6d, remember the last email we ran the saved-customer lookup
   // for, so tabbing in/out of the email field doesn't re-fire the API
   // call when the value hasn't actually changed.
   const lastLookupEmail = useRef<string>("");
@@ -163,7 +163,7 @@ export function DynamicOrderForm({
         return next;
       });
     } catch {
-      // Silent — prefill is a nicety, never block the form on it.
+      // Silent, prefill is a nicety, never block the form on it.
     }
   }
   const [currency, setCurrency] = useState<Currency>(defaultCurrency);
@@ -207,7 +207,7 @@ export function DynamicOrderForm({
     }
   }
 
-  /** Pass 6c — pre-fill a line from a catalog Item row. Carries
+  /** Pass 6c, pre-fill a line from a catalog Item row. Carries
    *  itemId back-pointer so the persisted order line can link to the
    *  catalog entry. */
   function addLineFromCatalogItem(itemId: string): void {

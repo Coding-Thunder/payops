@@ -9,7 +9,7 @@ import type { OnboardingState } from "@/server/services/onboarding-state.service
 /**
  * Dashboard setup-checklist banner. Server-rendered (no client JS),
  * shown ONLY when the state is incomplete + the org isn't the legacy
- * tenant. A finished checklist is hidden — we don't want a permanent
+ * tenant. A finished checklist is hidden, we don't want a permanent
  * "all done!" cheerleader on the dashboard.
  *
  * Steps render as a vertical list with a status pip + label + small
@@ -17,7 +17,7 @@ import type { OnboardingState } from "@/server/services/onboarding-state.service
  * founder sees what they've already accomplished.
  *
  * Optional step (team) is rendered separately because it isn't part
- * of the "you can take payments" critical path — most solo founders
+ * of the "you can take payments" critical path, most solo founders
  * never invite anyone.
  */
 interface SetupChecklistProps {
@@ -37,7 +37,7 @@ const ITEMS: ChecklistItem[] = [
     key: "gatewayConfigured",
     label: "Connect Stripe",
     description:
-      "Paste your secret key — we verify it and register the webhook endpoint automatically. Until you do, new orders can't generate payment links.",
+      "Paste your secret key, we verify it and register the webhook endpoint automatically. Until you do, new orders can't generate payment links.",
     href: "/app/admin/gateways",
     cta: "Connect Stripe",
   },
@@ -71,7 +71,7 @@ const OPTIONAL_ITEM: ChecklistItem = {
   key: "teamMemberAdded",
   label: "Invite a teammate",
   description:
-    "Add a second user so your account isn't a single point of failure. (Optional — solo operators can skip.)",
+    "Add a second user so your account isn't a single point of failure. (Optional, solo operators can skip.)",
   href: "/app/admin/users",
   cta: "Invite teammate",
 };

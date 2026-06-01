@@ -18,7 +18,7 @@ import {
 } from "../blocks";
 
 /**
- * Pass 5f — Universal order email.
+ * Pass 5f, Universal order email.
  *
  * One template, two variants:
  *   - `confirmation`: success banner + payment block list, used after
@@ -33,7 +33,7 @@ import {
  * tracking_info for shipping, etc.).
  *
  * The block context (`ctx`) carries the order DTO + branding + optional
- * payment snapshot, signature snapshot — everything any block needs.
+ * payment snapshot, signature snapshot, everything any block needs.
  * The template stays purely layout-only.
  */
 
@@ -48,13 +48,13 @@ export interface UniversalOrderEmailProps {
   /** Optional headline overrides. Falls back to variant defaults. */
   bannerTitle?: string | null;
   bannerDescription?: React.ReactNode;
-  /** Payment-request only — primary CTA copy + URL + helper. */
+  /** Payment-request only, primary CTA copy + URL + helper. */
   cta?: {
     url: string;
     label: string;
     helperText?: string | null;
   } | null;
-  /** Optional override greeting / intro text — written by the agent in
+  /** Optional override greeting / intro text, written by the agent in
    *  the composer and carried into the request flow. */
   greeting?: string | null;
   intro?: string | null;
@@ -78,8 +78,8 @@ export function UniversalOrderEmail({
     `${ctx.order.pricing.amount.toFixed(2)} ${ctx.order.pricing.currency}`;
   const preview =
     variant === "confirmation"
-      ? `${ctx.branding.brandName} — payment confirmed for ${ctx.order.orderNumber} (${amount})`
-      : `${ctx.branding.brandName} — please review order ${ctx.order.orderNumber}`;
+      ? `${ctx.branding.brandName}, payment confirmed for ${ctx.order.orderNumber} (${amount})`
+      : `${ctx.branding.brandName}, please review order ${ctx.order.orderNumber}`;
 
   return (
     <EmailLayout preview={preview}>
@@ -99,7 +99,7 @@ export function UniversalOrderEmail({
                 <strong style={{ color: COLOR.textPrimary }}>
                   {ctx.order.orderNumber}
                 </strong>
-                . Details below — please keep this email for your records.
+                . Details below, please keep this email for your records.
               </>
             )
           }
@@ -139,7 +139,7 @@ function RequestIntro({
   const headline = greeting ?? `Hi ${customerName},`;
   const body =
     intro ??
-    "Please review the order details below and continue to payment when you're ready. Reach out if anything looks off — this link is good for the next 24 hours.";
+    "Please review the order details below and continue to payment when you're ready. Reach out if anything looks off, this link is good for the next 24 hours.";
   return (
     <Section
       style={{ padding: `${SPACE.xl}px ${SPACE.xxxl}px ${SPACE.sm}px` }}

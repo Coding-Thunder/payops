@@ -13,7 +13,7 @@ interface SuccessBannerProps {
 }
 
 /**
- * Calm success state. No checkmark icon, no pill — just a typographic
+ * Calm success state. No checkmark icon, no pill, just a typographic
  * eyebrow plus a heading and short paragraph. The "premium fintech"
  * version of "🎉 booking complete".
  */

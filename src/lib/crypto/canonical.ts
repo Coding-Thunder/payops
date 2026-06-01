@@ -7,7 +7,7 @@
  * algorithm:
  *   - sort object keys lexicographically at every level
  *   - drop `undefined` values entirely (matches JSON.stringify) but
- *     keep `null`s — a removed field MUST change the hash
+ *     keep `null`s, a removed field MUST change the hash
  *   - serialise Dates as their ISO string (Date.prototype.toJSON)
  *   - reject circular references with a clear error rather than
  *     letting JSON.stringify throw a generic TypeError

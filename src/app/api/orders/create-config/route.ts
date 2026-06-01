@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  * "What does the create-order form need?" endpoint.
  *
  * Gated by ORDER_CREATE so STAFF (who can't read full settings) still
- * get the form defaults. Returns only what the UI binds against —
+ * get the form defaults. Returns only what the UI binds against -
  * never the full settings document.
  *
  * Pass 6c: also surfaces the per-org active Item catalog so the
@@ -25,7 +25,7 @@ export const GET = withApi(async () => {
   const [settings, itemTypes, items] = await Promise.all([
     getSettings(actor.orgId),
     listActiveItemTypes(actor.orgId ?? null),
-    // Catalog is optional — `actor.orgId` is null for legacy callers,
+    // Catalog is optional, `actor.orgId` is null for legacy callers,
     // in which case `listActiveItems` would throw. Skip silently.
     actor.orgId ? listActiveItems(actor.orgId) : Promise.resolve([]),
   ]);

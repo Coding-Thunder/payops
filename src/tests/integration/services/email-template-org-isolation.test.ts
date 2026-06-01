@@ -25,7 +25,7 @@ function content(
 
 /**
  * Phase 3d: per-org email-template versioning. Each tenant has their
- * own version stream — Tenant #2 saving v1 doesn't see / collide with
+ * own version stream, Tenant #2 saving v1 doesn't see / collide with
  * Tenant #1's v17.
  */
 
@@ -50,7 +50,7 @@ function actor(orgId: string) {
   };
 }
 
-describe("createTemplateVersion + getActiveTemplate — per-org", () => {
+describe("createTemplateVersion + getActiveTemplate, per-org", () => {
   it("each org gets its own version 1", async () => {
     const orgA = newOrgId();
     const orgB = newOrgId();
@@ -88,7 +88,7 @@ describe("createTemplateVersion + getActiveTemplate — per-org", () => {
       content({ greeting: "B v1" }),
       actor(orgB),
     );
-    // OrgA rolls forward to v2 — B's v1 stays active.
+    // OrgA rolls forward to v2, B's v1 stays active.
     await createTemplateVersion(
       "payment-confirmation",
       content({ greeting: "A v2" }),
@@ -112,14 +112,14 @@ describe("createTemplateVersion + getActiveTemplate — per-org", () => {
       "payment-confirmation",
       orgA,
     );
-    // Null falls through to the code's hardcoded copy — the email
+    // Null falls through to the code's hardcoded copy, the email
     // renderer treats this as "use defaults", which is the right
     // behaviour for a tenant that hasn't customized anything.
     expect(content).toBeNull();
   });
 });
 
-describe("activateTemplateVersion — cross-tenant guard", () => {
+describe("activateTemplateVersion, cross-tenant guard", () => {
   it("orgB can't activate orgA's version by id", async () => {
     const orgA = newOrgId();
     const orgB = newOrgId();
@@ -128,7 +128,7 @@ describe("activateTemplateVersion — cross-tenant guard", () => {
       content({ greeting: "A v1" }),
       actor(orgA),
     );
-    // OrgB tries to activate orgA's version id — refused as not found.
+    // OrgB tries to activate orgA's version id, refused as not found.
     await expect(
       activateTemplateVersion("payment-confirmation", a.id, actor(orgB)),
     ).rejects.toThrow(/not found/i);

@@ -40,7 +40,7 @@ export default async function EditItemPage({ params }: PageProps) {
     <div className="space-y-6">
       <PageHeader
         title={item.name}
-        description={`Editing this catalog item. Existing orders that referenced it keep their original snapshot — your edits affect future picks only.`}
+        description={`Editing this catalog item. Existing orders that referenced it keep their original snapshot, your edits affect future picks only.`}
       />
       <ItemForm
         initial={item}

@@ -13,9 +13,9 @@ import { registerModel } from "./register";
  * Replaces the hardcoded `OrderStatus` enum and the implicit transition
  * logic baked into order.service.ts with a tenant-configurable graph:
  *
- *   - statuses[]    — node set (the "boxes")
- *   - transitions[] — directed edges (allowed moves) with optional guards
- *   - initialStatusKey — entry point for a fresh order
+ *   - statuses[]   , node set (the "boxes")
+ *   - transitions[], directed edges (allowed moves) with optional guards
+ *   - initialStatusKey, entry point for a fresh order
  *
  * The platform ships ONE behavior on first access: a default workflow
  * mirroring the legacy enum (NOT_INITIATED → ... → PAID/FAILED) is
@@ -25,7 +25,7 @@ import { registerModel } from "./register";
  * against THEIR graph.
  *
  * Why nested arrays instead of separate collections:
- *   - Reads are always "load the whole workflow for one org" — one
+ *   - Reads are always "load the whole workflow for one org", one
  *     document fits cleanly under 16MB even with thousands of edges.
  *   - Atomicity: status + transition edits are inherently transactional
  *     (you can't add a transition that references a missing status).
@@ -36,7 +36,7 @@ import { registerModel } from "./register";
  *   - Status keys must be unique within a workflow.
  *   - Every transition's from/to must reference an existing status key.
  *   - Webhook payment events always target the `paymentSuccessStatusKey`
- *     and `paymentFailureStatusKey` declared at the workflow level —
+ *     and `paymentFailureStatusKey` declared at the workflow level -
  *     so tenants control the names but the gateway integration still
  *     has a stable contract to write into.
  */
@@ -82,7 +82,7 @@ export interface WorkflowTransitionSpec {
   /** Optional permission key the actor must hold to fire this
    *  transition. When null, any user with order:update can fire it. */
   requiredPermission: string | null;
-  /** Optional automation hook label — the automation engine looks up
+  /** Optional automation hook label, the automation engine looks up
    *  rules whose trigger key matches. Not enforced today; reserved
    *  for the WHEN-status-changes-THEN-X rule engine in Phase 8. */
   automationTriggerKey: string | null;
@@ -90,7 +90,7 @@ export interface WorkflowTransitionSpec {
 
 export interface WorkflowDoc {
   orgId: Types.ObjectId;
-  /** Workflow label — surfaced in the admin builder. One per org for
+  /** Workflow label, surfaced in the admin builder. One per org for
    *  now; future multi-workflow support (e.g. "rental" vs "service")
    *  will fan out off this same model. */
   name: string;

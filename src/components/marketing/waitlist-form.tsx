@@ -12,12 +12,12 @@ import { TurnstileWidget } from "@/components/common/turnstile-widget";
 import { api, ApiClientError } from "@/lib/api-client";
 
 /**
- * Waitlist form — minimal (name, email, what-you-build), posts to the
+ * Waitlist form, minimal (name, email, what-you-build), posts to the
  * existing /api/quotations endpoint tagged source:"waitlist".
  *
  * The full quotation schema requires fields the waitlist UX
  * doesn't surface (companyName, country, expectedVolume). We
- * pad those with "—" placeholders client-side so the submit
+ * pad those with "-" placeholders client-side so the submit
  * validates without forcing a fictional company name out of
  * someone whose product is one engineer + an idea. Sales sees
  * the `source: "waitlist"` tag and treats the lead accordingly.
@@ -57,9 +57,9 @@ export function WaitlistForm({ turnstileSiteKey }: WaitlistFormProps) {
         workEmail: email.trim(),
         // Padding so the heavier landing-page schema validates. Sales
         // sees `source: "waitlist"` + ignores the placeholder fields.
-        companyName: name.trim(), // best heuristic — use the name
-        country: "—",
-        expectedVolume: "—",
+        companyName: name.trim(), // best heuristic, use the name
+        country: "-",
+        expectedVolume: "-",
         useCase:
           building.trim() ||
           "Joined the waitlist without specifying what they build.",
@@ -71,7 +71,7 @@ export function WaitlistForm({ turnstileSiteKey }: WaitlistFormProps) {
       const msg =
         err instanceof ApiClientError
           ? err.message
-          : "Couldn't submit — please retry.";
+          : "Couldn't submit, please retry.";
       setError(msg);
       setCfToken(null);
     } finally {

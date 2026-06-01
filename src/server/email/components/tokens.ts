@@ -3,7 +3,7 @@
  *
  * Centralized so every email template draws from the same palette,
  * spacing rhythm, and type scale. Tokens are plain JS values (not CSS
- * variables) because most email clients strip <style> blocks — every
+ * variables) because most email clients strip <style> blocks, every
  * style we ship has to be inline.
  *
  * Aesthetic target: fintech-grade transactional email (Stripe, Mercury,
@@ -31,7 +31,7 @@ export const COLOR = {
   textFaint: "#94a3b8",
   textInverted: "#ffffff",
 
-  // Accents (kept restrained — used sparingly)
+  // Accents (kept restrained, used sparingly)
   success: "#0e9f6e",
   successSoft: "#ecfdf5",
   successBorder: "#d1fae5",
@@ -61,7 +61,7 @@ export const FONT = {
 } as const;
 
 export const TYPE = {
-  // (size, lineHeight, weight) — kept small to mirror Stripe receipts
+  // (size, lineHeight, weight), kept small to mirror Stripe receipts
   display: { size: 24, line: 30, weight: 700, track: "-0.02em" },
   amount: { size: 30, line: 34, weight: 700, track: "-0.025em" },
   heading: { size: 16, line: 22, weight: 600, track: "-0.01em" },

@@ -3,7 +3,7 @@ import type { MetadataRoute } from "next";
 import { env } from "@/lib/env";
 
 /**
- * robots.txt — surfaced by Next at `/robots.txt`.
+ * robots.txt, surfaced by Next at `/robots.txt`.
  *
  *  - Crawlers may index the landing page and the login route.
  *  - Everything authed (`/app/*`), every API (`/api/*`), and every
@@ -30,7 +30,7 @@ export default function robots(): MetadataRoute.Robots {
         ],
       },
       {
-        // AI crawlers — defensible default: opt OUT of being scraped
+        // AI crawlers, defensible default: opt OUT of being scraped
         // into LLM training corpora. The site exists to convert
         // prospects, not to feed a model. Easy to flip later if
         // marketing decides to allow.

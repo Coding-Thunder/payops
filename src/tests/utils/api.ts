@@ -63,7 +63,7 @@ export async function jsonBody<T = unknown>(
 }
 
 /**
- * Common API envelope shapes — tests narrow into one of these so they can
+ * Common API envelope shapes, tests narrow into one of these so they can
  * assert without `as` casts everywhere.
  */
 export interface ApiOk<T> {

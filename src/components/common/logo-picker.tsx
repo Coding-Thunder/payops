@@ -28,7 +28,7 @@ interface LogoPickerRowProps {
 
 /**
  * Shared "preview + upload" row used by provider + branding forms. The
- * server-side validation rules are identical for both — keep them in sync
+ * server-side validation rules are identical for both, keep them in sync
  * with `provider.service` / `branding.service` upload constraints.
  */
 export function LogoPickerRow({

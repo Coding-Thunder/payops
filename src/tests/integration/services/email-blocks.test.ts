@@ -212,7 +212,7 @@ describe("resolveEmailBlocksForOrder", () => {
     expect(blocks).toContain(EmailBlockKey.SCHEDULING_WINDOW);
   });
 
-  it("REFUSES cross-tenant ItemType reuse — Org B's order ignores Org A's blocks", async () => {
+  it("REFUSES cross-tenant ItemType reuse, Org B's order ignores Org A's blocks", async () => {
     const orgA = new Types.ObjectId();
     const orgB = new Types.ObjectId();
     await ItemType.create({

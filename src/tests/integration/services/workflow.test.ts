@@ -176,7 +176,7 @@ describe("workflow.service", () => {
 
     it("rejects mapping success to a non-paid status (dashboard rollup safety)", async () => {
       await getOrCreateDefaultWorkflow(orgId);
-      // LINK_GENERATED is not isPaid — using it as the success target
+      // LINK_GENERATED is not isPaid, using it as the success target
       // would silently exclude paid orders from revenue reporting.
       await expect(
         setPaymentStatusMapping(

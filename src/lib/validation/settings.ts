@@ -3,7 +3,7 @@ import { z } from "zod";
 import { CONSENT_MODES, CURRENCIES } from "@/lib/constants/enums";
 
 // Support email/phone live on the Branding doc now (see /admin/branding).
-// Redirect URLs are computed from APP_URL — accepted but ignored by the
+// Redirect URLs are computed from APP_URL, accepted but ignored by the
 // service mapper so the form's read-only display stays in sync.
 export const updateSettingsSchema = z.object({
   paymentExpiryHours: z.number().int().min(1).max(24 * 30),

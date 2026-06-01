@@ -17,7 +17,7 @@ import type { AuthenticatedUser } from "@/server/auth/session";
  *   - `actorFor(role)` produces a deterministic `AuthenticatedUser`.
  *   - `mockSession(user)` patches `@/server/auth/session` so route
  *     handlers believe a user is signed in. The mock HONOURS the real
- *     role/permission matrix — calling `requirePermission(X)` with a
+ *     role/permission matrix, calling `requirePermission(X)` with a
  *     role that doesn't grant X throws `ForbiddenError`, exactly like
  *     production. A test for "STAFF can't reach /admin/*" must work
  *     against the same RBAC code path the app does.
@@ -51,7 +51,7 @@ export function actorFor(
 /**
  * Persist an Organization + owner User for an actor's orgId so tenant-
  * aware services (Branding, Workflow, etc.) that lazy-seed from the
- * Org/founder data have something to read. Idempotent — safe to call
+ * Org/founder data have something to read. Idempotent, safe to call
  * multiple times for the same actor.
  *
  * Tests that exercise any flow touching branding/workflow/email seeds

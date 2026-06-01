@@ -1,5 +1,5 @@
 /**
- * Loads a `.env`-style file into process.env. Hand-rolled — no
+ * Loads a `.env`-style file into process.env. Hand-rolled, no
  * dependency on dotenv. Skips keys that are already populated so
  * explicit CLI overrides (`MONGODB_URI=… npm test`) still win.
  *

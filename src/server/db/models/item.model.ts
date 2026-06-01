@@ -41,7 +41,7 @@ import { registerModel } from "./register";
  * model declares the field as `Mixed` so the schema doesn't have to
  * carry per-tenant shape information.
  *
- * Hard-delete is intentionally absent — historical Orders embed
+ * Hard-delete is intentionally absent, historical Orders embed
  * snapshots that we never want to silently break. Use `archive()`
  * (sets `status: ARCHIVED`) instead.
  */
@@ -75,12 +75,12 @@ export interface ItemDoc {
   sku?: string | null;
   /** Hero image rendered in the create-order picker and in some
    *  email blocks (e.g. ITEM_HERO). Stored as the public path or a
-   *  full URL — same convention as `Branding.logo`. */
+   *  full URL, same convention as `Branding.logo`. */
   imageUrl?: string | null;
   /** Per-tenant per-vertical attribute payload. Validated against the
    *  referenced ItemType.attributeSchema at the service layer. */
   attributes: Record<string, unknown>;
-  /** Inventory snapshot — populated only when the referenced
+  /** Inventory snapshot, populated only when the referenced
    *  ItemType.inventoryTracked is true. Mutated transactionally by
    *  the inventory module on order PAID / refund. Optional at the
    *  schema level so non-inventory itemTypes don't carry the field. */
@@ -143,7 +143,7 @@ const itemSchema = new Schema<ItemDoc>(
     basePrice: { type: itemPriceSchema, default: null },
     sku: { type: String, default: null, trim: true, maxlength: 64 },
     imageUrl: { type: String, default: null, maxlength: 2048 },
-    // `Schema.Types.Mixed` — service-layer validates against the
+    // `Schema.Types.Mixed`, service-layer validates against the
     // referenced ItemType.attributeSchema. We deliberately don't
     // type-strict here because attribute shapes are per-tenant.
     attributes: { type: Schema.Types.Mixed, default: () => ({}) },
@@ -181,7 +181,7 @@ itemSchema.index({ orgId: 1, itemTypeKey: 1, status: 1, name: 1 });
 // Catalog-search support (regex-on-name path; full-text index lands
 // later if/when we add typeahead).
 itemSchema.index({ orgId: 1, name: 1 });
-// SKU uniqueness when present — operators using SKUs expect them to
+// SKU uniqueness when present, operators using SKUs expect them to
 // be unique within their tenant. Partial filter so items without
 // SKUs (services, consulting, rental units) don't compete on the
 // constraint.

@@ -29,7 +29,7 @@ export interface OrgContext {
 
 /**
  * Build an `OrgContext` from already-validated parts. Throws if the
- * orgId is not a valid ObjectId — guards against a stale JWT carrying
+ * orgId is not a valid ObjectId, guards against a stale JWT carrying
  * a random string into a Mongo query.
  */
 export function buildOrgContext(input: {
@@ -39,7 +39,7 @@ export function buildOrgContext(input: {
 }): OrgContext {
   if (!input.orgId) {
     throw new UnauthorizedError(
-      "Session has no organization context — please sign in again",
+      "Session has no organization context, please sign in again",
     );
   }
   if (!Types.ObjectId.isValid(input.orgId)) {

@@ -1,7 +1,7 @@
 import { QuotationFormBody } from "../quotation-form-body";
 
 /**
- * Closing region — the final enclosure of the document.
+ * Closing region, the final enclosure of the document.
  *
  * Not a "contact section." A compressed footer-area moment that
  * reframes the form as the side door for custom / procurement work,
@@ -36,7 +36,7 @@ export function ClosingRegion({ turnstileSiteKey }: ClosingRegionProps) {
             </a>{" "}
             and grow from there. If you need scoped routing, regional
             gateway selection, a procurement track, or volumes that
-            warrant a dedicated conversation — tell us about it and
+            warrant a dedicated conversation, tell us about it and
             we&apos;ll respond within one business day.
           </p>
 

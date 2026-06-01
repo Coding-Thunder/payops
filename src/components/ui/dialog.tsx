@@ -8,7 +8,7 @@ import { XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * Dialog — Stripe / Linear quality:
+ * Dialog, Stripe / Linear quality:
  *  - barely-there backdrop (8% dim + 6px blur, animated 180ms)
  *  - soft 12px radius surface, hairline border, refined shadow-lg
  *  - size variants (sm / md / lg) so primitives stay consistent across

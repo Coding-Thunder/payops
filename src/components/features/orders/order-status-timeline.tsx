@@ -27,8 +27,8 @@ interface Step {
 
 /**
  * Five-step horizontal-on-desktop / vertical-on-mobile timeline of the
- * payment lifecycle. Reads exclusively from the order DTO — no extra
- * fetches — so it renders instantly and stays in lockstep with the
+ * payment lifecycle. Reads exclusively from the order DTO, no extra
+ * fetches, so it renders instantly and stays in lockstep with the
  * polled / SSE-invalidated cache.
  *
  * Step rules:
@@ -36,7 +36,7 @@ interface Step {
  *   Email sent:        consent.requestedAt (consent record is created
  *                      atomically with the payment-request email send)
  *   Consent received:  consent.receivedAt (skipped when status is
- *                      NOT_REQUESTED — applies to admin-skipped flows)
+ *                      NOT_REQUESTED, applies to admin-skipped flows)
  *   Paid:              payment.paidAt (failed / expired surfaces a
  *                      destructive marker instead of a pending one)
  *   Confirmation sent: payment.confirmationEmailSentAt
@@ -50,7 +50,7 @@ export function OrderStatusTimeline({ order }: OrderStatusTimelineProps) {
           key={step.key}
           className="relative flex items-start gap-3 md:flex-col md:items-stretch md:gap-2"
         >
-          {/* Connector — between steps */}
+          {/* Connector, between steps */}
           {i < steps.length - 1 ? (
             <span
               aria-hidden

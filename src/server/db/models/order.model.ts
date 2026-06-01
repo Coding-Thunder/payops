@@ -50,12 +50,12 @@ export interface OrderDoc {
     currency: Currency;
   };
   payment: {
-    /** Which gateway routes this payment. Null while NOT_INITIATED —
+    /** Which gateway routes this payment. Null while NOT_INITIATED -
      *  no gateway has been contacted yet. Stamped at LINK_GENERATED
      *  and frozen for the lifetime of the order. */
     gateway?: PaymentGatewayKey | null;
     /** Provider-side session id. Field name predates the multi-gateway
-     *  refactor — under non-Stripe gateways this holds whatever the
+     *  refactor, under non-Stripe gateways this holds whatever the
      *  gateway returns as its session identifier. DTO surfaces it
      *  as the generic `paymentSessionId`. */
     stripeSessionId?: string | null;
@@ -67,7 +67,7 @@ export interface OrderDoc {
   status: string;
     paidAt?: Date | null;
     expiresAt?: Date | null;
-    /** When the gateway session was created — order moves NOT_INITIATED
+    /** When the gateway session was created, order moves NOT_INITIATED
      *  → LINK_GENERATED at this point via the agent's explicit
      *  "Generate Payment Link" action. */
     initiatedAt?: Date | null;
@@ -84,7 +84,7 @@ export interface OrderDoc {
   };
 
   /**
-   * Phase 5b — universal commerce line items.
+   * Phase 5b, universal commerce line items.
    *
    * Optional / nullable during the cutover. Tenant #1's existing
    * Order rows have `lineItems: []` (default). New orders post-Pass
@@ -93,7 +93,7 @@ export interface OrderDoc {
    * 5h), this becomes the canonical "what the customer is paying
    * for" structure.
    *
-   * Each entry is a SNAPSHOT taken at order-create time — `name`,
+   * Each entry is a SNAPSHOT taken at order-create time, `name`,
    * `unitPrice`, and resolved `attributes` are frozen so a later
    * Catalog edit / archive doesn't rewrite history.
    */
@@ -133,7 +133,7 @@ export interface OrderDoc {
     } | null;
   };
   /** Denormalised pointer to the latest PaymentConsent. Keeps the order
-   *  list query single-collection — the full audit trail lives in the
+   *  list query single-collection, the full audit trail lives in the
    *  payment_consents collection (multiple docs per order allowed). */
   consent: {
     status: ConsentStatus;
@@ -145,7 +145,7 @@ export interface OrderDoc {
   };
   /** Denormalised pointer to the latest Dispute. Null until the first
    *  chargeback lands. The full dispute history lives in the `disputes`
-   *  collection — this pointer keeps order list views single-collection
+   *  collection, this pointer keeps order list views single-collection
    *  for the at-risk dashboard. */
   dispute?: {
     status: DisputeStatus | null;
@@ -172,7 +172,7 @@ export interface OrderDoc {
  *
  * `attributes` shape is per-tenant per-vertical, validated at the
  * service layer against the referenced `ItemType.attributeSchema`.
- * Persisted as `Mixed` because the SCHEMA is per-org — we deliberately
+ * Persisted as `Mixed` because the SCHEMA is per-org, we deliberately
  * don't push that knowledge into the persistence layer.
  */
 export interface OrderLineItem {
@@ -300,10 +300,10 @@ const policySchema = new Schema(
   { _id: false },
 );
 
-/* ────────── Pass 5b — universal commerce subdocs (additive) ──────────── */
+/* ────────── Pass 5b, universal commerce subdocs (additive) ──────────── */
 
 /**
- * Order.scheduling — optional time window. Same shape used at the
+ * Order.scheduling, optional time window. Same shape used at the
  * line-item level when individual lines diverge from the order-level
  * window.
  */
@@ -317,7 +317,7 @@ const orderSchedulingSchema = new Schema<OrderScheduling>(
 );
 
 /**
- * Order.lineItems[] — universal commerce line item. Replaces the
+ * Order.lineItems[], universal commerce line item. Replaces the
  * rental-shaped `vehicle/trip/provider` triple over Pass 5c–5h.
  *
  * `attributes` is `Schema.Types.Mixed` deliberately: the per-tenant
@@ -455,7 +455,7 @@ const orderSchema = new Schema<OrderDoc>(
     pricing: { type: pricingSchema, required: true },
     payment: { type: paymentSchema, required: true },
     createdBy: { type: creatorSchema, required: true },
-    // Pass 5b — universal commerce additions (optional, default
+    // Pass 5b, universal commerce additions (optional, default
     // empty/null). Existing rental orders are unaffected; new code
     // paths (Pass 5d+) will populate these on every order.
     lineItems: { type: [orderLineItemSchema], default: () => [] },
@@ -504,7 +504,7 @@ orderSchema.index({ state: 1, createdAt: -1 });
 orderSchema.index({ "provider.id": 1, createdAt: -1 });
 orderSchema.index({ "consent.status": 1, createdAt: -1 });
 orderSchema.index({ "dispute.status": 1, "dispute.openedAt": -1 });
-// Org-scoped list queries — every multi-tenant read filters on orgId.
+// Org-scoped list queries, every multi-tenant read filters on orgId.
 // Partial index ignores legacy null-orgId rows so the index stays small
 // during the migration window.
 orderSchema.index(
@@ -528,7 +528,7 @@ orderSchema.index(
   },
 );
 // `payment.stripeSessionId` already has `index: true, sparse: true` on the
-// field definition — declaring it again here triggers a duplicate-index
+// field definition, declaring it again here triggers a duplicate-index
 // warning at startup. Keep it on the field, drop the schema-level call.
 
 orderSchema.pre("validate", function () {

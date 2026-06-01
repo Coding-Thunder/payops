@@ -18,7 +18,7 @@ import { createOrder as factoryCreateOrder } from "@/tests/factories/order.facto
 import { ensureMongo } from "@/tests/utils/db";
 
 /**
- * Dispute + refund webhook handlers — pins the operational invariants
+ * Dispute + refund webhook handlers, pins the operational invariants
  * the disputes team relies on:
  *
  *   - charge.dispute.created persists a Dispute, points the order at it,
@@ -158,7 +158,7 @@ describe("charge.dispute.updated", () => {
     const intentId = `pi_test_dispute_oop_${Date.now()}`;
     await seedPaidOrderWithIntent(intentId);
 
-    // Update first — no Dispute doc exists yet.
+    // Update first, no Dispute doc exists yet.
     const updated = disputeUpdatedWebhook({
       paymentIntentId: intentId,
       gatewayDisputeId: "du_test_oop_1",
@@ -199,7 +199,7 @@ describe("charge.dispute.closed", () => {
     expect(dispute?.status).toBe(DisputeStatus.LOST);
     expect(dispute?.closedAt).toBeInstanceOf(Date);
 
-    // Order pointer mirrors the outcome but risk.flagged stays — that's
+    // Order pointer mirrors the outcome but risk.flagged stays, that's
     // an explicit ops action.
     const refreshed = await Order.findById(order._id).lean();
     expect(refreshed?.dispute?.outcome).toBe(DisputeOutcome.LOST);
@@ -275,7 +275,7 @@ describe("charge.refunded", () => {
     const order = await seedPaidOrderWithIntent(intentId);
 
     // Imagine Stripe delivered a $100 cumulative-refund event first, then
-    // the $30 partial that came earlier — we should keep the $100.
+    // the $30 partial that came earlier, we should keep the $100.
     const big = refundCreatedWebhook({
       paymentIntentId: intentId,
       amount: 70,

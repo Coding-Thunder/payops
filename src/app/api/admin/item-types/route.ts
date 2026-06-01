@@ -14,7 +14,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Admin list — includes ARCHIVED rows so admins can restore or audit.
+ * Admin list, includes ARCHIVED rows so admins can restore or audit.
  * Public-ish list (active only) is served by `/api/item-types`.
  */
 export const GET = withApi(async (_req: NextRequest) => {

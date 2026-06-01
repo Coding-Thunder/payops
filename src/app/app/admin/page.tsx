@@ -6,7 +6,7 @@ import { requireUser } from "@/server/auth/session";
 export const dynamic = "force-dynamic";
 
 /**
- * `/app/admin` is a landing route — pick the highest-priority admin
+ * `/app/admin` is a landing route, pick the highest-priority admin
  * subpage the user has permission for and redirect there. Staff
  * hitting this URL bounce to the dashboard.
  */

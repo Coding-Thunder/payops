@@ -19,7 +19,7 @@ const REASON_LABEL: Record<string, string> = {
  * "valid" chain means every event's recomputed hash matches storage AND
  * every event's previousHash matches the prior event's hash. Anything
  * else is rendered as a "Broken at #N" red badge with the failure
- * reason — that surface state alone is dispute-grade evidence the
+ * reason, that surface state alone is dispute-grade evidence the
  * record hasn't been tampered with.
  */
 export function IntegrityBadge({ verification }: IntegrityBadgeProps) {

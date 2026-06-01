@@ -24,16 +24,16 @@ import {
  * (re-presentment, separate chargebacks against multi-charge intents)
  * without rewriting the order schema. Order keeps a denormalised
  * `dispute: { status, currentDisputeId, openedAt, closedAt, outcome }`
- * pointer for list-view rendering — see [order.model.ts](order.model.ts).
+ * pointer for list-view rendering, see [order.model.ts](order.model.ts).
  *
  * Lifecycle is driven entirely by Stripe webhooks: created → updated*
  * → closed. The handler is idempotent via `processedWebhookEventIds`
- * (per-dispute, not per-order — the same Stripe event id can be
+ * (per-dispute, not per-order, the same Stripe event id can be
  * delivered to multiple disputes on the same order in rare cases).
  */
 export interface DisputeDoc {
   orderId: Types.ObjectId;
-  /** Tenant boundary — denormalised from the parent Order at create
+  /** Tenant boundary, denormalised from the parent Order at create
    *  time so dispute queries can scope by orgId without a JOIN, and
    *  cross-tenant id-guesses fail at the find filter rather than
    *  relying on the parent Order's orgId pin alone. Nullable during
@@ -59,7 +59,7 @@ export interface DisputeDoc {
 
   /** Stored in MAJOR units (e.g. dollars), 2-decimal precision. */
   amount: number;
-  /** Stripe's raw minor-unit value — kept so reconciliation is exact
+  /** Stripe's raw minor-unit value, kept so reconciliation is exact
    *  even for zero-decimal currencies the major-unit conversion lossy. */
   amountMinor: number;
   currency: Currency;
@@ -70,7 +70,7 @@ export interface DisputeDoc {
   openedAt: Date;
   closedAt: Date | null;
 
-  /** Idempotency list — the gateway event id is appended on each
+  /** Idempotency list, the gateway event id is appended on each
    *  applied transition. Same id replayed is a no-op. */
   processedWebhookEventIds: string[];
 

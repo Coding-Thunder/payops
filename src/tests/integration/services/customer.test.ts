@@ -19,10 +19,10 @@ import {
 import { ensureMongo, resetDatabase } from "@/tests/utils/db";
 
 /**
- * Pass 6d — saved customer records.
+ * Pass 6d, saved customer records.
  *
  * The Customer collection auto-populates when an order is created. It's
- * an ergonomic prefill cache, not a source of truth — these tests pin
+ * an ergonomic prefill cache, not a source of truth, these tests pin
  * the upsert behavior + cross-tenant isolation + lookup case-handling.
  */
 
@@ -151,12 +151,12 @@ describe("createOrder → saves customer", () => {
       email: "casey@example.com",
     });
     expect(saved!.ordersCount).toBe(2);
-    // Latest-write-wins on name + phone — operator's freshest typing.
+    // Latest-write-wins on name + phone, operator's freshest typing.
     expect(saved!.name).toBe("Casey R.");
     expect(saved!.phone).toBe("+15555550200");
   });
 
-  it("isolates by org — same email in two orgs creates two rows", async () => {
+  it("isolates by org, same email in two orgs creates two rows", async () => {
     const orgA = new Types.ObjectId().toString();
     const orgB = new Types.ObjectId().toString();
     await seedSettings(orgA);

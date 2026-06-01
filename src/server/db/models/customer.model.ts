@@ -8,13 +8,13 @@ import {
 import { registerModel } from "./register";
 
 /**
- * Pass 6d — saved customer records.
+ * Pass 6d, saved customer records.
  *
  * Lightweight per-tenant contact book. Auto-populated when an operator
  * creates an order: the customer block (name/email/phone) is upserted
  * here so the next order to the same email pre-fills name + phone.
  *
- * Deliberately *not* the canonical source of truth — every Order still
+ * Deliberately *not* the canonical source of truth, every Order still
  * snapshots its own customer fields. This collection exists only to
  * eliminate retyping for repeat customers.
  */

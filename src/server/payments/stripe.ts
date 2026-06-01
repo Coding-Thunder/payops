@@ -44,7 +44,7 @@ export function getStripe(): Stripe {
 
 /**
  * Build a per-org Stripe client from a secret key resolved out of a
- * `GatewayCredential` row. NOT cached at module scope — caching a
+ * `GatewayCredential` row. NOT cached at module scope, caching a
  * per-org client globally would leak Tenant A's connection pool into
  * Tenant B's request when the module is hot-loaded.
  *
@@ -52,7 +52,7 @@ export function getStripe(): Stripe {
  * the secret key, so existing test suites (which set up the stub via
  * `setStripeForTesting`) keep observing one set of calls. This routes
  * through the same `cached` slot as `getStripe()` because Vitest's
- * tsconfig-paths plugin doesn't rewrite runtime CJS `require()` — we
+ * tsconfig-paths plugin doesn't rewrite runtime CJS `require()`, we
  * MUST reuse the pre-set test stub rather than reach for a fresh one.
  */
 export function getStripeForSecret(secretKey: string): Stripe {
@@ -62,12 +62,12 @@ export function getStripeForSecret(secretKey: string): Stripe {
   const testMode = process.env.TRACETXN_TEST_MODE;
   if (testMode === "smoke" || testMode === "integration") {
     // Reuse the test stub installed by `setStripeForTesting` in the
-    // integration / smoke setup. The stub is gateway-agnostic — it
-    // doesn't care which secret key fired it — so per-org isolation
+    // integration / smoke setup. The stub is gateway-agnostic, it
+    // doesn't care which secret key fired it, so per-org isolation
     // in tests is observed via the call-record arrays + the routing
     // path inside the gateway, not via the Stripe client itself.
     if (cached) return cached;
-    // No-one called setStripeForTesting yet — bootstrap via the legacy
+    // No-one called setStripeForTesting yet, bootstrap via the legacy
     // env path which knows how to build the stub.
     return getStripe();
   }
@@ -81,7 +81,7 @@ export function getStripeForSecret(secretKey: string): Stripe {
 
 /**
  * Replace the cached env-backed Stripe client. Test-only. Production
- * code paths never import this — Next.js tree-shakes it out of client
+ * code paths never import this, Next.js tree-shakes it out of client
  * bundles because the whole file is `server-only`.
  */
 export function setStripeForTesting(client: Stripe | null): void {

@@ -48,7 +48,7 @@ interface ConsentListResponse {
  *   - history list of past consent records (re-sends, prior attempts)
  *     fetched lazily from /api/orders/:id/consent
  *
- * Deliberately quiet by default — we render even when status is
+ * Deliberately quiet by default, we render even when status is
  * NOT_REQUESTED so the agent knows the feature exists, but the visual
  * weight stays muted until something has actually happened.
  */
@@ -59,7 +59,7 @@ export function OrderConsentCard({ order, role: _role }: OrderConsentCardProps) 
     queryKey: ["consent", "order", order.id],
     queryFn: () =>
       api.get<ConsentListResponse>(`/api/orders/${order.id}/consent`),
-    // Don't auto-poll — the SSE invalidation in RealtimeProvider drops
+    // Don't auto-poll, the SSE invalidation in RealtimeProvider drops
     // this cache when consent moves, and the agent will refetch on
     // action otherwise.
     staleTime: 30_000,
@@ -105,7 +105,7 @@ function Timeline({
   consent: OrderDTO["consent"];
 }) {
   // Customer submission auto-verifies, so there is no separate
-  // "Received" step any more — the hosted page click moves the record
+  // "Received" step any more, the hosted page click moves the record
   // straight to VERIFIED with the same captured signature + IP that
   // would have been graded later. Two steps only.
   const steps: Array<{

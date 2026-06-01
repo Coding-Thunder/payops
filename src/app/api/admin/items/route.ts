@@ -14,7 +14,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Admin list — includes ARCHIVED + DISABLED so admins can audit the
+ * Admin list, includes ARCHIVED + DISABLED so admins can audit the
  * full catalog history. Public-ish active-only list is at `/api/items`.
  */
 export const GET = withApi(async (req: NextRequest) => {

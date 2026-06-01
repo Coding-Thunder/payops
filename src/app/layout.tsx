@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
   display: "swap",
 });
 
-/** Brand-v1 display typeface — DM Sans. Used on the wordmark + on
+/** Brand-v1 display typeface, DM Sans. Used on the wordmark + on
  *  display-scale headings via the Tailwind `font-display` utility
  *  (token `--font-display`, declared in globals.css). Body copy
  *  stays on Geist for legibility at small sizes. */
@@ -32,15 +32,15 @@ const dmSans = DM_Sans({
  * Root metadata.
  *
  * Strategy: full technical-SEO surface area at the root so every
- * route inherits sensible defaults — title template, canonical via
+ * route inherits sensible defaults, title template, canonical via
  * `metadataBase`, OG/Twitter cards, theme color, viewport. Per-page
  * `metadata` exports override the title + description.
  *
  * Marketing intent: rank for the long-tail vocabulary an enterprise
  * payments lead actually searches for ("chargeback evidence platform",
  * "dispute readiness", "multi-gateway orchestration", "payment
- * operations audit trail"). Keywords here are advisory only — Google
- * doesn't use the meta tag — but they shape the OG/Twitter snippets
+ * operations audit trail"). Keywords here are advisory only, Google
+ * doesn't use the meta tag, but they shape the OG/Twitter snippets
  * and document the brand-positioning vocabulary in code.
  */
 
@@ -50,15 +50,15 @@ const SITE_URL = (
 ).replace(/\/$/, "");
 const HEADLINE = "Payment Operations Platform · Dispute & Chargeback Evidence";
 const DESCRIPTION =
-  "TraceTxn is the payment operations platform built for the full order lifecycle. Lifecycle visibility, hashed evidence chain, hosted consent, and multi-gateway orchestration — for retail, services, repair, dealership, B2B, and every commerce shape that takes money seriously.";
+  "TraceTxn is the payment operations platform built for the full order lifecycle. Lifecycle visibility, hashed evidence chain, hosted consent, and multi-gateway orchestration, for retail, services, repair, dealership, B2B, and every commerce shape that takes money seriously.";
 const SHORT_DESCRIPTION =
-  "Lifecycle visibility, hashed dispute evidence, and multi-gateway orchestration — operational infrastructure for modern commerce.";
+  "Lifecycle visibility, hashed dispute evidence, and multi-gateway orchestration, operational infrastructure for modern commerce.";
 const OG_IMAGE = `${SITE_URL}/marketing/evidence-chain.webp`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: `${SITE_NAME} — ${HEADLINE}`,
+    default: `${SITE_NAME}, ${HEADLINE}`,
     template: `%s • ${SITE_NAME}`,
   },
   description: DESCRIPTION,
@@ -132,7 +132,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     url: SITE_URL,
-    title: `${SITE_NAME} — ${HEADLINE}`,
+    title: `${SITE_NAME}, ${HEADLINE}`,
     description: DESCRIPTION,
     siteName: SITE_NAME,
     locale: "en_US",
@@ -141,7 +141,7 @@ export const metadata: Metadata = {
         url: OG_IMAGE,
         width: 1440,
         height: 900,
-        alt: `${SITE_NAME} — evidence chain for a disputed order`,
+        alt: `${SITE_NAME}, evidence chain for a disputed order`,
       },
     ],
   },
@@ -149,18 +149,18 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     site: `@${SITE_NAME.toLowerCase()}`,
     creator: `@${SITE_NAME.toLowerCase()}`,
-    title: `${SITE_NAME} — ${HEADLINE}`,
+    title: `${SITE_NAME}, ${HEADLINE}`,
     description: SHORT_DESCRIPTION,
     images: [
       {
         url: OG_IMAGE,
-        alt: `${SITE_NAME} — evidence chain for a disputed order`,
+        alt: `${SITE_NAME}, evidence chain for a disputed order`,
       },
     ],
   },
   // Marketing surfaces are indexable; the authed app is locked behind
   // login. Per-page robots overrides can opt-out (e.g. /pay/success,
-  // /consent/[token]) — see those routes for details.
+  // /consent/[token]), see those routes for details.
   robots: {
     index: true,
     follow: true,
@@ -175,7 +175,7 @@ export const metadata: Metadata = {
   // Icons are auto-injected from the file-convention assets:
   //   - src/app/icon.svg          -> <link rel="icon" href="/icon">
   //   - src/app/apple-icon.tsx    -> <link rel="apple-touch-icon" href="/apple-icon">
-  // Don't override `icons` here — explicit overrides win over the
+  // Don't override `icons` here, explicit overrides win over the
   // conventions and the prior list pointed at /favicon.ico and
   // /apple-icon.svg, neither of which exist.
   appleWebApp: {
@@ -188,7 +188,7 @@ export const metadata: Metadata = {
     address: false,
     telephone: false,
   },
-  // Verification placeholders — drop real codes when GSC / Bing
+  // Verification placeholders, drop real codes when GSC / Bing
   // Webmaster / Yandex / etc. are wired. Empty values are stripped
   // from the head by Next.
   verification: {

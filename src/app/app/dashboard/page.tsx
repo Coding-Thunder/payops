@@ -54,7 +54,7 @@ export default async function DashboardPage() {
       canSeeAnalytics
         ? getAnalyticsSummary({ from: thirtyAgo, to: now }, { orgId: user.orgId })
         : null,
-      // Prior 30-day window — drives the trend deltas on the KPI row.
+      // Prior 30-day window, drives the trend deltas on the KPI row.
       canSeeAnalytics
         ? getAnalyticsSummary({ from: sixtyAgo, to: thirtyAgo }, { orgId: user.orgId })
         : null,
@@ -67,7 +67,7 @@ export default async function DashboardPage() {
       <PageHeader
         eyebrow="Workspace"
         title="Dashboard"
-        description="Every order, every payment, every dispute — one operator surface."
+        description="Every order, every payment, every dispute, one operator surface."
         actions={
           <Button asChild>
             <Link href="/app/orders/create">

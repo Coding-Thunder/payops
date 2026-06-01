@@ -64,7 +64,7 @@ function toDTO(
 /**
  * List every version of a template for the given org. When `orgId` is
  * supplied we return only that tenant's rows; when omitted (legacy
- * caller) we list every row regardless of orgId — preserves the
+ * caller) we list every row regardless of orgId, preserves the
  * pre-Phase-3d behaviour while admin pages migrate to the new
  * signature.
  *
@@ -87,7 +87,7 @@ export async function listTemplateVersions(
 
 /**
  * Return the currently-active version for an org. Returns null when no
- * row exists for this org — the email service then falls back to the
+ * row exists for this org, the email service then falls back to the
  * code's hardcoded copy (which is the right default for tenants that
  * never customize).
  *
@@ -111,7 +111,7 @@ export async function getActiveTemplate(
 /**
  * Returns just the content fields for the currently active template
  * version. Used by the email-sending services (payment-request /
- * payment-confirmation) as override defaults — falls back to null so
+ * payment-confirmation) as override defaults, falls back to null so
  * the template's hardcoded copy stays in effect when no admin has
  * customized anything.
  */
@@ -153,7 +153,7 @@ export async function createTemplateVersion(
 ): Promise<EmailTemplateVersionDTO> {
   await connectMongo();
   // Scope every version lookup + update to the caller's org. Version
-  // numbers count UP within (orgId, templateKey) — Tenant #2's v1
+  // numbers count UP within (orgId, templateKey), Tenant #2's v1
   // doesn't share a counter with Tenant #1's v17.
   const scope: Record<string, unknown> = { templateKey };
   if (ctx.orgId) scope.orgId = orgIdFilter(ctx.orgId);
@@ -230,7 +230,7 @@ export async function activateTemplateVersion(
   }
   // Cross-tenant guard: a Tenant #2 admin can't activate a Tenant #1
   // version by guessing the id. Skipped for legacy un-scoped callers
-  // (no ctx.orgId — pre-Phase-3d behaviour).
+  // (no ctx.orgId, pre-Phase-3d behaviour).
   if (ctx.orgId && doc.orgId && String(doc.orgId) !== ctx.orgId) {
     throw new NotFoundError("Template version not found");
   }

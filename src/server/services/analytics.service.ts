@@ -33,7 +33,7 @@ export interface DailyPoint {
 }
 
 export interface ItemTypeBreakdown {
-  /** Stable internal identifier — kept for analytics joins / future
+  /** Stable internal identifier, kept for analytics joins / future
    *  drill-downs. NEVER render this directly in the UI. */
   itemTypeKey: string;
   /** Operator-facing label resolved by joining each aggregation
@@ -74,7 +74,7 @@ export async function getAnalyticsSummary(
   const { from, to } = resolveRange(range);
   // Tenant scope: when an orgId is supplied, every aggregation is
   // pinned to that org. Legacy callers (no orgId) keep the old
-  // cross-tenant behavior — phased out as callers migrate.
+  // cross-tenant behavior, phased out as callers migrate.
   const baseMatch: Record<string, unknown> = {
     state: RecordState.ACTIVE,
     createdAt: { $gte: from, $lte: to },
@@ -259,14 +259,14 @@ function round2(n: number): number {
  * distinct itemTypeKeys seen in the aggregation.
  *
  * Why this lives at the service layer (not the UI): the UI must
- * NEVER render `itemTypeKey` directly — that's how the internal
+ * NEVER render `itemTypeKey` directly, that's how the internal
  * "engagement" key leaked into customer screens. By resolving here,
  * the DTO carries a stable, operator-facing `displayName` and the
  * UI is free of any fallback logic.
  *
  * Missing-name handling: if an Order references an itemTypeKey that
  * no longer exists in the catalog (deleted ItemType, cross-tenant
- * legacy data), we surface "Unknown item type" — never the raw key.
+ * legacy data), we surface "Unknown item type", never the raw key.
  */
 async function resolveItemTypeDisplayNames(
   buckets: Array<Omit<ItemTypeBreakdown, "displayName">>,

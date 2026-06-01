@@ -28,7 +28,7 @@ import { registerModel } from "./register";
  *
  * Today every existing user gets exactly one OrgMember row pointing at
  * the legacy org with their pre-migration `User.role`. Phase 0 does NOT
- * remove `User.role` — it stays as a fallback so existing RBAC code
+ * remove `User.role`, it stays as a fallback so existing RBAC code
  * continues working unmodified.
  */
 export interface OrgMemberDoc {

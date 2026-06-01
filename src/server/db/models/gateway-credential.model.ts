@@ -17,7 +17,7 @@ import { registerModel } from "./register";
  *
  * One row per (orgId, gateway). Secret material (`secretKey`,
  * `webhookSecret`) is AES-256-GCM encrypted at rest using the master
- * key in env — see [src/lib/crypto/envelope.ts]. Public material
+ * key in env, see [src/lib/crypto/envelope.ts]. Public material
  * (`publishableKey`, `accountId`) is stored verbatim so the order /
  * checkout code can build a per-org Stripe client without paying the
  * decrypt cost on the hot path.
@@ -38,7 +38,7 @@ import { registerModel } from "./register";
  *
  * Security:
  *   - The encrypted blobs are useless without `TRACETXN_MASTER_KEY`.
- *   - Hard delete is supported — operator off-boarding a tenant
+ *   - Hard delete is supported, operator off-boarding a tenant
  *     deletes the row + revokes the key in the gateway dashboard.
  *   - `lastVerifiedAt` records the last successful API ping against
  *     the gateway so the admin UI can flag "credentials might be
@@ -76,10 +76,10 @@ export interface GatewayCredentialDoc {
   /** Publishable / public key. Safe to ship to the browser; stored
    *  in clear so the order page can pre-render it. */
   publishableKey?: string | null;
-  /** Stripe Connect `acct_…` (or equivalent) — reserved for future
+  /** Stripe Connect `acct_…` (or equivalent), reserved for future
    *  marketplace mode. Null today. */
   accountId?: string | null;
-  /** Pass 6a — set when TraceTxn auto-created the Stripe webhook
+  /** Pass 6a, set when TraceTxn auto-created the Stripe webhook
    *  endpoint on the operator's account. Used to delete the endpoint
    *  when the credential is disabled so we don't leave dangling
    *  endpoints behind. Null for rows where the operator pasted a
@@ -102,7 +102,7 @@ const encryptedFieldSchema = new Schema<EncryptedField>(
   {
     iv: { type: String, required: true, maxlength: 32 },
     // 4096 ≫ longest realistic encrypted secret. Stripe `sk_live_…`
-    // tops out around 100 bytes — we cap upstream of any pathological
+    // tops out around 100 bytes, we cap upstream of any pathological
     // dictionary attack on the model layer.
     ciphertext: { type: String, required: true, maxlength: 4096 },
     authTag: { type: String, required: true, maxlength: 32 },
@@ -170,7 +170,7 @@ const gatewayCredentialSchema = new Schema<GatewayCredentialDoc>(
         r.id = String(r._id);
         delete r._id;
         // Never serialise raw encrypted material onto a DTO. The
-        // service layer strips these explicitly too — defense in depth.
+        // service layer strips these explicitly too, defense in depth.
         delete r.secretKey;
         delete r.webhookSecret;
         return r;

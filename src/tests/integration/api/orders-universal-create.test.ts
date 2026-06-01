@@ -67,7 +67,7 @@ async function seedMilkType(orgId: string): Promise<void> {
   });
 }
 
-describe("POST /api/orders — polymorphic body", () => {
+describe("POST /api/orders, polymorphic body", () => {
   it("UNIVERSAL shape (lineItems[]) creates an order with no legacy fields", async () => {
     session = await mockSession(actorFor(UserRole.ADMIN));
     await seedSettingsForOrg(session.user.orgId!);

@@ -15,7 +15,7 @@ import { ensureMongo, resetDatabase } from "@/tests/utils/db";
 import { getCurrentTestStripe } from "@/tests/setup/integration.setup";
 
 /**
- * Pass 6a — Stripe auto-connect onboarding tests.
+ * Pass 6a, Stripe auto-connect onboarding tests.
  *
  * Verifies the happy path: operator pastes a secret key, server
  * verifies it via Stripe's /v1/balance, registers a webhook endpoint
@@ -59,7 +59,7 @@ const validPayload = {
   publishableKey: "pk_test_1234",
 };
 
-describe("POST /api/admin/gateways/stripe/connect — happy path", () => {
+describe("POST /api/admin/gateways/stripe/connect, happy path", () => {
   it("verifies the key, registers a webhook, persists encrypted, audits", async () => {
     session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     const stripe = getCurrentTestStripe();
@@ -136,7 +136,7 @@ describe("POST /api/admin/gateways/stripe/connect — happy path", () => {
   });
 });
 
-describe("POST /api/admin/gateways/stripe/connect — refusal paths", () => {
+describe("POST /api/admin/gateways/stripe/connect, refusal paths", () => {
   it("REFUSES when the secret key's prefix doesn't match the selected mode", async () => {
     session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     const res = await connectRoute(
@@ -177,7 +177,7 @@ describe("POST /api/admin/gateways/stripe/connect — refusal paths", () => {
     expect(getCurrentTestStripe().webhookEndpointsCreated).toHaveLength(0);
   });
 
-  it("ADMIN cannot connect — gated by GATEWAY_MANAGE (SUPER_ADMIN only)", async () => {
+  it("ADMIN cannot connect, gated by GATEWAY_MANAGE (SUPER_ADMIN only)", async () => {
     session = await mockSession(actorFor(UserRole.ADMIN));
     const res = await connectRoute(
       buildRequest("/api/admin/gateways/stripe/connect", {
@@ -190,7 +190,7 @@ describe("POST /api/admin/gateways/stripe/connect — refusal paths", () => {
   });
 });
 
-describe("POST /api/admin/gateways/stripe/test — pre-save probe", () => {
+describe("POST /api/admin/gateways/stripe/test, pre-save probe", () => {
   it("returns ok=true when Stripe accepts the key", async () => {
     session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     const res = await testRoute(

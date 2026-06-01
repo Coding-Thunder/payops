@@ -26,13 +26,13 @@ interface Params {
  *
  * REQUIRES that the payment link has already been generated via
  * `/api/orders/[id]/generate-payment-link`. We no longer auto-initiate
- * on send — payment-session creation is an explicit agent action so
+ * on send, payment-session creation is an explicit agent action so
  * the gateway choice + intent are unambiguous.
  *
  * Flow:
  *   1. Validate body (subject/greeting/intro/note + optional customer
  *      patch).
- *   2. PATCH the order's customer if anything was edited — the
+ *   2. PATCH the order's customer if anything was edited, the
  *      auto-confirmation email later relies on the same customer record.
  *   3. Guard: order MUST be in LINK_GENERATED or PAYMENT_PENDING. If
  *      it's still NOT_INITIATED the agent skipped step 3.
@@ -57,7 +57,7 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
     order = patched.order;
   }
 
-  // 2. Strict gate — payment link must exist before we email about it.
+  // 2. Strict gate, payment link must exist before we email about it.
   if (order.status === OrderStatus.NOT_INITIATED) {
     throw new ConflictError(
       "Generate a payment link before sending the request email.",
@@ -69,7 +69,7 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
     order.status === OrderStatus.EXPIRED
   ) {
     throw new ConflictError(
-      `Cannot send a request — order is ${order.status.toLowerCase()}.`,
+      `Cannot send a request, order is ${order.status.toLowerCase()}.`,
     );
   }
 

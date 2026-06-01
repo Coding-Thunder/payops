@@ -3,7 +3,7 @@ import "server-only";
 /**
  * Currency helpers shared by every payment gateway implementation.
  *
- * Zero-decimal currencies (JPY, KRW, etc.) don't have minor units — 100¥
+ * Zero-decimal currencies (JPY, KRW, etc.) don't have minor units, 100¥
  * is 100, not 10000. Both Stripe and most other gateways expect amounts
  * in the gateway's smallest currency unit ("amount in fils for AED",
  * "amount in cents for USD") so we centralise the conversion here.

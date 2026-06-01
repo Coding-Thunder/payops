@@ -39,28 +39,28 @@ export const Permission = {
   EVIDENCE_EXPORT: "evidence:export",
 
   /** Per-org payment-gateway credentials (Stripe/Razorpay/etc). SUPER_ADMIN
-   *  only by default — the page surfaces secrets and the webhook URL the
+   *  only by default, the page surfaces secrets and the webhook URL the
    *  operator must paste into their gateway dashboard. Treat as a financial
    *  permission, not a workspace-config one. */
   GATEWAY_VIEW: "gateway:view",
   GATEWAY_MANAGE: "gateway:manage",
 
-  /** Pass 5e — per-tenant ItemType catalog. Listing is open to anyone
+  /** Pass 5e, per-tenant ItemType catalog. Listing is open to anyone
    *  who can create orders (the dynamic form picks an ItemType to
    *  render). Editing is admin-only because the attribute schema +
    *  email-block layout drive every order written against the type. */
   ITEM_TYPE_VIEW: "item_type:view",
   ITEM_TYPE_MANAGE: "item_type:manage",
 
-  /** Pass 6c — per-tenant reusable product catalog (one row per SKU /
+  /** Pass 6c, per-tenant reusable product catalog (one row per SKU /
    *  service / rental asset). Listing is open to anyone who can create
    *  orders so the dynamic create-order form can offer "Pick from
-   *  catalog". Editing is admin-only — the catalog is the source of
+   *  catalog". Editing is admin-only, the catalog is the source of
    *  truth for SKUs + base prices. */
   ITEM_VIEW: "item:view",
   ITEM_MANAGE: "item:manage",
 
-  /** Per-tenant order workflow — list of statuses + transitions an order
+  /** Per-tenant order workflow, list of statuses + transitions an order
    *  can move through. Viewing is admin-only (the workflow page surfaces
    *  every status key + transition spec); editing is admin-only too.
    *  Staff doesn't see it because we don't want operators casually
@@ -68,7 +68,7 @@ export const Permission = {
   WORKFLOW_VIEW: "workflow:view",
   WORKFLOW_MANAGE: "workflow:manage",
 
-  /** Per-order accounting documents — invoices, receipts. Viewing is
+  /** Per-order accounting documents, invoices, receipts. Viewing is
    *  open to anyone who can see the order (staff for their own
    *  orders, admin for all); issuing is admin-only because the
    *  document carries the tenant's identity + a permanent number
@@ -97,10 +97,10 @@ const STAFF_PERMISSIONS: readonly Permission[] = [
   Permission.ITEM_VIEW,
   // Staff can see documents already issued against an order they
   // own (so they can forward a receipt to a customer). Issuance is
-  // admin-only — see ADMIN_ONLY_PERMISSIONS.
+  // admin-only, see ADMIN_ONLY_PERMISSIONS.
   Permission.DOCUMENT_VIEW,
   // Agents need to see whether the customer they're chasing has already
-  // acknowledged the request — gates the "ready to charge" call.
+  // acknowledged the request, gates the "ready to charge" call.
   Permission.CONSENT_VIEW,
 ];
 
@@ -127,11 +127,11 @@ const ADMIN_ONLY_PERMISSIONS: readonly Permission[] = [
   Permission.EMAIL_TEMPLATE_VIEW,
   Permission.EMAIL_TEMPLATE_MANAGE,
   Permission.AUDIT_VIEW,
-  // AUDIT_DELETE intentionally NOT granted to ADMIN — the audit table
+  // AUDIT_DELETE intentionally NOT granted to ADMIN, the audit table
   // is the dispute-defense system of record. Only SUPER_ADMIN can issue
   // a destructive operation against it (and the route asks for a reason
   // for the audit trail before the wipe).
-  // Verifying a consent record locks it for dispute evidence — admin-only
+  // Verifying a consent record locks it for dispute evidence, admin-only
   // so staff can't backdate or rubber-stamp records they collected.
   Permission.CONSENT_VERIFY,
   // The evidence chain page surfaces full email HTML, IP/UA/signature of

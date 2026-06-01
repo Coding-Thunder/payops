@@ -44,7 +44,7 @@ describe("POST /api/admin/users (RBAC)", () => {
     expectOk(body as never);
   });
 
-  it("ADMIN cannot create a SUPER_ADMIN — returns 403", async () => {
+  it("ADMIN cannot create a SUPER_ADMIN, returns 403", async () => {
     session = await mockSession(actorFor(UserRole.ADMIN));
     const res = await createUserRoute(
       buildRequest("/api/admin/users", {
@@ -78,7 +78,7 @@ describe("POST /api/admin/users (RBAC)", () => {
     expect(res.status).toBe(201);
   });
 
-  it("STAFF role can't even reach this route — requirePermission throws", async () => {
+  it("STAFF role can't even reach this route, requirePermission throws", async () => {
     session = await mockSession(actorFor(UserRole.STAFF));
     // requirePermission throws ForbiddenError → withApi turns it into 403
     const res = await createUserRoute(

@@ -17,7 +17,7 @@
  *     same scheme Stripe uses (t=<unix>,v1=<sig>) against the supplied
  *     secret, then parses the JSON body.
  *
- * The stub is intentionally minimal — it implements only what TraceTxn
+ * The stub is intentionally minimal, it implements only what TraceTxn
  * actually calls. New entry points should fail loudly so a missing
  * implementation is obvious.
  */
@@ -47,14 +47,14 @@ export interface RecordedWebhookEndpoint {
 export interface StripeStub {
   readonly sessionsCreated: RecordedSessionCreate[];
   readonly sessionsExpired: string[];
-  /** Pass 6a — endpoints registered through the onboarding helper. */
+  /** Pass 6a, endpoints registered through the onboarding helper. */
   readonly webhookEndpointsCreated: RecordedWebhookEndpoint[];
-  /** Pass 6a — endpoint ids deleted via `webhookEndpoints.del`. */
+  /** Pass 6a, endpoint ids deleted via `webhookEndpoints.del`. */
   readonly webhookEndpointsDeleted: string[];
 
   /** Forces the next `checkout.sessions.create` to throw. */
   failNextCreate(err: { code: string; message: string }): void;
-  /** Pass 6a — forces the next `balance.retrieve` to throw with the
+  /** Pass 6a, forces the next `balance.retrieve` to throw with the
    *  supplied Stripe-shaped error. Use to simulate auth failures. */
   failNextBalance(err: { type: string; message: string }): void;
 

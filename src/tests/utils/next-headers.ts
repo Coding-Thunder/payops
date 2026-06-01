@@ -5,7 +5,7 @@
  *
  * Shape:
  *   const { cookies, headers } = setNextHeaders({ cookies: { ... } });
- *   // `cookies` is the live Map — handler writes via `cookies().set()`
+ *   // `cookies` is the live Map, handler writes via `cookies().set()`
  *   // are reflected here so tests can assert on session cookies, etc.
  */
 

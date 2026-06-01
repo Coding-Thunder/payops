@@ -2,12 +2,12 @@ import { CaseFileCanvas } from "../mocks/case-file-canvas";
 import { OutcomeVariantsStrip } from "../mocks/outcome-variants";
 
 /**
- * Evidence region — opens the document.
+ * Evidence region, opens the document.
  *
  * Two visual layers: prose + margin notes set the framing, then the
  * embedded case-file canvas IS the product surface. Below the canvas,
  * a strip of the four polymorphic outcome panels makes it explicit
- * that dispute-readiness is the everyday state — most orders sit at
+ * that dispute-readiness is the everyday state, most orders sit at
  * READY, with OPEN / WON / LOST lighting up when a dispute happens.
  */
 export function EvidenceRegion() {
@@ -18,14 +18,14 @@ export function EvidenceRegion() {
           <p className="text-[15.5px] leading-relaxed text-foreground">
             Every order opens a case file the moment it&apos;s created.
             Items, customer, gateway selection, consent signature, every
-            email, every gateway round-trip — all written into a hashed
+            email, every gateway round-trip, all written into a hashed
             chain as they happen.
           </p>
           <p className="mt-3 text-[15.5px] leading-relaxed text-foreground">
             When a dispute arrives, weeks later, the artifact is
             already built. The operator clicks{" "}
             <span className="font-mono text-[14px]">Export PDF</span>{" "}
-            and forwards a bank-grade document — the one rendered below
+            and forwards a bank-grade document, the one rendered below
             is the actual surface, not a marketing facsimile.
           </p>
         </div>
@@ -53,7 +53,7 @@ export function EvidenceRegion() {
         <CaseFileCanvas />
       </div>
 
-      {/* Outcome variants — four states the same dispute outcome
+      {/* Outcome variants, four states the same dispute outcome
           panel renders, side-by-side. Reads as the operational
           ground truth: most orders sit at READY. */}
       <div className="mt-14">

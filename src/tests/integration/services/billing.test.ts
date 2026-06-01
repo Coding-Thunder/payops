@@ -23,7 +23,7 @@ import { ensureMongo, resetDatabase } from "@/tests/utils/db";
  *
  * Invariants asserted:
  *   1. Counter excludes terminal statuses (PAID / FAILED / EXPIRED).
- *   2. Counter is per-tenant — Tenant B's orders don't move Tenant A.
+ *   2. Counter is per-tenant, Tenant B's orders don't move Tenant A.
  *   3. Hard gate throws QuotaExceededError at limit; passes under.
  *   4. Error payload carries plan + limit + current for the UI.
  *   5. Legacy callers (orgId === null) are not metered.
@@ -118,7 +118,7 @@ describe("billing.service", () => {
     expect(await countActiveOrders(orgId)).toBe(3);
   });
 
-  it("counts are per-tenant — Tenant B's orders don't move Tenant A", async () => {
+  it("counts are per-tenant, Tenant B's orders don't move Tenant A", async () => {
     const a = new Types.ObjectId().toString();
     const b = new Types.ObjectId().toString();
     await seedManyActive(a, 5);

@@ -9,7 +9,7 @@ import { mockNextHeaders } from "@/tests/utils/next-headers";
 import { ensureMongo, resetDatabase } from "@/tests/utils/db";
 
 /**
- * Pass 6b — API contract for the onboarding wizard's final commit.
+ * Pass 6b, API contract for the onboarding wizard's final commit.
  *
  * Focus: RBAC + happy path + collision handling. Vertical-by-vertical
  * coverage lives in business-setup.test.ts (service layer).
@@ -83,7 +83,7 @@ describe("POST /api/onboarding/business-setup", () => {
     expect(persisted?.attributeSchema?.length).toBe(2);
   });
 
-  it("STAFF is forbidden — wizard is admin-only", async () => {
+  it("STAFF is forbidden, wizard is admin-only", async () => {
     session = await mockSession(actorFor(UserRole.STAFF));
     const res = await setupRoute(
       buildRequest("/api/onboarding/business-setup", {

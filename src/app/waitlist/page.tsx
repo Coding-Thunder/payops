@@ -6,7 +6,7 @@ import { WaitlistForm } from "@/components/marketing/waitlist-form";
 import { env } from "@/lib/env";
 
 export const metadata: Metadata = {
-  title: "Waitlist — Get an early invite",
+  title: "Waitlist, Get an early invite",
   description:
     "Join the TraceTxn waitlist. Early invites unlock the Growth tier free for the first three months and direct access to the founders during onboarding.",
   alternates: { canonical: "/waitlist" },
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
  * `quotations` collection as the landing-page form, tagged
  * `source: "waitlist"` so sales can triage separately.
  *
- * No incentives copy beyond what we can actually deliver — three
+ * No incentives copy beyond what we can actually deliver, three
  * months of Growth-tier credit + a 15-minute call. If we change
  * that offer, update the copy in BOTH places (hero + the trust
  * strip below).
@@ -39,7 +39,7 @@ export default function WaitlistPage() {
         />
 
         <div className="mx-auto grid max-w-[1280px] grid-cols-1 gap-y-12 px-6 pt-20 pb-24 sm:px-10 sm:pt-24 lg:grid-cols-[1.1fr_1fr] lg:items-center lg:gap-x-16">
-          {/* Left — copy */}
+          {/* Left, copy */}
           <div className="max-w-xl">
             <p className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-3 py-1 font-display text-[10.5px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
               <span
@@ -60,7 +60,7 @@ export default function WaitlistPage() {
             <p className="mt-6 max-w-lg text-[15px] leading-relaxed text-muted-foreground">
               We&apos;re rolling out access in small batches so we can
               hand-hold every early tenant through onboarding. Drop your
-              email — when your batch opens, you&apos;ll get an invite
+              email, when your batch opens, you&apos;ll get an invite
               link, three months of Growth-tier credit, and a 15-minute
               call with the founders if you want one.
             </p>
@@ -84,7 +84,7 @@ export default function WaitlistPage() {
             </ul>
           </div>
 
-          {/* Right — form card */}
+          {/* Right, form card */}
           <div>
             <WaitlistForm
               turnstileSiteKey={

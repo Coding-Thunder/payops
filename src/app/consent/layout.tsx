@@ -1,10 +1,10 @@
 import "../globals.css";
 
-// Token-bound consent surface — never index. The HMAC token in the
+// Token-bound consent surface, never index. The HMAC token in the
 // path IS the credential; allowing this in any search index would be
 // a security regression.
 //
-// Layout is chrome-only — same rationale as /pay/layout.tsx: layouts
+// Layout is chrome-only, same rationale as /pay/layout.tsx: layouts
 // can't resolve per-tenant orgId from child route params cleanly, and
 // the legacy {key:"default"} singleton would leak env-default brand
 // to every tenant's customers. The page under /consent/[token] reads

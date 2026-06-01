@@ -11,7 +11,7 @@ import type { UpdateSettingsInput } from "@/lib/validation";
 /** Test helper: the route handler validates via Zod and only forwards
  *  the fields a user actually changed. The service's diff loop only
  *  acts on supplied fields. We cast a partial here because the Zod
- *  inferred type is strict — runtime behaviour is partial-update. */
+ *  inferred type is strict, runtime behaviour is partial-update. */
 function patch(input: Partial<UpdateSettingsInput>): UpdateSettingsInput {
   return input as UpdateSettingsInput;
 }
@@ -23,7 +23,7 @@ function patch(input: Partial<UpdateSettingsInput>): UpdateSettingsInput {
  *   1. Legacy callers (no orgId) keep reading the {key:"default"} singleton.
  *   2. A new orgId on first access lazily provisions a per-org row seeded
  *      from the legacy singleton. Subsequent reads hit the per-org row.
- *   3. Updates land on the per-org row, not the legacy singleton — proving
+ *   3. Updates land on the per-org row, not the legacy singleton, proving
  *      no cross-tenant write leak.
  *   4. Two orgs are independent: writes to A don't show up in B.
  */
@@ -37,7 +37,7 @@ function newOrgId(): string {
   return new Types.ObjectId().toString();
 }
 
-describe("settings — scoped singleton + lazy provisioning", () => {
+describe("settings, scoped singleton + lazy provisioning", () => {
   it("legacy caller (no orgId) reads the {key:'default'} singleton unchanged", async () => {
     // Seed a legacy singleton row with a non-default cancellationPolicy
     // so we can recognise it on read.
@@ -131,7 +131,7 @@ describe("settings — scoped singleton + lazy provisioning", () => {
     const perOrg = await getSettings(orgA);
     expect(perOrg.orderPrefix).toBe("TENANT_A");
 
-    // Legacy singleton was NOT touched — cross-tenant write leak guard.
+    // Legacy singleton was NOT touched, cross-tenant write leak guard.
     const legacy = await Setting.findOne({ key: SETTINGS_KEY }).lean<{
       orderPrefix: string;
     }>();
@@ -163,7 +163,7 @@ describe("settings — scoped singleton + lazy provisioning", () => {
   });
 });
 
-describe("branding — scoped singleton + lazy provisioning", () => {
+describe("branding, scoped singleton + lazy provisioning", () => {
   it("legacy caller (no orgId) reads the {key:'default'} singleton unchanged", async () => {
     await Branding.create({
       key: BRANDING_KEY,
@@ -179,7 +179,7 @@ describe("branding — scoped singleton + lazy provisioning", () => {
   it("lazy-provisions per-org row from the org's OWN data (NOT the legacy singleton)", async () => {
     // Cross-tenant leak guard: even if a legacy singleton exists with
     // some other tenant's brand, a fresh tenant's seed must come from
-    // THEIR Organization + founder data — never from the singleton.
+    // THEIR Organization + founder data, never from the singleton.
     await Branding.create({
       key: BRANDING_KEY,
       brandName: "PlatformLegacyBrand",

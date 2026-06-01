@@ -10,7 +10,7 @@ import {
 import { ensureMongo, resetDatabase } from "@/tests/utils/db";
 
 /**
- * organization.service — renames + reads. Slug stays immutable post-
+ * organization.service, renames + reads. Slug stays immutable post-
  * creation (no mutation surface for it on this service) so the only
  * thing to test is the rename audit trail + validation.
  */

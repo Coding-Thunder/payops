@@ -5,7 +5,7 @@ import { formatCurrency, formatUtcTimestamp } from "@/lib/format";
 import type { OrderEvidenceChainDTO, OrderEvidenceEventDTO } from "@/types";
 
 /**
- * Polymorphic outcome panel — the right column of the case file.
+ * Polymorphic outcome panel, the right column of the case file.
  *
  * Reads the order's dispute / payment / consent pointers and renders
  * one of four variants:
@@ -37,7 +37,7 @@ function variantFor(
     if (d.outcome === DisputeOutcome.WON) return "WON";
     if (d.outcome === DisputeOutcome.LOST) return "LOST";
     // Warning-closed / charge-refunded read as LOST from the
-    // merchant's evidence perspective — funds went the customer's way.
+    // merchant's evidence perspective, funds went the customer's way.
     if (
       d.outcome === DisputeOutcome.WARNING_CLOSED ||
       d.outcome === DisputeOutcome.CHARGE_REFUNDED
@@ -48,7 +48,7 @@ function variantFor(
     if (d.status === DisputeStatus.WON) return "WON";
     if (d.status === DisputeStatus.LOST) return "LOST";
     // Everything else (needs-response, under-review, warning-*) reads
-    // as OPEN — there's an active case awaiting a terminal call.
+    // as OPEN, there's an active case awaiting a terminal call.
     return "OPEN";
   }
   return "READY";
@@ -117,17 +117,17 @@ function ReadyVariant({
     },
     {
       k: "Email delivery",
-      v: emailsSent > 0 ? `${emailsSent} sent · 0 failed` : "—",
+      v: emailsSent > 0 ? `${emailsSent} sent · 0 failed` : "-",
     },
     {
       k: "Gateway receipt",
       v: order.payment.paymentIntentId
-        ? `${order.payment.gateway ?? "—"} · ${truncate(order.payment.paymentIntentId, 16)}`
+        ? `${order.payment.gateway ?? "-"} · ${truncate(order.payment.paymentIntentId, 16)}`
         : "Not generated",
     },
     {
       k: "Customer IP capture",
-      v: consentIp ?? "—",
+      v: consentIp ?? "-",
     },
     {
       k: "Integrity verification",
@@ -180,7 +180,7 @@ function OpenVariant({
   const deadline = order.payment.paidAt; // proxy until DisputeDTO is wired
   return (
     <div className="mt-5 flex flex-col gap-6">
-      {/* Amber OPEN hero block — calm urgency. */}
+      {/* Amber OPEN hero block, calm urgency. */}
       <div
         className="grid grid-cols-[auto_1fr] items-center gap-4 rounded-xl px-5 py-5 shadow-[0_18px_44px_-20px_color-mix(in_oklch,var(--warning)_45%,transparent)]"
         style={{
@@ -203,7 +203,7 @@ function OpenVariant({
           </p>
           <p className="mt-1 text-[12.5px] leading-snug opacity-85">
             Chargeback opened{" "}
-            {d.openedAt ? formatUtcTimestamp(d.openedAt) : "—"}. Submit
+            {d.openedAt ? formatUtcTimestamp(d.openedAt) : "-"}. Submit
             evidence before the deadline.
           </p>
         </div>
@@ -219,12 +219,12 @@ function OpenVariant({
 
       <FactColumn
         items={[
-          { k: "Reason", v: d.reason ?? "—" },
-          { k: "Status", v: d.status ?? "—" },
-          { k: "Opened", v: d.openedAt ? formatUtcTimestamp(d.openedAt) : "—" },
+          { k: "Reason", v: d.reason ?? "-" },
+          { k: "Status", v: d.status ?? "-" },
+          { k: "Opened", v: d.openedAt ? formatUtcTimestamp(d.openedAt) : "-" },
           {
             k: "Evidence deadline",
-            v: deadline ? formatUtcTimestamp(deadline) : "—",
+            v: deadline ? formatUtcTimestamp(deadline) : "-",
           },
         ]}
       />
@@ -247,7 +247,7 @@ function WonVariant({
   );
   return (
     <div className="mt-5 flex flex-col gap-6">
-      {/* Big green CASE WON hero block — same operational
+      {/* Big green CASE WON hero block, same operational
           identity moment as the reference's outcome panel. */}
       <div
         className="grid grid-cols-[auto_1fr] items-center gap-4 rounded-xl px-5 py-5 text-white shadow-[0_18px_44px_-20px_color-mix(in_oklch,var(--success)_50%,transparent)]"
@@ -277,10 +277,10 @@ function WonVariant({
 
       <FactColumn
         items={[
-          { k: "Reason code", v: d.reason ?? "—" },
-          { k: "Opened", v: d.openedAt ? formatUtcTimestamp(d.openedAt) : "—" },
-          { k: "Decided", v: d.closedAt ? formatUtcTimestamp(d.closedAt) : "—" },
-          { k: "Outcome", v: "Won — Reversed" },
+          { k: "Reason code", v: d.reason ?? "-" },
+          { k: "Opened", v: d.openedAt ? formatUtcTimestamp(d.openedAt) : "-" },
+          { k: "Decided", v: d.closedAt ? formatUtcTimestamp(d.closedAt) : "-" },
+          { k: "Outcome", v: "Won, Reversed" },
         ]}
       />
 
@@ -315,7 +315,7 @@ function LostVariant({
   const d = order.dispute!;
   return (
     <div className="mt-5 flex flex-col gap-6">
-      {/* Red CASE LOST hero block — same composition, opposite outcome. */}
+      {/* Red CASE LOST hero block, same composition, opposite outcome. */}
       <div
         className="grid grid-cols-[auto_1fr] items-center gap-4 rounded-xl px-5 py-5 text-white shadow-[0_18px_44px_-20px_color-mix(in_oklch,var(--destructive)_50%,transparent)]"
         style={{ background: "var(--destructive)" }}
@@ -344,9 +344,9 @@ function LostVariant({
 
       <FactColumn
         items={[
-          { k: "Reason code", v: d.reason ?? "—" },
-          { k: "Opened", v: d.openedAt ? formatUtcTimestamp(d.openedAt) : "—" },
-          { k: "Decided", v: d.closedAt ? formatUtcTimestamp(d.closedAt) : "—" },
+          { k: "Reason code", v: d.reason ?? "-" },
+          { k: "Opened", v: d.openedAt ? formatUtcTimestamp(d.openedAt) : "-" },
+          { k: "Decided", v: d.closedAt ? formatUtcTimestamp(d.closedAt) : "-" },
           { k: "Outcome", v: d.outcome ?? "Lost" },
         ]}
       />
@@ -485,7 +485,7 @@ function whyWon(
 
 function formatTimeOnly(value: string): string {
   const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
+  if (Number.isNaN(d.getTime())) return "-";
   const hh = String(d.getUTCHours()).padStart(2, "0");
   const mi = String(d.getUTCMinutes()).padStart(2, "0");
   const ss = String(d.getUTCSeconds()).padStart(2, "0");

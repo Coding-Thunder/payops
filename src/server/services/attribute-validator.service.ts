@@ -13,7 +13,7 @@ import {
 import { connectMongo } from "@/server/db/mongoose";
 
 /**
- * Pass 5d — Attribute validator.
+ * Pass 5d, Attribute validator.
  *
  * Order writes that arrive in the universal shape carry
  * `lineItems[i].itemTypeKey` + `attributes: Record<string, unknown>`. The
@@ -23,12 +23,12 @@ import { connectMongo } from "@/server/db/mongoose";
  * collection-wide migration. Service-layer validation closes that hole:
  *
  *   1. The `itemTypeKey` must resolve to a real ItemType in the calling
- *      org. Cross-tenant key reuse is REFUSED — Tenant B cannot reference
+ *      org. Cross-tenant key reuse is REFUSED, Tenant B cannot reference
  *      Tenant A's "rental_booking" definition (this is the same tenant-
  *      isolation discipline as Pass 5a's order/evidence lookups).
  *   2. Every `required: true` attribute on the spec must be present.
  *   3. Every supplied attribute must:
- *        - exist in the spec (no arbitrary keys — protects against
+ *        - exist in the spec (no arbitrary keys, protects against
  *          attribute schema drift and prevents an attacker from
  *          smuggling extra payload through the API)
  *        - match the spec's `type` (STRING / NUMBER / DATE / URL / SELECT
@@ -38,7 +38,7 @@ import { connectMongo } from "@/server/db/mongoose";
  * Coerces inputs into canonical shapes (Date instances for DATE,
  * lowercased URLs validated against `URL()`, primitives narrowed). The
  * returned `attributes` object is what gets persisted onto the line
- * snapshot — callers should NOT use the raw input after validation.
+ * snapshot, callers should NOT use the raw input after validation.
  */
 
 /** Public input shape. The validator coerces values into the right
@@ -47,7 +47,7 @@ export interface AttributeInput {
   [key: string]: unknown;
 }
 
-/** What we hand back to the caller — same keys, coerced values. */
+/** What we hand back to the caller, same keys, coerced values. */
 export type ValidatedAttributes = Record<string, unknown>;
 
 export interface ValidationResult {
@@ -63,7 +63,7 @@ export async function validateLineAttributes(input: {
   orgId: string | null;
   itemTypeKey: string;
   attributes: AttributeInput;
-  /** Optional context for nicer error messages — e.g. "line 2". */
+  /** Optional context for nicer error messages, e.g. "line 2". */
   context?: string;
 }): Promise<ValidationResult> {
   await connectMongo();
@@ -71,7 +71,7 @@ export async function validateLineAttributes(input: {
 
   if (!input.orgId) {
     throw new ValidationError(
-      `${ctx}cannot validate item type "${input.itemTypeKey}" without an org context — universal orders require a tenant.`,
+      `${ctx}cannot validate item type "${input.itemTypeKey}" without an org context, universal orders require a tenant.`,
     );
   }
 
@@ -82,7 +82,7 @@ export async function validateLineAttributes(input: {
   })) as ItemTypeDocument | null;
 
   if (!itemType) {
-    // Refusing rather than auto-seeding — auto-seed across tenants would
+    // Refusing rather than auto-seeding, auto-seed across tenants would
     // be the cross-tenant leak Pass 5a closed for orders/evidence.
     throw new ValidationError(
       `${ctx}item type "${input.itemTypeKey}" is not defined for this organization. Create it via the admin catalog before referencing it on an order.`,
@@ -171,7 +171,7 @@ function coerceAttribute(
         );
       }
       try {
-        // eslint-disable-next-line no-new
+         
         new URL(raw);
       } catch {
         throw new ValidationError(
@@ -194,7 +194,7 @@ function coerceAttribute(
       return raw;
     }
     default: {
-      // Exhaustive — unreachable at the type level.
+      // Exhaustive, unreachable at the type level.
       throw new ValidationError(
         `${ctx}attribute "${spec.key}" has an unsupported type "${String(spec.type)}".`,
       );

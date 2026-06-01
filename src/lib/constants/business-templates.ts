@@ -6,7 +6,7 @@ import {
 } from "./items";
 
 /**
- * Pass 6b — Business-vertical starter templates.
+ * Pass 6b, Business-vertical starter templates.
  *
  * Platform-controlled finite list. A non-technical founder picks one
  * during the onboarding wizard and we seed a single ItemType named
@@ -15,13 +15,13 @@ import {
  * post-onboarding.
  *
  * Why a finite hardcoded list (vs. DB rows or a builder UI):
- *   1. New verticals deserve product review — adding "loan_servicing"
+ *   1. New verticals deserve product review, adding "loan_servicing"
  *      or "subscription_box" forces us to think about whether the
  *      universal commerce primitives are still enough. A code change
  *      catches that; a DB-row mutation hides it.
  *   2. Each template has an attribute schema that has to FEEL right
  *      for the vertical. Curated > generated.
- *   3. Tenants do not need to mint new verticals — they need a fast
+ *   3. Tenants do not need to mint new verticals, they need a fast
  *      path from "empty workspace" to "first paid order". This list
  *      is for that path.
  *
@@ -62,15 +62,15 @@ export interface TemplateAttribute {
 
 export interface BusinessTemplate {
   vertical: BusinessVertical;
-  /** Wizard step 1 — card title. */
+  /** Wizard step 1, card title. */
   displayName: string;
-  /** Wizard step 1 — one-line elevator pitch. */
+  /** Wizard step 1, one-line elevator pitch. */
   tagline: string;
-  /** Wizard step 1 — illustrative examples ("Phone repair, AC repair, …"). */
+  /** Wizard step 1, illustrative examples ("Phone repair, AC repair, …"). */
   examples: string[];
   /** Single ItemType seeded for this vertical. */
   itemType: {
-    /** Stable key — persisted on every order line. snake_case. */
+    /** Stable key, persisted on every order line. snake_case. */
     key: string;
     name: string;
     description: string;
@@ -93,7 +93,7 @@ export const BUSINESS_TEMPLATES: Record<BusinessVertical, BusinessTemplate> = {
     itemType: {
       key: "product",
       name: "Product",
-      description: "Anything sold off the shelf — packaged or fresh.",
+      description: "Anything sold off the shelf, packaged or fresh.",
       pricingModel: ItemPricingModel.QUANTITY,
       requiresScheduling: false,
       inventoryTracked: false,
@@ -119,7 +119,7 @@ export const BUSINESS_TEMPLATES: Record<BusinessVertical, BusinessTemplate> = {
   [BusinessVertical.RETAIL]: {
     vertical: BusinessVertical.RETAIL,
     displayName: "Retail / e-commerce",
-    tagline: "Sell physical goods — fashion, electronics, gifts.",
+    tagline: "Sell physical goods, fashion, electronics, gifts.",
     examples: ["Clothing boutique", "gadget store", "gift shop"],
     itemType: {
       key: "product",
@@ -214,7 +214,7 @@ export const BUSINESS_TEMPLATES: Record<BusinessVertical, BusinessTemplate> = {
   [BusinessVertical.DEALERSHIP]: {
     vertical: BusinessVertical.DEALERSHIP,
     displayName: "Dealership",
-    tagline: "Sell or service vehicles — new, used, or fleet.",
+    tagline: "Sell or service vehicles, new, used, or fleet.",
     examples: [
       "Car dealership",
       "two-wheeler showroom",
@@ -298,7 +298,7 @@ export const BUSINESS_TEMPLATES: Record<BusinessVertical, BusinessTemplate> = {
           label: "Daily rate",
           type: ItemAttributeType.NUMBER,
           required: false,
-          helpText: "Reference rate — actual line price is per-order.",
+          helpText: "Reference rate, actual line price is per-order.",
         },
         {
           key: "deposit_amount",
@@ -459,7 +459,7 @@ export const BUSINESS_TEMPLATES: Record<BusinessVertical, BusinessTemplate> = {
     itemType: {
       key: "item",
       name: "Item",
-      description: "Anything you sell — fields are entirely up to you.",
+      description: "Anything you sell, fields are entirely up to you.",
       pricingModel: ItemPricingModel.QUANTITY,
       requiresScheduling: false,
       inventoryTracked: false,

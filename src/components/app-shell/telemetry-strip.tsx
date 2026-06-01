@@ -6,7 +6,7 @@ import { useRealtimeStatus } from "@/components/providers/realtime-provider";
 import { cn } from "@/lib/utils";
 
 /**
- * TelemetryStrip — high-density status bar that lives ABOVE the
+ * TelemetryStrip, high-density status bar that lives ABOVE the
  * topbar. Reads like Bloomberg-terminal infrastructure telemetry,
  * not SaaS chrome.
  *
@@ -15,12 +15,12 @@ import { cn } from "@/lib/utils";
  *   [Queue]  [SSE]  [Region]  [UTC clock]  [Operator]
  *
  * Heights stay tight (28px). Type is monospace, 10.5px, uppercase
- * with letter-spacing — the visual signature of an ops console.
+ * with letter-spacing, the visual signature of an ops console.
  *
  * Health indicators are presentational (dot + label). Real backends
  * for Stripe / webhook / queue health are wired separately and
  * stream into this component via props when available; defaults
- * read "OK" so the strip never *lies* — it shows the conservative
+ * read "OK" so the strip never *lies*, it shows the conservative
  * default until a real signal supersedes it.
  *
  * Pure client-side; no API calls. The SSE state is the only real
@@ -52,7 +52,7 @@ const TONE: Record<
   ok: { dot: "bg-success", label: "OK" },
   degraded: { dot: "bg-warning", label: "Slow" },
   down: { dot: "bg-destructive", label: "Down" },
-  unknown: { dot: "bg-muted-foreground/50", label: "—" },
+  unknown: { dot: "bg-muted-foreground/50", label: "-" },
 };
 
 function detectEnv(): "live" | "test" {
@@ -73,7 +73,7 @@ export function TelemetryStrip({
   const realtime = useRealtimeStatus();
   const mode = env ?? detectEnv();
 
-  // UTC clock — ticks every 15s. Operators glance at it constantly
+  // UTC clock, ticks every 15s. Operators glance at it constantly
   // when correlating webhook timestamps. Tight format `12:34Z`.
   const [now, setNow] = React.useState<string>(() => formatUtc(new Date()));
   React.useEffect(() => {
@@ -94,7 +94,7 @@ export function TelemetryStrip({
       role="status"
       aria-label="System telemetry"
     >
-      {/* Faint top accent stroke — single brand-color hairline.
+      {/* Faint top accent stroke, single brand-color hairline.
           Drops the old marketing-gradient (orange/cobalt/ultraviolet)
           in favor of TraceTxn's emerald identity, consistent with
           the landing's document chrome. */}
@@ -188,7 +188,7 @@ function EnvBadge({ mode }: { mode: "live" | "test" }) {
           "size-1.5 rounded-full",
           mode === "live" ? "bg-success" : "bg-warning",
         )}
-        // Only LIVE mode pulses — TEST mode stays static so operators
+        // Only LIVE mode pulses, TEST mode stays static so operators
         // don't read it as "active live traffic".
         style={
           mode === "live"

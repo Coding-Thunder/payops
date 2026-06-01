@@ -12,7 +12,7 @@ interface FadeInProps extends HTMLMotionProps<"div"> {
 }
 
 /**
- * Subtle Stripe-style fade + tiny rise on mount. Use sparingly — apply to
+ * Subtle Stripe-style fade + tiny rise on mount. Use sparingly, apply to
  * page-level sections, not every element.
  */
 export function FadeIn({
@@ -47,7 +47,7 @@ interface StaggerProps {
 }
 
 /**
- * Wrap a list so each child fades in with a tiny step. Use cautiously —
+ * Wrap a list so each child fades in with a tiny step. Use cautiously -
  * staggering more than 6-8 items feels slow.
  */
 export function Stagger({ className, children, step = 60 }: StaggerProps) {

@@ -25,7 +25,7 @@ interface FormDialogProps {
 
   /** Optional icon shown in a tinted square next to the title. */
   icon?: React.ReactNode;
-  /** Tone for the icon background — default is brand. */
+  /** Tone for the icon background, default is brand. */
   tone?: DialogHeaderTone;
 
   /** Content (form fields). */
@@ -91,7 +91,7 @@ export function FormDialog({
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     // The dialog is rendered via Radix Portal, so its DOM lives in
-    // document.body — but the React tree still descends from whatever
+    // document.body, but the React tree still descends from whatever
     // parent rendered the dialog. React synthetic events bubble through
     // the React tree (not the DOM tree), which means a submit on this
     // form would also trigger any ancestor <form>'s submit. Stop the

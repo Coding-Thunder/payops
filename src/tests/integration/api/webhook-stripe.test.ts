@@ -26,7 +26,7 @@ import {
 import { ensureMongo } from "@/tests/utils/db";
 
 /**
- * /api/webhooks/stripe — verifies the HTTP route end-to-end:
+ * /api/webhooks/stripe, verifies the HTTP route end-to-end:
  *
  *   - rejects a missing Stripe-Signature header with 400 BAD_REQUEST
  *   - rejects an invalid signature even when the body parses cleanly
@@ -112,7 +112,7 @@ describe("POST /api/webhooks/stripe", () => {
     expect(claim).not.toBeNull();
     expect(claim?.gateway).toBe("STRIPE");
 
-    // Webhook does NOT send mail inline anymore — confirmation lands in
+    // Webhook does NOT send mail inline anymore, confirmation lands in
     // the outbox in the same transaction. The post-commit drain is
     // skipped in test mode so we can deterministically observe the row.
     const pending = await PendingEmail.find({
@@ -146,7 +146,7 @@ describe("POST /api/webhooks/stripe", () => {
     expect(secondBody.data.duplicate).toBe(true);
 
     // Duplicate delivery MUST NOT enqueue a second confirmation email
-    // — the outbox row from the first delivery is the single source of
+    //, the outbox row from the first delivery is the single source of
     // truth and the drainer retries autonomously.
     const pending = await PendingEmail.find({
       orderId: order._id,
@@ -154,7 +154,7 @@ describe("POST /api/webhooks/stripe", () => {
     });
     expect(pending).toHaveLength(1);
 
-    // Exactly one ProcessedWebhookEvent row for this id — the durable
+    // Exactly one ProcessedWebhookEvent row for this id, the durable
     // dedupe collection is the real idempotency primitive.
     const claims = await ProcessedWebhookEvent.find({
       gatewayEventId: event.id,
@@ -163,7 +163,7 @@ describe("POST /api/webhooks/stripe", () => {
   });
 
   it("rejects an oversized body with 413 before signature verification", async () => {
-    // 200 KB payload — well over the 64 KB webhook cap.
+    // 200 KB payload, well over the 64 KB webhook cap.
     const payload = JSON.stringify({ blob: "x".repeat(200 * 1024) });
     const headers = new Headers({
       "content-type": "application/json",

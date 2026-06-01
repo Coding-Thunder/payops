@@ -19,21 +19,21 @@ interface ConsentFormProps {
  *
  * The page has one job: capture a digital signature and push the customer
  * into Stripe Checkout. There's no intermediate "you're confirmed" screen
- * because the spec demands an immediate handoff — any dead state between
+ * because the spec demands an immediate handoff, any dead state between
  * sign and pay erodes conversion.
  *
  * Three runtime states:
- *  1. fresh REQUESTED — render the form (booking summary + required
+ *  1. fresh REQUESTED, render the form (booking summary + required
  *     signature + confirm button).
- *  2. submitting       — disabled CTA + inline spinner copy.
- *  3. redirecting      — page replaces itself to the Stripe URL via
+ *  2. submitting      , disabled CTA + inline spinner copy.
+ *  3. redirecting     , page replaces itself to the Stripe URL via
  *     `window.location.replace`. We render a slim "Redirecting…" shell
  *     so the brief window before the browser navigates isn't blank. If
  *     the redirect hasn't completed after 5 s (mobile browser quirk,
  *     popup blocker, broken network) we surface a manual fallback link.
  *
  * The same `redirecting` state is entered on mount when the record is
- * already RECEIVED — i.e. the customer refreshed after consenting. They
+ * already RECEIVED, i.e. the customer refreshed after consenting. They
  * never see the form again; they go straight to checkout.
  */
 
@@ -76,7 +76,12 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
   useEffect(() => {
     if (!view.alreadyConfirmedAt) return;
     if (!view.paymentUrl) return;
-    startRedirect(view.paymentUrl);
+    // Defer one frame so the state flip from startRedirect doesn't
+    // fire synchronously inside the effect (cascading-render warning).
+    const handle = requestAnimationFrame(() =>
+      startRedirect(view.paymentUrl!),
+    );
+    return () => cancelAnimationFrame(handle);
   }, [view.alreadyConfirmedAt, view.paymentUrl, startRedirect]);
 
   useEffect(() => {
@@ -110,7 +115,7 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
       if (next.paymentUrl) {
         startRedirect(next.paymentUrl);
       } else {
-        // No checkout URL on record — rare, but surface it cleanly rather
+        // No checkout URL on record, rare, but surface it cleanly rather
         // than silently leaving the customer on a finished form.
         setError(
           "Your acknowledgement was recorded, but no payment link is currently available. Please contact support.",

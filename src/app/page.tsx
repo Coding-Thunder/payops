@@ -23,20 +23,20 @@ export const metadata: Metadata = {
 };
 
 /**
- * TraceTxn landing page — brand-v1 visual system.
+ * TraceTxn landing page, brand-v1 visual system.
  *
- *   1. BrandNav      — sticky top, switches to blurred-white chrome
+ *   1. BrandNav     , sticky top, switches to blurred-white chrome
  *                       on scroll
- *   2. BrandHero      — light-mode hero with the four-node trace
+ *   2. BrandHero     , light-mode hero with the four-node trace
  *                       diagram + dual CTA + checklist
- *   3. Rich regions  — existing product content (Evidence, Lifecycle,
+ *   3. Rich regions , existing product content (Evidence, Lifecycle,
  *                       Gateways, Integrity, Setup), wrapped by the
  *                       DocumentRail "table of contents"
- *   4. BrandCtaStrip — Deep Navy conversion panel before the footer
- *   5. ClosingRegion — quotation / sales contact form
- *   6. BrandFooter    — brand wordmark + 3 link columns + status pill
+ *   4. BrandCtaStrip, Deep Navy conversion panel before the footer
+ *   5. ClosingRegion, quotation / sales contact form
+ *   6. BrandFooter   , brand wordmark + 3 link columns + status pill
  *
- * The rich regions retain their original content + layout — the
+ * The rich regions retain their original content + layout, the
  * brand-v1 pass replaces only the chrome (nav, hero, CTA, footer) so
  * the dense product content stays readable while the entry surface
  * matches the spec.
@@ -48,7 +48,7 @@ export default function LandingPage() {
       <BrandNav />
       <BrandHero />
 
-      {/* Document body — quiet ledger-grid backing behind the
+      {/* Document body, quiet ledger-grid backing behind the
           existing rich regions. */}
       <main
         id="features"

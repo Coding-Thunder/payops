@@ -1,15 +1,15 @@
 import { cn } from "@/lib/utils";
 
 /**
- * TraceTxn Brand v1 — primary mark + wordmark.
+ * TraceTxn Brand v1, primary mark + wordmark.
  *
  * The mark is a four-node transaction trace:
  *
  *     ●──●──●──●         (line + 4 dots, viewBox 40×40)
  *
  * Reading left-to-right: source → intent → settlement (emerald) →
- * destination. The third node is the operational moment — the only
- * one that's emerald — the "trace head" where evidence is captured.
+ * destination. The third node is the operational moment, the only
+ * one that's emerald, the "trace head" where evidence is captured.
  *
  * Wordmark: "Trace" in body weight + Deep Navy, "Txn" in semibold +
  * Emerald (default) or Deep Navy (monochrome). DM Sans throughout
@@ -69,7 +69,7 @@ interface LogoLockupProps {
   size?: "sm" | "md" | "lg";
   tone?: "default" | "inverted";
   /** When true (default), only the FIRST occurrence of "Txn" in the
-   *  brand string is emerald — mirrors the brand-v1 wordmark.
+   *  brand string is emerald, mirrors the brand-v1 wordmark.
    *  Tenants whose workspace name doesn't include "Txn" just see a
    *  single-tone wordmark in the appropriate color. */
   twoTone?: boolean;
@@ -77,7 +77,7 @@ interface LogoLockupProps {
 
 /**
  * Brand wordmark. Renders the LogoMark + the brand label as a
- * two-tone wordmark — "Trace" navy + "Txn" emerald — when the brand
+ * two-tone wordmark, "Trace" navy + "Txn" emerald, when the brand
  * string is the platform name. Other workspace names render as a
  * single-tone label.
  */
@@ -98,7 +98,7 @@ export function LogoLockup({
         ? "text-[13px]"
         : "text-[15px]";
 
-  // Two-tone applies ONLY when the wordmark contains "Txn" — the
+  // Two-tone applies ONLY when the wordmark contains "Txn", the
   // brand-v1 accented suffix. Otherwise the whole thing renders in
   // a single tone matching the surface.
   const txnIndex = twoTone ? brand.lastIndexOf("Txn") : -1;

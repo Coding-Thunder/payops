@@ -73,7 +73,7 @@ function toDTO(doc: SettingDoc | null): OperationalSettings {
 
 /**
  * Read the operational settings for an org. When `orgId` is omitted the
- * legacy `{ key: "default" }` singleton is returned — keeps untouched
+ * legacy `{ key: "default" }` singleton is returned, keeps untouched
  * callers working through the multi-tenant migration window. When an
  * `orgId` is supplied we resolve the per-org row, lazy-provisioning it
  * by cloning the legacy singleton on first access.
@@ -96,7 +96,7 @@ interface UpdateSettingsContext {
   actorName: string;
   actorRole: "SUPER_ADMIN" | "ADMIN" | "STAFF";
   /** Active organization. Optional only because some legacy admin
-   *  callers haven't been migrated yet — when supplied, the update
+   *  callers haven't been migrated yet, when supplied, the update
    *  lands on the per-org row (lazy-provisioned on first write). */
   orgId?: string | null;
   request?: { ip: string | null; userAgent: string | null; requestId: string | null } | null;
@@ -153,7 +153,7 @@ export async function ensureSettingsDocument(
     if (!doc) throw new Error("Failed to load settings document for org");
     return doc;
   }
-  // Legacy path — preserved verbatim for back-compat callers.
+  // Legacy path, preserved verbatim for back-compat callers.
   const e = env.server;
   const doc = await Setting.findOneAndUpdate(
     { key: SETTINGS_KEY },
@@ -253,7 +253,7 @@ export async function updateSettings(
 }
 
 /** Structural equality good enough for primitive fields + sorted arrays of
- *  primitives. Order-sensitive on arrays (intentional — booking-type order
+ *  primitives. Order-sensitive on arrays (intentional, booking-type order
  *  shouldn't matter today, but we surface re-ordering as a change anyway). */
 function isEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;

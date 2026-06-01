@@ -4,7 +4,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import * as React from "react";
 
 /**
- * RouteTransitionLoader — Stripe-style hairline progress bar fixed to the top
+ * RouteTransitionLoader, Stripe-style hairline progress bar fixed to the top
  * edge. Mounted once inside the authenticated layout.
  *
  * Detection model:
@@ -16,7 +16,7 @@ import * as React from "react";
  *    (offline, navigation aborted) so it never gets stuck.
  *
  * Programmatic router.push() navigations don't trigger the bar; the route
- * segment's loading.tsx skeleton covers that case instead — which is the
+ * segment's loading.tsx skeleton covers that case instead, which is the
  * primary navigation feedback mechanism in this app.
  */
 export function RouteTransitionLoader() {
@@ -86,7 +86,7 @@ export function RouteTransitionLoader() {
       }
       if (watchdog.current) window.clearTimeout(watchdog.current);
       setActive(true);
-      // Safety net — guarantees the bar never gets stuck if something
+      // Safety net, guarantees the bar never gets stuck if something
       // cancels the navigation silently.
       watchdog.current = window.setTimeout(() => {
         setActive(false);

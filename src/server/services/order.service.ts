@@ -89,7 +89,7 @@ interface OrderActor {
 interface OrderContext {
   actor: OrderActor;
   /** Active organization. Optional ONLY during the multi-tenant
-   *  migration window — every route handler in Phase 3b passes it.
+   *  migration window, every route handler in Phase 3b passes it.
    *  When set, per-org settings/branding/gateway are resolved; when
    *  absent (legacy callers not yet migrated), the env-backed
    *  singletons are used. */
@@ -226,7 +226,7 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
       : null,
     refundedAmount: doc.refundedAmount ?? 0,
     notes: doc.notes ?? null,
-    // Pass 5d: universal commerce — line items snapshot. Empty array
+    // Pass 5d: universal commerce, line items snapshot. Empty array
     // on pre-Pass-5c legacy orders that haven't been backfilled yet.
     lineItems: (doc.lineItems ?? []).map((li) => ({
       itemId: li.itemId ? String(li.itemId) : null,
@@ -263,7 +263,7 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
 
 interface CreateOrderResult {
   order: OrderDTO;
-  /** Always null on creation now — Stripe is no longer contacted until
+  /** Always null on creation now, Stripe is no longer contacted until
    *  the agent explicitly triggers payment initiation via the email
    *  composer. Kept on the result for caller compat. */
   checkoutUrl: string | null;
@@ -277,7 +277,7 @@ interface CreateOrderResult {
  * its `attributes` are validated against `attributeSchema`. Cross-tenant
  * ItemType reuse is REFUSED at the validator layer.
  *
- * The order starts in NOT_INITIATED state — checkoutUrl, sessionId,
+ * The order starts in NOT_INITIATED state, checkoutUrl, sessionId,
  * paymentIntentId, expiresAt all remain null. The agent transitions
  * the order to PAYMENT_PENDING by calling `initiatePayment` from the
  * email composer (which also dispatches the request email and creates
@@ -301,7 +301,7 @@ export async function createOrder(
   // Read settings + workflow + policy snapshot from the caller's org so
   // Tenant #2 doesn't inherit Tenant #1's cancellation policy text or
   // legacy status enum. The workflow's initialStatusKey is what the
-  // tenant designated as "where a fresh order starts" — defaults to
+  // tenant designated as "where a fresh order starts", defaults to
   // "NOT_INITIATED" for tenants who never opened the workflow builder,
   // but a tenant can rename it to "DRAFT" or "QUOTED" without code.
   const settings = await getSettings(ctx.orgId);
@@ -376,7 +376,7 @@ export async function createOrder(
     : null;
 
   // Transactional: Order doc + audit row + genesis evidence row are
-  // written together. A failure on evidence aborts the order create —
+  // written together. A failure on evidence aborts the order create -
   // disputes never face a chain with a missing sequence 1.
   const created = await withTx(async (session) => {
     const inserted = await Order.create(
@@ -514,7 +514,7 @@ export async function createOrder(
     },
   });
 
-  // Saved customer record (Pass 6d). Best-effort — never blocks the
+  // Saved customer record (Pass 6d). Best-effort, never blocks the
   // order. A failed upsert just means the operator re-types next time.
   if (ctx.orgId) {
     try {
@@ -603,13 +603,13 @@ export async function initiatePayment(
     doc.status === OrderStatus.EXPIRED
   ) {
     throw new ConflictError(
-      `Cannot initiate payment — order is ${doc.status.toLowerCase()}`,
+      `Cannot initiate payment, order is ${doc.status.toLowerCase()}`,
     );
   }
 
   // Idempotent: if a session is already created, return what we have.
   // Re-clicks from the composer hit this path; they should NOT create a
-  // second gateway session — that would orphan the first one.
+  // second gateway session, that would orphan the first one.
   if (
     (doc.status === OrderStatus.LINK_GENERATED ||
       doc.status === OrderStatus.PAYMENT_PENDING) &&
@@ -630,7 +630,7 @@ export async function initiatePayment(
     options.gateway ??
     (doc.payment.gateway as PaymentGatewayKey | null) ??
     getDefaultGateway().key;
-  // Prefer the order's own orgId over ctx.orgId — they should match for
+  // Prefer the order's own orgId over ctx.orgId, they should match for
   // any new order, but using the persisted value defends against a
   // stale ctx caused by an org-switcher race. Falls back to ctx.orgId
   // for legacy orders persisted before Phase 0+1 backfill ran.
@@ -696,7 +696,7 @@ export async function initiatePayment(
 
   // Transactional DB writes: Order flip + audit + 2× evidence (gateway
   // selected + link generated). Stripe API call already happened above
-  // — its session id is the source of truth even if the tx aborts; the
+  //, its session id is the source of truth even if the tx aborts; the
   // orphan-expire compensation lives in the !updated branch below.
   type TxOut =
     | { kind: "applied"; updated: OrderDoc & { _id: Types.ObjectId } }
@@ -803,7 +803,7 @@ export async function initiatePayment(
       scopedOrderFilter(id, ctx.orgId),
     ).lean<OrderDoc & { _id: Types.ObjectId }>();
     if (!racedDoc?.payment.checkoutUrl) {
-      throw new ConflictError("Payment initiation collided — try again");
+      throw new ConflictError("Payment initiation collided, try again");
     }
     return {
       order: orderToDTO(racedDoc),
@@ -826,7 +826,7 @@ export async function initiatePayment(
     type: DomainEventType.ORDER_LINK_REGENERATED,
     audience: { kind: "creator", userId: String(updated.createdBy.userId) },
     actor: { id: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
-    // Prefer the persisted order.orgId — it's the authoritative
+    // Prefer the persisted order.orgId, it's the authoritative
     // tenant key (set at creation, never mutated). Falls back to
     // ctx.orgId for orders pre-dating the Phase 0+1 backfill.
     orgId: updated.orgId ? String(updated.orgId) : (ctx.orgId ?? null),
@@ -881,7 +881,7 @@ function describeProductForGateway(doc: OrderDoc): {
   } else if (line.description) {
     description = line.description;
   }
-  // Universal orders may carry an image_url in line attributes — surface
+  // Universal orders may carry an image_url in line attributes, surface
   // it if so.
   const imgAttr =
     (line.attributes?.image_url as string | null | undefined) ??
@@ -902,7 +902,7 @@ export async function listOrders(
 ): Promise<PaginatedResult<OrderDTO>> {
   await connectMongo();
   const filter: Record<string, unknown> = {};
-  // Tenant gate — pinned BEFORE every other clause so query
+  // Tenant gate, pinned BEFORE every other clause so query
   // permutations can't strip it. The PRIMARY cross-tenant isolation
   // for the list view; the createdBy.userId check below was the
   // pre-Phase-5a guard but only fired for STAFF.
@@ -978,7 +978,7 @@ export async function getOrderByNumber(
   orderNumber: string,
 ): Promise<OrderDTO | null> {
   await connectMongo();
-  // Public lookup — no ctx.orgId because the caller is the
+  // Public lookup, no ctx.orgId because the caller is the
   // unauthenticated /pay/success render. Relies on the LEGACY global
   // unique on `orderNumber` (kept during the Phase 0+1 migration) so
   // orderNumber is still globally unique. Caller MUST verify the
@@ -1067,10 +1067,10 @@ export async function regeneratePaymentLink(
     throw new ConflictError("Cannot regenerate link on an archived order");
   }
 
-  // Per-order tenant scope — same precedence as initiatePayment.
+  // Per-order tenant scope, same precedence as initiatePayment.
   const orderOrgId = doc.orgId ? String(doc.orgId) : (ctx.orgId ?? null);
   // Route the regenerate through the gateway interface (Phase 3b closes
-  // the back door — pre-Phase-3 this called Stripe directly via
+  // the back door, pre-Phase-3 this called Stripe directly via
   // `getStripe()`/`buildCheckoutSession`, which made the per-org
   // Stripe-account routing impossible).
   const gatewayKey =
@@ -1094,7 +1094,7 @@ export async function regeneratePaymentLink(
     Date.now() + settings.paymentExpiryHours * 60 * 60 * 1000,
   );
 
-  // Expire previous session via the gateway adapter — works for any
+  // Expire previous session via the gateway adapter, works for any
   // gateway (best-effort; gateway impls log + swallow on
   // already-expired).
   if (doc.payment.stripeSessionId) {
@@ -1147,7 +1147,7 @@ export async function regeneratePaymentLink(
   doc.payment.status = OrderStatus.PAYMENT_PENDING;
 
   // Transactional: order save + audit + evidence. The Stripe session
-  // is already created above — if the tx aborts we don't roll it back
+  // is already created above, if the tx aborts we don't roll it back
   // but the next regenerate call will expire-and-replace it.
   await withTx(async (txSession) => {
     await doc.save(sessionOpt(txSession));
@@ -1229,7 +1229,7 @@ export async function regeneratePaymentLink(
 }
 
 /**
- * Hard-deletes one or more orders. Paid orders are skipped — financial
+ * Hard-deletes one or more orders. Paid orders are skipped, financial
  * records must remain in the database for audit/refund purposes. Returns
  * the count actually deleted plus the ids that were blocked.
  */
@@ -1262,7 +1262,7 @@ export async function deleteOrders(
   const deletableIds = deletable.map((d) => d._id);
   // Defense-in-depth: pin orgId on the delete too. `deletable` was
   // already filtered by orgId on the find above, so the ids can only
-  // belong to the actor's tenant — but a future code path that
+  // belong to the actor's tenant, but a future code path that
   // rebuilds the id list shouldn't be able to bypass the tenant
   // boundary by accident.
   const deleteFilter: Record<string, unknown> = { _id: { $in: deletableIds } };
@@ -1473,7 +1473,7 @@ export interface ReconcileResult {
  *
  * Two call sites:
  *   - the authed agent endpoint (`/api/orders/[id]/reconcile`)
- *   - the customer-facing `/pay/success` server render — there is no
+ *   - the customer-facing `/pay/success` server render, there is no
  *     session there; ctx is omitted. RBAC is skipped because the
  *     customer is already showing up with the orderNumber they got
  *     via email, exactly like `getOrderByNumber` on the same page.
@@ -1485,7 +1485,7 @@ export interface ReconcileResult {
 interface ReconcileCustomerProof {
   /** Gateway session id the unauth caller showed up with (came from
    *  Stripe via the success-URL substitution). MUST equal the order's
-   *  stored session id or we refuse — otherwise this endpoint becomes
+   *  stored session id or we refuse, otherwise this endpoint becomes
    *  a no-auth way to trigger Stripe API calls for arbitrary orders. */
   sessionId: string;
 }
@@ -1497,7 +1497,7 @@ export async function reconcileOrderPayment(
 ): Promise<ReconcileResult> {
   await connectMongo();
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
-  // Authed path: pin orgId. Public path (no ctx — /pay/success
+  // Authed path: pin orgId. Public path (no ctx, /pay/success
   // render): no orgId available; the sessionId match below is the
   // tenant boundary surrogate.
   const doc = await Order.findOne(scopedOrderFilter(id, ctx?.orgId));
@@ -1516,7 +1516,7 @@ export async function reconcileOrderPayment(
   } else {
     // Unauthenticated caller (customer on /pay/success). Require the
     // gateway session id from the URL and match it against the stored
-    // one — without this anyone with a guessed orderId could DOS Stripe.
+    // one, without this anyone with a guessed orderId could DOS Stripe.
     if (
       !customer?.sessionId ||
       !doc.payment.stripeSessionId ||
@@ -1527,7 +1527,7 @@ export async function reconcileOrderPayment(
   }
 
   if (!doc.payment.stripeSessionId) {
-    // No session to ask the gateway about — nothing to reconcile.
+    // No session to ask the gateway about, nothing to reconcile.
     return {
       order: orderToDTO(doc.toObject({ getters: false }) as OrderDoc & { _id: Types.ObjectId }),
       changed: false,
@@ -1535,7 +1535,7 @@ export async function reconcileOrderPayment(
     };
   }
 
-  // Already terminal — short-circuit so a reconcile spam-click after
+  // Already terminal, short-circuit so a reconcile spam-click after
   // PAID doesn't re-hit the gateway.
   if (doc.status === OrderStatus.PAID) {
     return {
@@ -1549,7 +1549,7 @@ export async function reconcileOrderPayment(
     doc.status === OrderStatus.PAYMENT_PENDING ||
     doc.status === OrderStatus.LINK_GENERATED;
   // Reconcile resolves the gateway from the ORDER's persisted orgId
-  // — not ctx — because the public `/pay/success` render reconciles
+  //, not ctx, because the public `/pay/success` render reconciles
   // without an actor present. The order itself is the tenant boundary.
   const orderOrgId = doc.orgId ? String(doc.orgId) : null;
   const gatewayKey: PaymentGatewayKey =
@@ -1582,7 +1582,7 @@ export async function reconcileOrderPayment(
   // Happy path: gateway says paid. Drive the same atomic transition the
   // webhook handler uses, so audit + event + email all fire identically.
   //
-  // Dedupe key is STABLE (`reconcile:<sessionId>`) — repeat reconcile
+  // Dedupe key is STABLE (`reconcile:<sessionId>`), repeat reconcile
   // calls share the same key and collapse to a single applied transition
   // via the durable `ProcessedWebhookEvent` collection. The key namespace
   // is disjoint from gateway event ids (`evt_...`) so a real webhook
@@ -1629,7 +1629,7 @@ export async function reconcileOrderPayment(
     };
   }
 
-  // Still pending on the gateway's side — caller (UI poll) keeps waiting.
+  // Still pending on the gateway's side, caller (UI poll) keeps waiting.
   const normalisedStatus: ReconcileResult["stripeStatus"] =
     status.paymentStatus === "unpaid" ||
     status.paymentStatus === "no_payment_required"
@@ -1650,7 +1650,7 @@ export async function listAtRiskOrders(
   await connectMongo();
   // Pin orgId so the /admin/disputes board doesn't leak Tenant B's
   // at-risk orders to Tenant A's admin. Legacy callers (orgId null)
-  // still get the global view — to be removed once the route is
+  // still get the global view, to be removed once the route is
   // updated to pass actor.orgId.
   const filter: Record<string, unknown> = {
     $or: [

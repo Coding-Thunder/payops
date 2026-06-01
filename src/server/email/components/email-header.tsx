@@ -11,7 +11,7 @@ interface EmailHeaderProps {
 }
 
 /**
- * Top of the email — workspace name + a single eyebrow label. Borrowed
+ * Top of the email, workspace name + a single eyebrow label. Borrowed
  * from Stripe's receipts: typographic, no logo, no color band.
  */
 export function EmailHeader({

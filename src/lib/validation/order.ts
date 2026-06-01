@@ -46,13 +46,13 @@ export const orderLineItemInputSchema = z.object({
   quantity: z.number().positive().max(10_000),
   unitPrice: z.number().min(0).max(1_000_000),
   /** Server recomputes total = quantity × unitPrice to defend against
-   *  client tampering — but the client may pre-compute for the preview.
+   *  client tampering, but the client may pre-compute for the preview.
    *  When supplied it must match within rounding tolerance. */
   total: z.number().min(0).max(10_000_000).optional(),
   attributes: z
     .record(z.string().regex(ITEM_ATTRIBUTE_KEY_REGEX), z.unknown())
     .default({}),
-  /** Optional per-line scheduling — overrides the order-level
+  /** Optional per-line scheduling, overrides the order-level
    *  `scheduling` for THIS line only. */
   scheduling: z
     .object({

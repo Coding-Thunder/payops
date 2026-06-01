@@ -24,7 +24,7 @@ import type { SessionUser } from "@/types";
 interface LoginFormProps {
   nextPath?: string;
   /** Cloudflare Turnstile site key. When null the widget is omitted
-   *  entirely and the form posts without a `cfToken` — server-side
+   *  entirely and the form posts without a `cfToken`, server-side
    *  verification is also disabled in that case, so dev keeps working. */
   turnstileSiteKey?: string | null;
 }

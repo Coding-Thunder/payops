@@ -17,9 +17,9 @@ import { BrandFooter } from "@/components/marketing/brand-footer";
 import { BrandNav } from "@/components/marketing/brand-nav";
 
 export const metadata: Metadata = {
-  title: "Features — Payment operations, simplified",
+  title: "Features, Payment operations, simplified",
   description:
-    "Hashed evidence chain on every order. Per-org Stripe connect. Configurable workflows. Hosted consent for dispute defence. PDF invoices + receipts. The operational console between you and your payment processor.",
+    "Hashed evidence chain on every order. Per-org Stripe connect. Configurable workflows. Hosted consent for dispute defense. PDF invoices + receipts. The operational console between you and your payment processor.",
   alternates: { canonical: "/features" },
 };
 
@@ -41,10 +41,10 @@ const PILLARS: Pillar[] = [
   {
     eyebrow: "Evidence",
     title: "Hashed evidence chain on every order",
-    body: "Every state change appends a SHA-256-linked event to that order's chain — order created, link generated, consent verified, payment settled, dispute filed. Six weeks later when a chargeback lands, the evidence is already filed.",
+    body: "Every state change appends a SHA-256-linked event to that order's chain, order created, link generated, consent verified, payment settled, dispute filed. Six weeks later when a chargeback lands, the evidence is already filed.",
     Icon: ShieldCheckIcon,
     bullets: [
-      "Append-only — events never mutate after they're written",
+      "Append-only, events never mutate after they're written",
       "Cryptographic hash chain proves no tampering",
       "Exported as a single PDF the cardholder's bank can read",
       "Captures IP + user agent + signed-name on every consent",
@@ -57,18 +57,18 @@ const PILLARS: Pillar[] = [
     Icon: GitBranchIcon,
     bullets: [
       "Configurable status workflow per tenant",
-      "Real-time SSE updates — no polling, no manual refresh",
+      "Real-time SSE updates, no polling, no manual refresh",
       "Per-org filtering, search, and saved views",
       "Order detail page surfaces every event in one timeline",
     ],
   },
   {
     eyebrow: "Payments",
-    title: "Per-org Stripe — your keys, encrypted",
+    title: "Per-org Stripe, your keys, encrypted",
     body: "Connect your own Stripe account in 60 seconds. We auto-register the webhook, capture the signing secret, encrypt your keys at rest, and never see your money. Your customers see your brand, not TraceTxn.",
     Icon: CreditCardIcon,
     bullets: [
-      "BYOS (bring-your-own-Stripe) — TraceTxn never holds funds",
+      "BYOS (bring-your-own-Stripe), TraceTxn never holds funds",
       "Webhook auto-registered + signing-secret stored encrypted",
       "Webhook health check + repair button on the connect page",
       "Per-tenant TEST + LIVE mode support",
@@ -77,10 +77,10 @@ const PILLARS: Pillar[] = [
   {
     eyebrow: "Consent",
     title: "Hosted consent before every charge",
-    body: "Customer clicks a single button to confirm the order details + acknowledge your terms BEFORE Stripe charges them. The signed acknowledgement lands on the evidence chain — strongest signal a card network sees in a dispute.",
+    body: "Customer clicks a single button to confirm the order details + acknowledge your terms BEFORE Stripe charges them. The signed acknowledgement lands on the evidence chain, strongest signal a card network sees in a dispute.",
     Icon: CheckCircle2Icon,
     bullets: [
-      "HMAC-token-bound URL — single-use, customer-specific",
+      "HMAC-token-bound URL, single-use, customer-specific",
       "Captures customer IP, user agent, signed-name, timestamp",
       "Renders in your tenant brand, not TraceTxn brand",
       "Mobile-first; works in any email client's preview pane",
@@ -89,11 +89,11 @@ const PILLARS: Pillar[] = [
   {
     eyebrow: "Documents",
     title: "Tenant-numbered invoices + receipts",
-    body: "One click issues a brand-rendered invoice or receipt with a monotonic per-tenant number. Frozen snapshot at issue time — re-rendering reads the same bytes you sent the customer in March, even after your brand updates.",
+    body: "One click issues a brand-rendered invoice or receipt with a monotonic per-tenant number. Frozen snapshot at issue time, re-rendering reads the same bytes you sent the customer in March, even after your brand updates.",
     Icon: FileTextIcon,
     bullets: [
-      "Monotonic numbering per (tenant, kind) — INV-2026-0001",
-      "Append-only — issued docs never mutate",
+      "Monotonic numbering per (tenant, kind), INV-2026-0001",
+      "Append-only, issued docs never mutate",
       "Open in a new tab → browser print dialog → PDF",
       "Frozen brand + customer + line-item snapshot",
     ],
@@ -112,7 +112,7 @@ const PILLARS: Pillar[] = [
   },
 ];
 
-/* Secondary capabilities — surfaced as a tighter grid, no big icons.
+/* Secondary capabilities, surfaced as a tighter grid, no big icons.
  * Lets the page communicate breadth without padding the hero with
  * a 12-feature list. */
 const SECONDARY: Array<{ label: string; body: string }> = [
@@ -122,7 +122,7 @@ const SECONDARY: Array<{ label: string; body: string }> = [
   },
   {
     label: "Configurable order statuses",
-    body: "Define your own lifecycle — Lead → Trial → Active for SaaS, Booked → Confirmed → Checked-in for hospitality, etc.",
+    body: "Define your own lifecycle, Lead → Trial → Active for SaaS, Booked → Confirmed → Checked-in for hospitality, etc.",
   },
   {
     label: "Hosted payment + cancel pages",
@@ -174,12 +174,12 @@ export default function FeaturesPage() {
           </h1>
           <p className="mx-auto mt-5 max-w-xl text-[15px] leading-relaxed text-muted-foreground">
             Six pillars that turn payment chaos into payment operations.
-            Every feature here is shipped — no roadmap chrome.
+            Every feature here is shipped, no roadmap chrome.
           </p>
         </div>
       </section>
 
-      {/* ─── Six pillars — alternating columns ───────────────────── */}
+      {/* ─── Six pillars, alternating columns ───────────────────── */}
       <section className="mx-auto max-w-[1280px] px-6 py-20 lg:px-10">
         <div className="space-y-20">
           {PILLARS.map((p, i) => (
@@ -188,7 +188,7 @@ export default function FeaturesPage() {
         </div>
       </section>
 
-      {/* ─── Secondary capabilities — tighter grid ───────────────── */}
+      {/* ─── Secondary capabilities, tighter grid ───────────────── */}
       <section className="border-y border-border bg-white py-20">
         <div className="mx-auto max-w-[1280px] px-6 lg:px-10">
           <div className="text-center">
@@ -226,7 +226,7 @@ export default function FeaturesPage() {
           <span className="font-semibold">your own order</span>.
         </h2>
         <p className="mx-auto mt-4 max-w-md text-[14px] leading-relaxed text-muted-foreground">
-          Open a workspace, connect Stripe, take a test payment — every
+          Open a workspace, connect Stripe, take a test payment, every
           event lands on the chain, every artifact is exportable.
         </p>
         <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
@@ -301,7 +301,7 @@ function PillarRow({
         </ul>
       </div>
 
-      {/* Visual placeholder card — a quiet operational artifact in the
+      {/* Visual placeholder card, a quiet operational artifact in the
           brand language. Real screenshots would slot in here later. */}
       <div className={flipped ? "lg:order-1" : ""}>
         <PillarVisual pillar={pillar} />
@@ -328,7 +328,7 @@ function PillarVisual({ pillar }: { pillar: Pillar }) {
           <ReceiptIcon className="size-3.5 text-muted-foreground" />
         </div>
 
-        {/* Stylised mock rows — each pillar gets the same chrome but a
+        {/* Stylised mock rows, each pillar gets the same chrome but a
             distinct content stripe, so the page feels consistent
             without re-rendering different illustrations. */}
         <div className="mt-5 space-y-3">

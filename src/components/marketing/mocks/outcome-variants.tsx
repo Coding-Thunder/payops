@@ -1,7 +1,7 @@
 import { CheckIcon, AlertCircleIcon, ClockIcon, XIcon } from "lucide-react";
 
 /**
- * Marketing canvas — the polymorphic outcome panel, all four
+ * Marketing canvas, the polymorphic outcome panel, all four
  * variants displayed side-by-side at small scale.
  *
  * Demonstrates that every order in TraceTxn carries a
@@ -12,7 +12,7 @@ import { CheckIcon, AlertCircleIcon, ClockIcon, XIcon } from "lucide-react";
  * dispute-active variants.
  *
  * Layered semantic palette: green (READY/WON), amber (OPEN), rose
- * (LOST) — the full reference tone-set in one compact composition.
+ * (LOST), the full reference tone-set in one compact composition.
  */
 
 interface Variant {
@@ -74,7 +74,7 @@ const VARIANTS: Variant[] = [
     details: [
       ["Reason", "13.1"],
       ["Decided", "2026-05-21"],
-      ["Outcome", "Won — Reversed"],
+      ["Outcome", "Won, Reversed"],
     ],
     tone: {
       bg: "oklch(0.62 0.17 148)",

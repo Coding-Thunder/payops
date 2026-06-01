@@ -89,7 +89,7 @@ async function sendInternalNotification(
   // never legitimate; collapse to single space and cap length.
   const headerSafe = (s: string) =>
     s.replace(/[\r\n]+/g, " ").trim().slice(0, 200);
-  const subject = `[TraceTxn lead] ${headerSafe(doc.companyName)} — ${headerSafe(doc.expectedVolume)}`;
+  const subject = `[TraceTxn lead] ${headerSafe(doc.companyName)}, ${headerSafe(doc.expectedVolume)}`;
   const lines = [
     `New TraceTxn quotation request`,
     ``,
@@ -99,9 +99,9 @@ async function sendInternalNotification(
     `Phone     : ${doc.phone}`,
     `Country   : ${doc.country}`,
     `Volume    : ${doc.expectedVolume}`,
-    `Gateway   : ${doc.preferredGateway || "—"}`,
-    `Stack     : ${doc.currentStack || "—"}`,
-    `Timeline  : ${doc.timeline || "—"}`,
+    `Gateway   : ${doc.preferredGateway || "-"}`,
+    `Stack     : ${doc.currentStack || "-"}`,
+    `Timeline  : ${doc.timeline || "-"}`,
     `Source    : ${doc.source}`,
     ``,
     `Use case`,

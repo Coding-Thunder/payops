@@ -24,11 +24,11 @@ import { connectMongo } from "@/server/db/mongoose";
 import { orgIdFilter, requireOrgId } from "@/server/db/org/org-context";
 
 /**
- * Pass 5e — ItemType admin + read service.
+ * Pass 5e, ItemType admin + read service.
  *
  * The dynamic create-order form lists ACTIVE ItemTypes for the caller's
  * org; admins manage the catalog (create / update attributes / archive).
- * All writes are org-scoped — a Tenant B admin cannot mutate a Tenant A
+ * All writes are org-scoped, a Tenant B admin cannot mutate a Tenant A
  * ItemType even by guessing its id (same boundary discipline as Pass 5a).
  */
 
@@ -101,7 +101,7 @@ export interface ItemTypeContext {
   actorId: string;
 }
 
-/** Per-tenant active list — what the create-order form picks from. */
+/** Per-tenant active list, what the create-order form picks from. */
 export async function listActiveItemTypes(
   orgId: string | null,
 ): Promise<ItemTypeDTO[]> {
@@ -116,7 +116,7 @@ export async function listActiveItemTypes(
   return docs.map(toDTO);
 }
 
-/** Admin list — includes archived rows so admins can see what's gone. */
+/** Admin list, includes archived rows so admins can see what's gone. */
 export async function listAllItemTypes(
   ctx: ItemTypeContext,
 ): Promise<ItemTypeDTO[]> {
@@ -135,7 +135,7 @@ export async function getItemTypeById(
   if (!Types.ObjectId.isValid(id)) {
     throw new NotFoundError("Item type not found");
   }
-  // Pin BOTH id AND orgId — cross-tenant id-guess refusal.
+  // Pin BOTH id AND orgId, cross-tenant id-guess refusal.
   const doc = await ItemType.findOne({
     _id: id,
     orgId: orgIdFilter(ctx.orgId),
@@ -166,7 +166,7 @@ export interface CreateItemTypeInput {
   requiresScheduling: boolean;
   inventoryTracked: boolean;
   attributeSchema: ItemTypeAttributeDTO[];
-  /** Optional — defaults to DEFAULT_CONFIRMATION_BLOCKS. */
+  /** Optional, defaults to DEFAULT_CONFIRMATION_BLOCKS. */
   confirmationEmailBlocks?: EmailBlockKey[];
 }
 
@@ -178,7 +178,7 @@ export type UpdateItemTypeInput = Partial<
   key?: never;
 };
 
-/** Shared attribute-spec sanity check — Mongo's pre-validate hook on the
+/** Shared attribute-spec sanity check, Mongo's pre-validate hook on the
  *  model also runs, but we surface ValidationError here for nicer API
  *  responses (Mongo errors lose stack context). */
 function sanitizeAttributeSchema(
@@ -283,7 +283,7 @@ export async function updateItemType(
   return toDTO(updated);
 }
 
-/** Soft delete — sets `status = ARCHIVED`. Historical orders keep their
+/** Soft delete, sets `status = ARCHIVED`. Historical orders keep their
  *  `lineItems[i].itemTypeKey` pointer intact (the snapshot is on the
  *  order; the catalog row only drives the create-order form). */
 export async function archiveItemType(

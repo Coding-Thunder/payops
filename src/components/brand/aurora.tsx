@@ -7,9 +7,9 @@ interface AuroraProps {
 }
 
 /**
- * Aurora background — three soft blurred conic gradients layered over the
+ * Aurora background, three soft blurred conic gradients layered over the
  * surface. Used very sparingly: login hero, dashboard greeting band, premium
- * empty states. No animation — calm by design.
+ * empty states. No animation, calm by design.
  */
 export function Aurora({ className, intensity = "low" }: AuroraProps) {
   const blur = intensity === "low" ? "blur-[110px]" : "blur-[90px]";

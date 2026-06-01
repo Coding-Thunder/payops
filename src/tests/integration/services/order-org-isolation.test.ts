@@ -70,7 +70,7 @@ afterEach(() => {
  *  data to read instead of failing on missing-org. */
 async function seedOrg(orgId: string): Promise<void> {
   const oid = new Types.ObjectId(orgId);
-  // If an Org doc already exists for this orgId we're done — repeat
+  // If an Org doc already exists for this orgId we're done, repeat
   // seedOrg(sameOrgId) calls inside a single test must be a no-op so
   // we don't double-write owner users with colliding emails.
   const existingOrg = await Organization.findById(oid).select({ _id: 1 }).lean();
@@ -96,7 +96,7 @@ async function seedOrg(orgId: string): Promise<void> {
 }
 
 /** Seed the legacy org so `isLegacyTenant` resolves true for the
- *  returned id — required for Pass 5a's env-fallback gate. */
+ *  returned id, required for Pass 5a's env-fallback gate. */
 async function seedLegacyOrg(): Promise<string> {
   const ownerId = new Types.ObjectId();
   await User.create({
@@ -175,7 +175,7 @@ function orderInput() {
   };
 }
 
-describe("createOrder — tenant boundary", () => {
+describe("createOrder, tenant boundary", () => {
   it("persists order.orgId from ctx", async () => {
     const orgA = new Types.ObjectId().toString();
     await seedOrg(orgA);
@@ -192,7 +192,7 @@ describe("createOrder — tenant boundary", () => {
     expect(String(persisted?.orgId)).toBe(orgA);
   });
 
-  it("reads per-org settings — orderNumber prefix differs per tenant", async () => {
+  it("reads per-org settings, orderNumber prefix differs per tenant", async () => {
     // Seed two orgs with different orderPrefixes by upserting per-org
     // Setting rows directly (faster than going through updateSettings).
     const orgA = new Types.ObjectId().toString();
@@ -250,13 +250,13 @@ describe("createOrder — tenant boundary", () => {
   // never reaches createOrder anymore.
 });
 
-describe("initiatePayment — per-org gateway routing", () => {
+describe("initiatePayment, per-org gateway routing", () => {
   it("uses the per-org Stripe credential when one exists", async () => {
     const orgA = new Types.ObjectId().toString();
     // Per-org Stripe credential for orgA. Note: env-based test stub
     // intercepts all Stripe calls in integration mode (see
     // integration.setup.ts), so the secret value isn't actually used
-    // to open a network connection — but the routing path DOES
+    // to open a network connection, but the routing path DOES
     // resolve through `gateway_credentials`, which is what we test.
     await saveGatewayCredential(
       {
@@ -293,7 +293,7 @@ describe("initiatePayment — per-org gateway routing", () => {
     // legacy org must exist in the DB before the gate permits it.
     const legacyOrg = await seedLegacyOrg();
     await seedServiceVisitType(legacyOrg);
-    // NO saveGatewayCredential call — Tenant #1 has no row.
+    // NO saveGatewayCredential call, Tenant #1 has no row.
     const { order } = await createOrder(orderInput(), {
       actor: actor(),
       orgId: legacyOrg,
@@ -319,7 +319,7 @@ describe("initiatePayment — per-org gateway routing", () => {
       orgId: newTenant,
       request: null,
     });
-    // No saveGatewayCredential for newTenant — initiatePayment must
+    // No saveGatewayCredential for newTenant, initiatePayment must
     // fail closed rather than silently route via env credentials.
     await expect(
       initiatePayment(order.id, {

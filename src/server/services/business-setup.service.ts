@@ -10,7 +10,7 @@ import {
 import type { CompleteBusinessSetupInput } from "@/lib/validation";
 
 /**
- * Pass 6b — onboarding wizard commit.
+ * Pass 6b, onboarding wizard commit.
  *
  * The wizard's last step posts a `CompleteBusinessSetupInput` here.
  * We translate it into a `createItemType` call on the existing
@@ -24,7 +24,7 @@ import type { CompleteBusinessSetupInput } from "@/lib/validation";
  *      than one row (catalog Items, default settings tweaks, etc.).
  *      Today it seeds exactly one ItemType.
  *
- * Re-entry behaviour: the user explicitly chose "Allow — append" in
+ * Re-entry behaviour: the user explicitly chose "Allow, append" in
  * Pass 6b verification, so this function does NOT refuse if other
  * ItemTypes already exist for the org. It DOES surface a clear
  * `ConflictError` when the chosen key collides with an existing row;

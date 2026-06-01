@@ -6,7 +6,7 @@ import { DomainEventType } from "@/lib/constants/events";
 import { isEventVisibleToUser } from "@/server/events/bus";
 
 /**
- * `isEventVisibleToUser` is the gatekeeper for SSE delivery — incorrectly
+ * `isEventVisibleToUser` is the gatekeeper for SSE delivery, incorrectly
  * fanning an admin-only event out to a STAFF viewer would leak
  * cross-tenant data. Pin the matrix.
  *
@@ -108,7 +108,7 @@ describe("isEventVisibleToUser", () => {
     });
   });
 
-  describe("Pass 5a — orgId tenant gate", () => {
+  describe("Pass 5a, orgId tenant gate", () => {
     it("does NOT deliver an event from Org A to a viewer in Org B", () => {
       const ev = {
         ...baseEvent,

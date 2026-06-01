@@ -11,7 +11,7 @@ const serverSchema = z.object({
   /**
    * Deprecated. Was the platform-wide customer brand name baked into
    * every tenant's emails before the multi-tenant branding fix.
-   * Empty default now — per-org Branding.brandName is the source of
+   * Empty default now, per-org Branding.brandName is the source of
    * truth. Kept on the schema only for the legacy singleton path
    * (no-orgId fallback) used during the multi-tenant migration window.
    */
@@ -46,7 +46,7 @@ const serverSchema = z.object({
     .string()
     .min(1, "STRIPE_WEBHOOK_SECRET is required"),
   // Note: server-side STRIPE_PUBLISHABLE_KEY is intentionally not in
-  // the schema — the publishable key only matters to the browser and
+  // the schema, the publishable key only matters to the browser and
   // is sourced from NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY below.
 
   // ---- SMTP (Google Workspace + App Password) ----
@@ -65,7 +65,7 @@ const serverSchema = z.object({
     .default("TraceTxn <no-reply@tracetxn.example.com>"),
   EMAIL_REPLY_TO: z.string().optional(),
   /**
-   * Deprecated platform-wide support contacts. Empty defaults — each
+   * Deprecated platform-wide support contacts. Empty defaults, each
    * tenant's Branding.supportEmail / supportPhone is the source of
    * truth. Only used by the legacy-singleton fallback in
    * branding.service.platformFallback (no-orgId path) and by
@@ -83,11 +83,11 @@ const serverSchema = z.object({
   DEFAULT_ORDER_PREFIX: z.string().default("ORD"),
 
   /**
-   * Cloudflare Turnstile — server-side secret used to verify client
+   * Cloudflare Turnstile, server-side secret used to verify client
    * tokens against challenges.cloudflare.com. Leave empty to disable
    * the bot-check pre-flight on /api/auth/login and /api/quotations:
    * routes still serve, the verifier just no-ops. Pair with the public
-   * NEXT_PUBLIC_TURNSTILE_SITE_KEY below — both must be set for the
+   * NEXT_PUBLIC_TURNSTILE_SITE_KEY below, both must be set for the
    * widget to render AND the server to validate.
    */
   TURNSTILE_SECRET_KEY: z.string().optional(),
@@ -95,7 +95,7 @@ const serverSchema = z.object({
   /**
    * AES-256 master key (32 bytes, base64-encoded) used to encrypt
    * per-org gateway credentials at rest. Optional during the
-   * multi-tenant migration window — the legacy tenant continues to
+   * multi-tenant migration window, the legacy tenant continues to
    * use env-based Stripe credentials and never touches this. Required
    * the moment ANY org saves a per-org gateway credential.
    *
@@ -105,7 +105,7 @@ const serverSchema = z.object({
    * credentials. Rotation: write new rows with the new key (the field
    * `keyVersion` on each encrypted blob discriminates which key to
    * use at decrypt time), then re-encrypt old rows and drop the
-   * previous key — manage out-of-band.
+   * previous key, manage out-of-band.
    */
   TRACETXN_MASTER_KEY: z
     .string()
@@ -123,7 +123,7 @@ const serverSchema = z.object({
    * in single quotes:
    *   FIREBASE_SERVICE_ACCOUNT='{"type":"service_account","project_id":"…",…}'
    *
-   * Optional — when unset, the Firebase auth route returns 503 and the
+   * Optional, when unset, the Firebase auth route returns 503 and the
    * UI falls back to the legacy bcrypt sign-in path (which keeps working).
    */
   FIREBASE_SERVICE_ACCOUNT: z.string().optional(),
@@ -138,7 +138,7 @@ const clientSchema = z.object({
    *  the API. Server verification lives behind TURNSTILE_SECRET_KEY. */
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().optional(),
 
-  /** Firebase Web SDK config — public values, safe to ship to the
+  /** Firebase Web SDK config, public values, safe to ship to the
    *  browser. All five must be set together; if any is missing the
    *  Firebase auth UI falls back to "feature unavailable" and the
    *  legacy bcrypt sign-in form is shown instead. */

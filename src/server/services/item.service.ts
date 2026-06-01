@@ -20,7 +20,7 @@ import { orgIdFilter, requireOrgId } from "@/server/db/org/org-context";
 import { validateLineAttributes } from "./attribute-validator.service";
 
 /**
- * Pass 6c — per-tenant Item catalog service.
+ * Pass 6c, per-tenant Item catalog service.
  *
  * An `Item` is a reusable product/service/asset row that operators
  * pick when creating an order. Each Item references an `ItemType` by
@@ -34,7 +34,7 @@ import { validateLineAttributes } from "./attribute-validator.service";
  *   2. Operators pick the Item in the create-order dynamic form;
  *      `Order.lineItems[i]` carries `itemId` back-pointer + a frozen
  *      snapshot of name/attributes/unitPrice.
- *   3. Edits to the catalog row do NOT mutate existing orders — the
+ *   3. Edits to the catalog row do NOT mutate existing orders, the
  *      snapshot keeps the historical truth.
  *   4. Archive (soft-delete) hides the Item from the picker; existing
  *      orders that reference it keep rendering via the snapshot.
@@ -165,7 +165,7 @@ export async function listActiveItems(
   return docs.map((d) => dtoWithDisplayName(d, nameByKey));
 }
 
-/** Admin list — includes ARCHIVED + DISABLED rows so admins can audit
+/** Admin list, includes ARCHIVED + DISABLED rows so admins can audit
  *  the full history of a catalog. */
 export async function listAllItems(
   ctx: ItemContext,
@@ -192,7 +192,7 @@ export async function getItemById(
   if (!Types.ObjectId.isValid(id)) {
     throw new NotFoundError("Item not found");
   }
-  // Pin BOTH id AND orgId — cross-tenant id-guess refusal.
+  // Pin BOTH id AND orgId, cross-tenant id-guess refusal.
   const doc = await Item.findOne({
     _id: id,
     orgId: orgIdFilter(ctx.orgId),
@@ -239,7 +239,7 @@ export async function createItem(
   await resolveItemType(ctx.orgId, input.itemTypeKey);
 
   // Attribute payload must conform to the ItemType's attributeSchema
-  // — same validator the order-create path runs against line items.
+  //, same validator the order-create path runs against line items.
   // Reusing it here means an Item the admin saves can never produce
   // an invalid order line downstream.
   const { attributes } = await validateLineAttributes({
@@ -306,7 +306,7 @@ export async function updateItem(
   }
   // Load the existing row so we can validate `attributes` against the
   // (immutable) itemTypeKey it's bound to. Disallow itemTypeKey
-  // changes — would invalidate snapshots on historical orders.
+  // changes, would invalidate snapshots on historical orders.
   const existing = await Item.findOne({
     _id: id,
     orgId: orgIdFilter(ctx.orgId),

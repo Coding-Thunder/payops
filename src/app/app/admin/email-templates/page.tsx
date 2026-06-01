@@ -119,13 +119,13 @@ export default async function AdminEmailTemplatesIndex() {
               </Row>
               <Row label="Versions">
                 {card.totalVersions === 0
-                  ? "—"
+                  ? "-"
                   : `${card.totalVersions} version${card.totalVersions === 1 ? "" : "s"}`}
               </Row>
               <Row label="Last updated">
                 {card.lastUpdatedAt
                   ? formatDateTime(card.lastUpdatedAt)
-                  : "—"}
+                  : "-"}
               </Row>
             </CardContent>
             <CardFooter className="flex justify-end gap-2">

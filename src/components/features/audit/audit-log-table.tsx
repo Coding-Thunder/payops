@@ -182,7 +182,7 @@ export function AuditLogTable({ items, canDelete }: AuditLogTableProps) {
                   ) : null}
                 </TableCell>
                 <TableCell className="hidden md:table-cell text-xs text-muted-foreground max-w-md truncate">
-                  {row.metadata ? JSON.stringify(row.metadata) : "—"}
+                  {row.metadata ? JSON.stringify(row.metadata) : "-"}
                 </TableCell>
                 {canDelete ? (
                   <TableCell>

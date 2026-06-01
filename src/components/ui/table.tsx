@@ -3,7 +3,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Table — refined polish.
+ * Table, refined polish.
  *
  *   - Header row gets a 1px hairline AND a tiny `pb` so the column
  *     labels lift off the data slightly. Previous version had only
@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
  *   - Row hover transition tightened (100ms, was the default 150) so
  *     scanning down a long table feels responsive, not laggy.
  *   - First/last cells get slightly more horizontal padding so the
- *     table doesn't visually hug the card border — a subtle gutter.
+ *     table doesn't visually hug the card border, a subtle gutter.
  */
 function Table({
   className,

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Forgot-password initiate. Accepts only an email — the route always
+ * Forgot-password initiate. Accepts only an email, the route always
  * returns 200 regardless of whether the address exists, so the schema
  * stays minimal (no user-enumeration via validation errors).
  */

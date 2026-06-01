@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40">
-  <!-- TraceTxn brand mark v1 — four-node transaction trace.
+  <!-- TraceTxn brand mark v1, four-node transaction trace.
        Source → intent → settlement (emerald) → destination. -->
   <path d="M6 14L16 14L24 20L34 14" stroke="#0F172A" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter" fill="none"/>
   <path d="M16 14V24" stroke="#10B981" stroke-width="2" stroke-linecap="square"/>

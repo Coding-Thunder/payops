@@ -11,7 +11,7 @@ const AUDIENCE = "tracetxn:web";
  *  /login         → sign-in (public, redirects to /app/dashboard once authed)
  *  /pay/*         → customer-facing payment surfaces (public, gateway-bound)
  *  /consent/*     → hosted consent confirmation (public, HMAC-token bound)
- *  /api/*         → API routes — auth applied selectively below
+ *  /api/*         → API routes, auth applied selectively below
  *  /app/*         → the entire authed product
  *
  * The authed product moved from a `(app)` route group to a literal
@@ -31,7 +31,7 @@ const PUBLIC_PATHS = [
   // Firebase ID-token → session cookie exchange. The caller has a
   // verified Firebase ID token but no TraceTxn cookie yet (this is
   // the endpoint that mints it). Must be unauthenticated to be
-  // reachable — token verification is the trust boundary inside
+  // reachable, token verification is the trust boundary inside
   // the route handler.
   "/api/auth/firebase-session",
   "/api/webhooks/stripe",
@@ -47,7 +47,7 @@ const PUBLIC_PREFIXES = [
   // verifies the HMAC; an invalid token surfaces a generic error.
   "/reset-password/",
   // Hosted consent flow is the customer's first stop after they click
-  // the email's primary CTA. They have no session — the HMAC token in
+  // the email's primary CTA. They have no session, the HMAC token in
   // the URL is the credential. Both the page and the JSON endpoint are
   // whitelisted; consent.service verifies the token before touching DB.
   "/consent/",
@@ -104,7 +104,7 @@ async function verifyToken(token: string, secret: Uint8Array) {
 
 /**
  * Next.js 16 renamed the `middleware` file convention to `proxy`. The
- * exported function name follows suit — semantics are identical, this is
+ * exported function name follows suit, semantics are identical, this is
  * just the deprecated-warning fix.
  */
 export async function proxy(req: NextRequest) {
@@ -167,7 +167,7 @@ export const config = {
      *   - /public asset folders we ship logos / images from:
      *       /assets, /providers, /branding, /static
      *     (Without this, customer-facing emails embed image URLs that
-     *      hit our auth gate and redirect to /login — Gmail then caches
+     *      hit our auth gate and redirect to /login, Gmail then caches
      *      that redirect via its /meips proxy and the inline logo
      *      renders as a broken image.)
      *   - stripe webhook (must keep raw body)

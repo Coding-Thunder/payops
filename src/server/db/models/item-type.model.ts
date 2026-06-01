@@ -26,19 +26,19 @@ import { registerModel } from "./register";
  * An `ItemType` row describes the SHAPE of a class of orderable thing
  * for one organisation:
  *
- *   - "milk_carton"      — a Pricing-Model=QUANTITY, no scheduling, no
+ *   - "milk_carton"     , a Pricing-Model=QUANTITY, no scheduling, no
  *                          attributes beyond the default name/price.
- *   - "service_visit"    — FIXED price, optional scheduling, no inventory.
- *   - "rental_booking"   — TIME_WINDOW price, REQUIRES scheduling,
+ *   - "service_visit"   , FIXED price, optional scheduling, no inventory.
+ *   - "rental_booking"  , TIME_WINDOW price, REQUIRES scheduling,
  *                          attributes [vehicleMake, vehicleType, imageUrl,
  *                          providerKey].
- *   - "consulting_hour"  — QUANTITY price (per hour), no scheduling.
- *   - "subscription_plan"— INTERVAL price, requires scheduling
+ *   - "consulting_hour" , QUANTITY price (per hour), no scheduling.
+ *   - "subscription_plan"- INTERVAL price, requires scheduling
  *                          (renewal cycles).
  *
  * The schema is per-org so two tenants in the same vertical can
  * customise independently (a dealership might want `vin` while
- * another doesn't). Platform ships no built-in ItemType rows —
+ * another doesn't). Platform ships no built-in ItemType rows -
  * the migration script seeds Tenant #1's "rental_booking" type
  * from their existing rental data; new tenants define their own.
  *
@@ -56,7 +56,7 @@ import { registerModel } from "./register";
 
 /** Single attribute spec inside `ItemType.attributeSchema[]`. */
 export interface ItemAttributeSpec {
-  /** Lowercase snake_case identifier — used as the key on
+  /** Lowercase snake_case identifier, used as the key on
    *  `OrderLineItem.attributes`, in Mongo dotted paths, and as a
    *  React key in dynamic forms. */
   key: string;
@@ -84,7 +84,7 @@ export interface ItemTypeDoc {
   requiresScheduling: boolean;
   inventoryTracked: boolean;
   attributeSchema: ItemAttributeSpec[];
-  /** Subset of the finite EmailBlockKey vocabulary — server-side
+  /** Subset of the finite EmailBlockKey vocabulary, server-side
    *  email render iterates over (defaults + these) and skips any
    *  block whose data isn't present. */
   confirmationEmailBlocks: EmailBlockKey[];

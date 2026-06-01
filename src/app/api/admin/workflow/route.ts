@@ -6,7 +6,7 @@ import { getOrCreateDefaultWorkflow } from "@/server/services/workflow.service";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** GET /api/admin/workflow — return the tenant's workflow (seeded on
+/** GET /api/admin/workflow, return the tenant's workflow (seeded on
  *  first access from the default 6 statuses + matching transitions). */
 export const GET = withApi(async () => {
   const actor = await requirePermission(Permission.WORKFLOW_VIEW);

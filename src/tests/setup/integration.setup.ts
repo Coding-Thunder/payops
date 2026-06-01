@@ -13,7 +13,7 @@ import { _nextHeadersState } from "@/tests/utils/next-headers";
 
 /**
  * Mock `next/headers` globally for every integration test. The module's
- * exports are non-configurable getters, so `vi.spyOn` won't fly — we
+ * exports are non-configurable getters, so `vi.spyOn` won't fly, we
  * register the mock via `vi.mock`, which Vitest hoists. The mock reads
  * its live cookie / header state from a global accessor so tests can
  * mutate it without re-installing the mock.
@@ -62,7 +62,7 @@ vi.mock("next/headers", () => ({
  * Per-file integration setup.
  *
  *   - Picks a unique logical database on the shared in-memory mongod
- *     instance — every test file gets a fresh namespace, no shared state.
+ *     instance, every test file gets a fresh namespace, no shared state.
  *   - Installs a Stripe stub fresh for each test (`beforeEach`) so call
  *     records never leak between tests.
  *   - Disconnects Mongo at the end of the file so the worker exits clean.
@@ -77,7 +77,7 @@ let perFileDbName: string | null = null;
 export function getCurrentTestStripe(): StripeStub {
   if (!stripeStub) {
     throw new Error(
-      "Stripe stub is not initialised — make sure beforeEach has run.",
+      "Stripe stub is not initialised, make sure beforeEach has run.",
     );
   }
   return stripeStub;
@@ -87,7 +87,7 @@ beforeAll(async () => {
   const rootUri = process.env.TRACETXN_IT_MONGO_URI;
   if (!rootUri) {
     throw new Error(
-      "TRACETXN_IT_MONGO_URI not set — did integration.global-setup.ts run?",
+      "TRACETXN_IT_MONGO_URI not set, did integration.global-setup.ts run?",
     );
   }
   perFileDbName = `it-${crypto.randomUUID().slice(0, 8)}`;

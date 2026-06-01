@@ -31,14 +31,14 @@ import {
 
 export interface PaymentConsentDoc {
   orderId: Types.ObjectId;
-  /** Tenant boundary — denormalised from the parent Order so admin
+  /** Tenant boundary, denormalised from the parent Order so admin
    *  consent lists can scope by orgId without a JOIN. The public
    *  /consent/[token] surface is HMAC-token authed (not session
    *  authed), so orgId here is a tenant-isolation primitive for the
    *  admin-facing queries, not a customer-facing access gate.
    *  Nullable during the multi-tenant migration window. */
   orgId?: Types.ObjectId | null;
-  /** Denormalised lookup field — matches Order.orderNumber. Lets the
+  /** Denormalised lookup field, matches Order.orderNumber. Lets the
    *  hosted page render a recognisable header without a second query. */
   orderNumber: string;
 
@@ -59,7 +59,7 @@ export interface PaymentConsentDoc {
    *  customer's mailto reply was prefilled with). Useful evidence. */
   consentEmailSubject?: string | null;
 
-  /** Required digital signature captured on the hosted consent page —
+  /** Required digital signature captured on the hosted consent page -
    *  the customer's typed name acts as a lightweight acknowledgement
    *  proof attached to the record. Stored nullable so we can create a
    *  REQUESTED record (no signature yet); the service enforces presence
@@ -73,7 +73,7 @@ export interface PaymentConsentDoc {
    *  Pass 5h: rental-specific fields removed entirely. Universal-shape
    *  orders fill `summary` (line items recap) + `startsAt/endsAt`
    *  (from order.scheduling). Existing records with the old fields are
-   *  read transparently — Mongoose just ignores fields not declared in
+   *  read transparently, Mongoose just ignores fields not declared in
    *  the schema. */
   snapshot: {
     summary?: string | null;
@@ -96,7 +96,7 @@ export interface PaymentConsentDoc {
   } | null;
 
   /** Browser fingerprint captured at receipt time (hosted page). Never
-   *  surfaces in the customer-facing UI — internal evidence only. */
+   *  surfaces in the customer-facing UI, internal evidence only. */
   receiptIp?: string | null;
   receiptUserAgent?: string | null;
 

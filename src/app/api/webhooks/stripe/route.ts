@@ -24,7 +24,7 @@ export const dynamic = "force-dynamic";
  *  - Always return 2xx after a verified event so the gateway doesn't
  *    replay it needlessly (idempotency is in the service layer via
  *    the durable `ProcessedWebhookEvent` collection).
- *  - Email side-effects DO NOT block the ack — `applyCheckoutPaid`
+ *  - Email side-effects DO NOT block the ack, `applyCheckoutPaid`
  *    enqueues to the email outbox inside the transaction, and we
  *    kick a fire-and-forget post-commit drain so the customer sees
  *    confirmation sub-second on the happy path. The 60s in-process

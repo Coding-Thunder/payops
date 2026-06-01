@@ -23,12 +23,12 @@ export const SETTINGS_KEY = "default" as const;
  * Default cancellation / refund policy text shown to customers on the
  * payment receipt and snapshotted onto every order at create-time.
  *
- * Empty by design — refund policies are tenant-specific and legally
+ * Empty by design, refund policies are tenant-specific and legally
  * sensitive (a generic platform default like "refunds within 5–10
  * business days" can mislead customers if a tenant operates under
  * different terms). New tenants set this in /app/admin/settings during
  * onboarding; until they do, the email's policy block renders nothing
- * (see email/blocks/index.tsx — block early-returns on empty text).
+ * (see email/blocks/index.tsx, block early-returns on empty text).
  *
  * Prior history: this used to ship hardcoded car-rental terms
  * ("pick-up", "vehicle changes", "deposit forfeit"). Replaced as part
@@ -40,7 +40,7 @@ export const DEFAULT_CANCELLATION_POLICY = "";
 
 /**
  * Default copy for the customer acknowledgement statement. Intentionally
- * short, calm, and free of legalese — this is operational evidence, not
+ * short, calm, and free of legalese, this is operational evidence, not
  * an enterprise contract.
  */
 export const DEFAULT_CONSENT_MESSAGE =
@@ -72,7 +72,7 @@ export interface SettingDoc {
    *  point to the exact policy version the customer paid against. */
   cancellationPolicyVersion: string;
   /** Operational policy for pre-payment consent. ADVISORY is the safe
-   *  default — we capture consent but never block payment. Tighten only
+   *  default, we capture consent but never block payment. Tighten only
    *  when ops/legal explicitly opt in. */
   consentMode: ConsentMode;
   /** Customer-facing acknowledgement copy. Editable by admins; rendered
@@ -180,7 +180,7 @@ settingSchema.index(
     name: "settings_orgId_unique",
   },
 );
-// Legacy {key:"default"} singleton — kept unique while migration code
+// Legacy {key:"default"} singleton, kept unique while migration code
 // still upserts via key. Partial filter exempts per-org rows that
 // omit the field entirely.
 settingSchema.index(

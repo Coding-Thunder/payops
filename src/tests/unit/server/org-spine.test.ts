@@ -53,7 +53,7 @@ describe("OrgContext helpers", () => {
       expect(ctx.actor.email).toBe("ada@tracetxn.test");
     });
 
-    it("throws Unauthorized when orgId is missing — never silently falls back", () => {
+    it("throws Unauthorized when orgId is missing, never silently falls back", () => {
       expect(() =>
         buildOrgContext({ orgId: null, actor, request: null }),
       ).toThrowError(/sign in again/i);

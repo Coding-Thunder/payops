@@ -17,7 +17,7 @@ import {
  *   4. Re-fetch the order via /api/orders/:id and confirm it transitioned
  *      to PAID and recorded the amount + paidAt.
  *
- * This is the heart of TraceTxn — if it ever breaks, payments are broken.
+ * This is the heart of TraceTxn, if it ever breaks, payments are broken.
  */
 
 test.describe("order + payment flow", () => {

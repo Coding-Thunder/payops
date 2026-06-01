@@ -76,7 +76,7 @@ export default async function DisputesPage() {
       <PageHeader
         eyebrow="Admin"
         title="Disputes & at-risk orders"
-        description="Orders that need an operator's attention — manually flagged, payment failed, or the checkout link expired. Resolving these promptly keeps your Stripe dispute rate low."
+        description="Orders that need an operator's attention, manually flagged, payment failed, or the checkout link expired. Resolving these promptly keeps your Stripe dispute rate low."
       />
 
       {canSearchEvidence ? <EvidenceSearchForm /> : null}
@@ -105,7 +105,7 @@ export default async function DisputesPage() {
         <CardHeader>
           <CardTitle>Watchlist</CardTitle>
           <CardDescription>
-            Flagged orders sit at the top — clear the flag once the situation
+            Flagged orders sit at the top, clear the flag once the situation
             is resolved. Showing up to 100 most recent.
           </CardDescription>
         </CardHeader>
@@ -218,7 +218,7 @@ export default async function DisputesPage() {
           <CardDescription>
             An order shows up here automatically when its Stripe payment fails
             or the checkout link expires. Operators can manually flag any
-            order — paid, pending, anything — by opening it and clicking{" "}
+            order, paid, pending, anything, by opening it and clicking{" "}
             <span className="inline-flex items-center gap-1 font-medium text-foreground">
               <ShieldAlertIcon className="size-3" /> Flag for review
             </span>
@@ -231,7 +231,7 @@ export default async function DisputesPage() {
             <XCircleIcon className="mt-0.5 size-3.5 text-destructive shrink-0" />
             <span>
               <strong className="text-foreground">Payment failed</strong> means
-              Stripe explicitly rejected the charge — review the failure
+              Stripe explicitly rejected the charge, review the failure
               reason, contact the customer, regenerate the link if appropriate.
             </span>
           </p>

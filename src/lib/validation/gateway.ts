@@ -5,7 +5,7 @@ import { PAYMENT_GATEWAY_KEYS } from "@/lib/constants/enums";
 /**
  * Save / rotate a per-org gateway credential.
  *
- * Validation is intentionally lax on the actual key SHAPES — vendors
+ * Validation is intentionally lax on the actual key SHAPES, vendors
  * change their key formats periodically (Stripe added `rk_` keys,
  * Razorpay uses different prefixes per region). The hard checks live in
  * the service (`saveGatewayCredential`):
@@ -29,7 +29,7 @@ export const saveGatewayCredentialSchema = z.object({
     .trim()
     .min(10, "Webhook secret looks too short")
     .max(500, "Webhook secret looks too long"),
-  // Same silent-validation-fail pattern as connectStripeSchema —
+  // Same silent-validation-fail pattern as connectStripeSchema -
   // empty string from an unfilled form field would block the click
   // without a visible error. Drop .min(1) and let the transform
   // normalize empty → null.
@@ -53,13 +53,13 @@ export type SaveGatewayCredentialInput = z.infer<
   typeof saveGatewayCredentialSchema
 >;
 
-/* ─────────────────────── Pass 6a — Stripe auto-connect ───────────────── */
+/* ─────────────────────── Pass 6a, Stripe auto-connect ───────────────── */
 
 /**
  * Auto-connect input: just the secret key + mode (+ optional public
  * fields). The service verifies the key, registers the webhook
  * endpoint on the operator's Stripe account, and persists the
- * resulting signing secret — the operator never has to leave the page.
+ * resulting signing secret, the operator never has to leave the page.
  */
 export const connectStripeSchema = z.object({
   mode: z.enum(["LIVE", "TEST"]),
@@ -68,7 +68,7 @@ export const connectStripeSchema = z.object({
     .trim()
     .min(10, "Secret key looks too short")
     .max(500, "Secret key looks too long"),
-  // publishableKey + accountId are OPTIONAL — drop .min(1) so an
+  // publishableKey + accountId are OPTIONAL, drop .min(1) so an
   // empty string (react-hook-form's default for an unfilled field)
   // doesn't fail validation silently and prevent the Connect button
   // from firing. Transform converts empty / whitespace → null.
@@ -89,7 +89,7 @@ export const connectStripeSchema = z.object({
 });
 export type ConnectStripeInput = z.infer<typeof connectStripeSchema>;
 
-/** Pre-save "did this key work?" check — used by the admin UI's
+/** Pre-save "did this key work?" check, used by the admin UI's
  *  Test connection button. */
 export const testStripeSchema = z.object({
   mode: z.enum(["LIVE", "TEST"]),
@@ -101,7 +101,7 @@ export const testStripeSchema = z.object({
 });
 export type TestStripeInput = z.infer<typeof testStripeSchema>;
 
-/** Path parameter — used by DELETE /api/admin/gateways/[gateway] */
+/** Path parameter, used by DELETE /api/admin/gateways/[gateway] */
 export const gatewayKeyParamSchema = z.object({
   gateway: z.enum(PAYMENT_GATEWAY_KEYS),
 });

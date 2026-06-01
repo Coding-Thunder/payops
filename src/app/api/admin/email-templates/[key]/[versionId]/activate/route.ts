@@ -16,7 +16,7 @@ interface Params {
 
 /**
  * Flip the active flag to a previously-saved historical version.
- * Atomic at the (templateKey) level — deactivates whatever was active.
+ * Atomic at the (templateKey) level, deactivates whatever was active.
  */
 export const POST = withApi(async (_req: NextRequest, { params }: Params) => {
   const actor = await requirePermission(Permission.EMAIL_TEMPLATE_MANAGE);

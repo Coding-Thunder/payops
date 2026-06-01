@@ -11,7 +11,7 @@ import { loadEnvFile } from "./load-env";
  *
  *   1. Load .env.smoke so MONGODB_URI etc. point at the dedicated
  *      tracetxn-smoke database. Refuse to run if it doesn't.
- *   2. Connect to Mongo and drop the database — every run starts clean.
+ *   2. Connect to Mongo and drop the database, every run starts clean.
  *   3. Seed deterministic fixtures: admin user, staff user, settings doc.
  *   4. Write the credentials to a tmp file the tests read.
  *
@@ -42,7 +42,7 @@ export default async function globalSetup() {
   const dbName = process.env.MONGODB_DB;
   if (!uri?.includes("tracetxn-smoke")) {
     throw new Error(
-      `[smoke] Refusing to run — MONGODB_URI must point at tracetxn-smoke (got ${uri}).`,
+      `[smoke] Refusing to run, MONGODB_URI must point at tracetxn-smoke (got ${uri}).`,
     );
   }
 

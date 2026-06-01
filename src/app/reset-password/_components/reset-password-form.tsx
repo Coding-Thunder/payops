@@ -23,7 +23,7 @@ import {
 } from "@/lib/validation";
 
 interface ResetPasswordFormProps {
-  /** HMAC-signed token from the URL — passed to the server so it can
+  /** HMAC-signed token from the URL, passed to the server so it can
    *  verify + look up the user without a separate session. */
   token: string;
 }
@@ -71,7 +71,7 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
       <form className="space-y-5" onSubmit={form.handleSubmit(onSubmit)} noValidate>
         {error ? (
           <Alert variant="destructive">
-            <AlertTitle>Couldn't reset your password</AlertTitle>
+            <AlertTitle>Couldn&apos;t reset your password</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}

@@ -1,11 +1,11 @@
 /**
- * Integrity region — three semantically-toned stats + an anchor
+ * Integrity region, three semantically-toned stats + an anchor
  * pillar + six footnoted pillars + commerce-shapes inline ledger.
  *
  * The three stats each carry a distinct identity color (green /
  * blue / amber) so the strip reads as multi-tonal operational
  * truth, not green-monochrome. Each stat has a thin top accent in
- * its semantic color — same compositional move as the dashboard
+ * its semantic color, same compositional move as the dashboard
  * reference's KPI tiles.
  */
 
@@ -32,7 +32,7 @@ const STATS: Stat[] = [
   {
     label: "Evidence retention",
     value: "∞",
-    note: "Paid, refunded, disputed — kept forever.",
+    note: "Paid, refunded, disputed, kept forever.",
     tone: "warning",
   },
 ];
@@ -107,7 +107,7 @@ const PILLARS: Array<{ k: string; title: string; body: string }> = [
   {
     k: "03",
     title: "Hashed evidence chain",
-    body: "Per-order events chain-hash to the previous entry. Any rewrite breaks the chain — provable to disputes and regulators.",
+    body: "Per-order events chain-hash to the previous entry. Any rewrite breaks the chain, provable to disputes and regulators.",
   },
   {
     k: "04",
@@ -122,7 +122,7 @@ const PILLARS: Array<{ k: string; title: string; body: string }> = [
   {
     k: "06",
     title: "Retention by design",
-    body: "Paid orders never delete. Refunded orders never delete. Risk-flagged orders persist through archive — surfaces dim, records stay.",
+    body: "Paid orders never delete. Refunded orders never delete. Risk-flagged orders persist through archive, surfaces dim, records stay.",
   },
 ];
 
@@ -147,7 +147,7 @@ const TONE_MAP: Record<Stat["tone"], { label: string; bar: string; value: string
 export function IntegrityRegion() {
   return (
     <section id="integrity" className="scroll-mt-20 pt-20 sm:pt-28">
-      {/* Stats — three columns, each with a top accent bar in its
+      {/* Stats, three columns, each with a top accent bar in its
           semantic tone. No card chrome; the accent + typography
           carries the identity. */}
       <dl className="grid grid-cols-1 gap-y-8 sm:grid-cols-3 sm:gap-x-10">
@@ -196,7 +196,7 @@ export function IntegrityRegion() {
             Every record TraceTxn writes is shaped for the conversation
             finance has with auditors and banks. Actor identity, request
             context, hash linkage, and immutability proofs are storage
-            primitives — not a reporting layer added on later.
+            primitives, not a reporting layer added on later.
           </p>
         </div>
       </div>
@@ -257,7 +257,7 @@ export function IntegrityRegion() {
         </ul>
         <p className="mt-5 max-w-[64ch] text-[13px] leading-relaxed text-muted-foreground">
           Catalog editor accepts any shape. If your business doesn&apos;t
-          appear above, the same backbone carries it — define your item
+          appear above, the same backbone carries it, define your item
           type, declare your attributes, run your first order.
         </p>
       </div>

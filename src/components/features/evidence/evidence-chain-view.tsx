@@ -12,12 +12,12 @@ interface EvidenceChainViewProps {
 }
 
 /**
- * Case file — read-only dispute-defense surface.
+ * Case file, read-only dispute-defense surface.
  *
  * Composed as a single document, not a stack of cards. The dark
  * header band, the asymmetric two-column body (order evidence on the
  * left, outcome panel on the right), and the integrity statement
- * footer are intended to read as one artifact — the in-app version
+ * footer are intended to read as one artifact, the in-app version
  * and the exported PDF share the same skeleton.
  *
  * The previous three-card layout (Order header + Consent + Event
@@ -89,7 +89,7 @@ function OrderSummary({
   const items = order.lineItems
     .map((l) => (l.quantity > 1 ? `${l.quantity}× ${l.name}` : l.name))
     .filter(Boolean);
-  const itemsText = items.length > 0 ? items.join(", ") : "—";
+  const itemsText = items.length > 0 ? items.join(", ") : "-";
 
   const rows: Array<{ k: string; v: React.ReactNode; mono?: boolean }> = [
     { k: "Customer", v: order.customer.name },
@@ -109,10 +109,10 @@ function OrderSummary({
       k: "Paid",
       v: order.payment.paidAt
         ? formatUtcTimestamp(order.payment.paidAt)
-        : "—",
+        : "-",
       mono: true,
     },
-    { k: "Gateway", v: order.payment.gateway ?? "—", mono: true },
+    { k: "Gateway", v: order.payment.gateway ?? "-", mono: true },
     {
       k: "Items",
       v: itemsText,

@@ -7,11 +7,11 @@ import {
 } from "@/lib/constants/items";
 
 /**
- * Pass 6c — admin CRUD for the per-tenant Item catalog.
+ * Pass 6c, admin CRUD for the per-tenant Item catalog.
  *
  * Each Item references an ItemType via `itemTypeKey`. The service
  * layer validates `attributes` against that ItemType's
- * `attributeSchema` — Zod here is shape-only (it doesn't know which
+ * `attributeSchema`, Zod here is shape-only (it doesn't know which
  * fields the org has declared on which type).
  */
 

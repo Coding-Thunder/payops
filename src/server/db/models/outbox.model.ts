@@ -19,14 +19,14 @@ import { registerModel } from "./register";
  * Concurrent webhook + reconcile deliveries race on `findOneAndUpdate`
  * upserts against the unique `gatewayEventId` index; the loser
  * short-circuits as duplicate. TTL on `processedAt` is set to 90 days
- * — well past Stripe's 3-day retry window but stops the collection
+ *, well past Stripe's 3-day retry window but stops the collection
  * growing forever.
  */
 export interface ProcessedWebhookEventDoc {
   gatewayEventId: string;
   gateway: string;
   orderId?: Types.ObjectId | null;
-  /** Tenant boundary — denormalised from the targeted Order. Lets
+  /** Tenant boundary, denormalised from the targeted Order. Lets
    *  per-tenant ops queries (recent webhook events, processing
    *  latency by tenant) scope cleanly. Nullable for system events
    *  that don't bind to a specific order (e.g. account-level Stripe
@@ -87,7 +87,7 @@ export const ProcessedWebhookEvent: Model<ProcessedWebhookEventDoc> =
  *                         ─→ PENDING (retry with exp backoff)
  *                         ─→ FAILED  (after MAX_ATTEMPTS)
  *
- * Single drainer per row — the conditional findOneAndUpdate
+ * Single drainer per row, the conditional findOneAndUpdate
  * (status PENDING → PROCESSING) is the lock so two drainers can never
  * grab the same row. No external infra required.
  */
@@ -104,7 +104,7 @@ const PENDING_EMAIL_STATUSES = Object.values(PendingEmailStatus);
 
 export interface PendingEmailDoc {
   orderId: Types.ObjectId;
-  /** Tenant boundary — denormalised from the parent Order so the
+  /** Tenant boundary, denormalised from the parent Order so the
    *  drainer can per-tenant rate-limit / kill-switch failed sends
    *  without joining through Order. Required for new rows; nullable
    *  during the multi-tenant migration window. */
@@ -121,7 +121,7 @@ export interface PendingEmailDoc {
   lastError?: string | null;
   /** Set on the SENT transition. Used by TTL cleanup. */
   sentAt?: Date | null;
-  /** Free-form payload passed to the email service at drain time —
+  /** Free-form payload passed to the email service at drain time -
    *  e.g. copy overrides for payment-request emails. */
   metadata?: Record<string, unknown> | null;
   createdAt: Date;
@@ -178,7 +178,7 @@ const pendingEmailSchema = new Schema<PendingEmailDoc>(
 
 pendingEmailSchema.index({ status: 1, nextAttemptAt: 1 });
 
-// TTL on SENT rows — keep 7 days for audit visibility, then drop. FAILED
+// TTL on SENT rows, keep 7 days for audit visibility, then drop. FAILED
 // rows are NOT auto-deleted; ops should review them.
 pendingEmailSchema.index(
   { sentAt: 1 },

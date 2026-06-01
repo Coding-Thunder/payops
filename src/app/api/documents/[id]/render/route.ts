@@ -19,11 +19,11 @@ interface Params {
  * The user prints it to PDF via the browser's print dialog (the
  * page embeds a "Save as PDF" button that opens window.print()).
  *
- * Org-scoped via the service — a Tenant-A actor guessing a Tenant-B
+ * Org-scoped via the service, a Tenant-A actor guessing a Tenant-B
  * document id gets a 404, not the document.
  *
  * Response is text/html (NOT the default JSON envelope withApi
- * usually returns) — the browser needs raw HTML to render it. We
+ * usually returns), the browser needs raw HTML to render it. We
  * still go through withApi for the auth + rate-limit guarantees,
  * but bypass jsonOk and return a NextResponse directly.
  */

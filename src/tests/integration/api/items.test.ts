@@ -22,7 +22,7 @@ import { mockNextHeaders } from "@/tests/utils/next-headers";
 import { ensureMongo, resetDatabase } from "@/tests/utils/db";
 
 /**
- * Pass 6c — Item catalog API contracts.
+ * Pass 6c, Item catalog API contracts.
  *
  * Service-layer coverage is in item.test.ts. This file covers the
  * route-level behavior: RBAC, body shape, status-only PATCH, and the
@@ -88,7 +88,7 @@ const validBody = {
   attributes: { sku: "TSHIRT-001" },
 };
 
-describe("POST /api/admin/items — create", () => {
+describe("POST /api/admin/items, create", () => {
   it("ADMIN can create a catalog item", async () => {
     session = await mockSession(actorFor(UserRole.ADMIN));
     await seedProductType(session.user.orgId!);
@@ -101,7 +101,7 @@ describe("POST /api/admin/items — create", () => {
     expect(data?.name).toBe("Cotton t-shirt");
   });
 
-  it("STAFF is forbidden — catalog is admin-only", async () => {
+  it("STAFF is forbidden, catalog is admin-only", async () => {
     session = await mockSession(actorFor(UserRole.STAFF));
     const res = await createAdmin(
       buildRequest("/api/admin/items", { method: "POST", body: validBody }),
@@ -124,7 +124,7 @@ describe("POST /api/admin/items — create", () => {
   });
 });
 
-describe("GET /api/items — staff/operator read", () => {
+describe("GET /api/items, staff/operator read", () => {
   it("returns only ACTIVE rows for the actor's org", async () => {
     session = await mockSession(actorFor(UserRole.ADMIN));
     await seedProductType(session.user.orgId!);
@@ -248,7 +248,7 @@ describe("PATCH /api/admin/items/[id]", () => {
   });
 });
 
-describe("GET /api/admin/items/[id] — read one", () => {
+describe("GET /api/admin/items/[id], read one", () => {
   it("returns the row when the actor owns it", async () => {
     session = await mockSession(actorFor(UserRole.ADMIN));
     await seedProductType(session.user.orgId!);

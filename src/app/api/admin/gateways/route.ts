@@ -16,7 +16,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * GET — list every per-org gateway credential row + a few diagnostics
+ * GET, list every per-org gateway credential row + a few diagnostics
  * the admin UI needs to render the page (webhook URL template, whether
  * the master encryption key is configured). Never returns the
  * encrypted secrets themselves.
@@ -24,7 +24,7 @@ export const dynamic = "force-dynamic";
 export const GET = withApi(async (_req: NextRequest) => {
   const actor = await requirePermission(Permission.GATEWAY_VIEW);
   if (!actor.orgId) {
-    // SUPER_ADMIN whose JWT has no orgId — only happens for ghost
+    // SUPER_ADMIN whose JWT has no orgId, only happens for ghost
     // legacy accounts the migration script never claimed.
     return jsonOk({
       items: [],
@@ -43,8 +43,8 @@ export const GET = withApi(async (_req: NextRequest) => {
 });
 
 /**
- * POST — upsert a credential. Re-posting for the same (orgId, gateway)
- * rotates the encrypted blob — there's no separate /rotate endpoint
+ * POST, upsert a credential. Re-posting for the same (orgId, gateway)
+ * rotates the encrypted blob, there's no separate /rotate endpoint
  * because rotation is semantically identical to "save again with new
  * key material".
  *

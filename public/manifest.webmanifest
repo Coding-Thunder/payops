@@ -1,5 +1,5 @@
 {
-  "name": "TraceTxn — Payment Operations Platform",
+  "name": "TraceTxn, Payment Operations Platform",
   "short_name": "TraceTxn",
   "description": "Lifecycle visibility, hashed dispute evidence, and per-org Stripe orchestration. The operational console between you and your payment processor.",
   "id": "/?source=pwa",

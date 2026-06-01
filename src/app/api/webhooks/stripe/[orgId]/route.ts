@@ -33,7 +33,7 @@ export const dynamic = "force-dynamic";
  *     URL itself encodes which tenant should verify the signature.
  *
  * Legacy `/api/webhooks/stripe` (without `[orgId]`) continues to verify
- * against `env.STRIPE_WEBHOOK_SECRET` and process WITHOUT a scope —
+ * against `env.STRIPE_WEBHOOK_SECRET` and process WITHOUT a scope -
  * Tenant #1's existing setup keeps working unchanged.
  */
 
@@ -91,7 +91,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     );
   }
 
-  // Resolve the per-org Stripe gateway — pulls credentials from the
+  // Resolve the per-org Stripe gateway, pulls credentials from the
   // `gateway_credentials` collection and builds a Stripe client bound
   // to that secret. Returns null when the org never configured Stripe
   // or disabled it.
@@ -142,7 +142,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
   try {
     // The orgId scope pins every order lookup inside the handler to
-    // this tenant — a stale event id, paymentIntentId, or sessionId
+    // this tenant, a stale event id, paymentIntentId, or sessionId
     // from another tenant can never resolve the wrong order, even on
     // the cosmic-bad-luck case where one of those identifiers
     // collides.

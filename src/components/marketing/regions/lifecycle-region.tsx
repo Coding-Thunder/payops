@@ -1,7 +1,7 @@
 import { LifecycleCanvas } from "../mocks/lifecycle-canvas";
 
 /**
- * Lifecycle region — multi-tonal body notes.
+ * Lifecycle region, multi-tonal body notes.
  *
  * Sits in a soft inset surface so it visually contrasts from the
  * Evidence region above (white canvas) and the Gateways region below
@@ -30,7 +30,7 @@ export function LifecycleRegion() {
           <p className="text-[15.5px] leading-relaxed text-foreground">
             One lifecycle, ten states, one source of truth. Operators stop
             asking{" "}
-            <span className="italic">is this paid yet</span> — the answer
+            <span className="italic">is this paid yet</span>, the answer
             is the chain, visible in realtime.
           </p>
 
@@ -58,7 +58,7 @@ export function LifecycleRegion() {
             tone="cyan"
             label="Live signal"
             title="Realtime push, polling backstop"
-            body="The operator's surface receives SSE updates the moment the webhook fires. If the connection drops, polling fills the gap — the canonical record never disagrees with what's on screen."
+            body="The operator's surface receives SSE updates the moment the webhook fires. If the connection drops, polling fills the gap, the canonical record never disagrees with what's on screen."
           />
           <BodyNote
             tone="warning"

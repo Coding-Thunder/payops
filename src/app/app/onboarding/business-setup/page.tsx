@@ -8,7 +8,7 @@ export const metadata = { title: "Set up your business" };
 export const dynamic = "force-dynamic";
 
 /**
- * Pass 6b — Business onboarding wizard entry point.
+ * Pass 6b, Business onboarding wizard entry point.
  *
  * Server component just gates on `ITEM_TYPE_MANAGE` and hands the
  * client wizard the org-id. All step transitions happen client-side
@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
  * verification), so this page does NOT check whether ItemTypes
  * already exist. The dashboard checklist hides the "Set up your
  * business" entry once any ItemType is present, but a direct URL
- * visit still lands here — useful for tenants expanding into a
+ * visit still lands here, useful for tenants expanding into a
  * second vertical.
  */
 export default async function BusinessSetupPage() {

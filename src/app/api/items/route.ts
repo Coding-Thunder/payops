@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Pass 6c — per-tenant active Item catalog.
+ * Pass 6c, per-tenant active Item catalog.
  *
  * The create-order dynamic form reads this to power the "Pick from
  * catalog" affordance. Scoped to the actor's orgId (refused if the

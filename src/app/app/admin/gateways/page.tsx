@@ -22,7 +22,7 @@ export default async function AdminGatewaysPage() {
     <div className="space-y-6">
       <PageHeader
         title="Payment gateway"
-        description="Connect Stripe to start accepting payments. Paste your secret key once — we verify it, register the webhook endpoint on your Stripe account automatically, and store everything encrypted."
+        description="Connect Stripe to start accepting payments. Paste your secret key once, we verify it, register the webhook endpoint on your Stripe account automatically, and store everything encrypted."
       />
       <GatewaysPageContent
         items={items}

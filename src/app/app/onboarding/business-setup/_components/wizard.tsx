@@ -47,7 +47,7 @@ import { DynamicOrderForm } from "@/components/features/orders/dynamic-order-for
 import { Currency } from "@/lib/constants/enums";
 
 /**
- * Pass 6b — Business onboarding wizard client.
+ * Pass 6b, Business onboarding wizard client.
  *
  * Five linear steps, URL-driven state so refresh / back-button works:
  *   1. Pick business vertical.
@@ -315,7 +315,7 @@ function Step1Picker({
           >
             Start blank
           </button>{" "}
-          — you can add fields manually.
+         , you can add fields manually.
         </p>
       </CardContent>
     </Card>
@@ -374,12 +374,12 @@ function Step2Review({
             <div>
               <dt className="text-muted-foreground">Scheduling</dt>
               <dd>
-                {template.itemType.requiresScheduling ? "Required" : "—"}
+                {template.itemType.requiresScheduling ? "Required" : "-"}
               </dd>
             </div>
             <div>
               <dt className="text-muted-foreground">Inventory</dt>
-              <dd>{template.itemType.inventoryTracked ? "Tracked" : "—"}</dd>
+              <dd>{template.itemType.inventoryTracked ? "Tracked" : "-"}</dd>
             </div>
           </dl>
         </div>
@@ -390,7 +390,7 @@ function Step2Review({
           </h3>
           {template.itemType.attributeSchema.length === 0 ? (
             <p className="mt-2 text-[12.5px] text-muted-foreground">
-              No extra fields — just name, quantity, price. You can add
+              No extra fields, just name, quantity, price. You can add
               more on the next step.
             </p>
           ) : (
@@ -542,7 +542,7 @@ function Step3Customize({
               maxLength={32}
             />
             <p className="text-[11px] text-muted-foreground">
-              Locked after save — used on every order line forever.
+              Locked after save, used on every order line forever.
             </p>
           </div>
           <div className="space-y-1.5 sm:col-span-2">
@@ -567,7 +567,7 @@ function Step3Customize({
             <div>
               <h3 className="text-[13px] font-semibold">Fields</h3>
               <p className="text-[11.5px] text-muted-foreground">
-                Order matters — the create-order form renders them top-down.
+                Order matters, the create-order form renders them top-down.
               </p>
             </div>
             <Button
@@ -807,7 +807,7 @@ function Step4Preview({
   }, [state.vertical]);
 
   // Build a synthetic ItemType DTO so the DynamicOrderForm renders the
-  // same way it will after save. `id` doesn't matter — the form keys
+  // same way it will after save. `id` doesn't matter, the form keys
   // off the catalog list.
   const previewItemTypes = useMemo(
     () => [
@@ -903,7 +903,7 @@ function Step4Preview({
           Back to edits
         </Button>
         <Button onClick={onContinue}>
-          Looks good — finish
+          Looks good, finish
           <ArrowRightIcon className="size-3.5" />
         </Button>
       </div>
@@ -952,7 +952,7 @@ function Step5Finish({
             <CheckCircle2Icon className="mt-0.5 size-4 text-emerald-600" />
             <span>
               You can edit fields anytime from <em>Admin → Item types</em>
-              {" "}— but the internal key is locked once orders start using
+              {" "}- but the internal key is locked once orders start using
               it.
             </span>
           </li>

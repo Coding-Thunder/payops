@@ -9,7 +9,7 @@ import { createUser } from "@/tests/factories/user.factory";
 import { ensureMongo } from "@/tests/utils/db";
 
 /**
- * Authentication service — direct integration against the in-memory
+ * Authentication service, direct integration against the in-memory
  * Mongo. We assert:
  *
  *   - successful logins return a verifiable session JWT
@@ -18,7 +18,7 @@ import { ensureMongo } from "@/tests/utils/db";
  *     throw `UnauthorizedError` and emit USER_LOGIN_FAILED audit rows
  *   - the user's `lastLoginAt` is touched on a successful login
  *
- * No HTTP layer here — the route handler test exercises that surface
+ * No HTTP layer here, the route handler test exercises that surface
  * separately so we can keep this focused on the service behaviour.
  */
 

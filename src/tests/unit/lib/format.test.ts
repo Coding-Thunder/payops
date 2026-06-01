@@ -20,7 +20,7 @@ describe("formatCurrency", () => {
   });
 
   it("renders unknown currency codes with the code as prefix", () => {
-    // Intl.NumberFormat doesn't throw on unknown ISO codes — it just
+    // Intl.NumberFormat doesn't throw on unknown ISO codes, it just
     // prefixes the code (with a NBSP separator). We assert structurally
     // so the test isn't tied to the exact whitespace character.
     const out = formatCurrency(42, "ZZZ");
@@ -30,12 +30,12 @@ describe("formatCurrency", () => {
 
 describe("formatDate / formatDateTime", () => {
   it("returns an em dash for null / undefined", () => {
-    expect(formatDate(null)).toBe("—");
-    expect(formatDate(undefined)).toBe("—");
+    expect(formatDate(null)).toBe("-");
+    expect(formatDate(undefined)).toBe("-");
   });
 
   it("returns an em dash for an unparseable string", () => {
-    expect(formatDate("not-a-date")).toBe("—");
+    expect(formatDate("not-a-date")).toBe("-");
   });
 
   it("formats a valid ISO string in en-US short form", () => {
@@ -51,7 +51,7 @@ describe("formatDate / formatDateTime", () => {
 
 describe("formatRelative", () => {
   it("returns an em dash for empty input", () => {
-    expect(formatRelative(null)).toBe("—");
+    expect(formatRelative(null)).toBe("-");
   });
 
   it("returns a seconds-scale label for a near-now date", () => {

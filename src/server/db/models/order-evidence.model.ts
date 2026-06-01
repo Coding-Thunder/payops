@@ -27,7 +27,7 @@ import {
  *   - audit_logs can be purged by admins (existing `AUDIT_DELETE`
  *     permission); evidence must be permanent for the lifetime of the
  *     order
- *   - payloads embed rendered email HTML (~50–150 KB) — we don't want
+ *   - payloads embed rendered email HTML (~50–150 KB), we don't want
  *     to bloat audit queries
  *   - chain integrity is per-order; mixing with the global audit table
  *     would complicate verification and indexing
@@ -66,7 +66,7 @@ export interface OrderEvidenceRefs {
 
 export interface OrderEvidenceDoc {
   orderId: Types.ObjectId;
-  /** Tenant boundary — denormalised from the parent Order so the
+  /** Tenant boundary, denormalised from the parent Order so the
    *  evidence chain can be scoped by orgId without joining through
    *  Order on every read. Nullable during the multi-tenant migration
    *  window; required for new rows. */
@@ -197,7 +197,7 @@ orderEvidenceSchema.index({ "refs.consentTokenHash": 1 }, { sparse: true });
 orderEvidenceSchema.index({ "refs.signatureName": 1 }, { sparse: true });
 
 const APPEND_ONLY_MESSAGE =
-  "OrderEvidence is append-only — events cannot be modified";
+  "OrderEvidence is append-only, events cannot be modified";
 
 // Append-only guard: any save() that's not an insert is rejected. The
 // only legitimate writer is recordEvidence(), which does fresh creates.

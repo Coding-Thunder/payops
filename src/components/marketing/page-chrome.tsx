@@ -6,7 +6,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Document chrome — the persistent frame around the landing page.
+ * Document chrome, the persistent frame around the landing page.
  *
  * Not a marketing nav. This is the chrome a document has: a slim
  * utility band at the top, and a sticky vertical anchor rail on the
@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
  * the rail highlights which document region they're in.
  *
  * The chrome stays visible across the entire page. Regions below
- * don't carry their own headers — the rail is the index of the
+ * don't carry their own headers, the rail is the index of the
  * document, the regions are the document body.
  */
 
@@ -95,7 +95,7 @@ export function TopBand() {
  * Sticky left rail. Vertical anchor list with active-region tracking
  * via IntersectionObserver. Reads as a table of contents, not a nav.
  *
- * Active state is a flat 2px emerald rail on the left edge — same
+ * Active state is a flat 2px emerald rail on the left edge, same
  * accent the app shell uses, so chrome reads as one product.
  */
 export function DocumentRail() {
@@ -108,7 +108,7 @@ export function DocumentRail() {
     if (elements.length === 0) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        // Track the topmost element currently above the 1/3 mark — the
+        // Track the topmost element currently above the 1/3 mark, the
         // standard "you are here" heuristic for a long scrolling doc.
         const visible = entries
           .filter((e) => e.isIntersecting)

@@ -3,7 +3,7 @@
 # If you find a vulnerability in any PayOps deployment, please report
 # it directly to the engineer running the service. Every deployment
 # is privately operated on its own domain, so this file applies to
-# the public marketing landing only — customer deployments will
+# the public marketing landing only, customer deployments will
 # publish their own /.well-known/security.txt on their domain.
 
 Contact: mailto:vinaymaheshwari35@gmail.com

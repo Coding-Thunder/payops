@@ -20,7 +20,7 @@ import { createOrder as factoryCreateOrder } from "@/tests/factories/order.facto
 import { ensureMongo } from "@/tests/utils/db";
 
 /**
- * Webhook processor — the most safety-critical surface in TraceTxn.
+ * Webhook processor, the most safety-critical surface in TraceTxn.
  *
  * Pin the invariants that the operations team relies on:
  *
@@ -88,7 +88,7 @@ describe("checkout.session.completed", () => {
     // New outbox contract (replaces the old in-tx claim):
     //   1. processStripeEvent enqueues one PendingEmail row inside
     //      the same tx as the PAID flip. The duplicate delivery is a
-    //      no-op — no second row.
+    //      no-op, no second row.
     //   2. The drainer sends the email + stamps the order's
     //      `confirmationEmailSentAt`. SMTP isn't configured in tests,
     //      so the send is treated as a soft no-op (returns id: null,
@@ -107,7 +107,7 @@ describe("checkout.session.completed", () => {
     expect([a.duplicate, b.duplicate].sort()).toEqual([false, true]);
 
     // Before the drainer runs, the order is PAID but the email hasn't
-    // been sent yet — exactly one outbox row is sitting there waiting.
+    // been sent yet, exactly one outbox row is sitting there waiting.
     const beforeDrain = await Order.findById(order._id);
     expect(beforeDrain?.status).toBe(OrderStatus.PAID);
     expect(beforeDrain?.payment.confirmationEmailSentAt).toBeNull();
@@ -116,7 +116,7 @@ describe("checkout.session.completed", () => {
     expect(pendingRows).toHaveLength(1);
     expect(pendingRows[0].status).toBe(PendingEmailStatus.PENDING);
 
-    // Drain — the outbox picks up the row, calls sendPaymentConfirmation
+    // Drain, the outbox picks up the row, calls sendPaymentConfirmation
     // (which soft-fails with no SMTP), then conditionally stamps the
     // order. The row resolves as SENT because the send returned cleanly.
     const drained = await drainOnePendingEmail();
@@ -126,7 +126,7 @@ describe("checkout.session.completed", () => {
     expect(afterDrain?.payment.confirmationEmailSentAt).toBeInstanceOf(Date);
 
     // The no-SMTP path writes one EMAIL_FAILED audit row per send
-    // attempt. Exactly one — never doubled by the duplicate webhook.
+    // attempt. Exactly one, never doubled by the duplicate webhook.
     expect(
       await AuditLog.countDocuments({ action: AuditAction.EMAIL_FAILED }),
     ).toBe(1);
@@ -159,7 +159,7 @@ describe("checkout.session.completed", () => {
     expect(enqueued?.status).toBe(PendingEmailStatus.PENDING);
     expect(enqueued?.attempts).toBe(0);
 
-    // First drain — fails, row goes back to PENDING with backoff.
+    // First drain, fails, row goes back to PENDING with backoff.
     const r1 = await drainOnePendingEmail();
     expect(r1?.status).toBe(PendingEmailStatus.PENDING);
     const afterFirst = await PendingEmail.findById(enqueued?._id);
@@ -185,7 +185,7 @@ describe("checkout.session.completed", () => {
       expect(row?.attempts).toBe(i);
     }
 
-    // 5th attempt — caps out, row resolves as FAILED.
+    // 5th attempt, caps out, row resolves as FAILED.
     const final = await rewindAndDrain();
     expect(final?.status).toBe(PendingEmailStatus.FAILED);
     const dead = await PendingEmail.findById(enqueued?._id);
@@ -193,7 +193,7 @@ describe("checkout.session.completed", () => {
     expect(dead?.status).toBe(PendingEmailStatus.FAILED);
     expect(dead?.lastError).toMatch(/connection refused/);
 
-    // The order's confirmationEmailSentAt remains null — the outbox
+    // The order's confirmationEmailSentAt remains null, the outbox
     // never stamped it because every send failed.
     const orderAfter = await Order.findById(order._id);
     expect(orderAfter?.payment.confirmationEmailSentAt).toBeNull();
@@ -229,7 +229,7 @@ describe("checkout.session.completed", () => {
       sessionId: "cs_test_lookup_by_session",
     });
 
-    // The normalised event has no client_reference_id field — the
+    // The normalised event has no client_reference_id field, the
     // session id alone drives the lookup.
     const result = await processStripeEvent(event);
     expect(result).toMatchObject({

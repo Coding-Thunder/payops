@@ -14,21 +14,21 @@ import type { OrderDTO } from "@/types";
 import { sortBlocks } from "@/server/email/blocks";
 
 /**
- * Pass 5f — Resolve the union of email blocks an order should render.
+ * Pass 5f, Resolve the union of email blocks an order should render.
  *
  * The order's confirmation/request email is composed from the
  * intersection of:
  *
- *   1. `DEFAULT_CONFIRMATION_BLOCKS` — always present (payment summary,
+ *   1. `DEFAULT_CONFIRMATION_BLOCKS`, always present (payment summary,
  *      line items table, totals, purchase terms, support section).
- *   2. Per-ItemType `confirmationEmailBlocks` — each line's
+ *   2. Per-ItemType `confirmationEmailBlocks`, each line's
  *      `itemTypeKey` resolves against THIS org's ItemType row; its
  *      declared blocks get unioned in.
  *
  * Plus heuristic adjustments that only apply when data is actually
  * present on the order:
  *   - SCHEDULING_WINDOW auto-added when `order.scheduling` exists
- *     (even if no ItemType opted in — the data is there, surface it).
+ *     (even if no ItemType opted in, the data is there, surface it).
  *   - SIGNATURE_BLOCK callers (request flow) pass it explicitly when
  *     consent has been received.
  *

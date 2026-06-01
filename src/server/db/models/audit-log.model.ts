@@ -16,7 +16,7 @@ const AUDIT_ACTIONS = Object.values(AuditAction);
 const AUDIT_ENTITIES = Object.values(AuditEntity);
 
 export interface AuditLogDoc {
-  /** Tenant boundary. Nullable during the migration — null only for
+  /** Tenant boundary. Nullable during the migration, null only for
    *  pre-migration rows. Cross-tenant audit views (platform-admin
    *  surfaces) bypass this; per-tenant admin pages must filter on it. */
   orgId?: Types.ObjectId | null;

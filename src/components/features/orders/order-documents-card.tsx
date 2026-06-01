@@ -21,7 +21,7 @@ import { api, ApiClientError } from "@/lib/api-client";
  *
  * Lists invoices / receipts already issued for this order, with a
  * one-click "Open" affordance that opens the rendered HTML in a new
- * tab — the browser's print dialog handles "Save as PDF". Admins
+ * tab, the browser's print dialog handles "Save as PDF". Admins
  * with DOCUMENT_ISSUE see two CTAs (Issue invoice, Issue receipt);
  * the receipt CTA is disabled until the order is paid (mirroring
  * the service-layer guard).

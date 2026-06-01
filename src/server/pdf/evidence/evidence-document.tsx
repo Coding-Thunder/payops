@@ -157,12 +157,12 @@ export function EvidenceDocument({
   const { order, events, verification } = chain;
   return (
     <Document
-      title={`Evidence — ${order.orderNumber}`}
+      title={`Evidence, ${order.orderNumber}`}
       author={`Dispute team`}
       subject={`Order ${order.orderNumber}`}
     >
       <Page size="A4" style={styles.page}>
-        <Text style={styles.h1}>Order evidence — {order.orderNumber}</Text>
+        <Text style={styles.h1}>Order evidence, {order.orderNumber}</Text>
         <Text style={styles.meta}>
           Generated {generatedAt.toISOString()} · {events.length} event
           {events.length === 1 ? "" : "s"} ·{" "}
@@ -175,7 +175,7 @@ export function EvidenceDocument({
           <Text>
             {verification.valid
               ? "Chain integrity verified"
-              : `Chain broken at sequence #${verification.brokenAtSequence ?? "?"} — ${
+              : `Chain broken at sequence #${verification.brokenAtSequence ?? "?"}, ${
                   verification.reason ?? "unknown"
                 }`}
           </Text>
@@ -198,7 +198,7 @@ export function EvidenceDocument({
               .map((l) =>
                 l.quantity > 1 ? `${l.quantity}× ${l.name}` : l.name,
               )
-              .join(", ") || "—"
+              .join(", ") || "-"
           }
         />
         {order.scheduling ? (
@@ -326,7 +326,7 @@ function EventCard({
 
 function renderActor(event: OrderEvidenceEventDTO): string {
   const role = OrderEvidenceActorLabel[event.actor.type];
-  const name = event.actor.name ?? "—";
+  const name = event.actor.name ?? "-";
   const email = event.actor.email ?? "";
   return `${role} · ${name}${email ? ` <${email}>` : ""}`;
 }
@@ -382,10 +382,10 @@ function ConsentBlock({ events }: { events: OrderEvidenceEventDTO[] }) {
       <Row label="Method" value={asString(received.payload.method)} />
       <Row label="Received at" value={received.occurredAt} />
       <Row label="IP" value={formatIp(received.request?.ip)} />
-      <Row label="User agent" value={received.request?.userAgent ?? "—"} />
+      <Row label="User agent" value={received.request?.userAgent ?? "-"} />
       <Row
         label="Token hash"
-        value={received.refs?.consentTokenHash ?? "—"}
+        value={received.refs?.consentTokenHash ?? "-"}
       />
       <Row label="Payload hash" value={received.snapshotHash} />
     </View>
@@ -403,26 +403,26 @@ function PaymentBlock({ events }: { events: OrderEvidenceEventDTO[] }) {
   }
   return (
     <View>
-      <Row label="Gateway" value={asString(paid.payload.gateway) || "—"} />
+      <Row label="Gateway" value={asString(paid.payload.gateway) || "-"} />
       <Row
         label="Session id"
-        value={asString(paid.payload.paymentSessionId) || "—"}
+        value={asString(paid.payload.paymentSessionId) || "-"}
       />
       <Row
         label="Intent / transaction id"
-        value={asString(paid.payload.paymentIntentId) || "—"}
+        value={asString(paid.payload.paymentIntentId) || "-"}
       />
       <Row
         label="Gateway event id"
-        value={asString(paid.payload.gatewayEventId) || "—"}
+        value={asString(paid.payload.gatewayEventId) || "-"}
       />
       <Row
         label="Amount received"
-        value={String(paid.payload.amountReceived ?? "—")}
+        value={String(paid.payload.amountReceived ?? "-")}
       />
-      <Row label="Currency" value={asString(paid.payload.currency) || "—"} />
-      <Row label="Paid at" value={asString(paid.payload.paidAt) || "—"} />
-      <Row label="Source" value={asString(paid.payload.source) || "—"} />
+      <Row label="Currency" value={asString(paid.payload.currency) || "-"} />
+      <Row label="Paid at" value={asString(paid.payload.paidAt) || "-"} />
+      <Row label="Source" value={asString(paid.payload.source) || "-"} />
     </View>
   );
 }
@@ -470,7 +470,7 @@ function EmailBlock({ events }: { events: OrderEvidenceEventDTO[] }) {
             ) : null}
             <Row
               label="Message id"
-              value={asString(email.payload.messageId) || "—"}
+              value={asString(email.payload.messageId) || "-"}
             />
             <Row label="Snapshot hash" value={email.snapshotHash} />
             <View style={styles.divider} />

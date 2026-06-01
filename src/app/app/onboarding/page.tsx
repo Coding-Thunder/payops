@@ -13,21 +13,21 @@ export const metadata = { title: "Set up your workspace" };
 export const dynamic = "force-dynamic";
 
 /**
- * Tenant setup wizard — a guided onboarding flow that walks a new
+ * Tenant setup wizard, a guided onboarding flow that walks a new
  * SUPER_ADMIN through the five steps that turn a brand-new workspace
  * into one that can actually take payments:
  *
  *   1. Company name (rename from synthesized "X's workspace")
  *   2. Business basics (currency + order prefix)
  *   3. Branding (display name + primary color)
- *   4. Connect Stripe (link out to /admin/gateways — auto-connect
+ *   4. Connect Stripe (link out to /admin/gateways, auto-connect
  *      already encapsulated there; no point duplicating)
  *   5. First item type (link out to /onboarding/business-setup)
  *
  *   Final: "You're all set" with a CTA to create the first order.
  *
  * Server pre-fetches all the data the steps need so the wizard
- * renders instantly on first paint — every step is a controlled form
+ * renders instantly on first paint, every step is a controlled form
  * bound to existing values, so the operator never sees a flicker
  * between "loading" and "filled".
  *
@@ -55,7 +55,7 @@ export default async function OnboardingPage({
     getOnboardingState(user.orgId),
   ]);
 
-  // Completed tenants bouncing past — don't trap them here unless
+  // Completed tenants bouncing past, don't trap them here unless
   // they pass ?force=1 (operators returning to tweak).
   if (onboarding.complete && !force) {
     redirect("/app/dashboard");

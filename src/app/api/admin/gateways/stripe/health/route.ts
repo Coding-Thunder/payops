@@ -17,9 +17,9 @@ export const dynamic = "force-dynamic";
  * renders verbatim (status pill + missing-events checklist + repair CTA).
  *
  * Returns the full list of REQUIRED events so the UI doesn't have to
- * import them itself — keeps the canonical list server-owned.
+ * import them itself, keeps the canonical list server-owned.
  *
- * Gated by GATEWAY_MANAGE (SUPER_ADMIN-only) — same guardrail as
+ * Gated by GATEWAY_MANAGE (SUPER_ADMIN-only), same guardrail as
  * connect/disable; webhook health probes the saved secret key.
  */
 export const GET = withApi(async () => {

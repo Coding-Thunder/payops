@@ -12,7 +12,7 @@ import { Item, ItemType, Order } from "@/server/db/models";
 import { ensureMongo, resetDatabase } from "@/tests/utils/db";
 
 /**
- * Pass 5b — universal commerce schema primitives.
+ * Pass 5b, universal commerce schema primitives.
  *
  * Verifies:
  *   - ItemType + Item persist with sane defaults
@@ -23,7 +23,7 @@ import { ensureMongo, resetDatabase } from "@/tests/utils/db";
  *
  * NO BEHAVIOR CHANGE assertions: a brand-new rental order can still
  * be saved with the legacy `vehicle/trip/provider` triple and an
- * empty `lineItems` array — the same shape Tenant #1 uses today.
+ * empty `lineItems` array, the same shape Tenant #1 uses today.
  */
 
 const ORG_A = new Types.ObjectId();
@@ -36,7 +36,7 @@ beforeEach(async () => {
 
 /* ───────────────────────────── ItemType ──────────────────────────────── */
 
-describe("ItemType — schema definition primitive", () => {
+describe("ItemType, schema definition primitive", () => {
   it("persists with default email-block manifest + ACTIVE status", async () => {
     const doc = await ItemType.create({
       orgId: ORG_A,
@@ -67,11 +67,11 @@ describe("ItemType — schema definition primitive", () => {
     expect(doc.attributeSchema.length).toBe(2);
   });
 
-  it("enforces (orgId, key) uniqueness — same key in another tenant is allowed", async () => {
+  it("enforces (orgId, key) uniqueness, same key in another tenant is allowed", async () => {
     await ItemType.create({
       orgId: ORG_A,
       key: "rental_booking",
-      name: "Rental booking — Org A",
+      name: "Rental booking, Org A",
       pricingModel: ItemPricingModel.TIME_WINDOW,
     });
 
@@ -89,7 +89,7 @@ describe("ItemType — schema definition primitive", () => {
     const other = await ItemType.create({
       orgId: ORG_B,
       key: "rental_booking",
-      name: "Rental booking — Org B",
+      name: "Rental booking, Org B",
       pricingModel: ItemPricingModel.TIME_WINDOW,
     });
     expect(String(other.orgId)).toBe(String(ORG_B));
@@ -157,7 +157,7 @@ describe("ItemType — schema definition primitive", () => {
 
 /* ───────────────────────────────── Item ──────────────────────────────── */
 
-describe("Item — per-tenant catalog row", () => {
+describe("Item, per-tenant catalog row", () => {
   it("persists with attributes payload + default ACTIVE status", async () => {
     const doc = await Item.create({
       orgId: ORG_A,
@@ -241,7 +241,7 @@ describe("Item — per-tenant catalog row", () => {
 
 /* ────────────────────────── Order: additive change ───────────────────── */
 
-describe("Order — universal commerce shape (Pass 5h)", () => {
+describe("Order, universal commerce shape (Pass 5h)", () => {
   it("accepts the universal shape with lineItems[] + scheduling", async () => {
     const startsAt = new Date(Date.now() + 86_400_000);
     const endsAt = new Date(Date.now() + 2 * 86_400_000);

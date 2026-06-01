@@ -2,12 +2,12 @@ import Link from "next/link";
 import { ArrowRightIcon, CheckIcon } from "lucide-react";
 
 /**
- * Cover band — the chargeback-document header style.
+ * Cover band, the chargeback-document header style.
  *
  * Bold block headline ("WHEN A CHARGEBACK LANDS / SIX WEEKS LATER, /
  * THE EVIDENCE IS ALREADY FILED") with the closing phrase set in
  * the reference's saturated emerald. Shield mark on the right side.
- * Navy-tinted dark background, not obsidian — matches the
+ * Navy-tinted dark background, not obsidian, matches the
  * reference's distinct blue cast.
  *
  * No marketing eyebrows, no centered hero composition. This reads
@@ -91,7 +91,7 @@ export function CoverBand() {
 
           <p className="mt-6 max-w-[58ch] text-[15.5px] leading-relaxed text-white/72">
             Complete evidence. Verified integrity. Case won. One
-            operational backbone for the full transaction lifecycle —
+            operational backbone for the full transaction lifecycle -
             hashed evidence chain, hosted consent, multi-gateway
             orchestration. Built for retail, services, repair,
             dealership, B2B, and every commerce shape that takes money
@@ -115,7 +115,7 @@ export function CoverBand() {
           </div>
         </div>
 
-        {/* Right: shield mark — green, with radiating rays.
+        {/* Right: shield mark, green, with radiating rays.
             Matches the reference's decorative anchor on the cover. */}
         <ShieldMark />
       </div>

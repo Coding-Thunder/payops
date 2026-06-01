@@ -11,7 +11,7 @@ import type { OrderDTO } from "@/types";
  *
  * Five rows max. Each row is a single tight line: order number ·
  * customer name · reason · time. No card chrome per row, no badges
- * competing for attention — the icon is the only visual marker.
+ * competing for attention, the icon is the only visual marker.
  */
 
 interface RecentDisputesProps {

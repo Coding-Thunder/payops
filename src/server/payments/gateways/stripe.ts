@@ -21,7 +21,7 @@ import type {
 
 /**
  * Stripe implementation of `PaymentGateway`. Talks to the existing
- * `getStripe()` singleton — the rest of the codebase never imports
+ * `getStripe()` singleton, the rest of the codebase never imports
  * `stripe` directly; they go through this adapter via the registry.
  */
 
@@ -65,7 +65,7 @@ function mapStripeEventType(type: string): PaymentEventType {
 
 /**
  * Map Stripe's dispute status string to our DisputeStatus enum. Stripe's
- * canonical values are stable so a 1:1 switch is fine — if Stripe adds
+ * canonical values are stable so a 1:1 switch is fine, if Stripe adds
  * a new value we default to UNDER_REVIEW (safe holding state) and log
  * loudly so we notice.
  */
@@ -122,7 +122,7 @@ function mapStripeDisputeOutcome(
  * `getGatewayForOrg` calls this with values pulled from that table.
  *
  * Legacy `stripeGateway` (below) wraps the env-backed credentials so
- * Tenant #1's unchanged flow keeps working — that path is identical to
+ * Tenant #1's unchanged flow keeps working, that path is identical to
  * `buildStripeGateway({ secretKey: env.STRIPE_SECRET_KEY, webhookSecret: env.STRIPE_WEBHOOK_SECRET })`.
  */
 export interface StripeGatewayCreds {
@@ -248,7 +248,7 @@ function makeStripeGateway(deps: StripeGatewayDeps): PaymentGateway {
     try {
       await stripe.checkout.sessions.expire(sessionId);
     } catch (err) {
-      // Already expired / never existed — best-effort. Caller can still
+      // Already expired / never existed, best-effort. Caller can still
       // create a fresh session over the top.
       logger.warn("stripe.expire_session_failed", {
         sessionId,
@@ -317,7 +317,7 @@ function makeStripeGateway(deps: StripeGatewayDeps): PaymentGateway {
       null;
     // Stripe surfaces our order id as `client_reference_id` on the
     // session and `metadata.orderId` on the payment-intent. Either is
-    // safe to forward — `processGatewayEvent` uses it as a lookup
+    // safe to forward, `processGatewayEvent` uses it as a lookup
     // fallback when session-id alone can't find the order. Disputes
     // don't carry our metadata directly; we round-trip via the payment
     // intent id and Order's index on `payment.paymentIntentId`.

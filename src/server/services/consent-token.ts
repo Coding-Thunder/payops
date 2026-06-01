@@ -9,7 +9,7 @@ import { BadRequestError } from "@/lib/errors";
  * Consent token: a base64url-encoded `{consentId}.{iatSec}.{hmac}` triple,
  * signed with `CONSENT_TOKEN_SECRET` (falling back to `JWT_SECRET` for
  * backwards compat with deployments that haven't rotated yet). Verifying
- * the HMAC proves the token came from us and is unexpired — no DB hit
+ * the HMAC proves the token came from us and is unexpired, no DB hit
  * needed before we look the record up.
  *
  * Legacy format (`{consentId}.{hmac}` over consentId-only) is still
@@ -21,7 +21,7 @@ import { BadRequestError } from "@/lib/errors";
  */
 
 /** Max age of a freshly-issued consent token. After 14 days a re-send
- *  is required — keeps a forwarded inbox from being a forever-back-door. */
+ *  is required, keeps a forwarded inbox from being a forever-back-door. */
 const MAX_AGE_SECONDS = 14 * 24 * 60 * 60;
 
 function secret(): string {

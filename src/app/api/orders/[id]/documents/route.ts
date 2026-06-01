@@ -22,7 +22,7 @@ const issueBodySchema = z.object({
   kind: z.enum([DocumentKind.INVOICE, DocumentKind.RECEIPT]),
 });
 
-/** GET /api/orders/:id/documents — list accounting docs issued for
+/** GET /api/orders/:id/documents, list accounting docs issued for
  *  this order. Org-scoped by the service. */
 export const GET = withApi(async (_req: NextRequest, { params }: Params) => {
   const actor = await requirePermission(Permission.DOCUMENT_VIEW);
@@ -34,7 +34,7 @@ export const GET = withApi(async (_req: NextRequest, { params }: Params) => {
   return jsonOk({ items });
 });
 
-/** POST /api/orders/:id/documents — issue a new document
+/** POST /api/orders/:id/documents, issue a new document
  *  (INVOICE or RECEIPT). Admin-only via DOCUMENT_ISSUE. */
 export const POST = withApi(async (req: NextRequest, { params }: Params) => {
   const actor = await requirePermission(Permission.DOCUMENT_ISSUE);

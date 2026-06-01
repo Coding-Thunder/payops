@@ -11,7 +11,7 @@ import {
 } from "@/lib/constants/items";
 
 /**
- * Pass 5e — Admin CRUD for the per-tenant ItemType catalog.
+ * Pass 5e, Admin CRUD for the per-tenant ItemType catalog.
  *
  * The schemas mirror the model layer except they accept what the form
  * actually sends (string-typed enums vs the model's literal unions, plus

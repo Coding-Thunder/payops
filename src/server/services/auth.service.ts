@@ -69,15 +69,15 @@ export async function authenticate(
   };
 
   // Resolve the user's active org for the new token. Order of precedence:
-  //   1. `User.primaryOrgId` — set by the migration script and by future
+  //   1. `User.primaryOrgId`, set by the migration script and by future
   //      signup. The authoritative pointer.
-  //   2. First ACTIVE OrgMember row — defensive fallback for accounts
+  //   2. First ACTIVE OrgMember row, defensive fallback for accounts
   //      created before the migration script populated primaryOrgId.
-  //   3. None — caller has no org. The token is still issued (no orgId
+  //   3. None, caller has no org. The token is still issued (no orgId
   //      claim); downstream callers will hit `requireOrgUser` and bounce
   //      the operator to a "contact support" path.
   //
-  // We deliberately do NOT fail-closed on a missing org here — that
+  // We deliberately do NOT fail-closed on a missing org here, that
   // would lock the legacy super-admin out of their own console during
   // the migration window. Fail-closed lands once the migration is
   // verified and `primaryOrgId` becomes required on User.
@@ -155,7 +155,7 @@ export function publicUserFromDoc(doc: UserDoc & { _id: unknown }): SessionUser 
 export interface FirebaseExchangeInput {
   /** Lower-cased email from the verified Firebase ID token. */
   email: string;
-  /** Optional display name — used when this is the user's first sign-in
+  /** Optional display name, used when this is the user's first sign-in
    *  and we have to provision a User row + Organization. Falls back to
    *  the local-part of the email. */
   displayName?: string | null;
@@ -177,12 +177,12 @@ export interface FirebaseExchangeResult extends AuthenticateResult {
  * tuple.
  *
  * Lookup precedence:
- *   1. User with this `externalAuth.firebaseUid` — fastest path; lets
+ *   1. User with this `externalAuth.firebaseUid`, fastest path; lets
  *      the user's email change in Firebase without orphaning the row.
- *   2. User with this email — covers legacy users who pre-date Firebase
+ *   2. User with this email, covers legacy users who pre-date Firebase
  *      auth. The row is linked back by stamping `externalAuth.firebaseUid`
  *      on first match.
- *   3. None — provision a new User + Organization (auto-named from the
+ *   3. None, provision a new User + Organization (auto-named from the
  *      display name or email local-part) and return with isNewUser=true.
  *
  * The Firebase-only User path stores a placeholder passwordHash so the

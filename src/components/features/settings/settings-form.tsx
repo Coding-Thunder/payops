@@ -237,7 +237,7 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
                     </Select>
                     <FormDescription>
                       Advisory records consent but never blocks payment.
-                      Required tightens the customer-facing copy — payment
+                      Required tightens the customer-facing copy, payment
                       itself remains driven by Stripe.
                     </FormDescription>
                     <FormMessage />
@@ -284,7 +284,7 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
                   <FormControl>
                     <Textarea
                       rows={8}
-                      placeholder="One rule per line — paragraphs render with subtle spacing in the email."
+                      placeholder="One rule per line, paragraphs render with subtle spacing in the email."
                       disabled={!canEdit || isSubmitting}
                       {...field}
                     />

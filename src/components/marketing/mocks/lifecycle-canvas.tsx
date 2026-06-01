@@ -1,17 +1,17 @@
 import { CheckIcon } from "lucide-react";
 
 /**
- * Lifecycle canvas — order lifecycle ledger with numbered green
+ * Lifecycle canvas, order lifecycle ledger with numbered green
  * ring nodes. Same operational identity element the case-file
  * timeline uses; here applied to the canonical-state lifecycle.
  *
  * States are styled by `state`:
- *   done     — filled green ring with white check
- *   current  — filled green ring with white number + outer pulse
- *   pending  — outlined green ring with muted number
+ *   done    , filled green ring with white check
+ *   current , filled green ring with white number + outer pulse
+ *   pending , outlined green ring with muted number
  *
  * Connector line runs solid green between done/current states and
- * fades to a quieter green for the pending tail — the chain
+ * fades to a quieter green for the pending tail, the chain
  * continues but hasn't been written yet.
  */
 
@@ -31,8 +31,8 @@ const STAGES: Stage[] = [
   { seq: 5, label: "Consent received", meta: "Customer · IP 73.114.142.18", time: "08:21:22", state: "done" },
   { seq: 6, label: "Payment started", meta: "Customer reached the gateway", time: "08:21:30", state: "done" },
   { seq: 7, label: "Paid", meta: "Webhook reconciled · pi_3R7kx2KZ4m…", time: "08:21:35", state: "current" },
-  { seq: 8, label: "Confirmation sent", meta: "Receipt delivered via durable outbox", time: "—", state: "pending" },
-  { seq: 9, label: "Refunded / Failed", meta: "Refund + failure paths preserve the chain", time: "—", state: "pending" },
+  { seq: 8, label: "Confirmation sent", meta: "Receipt delivered via durable outbox", time: "-", state: "pending" },
+  { seq: 9, label: "Refunded / Failed", meta: "Refund + failure paths preserve the chain", time: "-", state: "pending" },
 ];
 
 export function LifecycleCanvas() {
@@ -68,7 +68,7 @@ export function LifecycleCanvas() {
         </div>
 
         <ol className="relative mt-4">
-          {/* Connector line — solid green through "done" zone,
+          {/* Connector line, solid green through "done" zone,
               quieter green through pending tail. Two stacked lines. */}
           <span
             aria-hidden

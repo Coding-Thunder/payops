@@ -20,9 +20,9 @@ interface AttributeFieldProps {
 }
 
 /**
- * Pass 5e — Renders one attribute input based on its spec. Used by the
+ * Pass 5e, Renders one attribute input based on its spec. Used by the
  * dynamic create-order form to render whatever schema the selected
- * ItemType declares. Stays controlled — the parent owns the entire
+ * ItemType declares. Stays controlled, the parent owns the entire
  * attributes object.
  */
 export function AttributeField({ spec, value, onChange }: AttributeFieldProps) {

@@ -3,7 +3,7 @@ import "server-only";
 /**
  * Gateway-agnostic payment orchestration layer.
  *
- * Order / email / webhook code talks to this interface — no caller
+ * Order / email / webhook code talks to this interface, no caller
  * imports Stripe (or any other gateway SDK) directly. Adding a new
  * gateway means writing one implementation of `PaymentGateway` and
  * registering it in `./gateways/index.ts`; nothing in the order
@@ -83,7 +83,7 @@ export type PaymentEventType =
 
 /**
  * Dispute-specific payload normalised across gateways. Optional on the
- * verified event — only populated for `dispute.*` event types. Stripe's
+ * verified event, only populated for `dispute.*` event types. Stripe's
  * `Dispute.status` string is mapped to our DisputeStatus enum at the
  * gateway layer so downstream code never sees provider-specific values.
  */
@@ -94,7 +94,7 @@ export interface VerifiedDisputePayload {
   chargeId: string | null;
   /** Normalised dispute status (DisputeStatus enum value). */
   status: string;
-  /** Stripe's `reason` string — kept verbatim because the enum is huge
+  /** Stripe's `reason` string, kept verbatim because the enum is huge
    *  and rarely exercised. UI surfaces it as freeform text. */
   reason: string | null;
   amountMinor: number | null;
@@ -109,7 +109,7 @@ export interface VerifiedDisputePayload {
 
 /**
  * Refund-specific payload normalised across gateways. Populated for
- * `refund.created` events. We model refunds as additive — multiple
+ * `refund.created` events. We model refunds as additive, multiple
  * partial refunds may stack on a single order over time, so the handler
  * needs amountRefundedMinor for the SPECIFIC refund event, plus
  * amountRefundedTotalMinor for the cumulative state on the charge.
@@ -128,7 +128,7 @@ export interface VerifiedRefundPayload {
 }
 
 export interface VerifiedPaymentEvent {
-  /** Gateway's event id — used for the order's
+  /** Gateway's event id, used for the order's
    *  `processedWebhookEventIds` idempotency list. */
   eventId: string;
   type: PaymentEventType;
@@ -148,7 +148,7 @@ export interface VerifiedPaymentEvent {
   dispute?: VerifiedDisputePayload | null;
   /** Populated when `type === "refund.created"`. */
   refund?: VerifiedRefundPayload | null;
-  /** Underlying provider payload — kept around for audit. */
+  /** Underlying provider payload, kept around for audit. */
   raw: unknown;
 }
 
@@ -178,7 +178,7 @@ export interface PaymentGateway {
   createSession(input: CreatePaymentSessionInput): Promise<CreatedPaymentSession>;
   expireSession(sessionId: string): Promise<void>;
   /** Verifies signature AND parses payload. Throws on invalid signature
-   *  or malformed body — the webhook route surfaces 400 in that case. */
+   *  or malformed body, the webhook route surfaces 400 in that case. */
   verifyWebhook(
     rawBody: string | Buffer,
     signatureHeader: string,

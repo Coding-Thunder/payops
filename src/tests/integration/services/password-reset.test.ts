@@ -52,7 +52,7 @@ async function makeUser(opts: { email?: string; status?: RecordState } = {}) {
   return user;
 }
 
-describe("password-reset service — token lifecycle", () => {
+describe("password-reset service, token lifecycle", () => {
   it("happy path: token + new password works; old password rejected", async () => {
     const user = await makeUser();
     const token = _generateResetTokenForTesting(
@@ -87,7 +87,7 @@ describe("password-reset service — token lifecycle", () => {
   it("tampered token rejected", async () => {
     const user = await makeUser();
     const token = _generateResetTokenForTesting(user.toObject() as never);
-    // Flip a byte in the encoded token — HMAC verification fails.
+    // Flip a byte in the encoded token, HMAC verification fails.
     const tampered = token.slice(0, -2) + (token.endsWith("A") ? "B" : "A");
     await expect(
       completePasswordReset(tampered, "NewPass456XYZ", { request: null }),
@@ -118,12 +118,12 @@ describe("password-reset service — token lifecycle", () => {
   });
 });
 
-describe("initiatePasswordReset — no enumeration leak", () => {
+describe("initiatePasswordReset, no enumeration leak", () => {
   it("emits an audit row whether or not the email exists", async () => {
     const before = await AuditLog.countDocuments({
       action: AuditAction.USER_PASSWORD_RESET,
     });
-    // Unknown email — no user.
+    // Unknown email, no user.
     await initiatePasswordReset("nobody@x.test", { request: null });
     // Existing email.
     await makeUser({ email: "real@x.test" });

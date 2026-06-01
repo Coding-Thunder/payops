@@ -25,7 +25,7 @@ import { getFirebaseAuth, isFirebaseConfigured } from "@/lib/firebase/client";
  * Two paths: Google OAuth (popup) and email + password. Both go
  * through the same /api/auth/firebase-session exchange so downstream
  * session machinery (JWT cookie, RBAC, audit) doesn't care which the
- * user picked. Mode is set by the caller — "signup" creates a fresh
+ * user picked. Mode is set by the caller, "signup" creates a fresh
  * Firebase user + provisions a TraceTxn workspace on first exchange,
  * "signin" only authenticates existing accounts.
  */
@@ -298,7 +298,7 @@ function safeNext(value?: string): string {
 
 /** Renders every interesting field of a caught error as a single
  *  inspectable string. Goal: never need DevTools to debug a failed
- *  auth attempt — the whole payload appears under the inline alert. */
+ *  auth attempt, the whole payload appears under the inline alert. */
 function dumpErrorForUi(err: unknown): string {
   const e = err as {
     name?: string;
@@ -326,7 +326,7 @@ function safeStringify(value: unknown): string {
 }
 
 function humanizeAuthError(err: unknown, mode: "signin" | "signup"): string {
-  // Log the full error to the console so DevTools shows everything —
+  // Log the full error to the console so DevTools shows everything -
   // stack, message, code, customData. The on-screen string is a
   // summary; the console is the source of truth.
    
@@ -336,7 +336,7 @@ function humanizeAuthError(err: unknown, mode: "signin" | "signup"): string {
   if (err instanceof ApiClientError) return err.message;
   // Firebase Auth errors carry stable code strings AND, for many
   // failures, the raw Identity Toolkit JSON payload at
-  // err.customData.serverResponse — the most useful diagnostic field.
+  // err.customData.serverResponse, the most useful diagnostic field.
   const code =
     (err as AuthError | undefined)?.code ??
     (err as { code?: string } | undefined)?.code;

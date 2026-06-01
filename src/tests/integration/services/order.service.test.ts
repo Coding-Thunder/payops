@@ -29,7 +29,7 @@ import { validCreateOrderInput } from "@/tests/fixtures/order-input.fixture";
 import { getCurrentTestStripe } from "@/tests/setup/integration.setup";
 
 /**
- * Order service — full integration. Stripe is stubbed by the per-test
+ * Order service, full integration. Stripe is stubbed by the per-test
  * integration setup so calls are observable and offline.
  */
 
@@ -67,7 +67,7 @@ describe("createOrder", () => {
     expect(result.order.status).toBe(OrderStatus.NOT_INITIATED);
     expect(result.checkoutUrl).toBeNull();
 
-    // Persisted state — no Stripe fields at all yet.
+    // Persisted state, no Stripe fields at all yet.
     const stored = await Order.findById(result.order.id).lean();
     expect(stored?.status).toBe(OrderStatus.NOT_INITIATED);
     expect(stored?.payment.status).toBe(OrderStatus.NOT_INITIATED);
@@ -75,14 +75,14 @@ describe("createOrder", () => {
     expect(stored?.payment.checkoutUrl ?? null).toBeNull();
     expect(stored?.payment.initiatedAt ?? null).toBeNull();
     expect(stored?.payment.expiresAt ?? null).toBeNull();
-    // Policy is opt-in per tenant. Default is empty — tenants set
+    // Policy is opt-in per tenant. Default is empty, tenants set
     // their refund/cancellation terms in /app/admin/settings during
     // onboarding. Empty means the receipt email's policy block
     // renders nothing instead of platform-generic legalese.
     expect(stored?.policy.text).toBe("");
     expect(stored?.policy.version).toBe("v1");
 
-    // Stripe was NOT called — the whole point of decoupling creation.
+    // Stripe was NOT called, the whole point of decoupling creation.
     expect(stripe.sessionsCreated).toHaveLength(0);
   });
 
@@ -104,7 +104,7 @@ describe("createOrder", () => {
 
   it("rejects amounts below the model's 50-cent floor at creation", async () => {
     // Mongoose `min: 0.5` validator fires synchronously inside create().
-    // Stripe is no longer involved here — order persistence simply
+    // Stripe is no longer involved here, order persistence simply
     // refuses to save.
     const actor = actorFor(UserRole.ADMIN);
     await seedRentalBookingType(actor.orgId!);

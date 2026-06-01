@@ -22,7 +22,7 @@ import {
 import { ensureMongo, resetDatabase } from "@/tests/utils/db";
 
 /**
- * Pass 5a — order-service cross-tenant write/read guard.
+ * Pass 5a, order-service cross-tenant write/read guard.
  *
  * The Phase-A audit (risk #4.1) called out 14+ `Order.findById` call
  * sites that didn't pin orgId. The mitigation today was the
@@ -31,7 +31,7 @@ import { ensureMongo, resetDatabase } from "@/tests/utils/db";
  *
  * This test fixture creates an order owned by Org A and probes every
  * affected service entry-point as an ADMIN of Org B. All must return
- * `NotFoundError` (preferred — masks existence) or otherwise refuse.
+ * `NotFoundError` (preferred, masks existence) or otherwise refuse.
  */
 
 beforeEach(async () => {
@@ -74,7 +74,7 @@ async function seedOrgAOrder(): Promise<{ orderId: string; ownerId: string }> {
     policy: {
       acceptedAt: new Date(),
       version: "v1",
-      text: "Org A cancellation policy — long enough to satisfy validation.",
+      text: "Org A cancellation policy, long enough to satisfy validation.",
     },
   });
   return { orderId: String(order._id), ownerId: String(ownerId) };

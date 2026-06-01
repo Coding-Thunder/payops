@@ -86,7 +86,7 @@ export default async function AdminEmailsPage({
       <PageHeader
         eyebrow="Admin"
         title="Email previews"
-        description="Live preview of customer-facing transactional emails. Sample data only — nothing is sent."
+        description="Live preview of customer-facing transactional emails. Sample data only, nothing is sent."
       />
 
       <div className="grid gap-6 lg:grid-cols-[280px_1fr]">

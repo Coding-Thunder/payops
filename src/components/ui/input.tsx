@@ -3,7 +3,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Input — refined polish.
+ * Input, refined polish.
  *
  *   - Radius tightened to 6px (`--radius-input`). Just a hair
  *     squarer than buttons (9px) so inputs read as "form chrome"

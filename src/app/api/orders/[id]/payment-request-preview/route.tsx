@@ -19,8 +19,8 @@ interface Params {
 /**
  * Render the payment-request email with the composer's current overrides
  * and return the HTML string. Used by the composer's right-hand iframe
- * so the preview matches what will actually be sent — same template,
- * same inline-image pipeline, same defaults — without burning an SMTP
+ * so the preview matches what will actually be sent, same template,
+ * same inline-image pipeline, same defaults, without burning an SMTP
  * call.
  *
  * Body reuses `sendPaymentRequestSchema` so the preview and the send

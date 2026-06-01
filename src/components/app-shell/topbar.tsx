@@ -72,7 +72,7 @@ export function Topbar({ user, brand }: TopbarProps) {
         </SheetContent>
       </Sheet>
 
-      {/* Topbar left side is intentionally bare — page context lives
+      {/* Topbar left side is intentionally bare, page context lives
           inside each page's own header. The telemetry strip above
           carries workspace + environment chrome; the topbar carries
           only utility actions (search + account). */}

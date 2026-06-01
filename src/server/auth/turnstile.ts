@@ -5,13 +5,13 @@ import { AppError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
 /**
- * Cloudflare Turnstile siteverify endpoint. Public, no auth — the
+ * Cloudflare Turnstile siteverify endpoint. Public, no auth, the
  * (token, secret, ip) tuple is the credential.
  */
 const TURNSTILE_VERIFY_URL =
   "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
-/** Hard timeout on the verifier — Cloudflare's edge is usually <200ms
+/** Hard timeout on the verifier, Cloudflare's edge is usually <200ms
  *  but we don't want a slow upstream wedging the login path. */
 const VERIFY_TIMEOUT_MS = 3_000;
 
@@ -35,7 +35,7 @@ export interface TurnstileContext {
 
 /**
  * Verify a Turnstile token. When `TURNSTILE_SECRET_KEY` is unset the
- * verifier no-ops and returns silently — that's the local-dev /
+ * verifier no-ops and returns silently, that's the local-dev /
  * not-yet-configured contract. When the secret IS set, a missing or
  * invalid token raises a 403 `BOT_CHECK_FAILED` AppError.
  *
@@ -51,7 +51,7 @@ export async function verifyTurnstile(
   if (!token) {
     throw new AppError(
       "BOT_CHECK_FAILED",
-      "Captcha required — please complete the verification challenge.",
+      "Captcha required, please complete the verification challenge.",
       403,
     );
   }
@@ -81,7 +81,7 @@ export async function verifyTurnstile(
     });
     throw new AppError(
       "BOT_CHECK_FAILED",
-      "Could not verify the captcha — please try again.",
+      "Could not verify the captcha, please try again.",
       503,
     );
   } finally {
@@ -94,7 +94,7 @@ export async function verifyTurnstile(
     });
     throw new AppError(
       "BOT_CHECK_FAILED",
-      "Captcha verification failed — please retry.",
+      "Captcha verification failed, please retry.",
       403,
     );
   }

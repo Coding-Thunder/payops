@@ -25,7 +25,7 @@ interface PlaceholderInput {
 }
 
 /** Read-only stub for not-yet-implemented gateways. Throws on any
- *  operation — the composer UI guards against selection, so the only
+ *  operation, the composer UI guards against selection, so the only
  *  way to hit these in practice is a programmatic mistake. */
 function placeholder({ key, label }: PlaceholderInput): PaymentGateway {
   const notImplemented = (op: string) => {
@@ -90,7 +90,7 @@ export function getDefaultGateway(): PaymentGateway {
  *
  * Resolves credentials from `GatewayCredential` (encrypted at rest);
  * falls back to env vars when no per-org row exists AND the gateway is
- * Stripe. This is the "no breaking production behavior" seam — Tenant
+ * Stripe. This is the "no breaking production behavior" seam, Tenant
  * #1 (no GatewayCredential row) keeps using the env-backed flow; new
  * tenants land on a per-org client built from their own row.
  *
@@ -103,7 +103,7 @@ export function getDefaultGateway(): PaymentGateway {
  * than crashing.
  *
  * NB: This returns a FRESH `PaymentGateway` per call when the source
- * is a per-org row. Don't cache the result at module scope — see
+ * is a per-org row. Don't cache the result at module scope, see
  * `getStripeForSecret` for the rationale.
  */
 export async function getGatewayForOrg(

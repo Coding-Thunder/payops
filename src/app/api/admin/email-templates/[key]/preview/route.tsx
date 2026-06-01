@@ -26,7 +26,7 @@ interface Params {
 
 /**
  * Render the chosen email template with the editor's current draft
- * overrides — without saving anything to Mongo. Powers the admin
+ * overrides, without saving anything to Mongo. Powers the admin
  * editor's live preview pane.
  */
 export const POST = withApi(async (req: NextRequest, { params }: Params) => {

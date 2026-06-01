@@ -22,7 +22,7 @@ import { ensureMongo } from "@/tests/utils/db";
 import { createOrder as factoryCreateOrder } from "@/tests/factories/order.factory";
 
 /**
- * Evidence service — the dispute-defense backbone. Tests cover the
+ * Evidence service, the dispute-defense backbone. Tests cover the
  * append protocol, the hash-chain integrity guarantees, and the
  * cross-order search.
  */
@@ -79,7 +79,7 @@ describe("recordEvidence", () => {
 
   it("produces a strictly monotonic sequence under concurrent appends", async () => {
     // Force the unique `{ orderId, sequence }` index to be built before
-    // we race writes — mongoose's autoIndex is async and the first
+    // we race writes, mongoose's autoIndex is async and the first
     // batch of inserts can otherwise outrun it.
     await OrderEvidence.syncIndexes();
     const order = await makeOrder();
@@ -96,7 +96,7 @@ describe("recordEvidence", () => {
     );
     const sequences = events.map((e) => e.sequence).sort((x, y) => x - y);
     expect(sequences).toEqual([1, 2, 3, 4, 5]);
-    // And the chain still verifies — each event's previousHash matches
+    // And the chain still verifies, each event's previousHash matches
     // its predecessor's hash.
     const docs = await OrderEvidence.find({ orderId: order._id })
       .sort({ sequence: 1 })
@@ -128,7 +128,7 @@ describe("recordEvidence", () => {
 
 describe("captureEvidenceSafe", () => {
   it("swallows errors and never throws to the caller", async () => {
-    // Pass an invalid orderId — recordEvidence would throw — and verify
+    // Pass an invalid orderId, recordEvidence would throw, and verify
     // captureEvidenceSafe returns void without surfacing the error.
     await expect(
       captureEvidenceSafe({
@@ -152,7 +152,7 @@ describe("verifyChainFromDocs", () => {
       actor: { type: OrderEvidenceActorType.AGENT },
       payload: { original: true },
     });
-    // Bypass the append-only guard with a raw mongo update — exactly
+    // Bypass the append-only guard with a raw mongo update, exactly
     // what a malicious DB admin would do.
     await OrderEvidence.collection.updateOne(
       { orderId: order._id },

@@ -40,11 +40,11 @@ export interface RateLimitConfig {
 export interface WithApiOptions {
   /** Skip the same-origin (CSRF) guard for non-GET requests. Default
    *  false. Use only for gateway-signature-authed routes that legitimately
-   *  originate from a non-browser caller (e.g. the Stripe webhook —
+   *  originate from a non-browser caller (e.g. the Stripe webhook -
    *  which doesn't go through `withApi` anyway). */
   allowCrossOrigin?: boolean;
   /** Override default JSON body cap (bytes). null disables the check
-   *  entirely — use only for multipart uploads that enforce their own
+   *  entirely, use only for multipart uploads that enforce their own
    *  cap inside the handler. */
   bodyLimitBytes?: number | null;
   /** Optional rate-limit guard applied before the handler runs. Keyed
@@ -58,7 +58,7 @@ export interface WithApiOptions {
  *
  * Adds cross-cutting protections automatically:
  *   1. Same-origin enforcement on state-changing methods
- *      (POST/PUT/PATCH/DELETE) — paired with `sameSite=strict` cookies
+ *      (POST/PUT/PATCH/DELETE), paired with `sameSite=strict` cookies
  *      and JSON content-type, this is the CSRF defense.
  *   2. Body-size pre-flight using Content-Length (default 32 KB; can be
  *      overridden via `bodyLimitBytes` or disabled with `null`).

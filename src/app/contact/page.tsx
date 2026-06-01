@@ -13,20 +13,20 @@ import { BrandFooter } from "@/components/marketing/brand-footer";
 import { BrandNav } from "@/components/marketing/brand-nav";
 
 export const metadata: Metadata = {
-  title: "Contact — Sales, support, security",
+  title: "Contact, Sales, support, security",
   description:
-    "Talk to TraceTxn. Sales for prospects, support for customers, security for vulnerability disclosure, careers + press inquiries — direct contact lines, no chatbot maze.",
+    "Talk to TraceTxn. Sales for prospects, support for customers, security for vulnerability disclosure, careers + press inquiries, direct contact lines, no chatbot maze.",
   alternates: { canonical: "/contact" },
 };
 
 /**
- * Four contact lanes, each a direct mailto. No contact form —
+ * Four contact lanes, each a direct mailto. No contact form -
  * intentional: a form adds friction without giving us better signal
  * than an email. Operators reading a contact page have a question;
  * the fastest path is one tap to mailto.
  *
  * Sales is the only lane that also has a "Open a workspace yourself"
- * affordance — most prospects don't need a call.
+ * affordance, most prospects don't need a call.
  */
 
 interface Lane {
@@ -42,7 +42,7 @@ const LANES: Lane[] = [
   {
     eyebrow: "Sales",
     title: "Talk to sales",
-    body: "Prospect questions on pricing, deployment, custom requirements, multi-team setup, or enterprise terms. Most prospects don't need a call — you can spin up a workspace directly and we'll reach out if you flag something on signup.",
+    body: "Prospect questions on pricing, deployment, custom requirements, multi-team setup, or enterprise terms. Most prospects don't need a call, you can spin up a workspace directly and we'll reach out if you flag something on signup.",
     email: "sales@tracetxn.com",
     icon: BriefcaseIcon,
     altCta: { label: "Open a workspace yourself", href: "/signup" },
@@ -50,7 +50,7 @@ const LANES: Lane[] = [
   {
     eyebrow: "Support",
     title: "Customer support",
-    body: "Already using TraceTxn? Stuck on a connect step, missing a payment in your dashboard, evidence chain showing wrong? Reach support — Growth + Scale tiers get priority email; Starter gets best-effort within 2 business days.",
+    body: "Already using TraceTxn? Stuck on a connect step, missing a payment in your dashboard, evidence chain showing wrong? Reach support, Growth + Scale tiers get priority email; Starter gets best-effort within 2 business days.",
     email: "support@tracetxn.com",
     icon: HeadphonesIcon,
   },
@@ -65,7 +65,7 @@ const LANES: Lane[] = [
   {
     eyebrow: "Press + partnerships",
     title: "Press, partnerships, and everything else",
-    body: "Media inquiries, integration partnerships, agency referrals, podcast invites. We're a small team — replies take 1-3 business days.",
+    body: "Media inquiries, integration partnerships, agency referrals, podcast invites. We're a small team, replies take 1-3 business days.",
     email: "hello@tracetxn.com",
     icon: ZapIcon,
   },

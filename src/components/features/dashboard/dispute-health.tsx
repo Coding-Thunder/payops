@@ -13,7 +13,7 @@ import type { OrderDTO } from "@/types";
  * expired in the active window.
  *
  * Deliberately not a chart. The dashboard is the operator's daily
- * surface — these are the counts that decide whether they need to
+ * surface, these are the counts that decide whether they need to
  * click into Disputes today, not a 30-day overview.
  */
 

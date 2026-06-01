@@ -24,7 +24,7 @@ const generatePaymentLinkSchema = z.object({
  *
  * Step 3 of the linear agent flow: explicit "Generate Payment Link"
  * action from the email composer. Decouples payment-session creation
- * from order creation — the agent picks the gateway and clicks the
+ * from order creation, the agent picks the gateway and clicks the
  * button when they're ready, not the moment the order is persisted.
  *
  * Idempotent: re-clicking returns the existing checkout URL.

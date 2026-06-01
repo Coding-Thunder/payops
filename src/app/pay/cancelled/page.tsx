@@ -2,7 +2,7 @@ export const metadata = { title: "Payment cancelled" };
 export const dynamic = "force-dynamic";
 
 /**
- * Generic cancellation page — no per-tenant branding is rendered
+ * Generic cancellation page, no per-tenant branding is rendered
  * here because Stripe's cancel URL doesn't carry an order id and
  * we deliberately don't expose the legacy {key:"default"} singleton's
  * env-defaulted brand (which would be wrong for every tenant except

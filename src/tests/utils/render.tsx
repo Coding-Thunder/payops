@@ -13,7 +13,7 @@ import userEvent from "@testing-library/user-event";
  *   await user.type(screen.getByLabelText(/email/i), "x@y.z")
  *
  * Wraps `@testing-library/react`'s render in a thin layer that also sets
- * up `userEvent` with sensible defaults (no fake timers — they cause
+ * up `userEvent` with sensible defaults (no fake timers, they cause
  * flake) and exposes it on the result.
  *
  * Provider wrappers (QueryClientProvider, ThemeProvider) live here so a

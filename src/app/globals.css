@@ -4,14 +4,14 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ──────────────────────────────────────────────────────────────────────────
-   Marketing color palette — Apple-iPhone-17-style section themes.
+   Marketing color palette, Apple-iPhone-17-style section themes.
    Each section "owns" one accent that washes the background, the
    eyebrow, the accent word in the headline, and CTA hover states.
    Tokens are global so the marketing-only `section[data-theme]`
    selector can swap them in one place without per-component overrides.
    ────────────────────────────────────────────────────────────────────────── */
 :root {
-  /* Hero — deep obsidian with hot accent (cosmic orange + ultraviolet) */
+  /* Hero, deep obsidian with hot accent (cosmic orange + ultraviolet) */
   --m-obsidian: oklch(0.13 0.012 286);
   --m-obsidian-soft: oklch(0.19 0.015 286);
   --m-ink: oklch(0.08 0.01 286);
@@ -39,7 +39,7 @@
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
-   Section theme classes — applied via `data-theme` on the section root.
+   Section theme classes, applied via `data-theme` on the section root.
    Each one paints its OWN background, foreground, eyebrow, accent word,
    and outline tone. The body picks up no theming; the page composes
    chapters by stacking themed sections.
@@ -63,8 +63,8 @@
 /* ──────────────────────────────────────────────────────────────────────────
    Post-hero palette is restricted to TWO backgrounds: pure white (snow)
    and the warm cream tone. Per-section identity now lives ONLY in the
-   small stuff — eyebrow color, headline accent word, status dots,
-   embedded callouts — never the section background.
+   small stuff, eyebrow color, headline accent word, status dots,
+   embedded callouts, never the section background.
    Rhythm runs:  HERO obsidian → SNOW → CREAM → SNOW → CREAM → SNOW → CREAM
    ────────────────────────────────────────────────────────────────────────── */
 
@@ -91,8 +91,8 @@
 }
 
 [data-theme="cobalt"] {
-  /* SNOW. Accent: cobalt. (Code block uses its own dark callout — see
-     multi-gateway.tsx — so the syntax colors still read against a
+  /* SNOW. Accent: cobalt. (Code block uses its own dark callout, see
+     multi-gateway.tsx, so the syntax colors still read against a
      dark surface inside the white section.) */
   background: var(--background);
   color: var(--foreground);
@@ -127,7 +127,7 @@
 
 [data-theme="closing"] {
   /* CREAM. Accent: ultraviolet (matches the brand close-out). The
-     closing form lives on a cream background — light, calm, terminal
+     closing form lives on a cream background, light, calm, terminal
      instead of dark mystique. */
   background: var(--m-cream);
   color: var(--m-cream-fg);
@@ -141,7 +141,7 @@
 [data-theme="graphite"] {
   /* DARK SPEC SHEET. Mid-page mono inset between Lifecycle (CREAM)
      and Gateways (SNOW). Breaks the snow/cream alternation on purpose
-     — this chapter is the "developer documentation" pause, where the
+    , this chapter is the "developer documentation" pause, where the
      copy is item-type keys and attribute names, not narrative. */
   background: linear-gradient(
     180deg,
@@ -157,7 +157,7 @@
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
-   Marketing animation primitives — used by hero + sticky scroll moments.
+   Marketing animation primitives, used by hero + sticky scroll moments.
    ────────────────────────────────────────────────────────────────────────── */
 
 @keyframes aurora-drift {
@@ -199,7 +199,7 @@
   --radius: 0.5rem;
 
   /* ─────────────────────────────────────────────────────────────
-   * TraceTxn Brand v1 — aligned to the brand-spec palette:
+   * TraceTxn Brand v1, aligned to the brand-spec palette:
    *   Deep Navy  #0F172A   Charcoal  #1E293B
    *   Emerald    #10B981   Slate     #94A3B8
    *   Cloud      #F8FAFC   White     #FFFFFF
@@ -208,7 +208,7 @@
    * ───────────────────────────────────────────────────────────── */
 
   /* Surfaces ──────────────────────────────────────────────────
-   * Cloud (#F8FAFC) as the page body — paper-like, not pure white.
+   * Cloud (#F8FAFC) as the page body, paper-like, not pure white.
    * Cards are pure white so they read as raised panels above it.
    * Surface-1/2 step down for inset regions (footnotes, muted blocks).
    */
@@ -220,13 +220,13 @@
   --card: #FFFFFF;                                 /* pure white panels */
   --card-foreground: #0F172A;
 
-  /* Dark surfaces — brand-spec Deep Navy + Charcoal.
+  /* Dark surfaces, brand-spec Deep Navy + Charcoal.
    * Used for cover bands, document headers, footer strips,
    * marketing hero, and the login/signup left panels. */
   --ink-navy: #0F172A;                            /* Deep Navy */
   --ink-navy-soft: #1E293B;                       /* Charcoal */
 
-  /* Document atmosphere — barely-visible ledger grid pattern
+  /* Document atmosphere, barely-visible ledger grid pattern
    * applied to the page body so the document has a hint of
    * underlying structure (operational, not decorative). */
   --doc-grid:
@@ -245,7 +245,7 @@
   --secondary-foreground: oklch(0.205 0.006 286);
 
   --muted: oklch(0.97 0.002 247);
-  /* Brand-v1 Slate (#94A3B8) for muted text — secondary copy,
+  /* Brand-v1 Slate (#94A3B8) for muted text, secondary copy,
    * labels, helper text, footer chrome. */
   --muted-foreground: #64748B;                     /* one step darker than slate for AAA contrast */
 
@@ -274,7 +274,7 @@
   --success-border: oklch(0.82 0.09 162);
   --success-strong: oklch(0.55 0.14 162);           /* readable on light bg */
 
-  /* Slate (#94A3B8) — brand-spec secondary text. */
+  /* Slate (#94A3B8), brand-spec secondary text. */
   --brand-slate: #94A3B8;
 
   --warning: oklch(0.78 0.13 78);
@@ -302,7 +302,7 @@
   --chart-4: oklch(0.55 0.22 303);
   --chart-5: oklch(0.62 0.21 16);
 
-  /* Sidebar — brand-v1 Cloud surface, Deep Navy ink, Emerald
+  /* Sidebar, brand-v1 Cloud surface, Deep Navy ink, Emerald
    * active-rail. Reads as the operational chrome the brand spec
    * describes (Stripe / Linear / Ramp restraint, not purple-gray). */
   --sidebar: #F8FAFC;                              /* Cloud */
@@ -314,7 +314,7 @@
   --sidebar-border: oklch(0.91 0.005 247);
   --sidebar-ring: #10B981;                         /* Emerald focus */
 
-  /* Shadow scale — layered, restrained. Each step blends a hairline
+  /* Shadow scale, layered, restrained. Each step blends a hairline
      contact-shadow (sharp, 1px) with a soft ambient halo. Avoids the
      "single 0 4px 12px rgba/0.1" tell that screams generic Tailwind. */
   --shadow-xs:
@@ -332,11 +332,11 @@
     0 1px 0 0 oklch(0.158 0.005 286 / 0.06),
     0 4px 8px -2px oklch(0.158 0.005 286 / 0.06),
     0 20px 40px -12px oklch(0.158 0.005 286 / 0.16);
-  /* Inset highlight — used inside primary buttons + accent cards for
+  /* Inset highlight, used inside primary buttons + accent cards for
      a hint of dimensionality without "skeuomorph". */
   --shadow-inset-hi: inset 0 1px 0 0 oklch(1 0 0 / 0.08);
 
-  /* Radius — explicit scale so buttons, inputs, cards, badges read
+  /* Radius, explicit scale so buttons, inputs, cards, badges read
      as distinct shapes. Differs intentionally; avoids the "all
      rounded-md" template tell. */
   --radius-input: 6px;
@@ -469,7 +469,7 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  /* Radii — single source for every component */
+  /* Radii, single source for every component */
   --radius-xs: calc(var(--radius) - 4px); /* 4px */
   --radius-sm: calc(var(--radius) - 2px); /* 6px */
   --radius-md: var(--radius);             /* 8px */
@@ -485,7 +485,7 @@
   /* Typography */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  /* Brand-v1 display typeface — DM Sans, applied via `font-display`
+  /* Brand-v1 display typeface, DM Sans, applied via `font-display`
    * (Tailwind utility) on the wordmark + on display-scale headings.
    * Body copy stays on Geist for legibility. */
   --font-display: var(--font-dm-sans);
@@ -543,7 +543,7 @@
     font-size: 14px;
     /* Slightly tighter line-height + a hair more negative tracking
        reads less "default Tailwind body" and more "deliberately set
-       SaaS UI text". The values are conservative — they look the
+       SaaS UI text". The values are conservative, they look the
        same in a screenshot but feel quieter when you actually use
        the app. */
     line-height: 1.5;
@@ -552,7 +552,7 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  /* Heading rhythm — H1/H2/H3 each get their own tracking so they
+  /* Heading rhythm, H1/H2/H3 each get their own tracking so they
      don't all stack with the same body tracking. Subtle but matters
      for hierarchy. */
   h1, h2 {
@@ -567,7 +567,7 @@
     letter-spacing: -0.01em;
   }
 
-  /* Selection — branded, restrained. Default browser blue is one of
+  /* Selection, branded, restrained. Default browser blue is one of
      the strongest tells that a UI is unstyled. */
   ::selection {
     background-color: oklch(0.93 0.025 286 / 0.7);
@@ -587,7 +587,7 @@
     letter-spacing: -0.018em;
   }
 
-  /* Scrollbar — slim, neutral, never dominant. */
+  /* Scrollbar, slim, neutral, never dominant. */
   *::-webkit-scrollbar {
     width: 10px;
     height: 10px;
@@ -626,7 +626,7 @@
     @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
   }
 
-  /* Skeleton shimmer — a soft moving highlight on top of surface-2. Calmer
+  /* Skeleton shimmer, a soft moving highlight on top of surface-2. Calmer
      than a full opacity pulse and reads as "premium" loading. */
   .skeleton-shimmer {
     position: relative;

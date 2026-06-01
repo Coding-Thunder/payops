@@ -6,7 +6,7 @@ import { toMinorUnits } from "@/server/services/order.service";
 
 /**
  * Pure helpers exported from the order service. The DB-touching surface
- * lives in the integration suite — these tests run instantly with no
+ * lives in the integration suite, these tests run instantly with no
  * Mongo connection.
  */
 

@@ -31,7 +31,7 @@ interface EmailComposePageContentProps {
 }
 
 /**
- * Step 2 of the linear flow — communication only.
+ * Step 2 of the linear flow, communication only.
  *
  * Lives at `/orders/[id]/email` as a real Next.js route (no workspace
  * tab shell). Strict scope:
@@ -56,7 +56,7 @@ export function EmailComposePageContent({
   const [sentAt, setSentAt] = React.useState<string | null>(null);
 
   // Auto-redirect to the order detail page the moment the send completes.
-  // No artificial delay — the order route has its own loading skeleton
+  // No artificial delay, the order route has its own loading skeleton
   // (loading.tsx) which carries the user across the transition. We
   // depend only on `sentAt` so the effect runs exactly once per send
   // and never has its push timeout cancelled by a re-render.
@@ -73,7 +73,7 @@ export function EmailComposePageContent({
       <CenteredSpinner
         minHeight="60vh"
         size="xl"
-        text="Email sent — opening the order page…"
+        text="Email sent, opening the order page…"
       />
     );
   }
@@ -148,7 +148,7 @@ export function EmailComposePageContent({
                   .map((l) =>
                     l.quantity > 1 ? `${l.quantity}× ${l.name}` : l.name,
                   )
-                  .join(", ") || "—"
+                  .join(", ") || "-"
               }
             />
             <SummaryRow label="Order" value={order.orderNumber} mono />
@@ -166,7 +166,7 @@ export function EmailComposePageContent({
       <div className="flex justify-end">
         <Button asChild variant="outline" size="sm">
           <Link href={orderHref}>
-            Skip — open order
+            Skip, open order
             <ArrowRightIcon className="size-3.5" />
           </Link>
         </Button>

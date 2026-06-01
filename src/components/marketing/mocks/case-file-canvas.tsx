@@ -1,7 +1,7 @@
 import { CheckIcon, ShieldIcon, TrophyIcon } from "lucide-react";
 
 /**
- * Case-file canvas — the WON variant.
+ * Case-file canvas, the WON variant.
  *
  * Static React mock that mirrors the reference's "CHARGEBACK SOLVED"
  * artifact layout, point-for-point:
@@ -107,7 +107,7 @@ export function CaseFileCanvas() {
         {/* ── LEFT PANEL: order evidence ──────────────────────── */}
         <div className="rounded-xl bg-card p-5 ring-1 ring-border/70 sm:p-6">
           <h2 className="text-[16px] font-semibold tracking-tight">
-            Order evidence —{" "}
+            Order evidence -{" "}
             <span className="font-mono tabular-nums">
               ORD-260805-K4M9P2RT3W
             </span>
@@ -244,11 +244,11 @@ export function CaseFileCanvas() {
 
           {/* Outcome facts grid */}
           <div className="rounded-xl bg-card p-5 ring-1 ring-border/70">
-            <OutcomeRow label="Reason code" value="13.1 — Merchandise/Service Not Received" />
+            <OutcomeRow label="Reason code" value="13.1, Merchandise/Service Not Received" />
             <OutcomeRow label="Received" value="2026-05-05" mono />
             <OutcomeRow label="Represented" value="2026-05-07" mono />
             <OutcomeRow label="Decision" value="2026-05-21" mono />
-            <OutcomeRow label="Outcome" value="Won — Reversed" toned />
+            <OutcomeRow label="Outcome" value="Won, Reversed" toned />
             <OutcomeRow
               label="Recovered amount"
               value="$2,840.00 USD"

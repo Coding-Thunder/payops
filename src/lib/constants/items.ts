@@ -1,5 +1,5 @@
 /**
- * Universal commerce primitives — pricing models, attribute types,
+ * Universal commerce primitives, pricing models, attribute types,
  * scheduling shapes, and the finite library of composable email blocks
  * that ItemTypes can opt their orders into.
  *
@@ -8,13 +8,13 @@
  * `lineItems[].itemTypeKey` + `attributes`; the SHAPE of those
  * attributes is per-tenant per-vertical, defined in an `ItemType`
  * collection. The values below are the platform-controlled
- * vocabulary that ItemType definitions must pick from — i.e. the
+ * vocabulary that ItemType definitions must pick from, i.e. the
  * non-configurable surface.
  *
  * Discipline:
  *   - Adding a new enum value is a platform decision (code change).
  *   - Tenants pick from these enums when defining their ItemType.
- *   - Tenants CANNOT define new values — keeps the email block
+ *   - Tenants CANNOT define new values, keeps the email block
  *     library finite (a real risk if tenants could mint their own).
  */
 
@@ -25,10 +25,10 @@
  * the create-order form renders (quantity stepper vs interval picker
  * vs date-range picker).
  *
- *   FIXED        — one-shot price; quantity always 1 (e.g. service call).
- *   QUANTITY     — unit price × quantity; cart-style. Default for retail.
- *   INTERVAL     — recurring billing per interval (subscription module).
- *   TIME_WINDOW  — price scoped to a start/end window (rental, hotel).
+ *   FIXED       , one-shot price; quantity always 1 (e.g. service call).
+ *   QUANTITY    , unit price × quantity; cart-style. Default for retail.
+ *   INTERVAL    , recurring billing per interval (subscription module).
+ *   TIME_WINDOW , price scoped to a start/end window (rental, hotel).
  *
  * Per-order Total = sum of line totals. Computation rule lives in the
  * service, not configurable. Tax module adds tax line(s) on top.
@@ -52,14 +52,14 @@ export const ITEM_PRICING_MODELS = Object.values(
  * Drives both server-side validation and dynamic form rendering on
  * the frontend.
  *
- *   STRING   — single line of text. Default control.
- *   NUMBER   — numeric input. Integer or float per `precision` field.
- *   DATE     — ISO date / datetime. Drives the calendar picker.
- *   URL      — must parse as http(s); useful for image refs etc.
- *   SELECT   — closed enum. `options[]` must be supplied.
- *   BOOLEAN  — checkbox / toggle.
+ *   STRING  , single line of text. Default control.
+ *   NUMBER  , numeric input. Integer or float per `precision` field.
+ *   DATE    , ISO date / datetime. Drives the calendar picker.
+ *   URL     , must parse as http(s); useful for image refs etc.
+ *   SELECT  , closed enum. `options[]` must be supplied.
+ *   BOOLEAN , checkbox / toggle.
  *
- * NB: no "file upload" type here — file uploads go through their own
+ * NB: no "file upload" type here, file uploads go through their own
  * routes (logo, evidence) and are referenced as URL strings in
  * attributes. Keeps the model layer storage-shape free.
  */
@@ -77,7 +77,7 @@ export const ITEM_ATTRIBUTE_TYPES = Object.values(
   ItemAttributeType,
 ) as ItemAttributeType[];
 
-/** Attribute keys must be `[a-z][a-z0-9_]{0,31}` — lowercase, snake-case,
+/** Attribute keys must be `[a-z][a-z0-9_]{0,31}`, lowercase, snake-case,
  *  matches the convention used by Mongo dotted paths so denormalised
  *  search-key fields can be added without name collisions. */
 export const ITEM_ATTRIBUTE_KEY_REGEX = /^[a-z][a-z0-9_]{0,31}$/;
@@ -88,11 +88,11 @@ export const ITEM_ATTRIBUTE_KEY_REGEX = /^[a-z][a-z0-9_]{0,31}$/;
  * Shape of the time window an order (or line item) lives in. Only
  * present when at least one line's ItemType has `requiresScheduling`.
  *
- *   FIXED_WINDOW       — startsAt + endsAt, both required, immutable
+ *   FIXED_WINDOW      , startsAt + endsAt, both required, immutable
  *                        once paid (rental, hotel, fixed appointment).
- *   OPEN_ENDED         — startsAt required, endsAt nullable (consulting
+ *   OPEN_ENDED        , startsAt required, endsAt nullable (consulting
  *                        engagement that ends on signoff).
- *   RECURRING_INTERVAL — startsAt + endsAt define the first cycle; the
+ *   RECURRING_INTERVAL, startsAt + endsAt define the first cycle; the
  *                        subscription module mints new cycles on rollover.
  */
 export const SchedulingType = {
@@ -117,7 +117,7 @@ export const SCHEDULING_TYPES = Object.values(
  * server-side renderer maps each key to a React Email component.
  *
  * Keep this list short and meaningful. Adding a new block is a
- * deliberate platform decision (code + visual review) — not config.
+ * deliberate platform decision (code + visual review), not config.
  */
 export const EmailBlockKey = {
   /** Total paid / due, transaction ref, paid-on date. Universal. */
@@ -126,13 +126,13 @@ export const EmailBlockKey = {
   LINE_ITEMS_TABLE: "line_items_table",
   /** Order-level totals: subtotal, tax, discount, grand total. */
   TOTALS: "totals",
-  /** Pickup / dropoff or appointment window — only when the order has
+  /** Pickup / dropoff or appointment window, only when the order has
    *  `scheduling`. Renders date + time + (optional) location text. */
   SCHEDULING_WINDOW: "scheduling_window",
   /** Hero image + headline for a single visual item (legacy rental
    *  "vehicle hero" generalised). Driven by an attribute of type URL. */
   ITEM_HERO: "item_hero",
-  /** Rx number + refills line — pharmacy-friendly without baking
+  /** Rx number + refills line, pharmacy-friendly without baking
    *  pharmacy assumptions into the platform. */
   PRESCRIPTION_BLOCK: "prescription_block",
   /** Cancellation / refund / terms-of-purchase snapshot. Universal. */
@@ -141,9 +141,9 @@ export const EmailBlockKey = {
   SUPPORT_SECTION: "support_section",
   /** Customer signature acknowledgement (consent-received emails). */
   SIGNATURE_BLOCK: "signature_block",
-  /** Tracking number / fulfilment ETA — for verticals that ship goods. */
+  /** Tracking number / fulfilment ETA, for verticals that ship goods. */
   TRACKING_INFO: "tracking_info",
-  /** Refund issued (amount, reason) block — used in refund emails. */
+  /** Refund issued (amount, reason) block, used in refund emails. */
   REFUND_DETAILS: "refund_details",
 } as const;
 export type EmailBlockKey = (typeof EmailBlockKey)[keyof typeof EmailBlockKey];
@@ -165,7 +165,7 @@ export const DEFAULT_CONFIRMATION_BLOCKS: EmailBlockKey[] = [
 
 /* ─────────────────────── ItemType key validation ─────────────────────── */
 
-/** ItemType.key shape — same vocabulary as attribute keys. Tenants
+/** ItemType.key shape, same vocabulary as attribute keys. Tenants
  *  pick short identifiers like `milk_carton`, `service_visit`,
  *  `rental_booking`, `consulting_hour`. */
 export const ITEM_TYPE_KEY_REGEX = /^[a-z][a-z0-9_]{0,31}$/;

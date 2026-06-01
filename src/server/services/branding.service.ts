@@ -38,7 +38,7 @@ interface BrandingContext {
   actor: BrandingActor;
   /** Active organization. When supplied, reads/writes target the
    *  per-org branding row (lazy-provisioned on first access). When
-   *  omitted, the legacy `{ key: "default" }` singleton is used —
+   *  omitted, the legacy `{ key: "default" }` singleton is used -
    *  preserved for back-compat with un-migrated callers. */
   orgId?: string | null;
   request?: RequestContext | null;
@@ -76,7 +76,7 @@ function toDTO(doc: BrandingDoc): BrandingDTO {
 //
 // Used ONLY by the no-orgId path, which is preserved for un-migrated
 // callers and the legacy `{ key: "default" }` singleton row. The
-// multi-tenant seed path below does NOT read these — every tenant's
+// multi-tenant seed path below does NOT read these, every tenant's
 // brand is derived from their own Organization + founder data.
 
 function platformFallback(): Omit<BrandingDTO, "updatedAt"> {
@@ -93,7 +93,7 @@ function platformFallback(): Omit<BrandingDTO, "updatedAt"> {
 }
 
 /** Build the seed payload for a fresh per-org branding row using ONLY
- *  data owned by that tenant — never env defaults. The tenant's
+ *  data owned by that tenant, never env defaults. The tenant's
  *  business identity (brand name, support email, support phone, logo,
  *  colors, footer) is fully theirs from row #1; cross-tenant env
  *  defaults would leak the platform's previous tenant brand into
@@ -103,7 +103,7 @@ function platformFallback(): Omit<BrandingDTO, "updatedAt"> {
  *    - brandName     ← Organization.name (collected at signup)
  *    - supportEmail  ← founder User.email (the owner who signed up)
  *    - supportPhone  ← empty (admin fills in /app/admin/branding)
- *    - primaryColor  ← neutral platform-default (#0B1220) — not a
+ *    - primaryColor  ← neutral platform-default (#0B1220), not a
  *                      brand decision, just a placeholder until the
  *                      admin picks one. Safe because it doesn't
  *                      identify any specific tenant.
@@ -129,7 +129,7 @@ function seedBrandingFromOrg(input: {
 }
 
 /** Fetch the org name + founder email needed to seed a fresh per-org
- *  branding row. Throws if either piece is missing — a tenant without
+ *  branding row. Throws if either piece is missing, a tenant without
  *  a name or founder is a corrupt provisioning, not a recoverable
  *  state, and silently falling back to env would re-introduce the
  *  cross-tenant leak this whole refactor exists to prevent. */
@@ -160,7 +160,7 @@ async function readOrgSeedSource(
  * re-enter on the new screen.
  *
  * When `orgId` is supplied the per-org row is lazy-provisioned; when
- * omitted the legacy `{ key: "default" }` singleton is upserted —
+ * omitted the legacy `{ key: "default" }` singleton is upserted -
  * preserved for back-compat through the multi-tenant migration window.
  */
 export async function ensureBrandingDocument(
@@ -178,7 +178,7 @@ export async function ensureBrandingDocument(
 
     // Slow path (first access for this tenant): fetch the seed source
     // and provision. loadScopedSingleton handles the concurrency race
-    // on the orgId unique index — two parallel first-access calls
+    // on the orgId unique index, two parallel first-access calls
     // won't produce duplicate rows.
     const seedSource = await readOrgSeedSource(orgId);
     const doc = await loadScopedSingleton<BrandingDoc>(Branding, {
@@ -296,7 +296,7 @@ interface ValidatedLogo {
   buffer: Buffer;
   mimeType: string;
   ext: string;
-  /** Content hash — used as the URL's cache-busting segment so updates
+  /** Content hash, used as the URL's cache-busting segment so updates
    *  invalidate aggressively-cached customer-facing copies. */
   hash: string;
 }
@@ -316,7 +316,7 @@ function validateLogoUpload(input: SaveLogoInput): ValidatedLogo {
     );
   }
   // The browser-supplied `mimeType` is attacker-controlled. Sniff the
-  // bytes and confirm they match the declared type before storing — an
+  // bytes and confirm they match the declared type before storing, an
   // HTML/SVG payload labelled image/png that the route hands back with
   // the declared Content-Type would otherwise be stored XSS the moment
   // anyone opens the URL directly.
@@ -334,7 +334,7 @@ function validateLogoUpload(input: SaveLogoInput): ValidatedLogo {
 }
 
 function buildLogoUrl(orgId: string | null, hash: string, ext: string): string {
-  // Per-org URL. The hash + ext are cosmetic — they're cache-busters,
+  // Per-org URL. The hash + ext are cosmetic, they're cache-busters,
   // not part of the lookup. The route always serves the current bytes
   // stored on the Branding doc for that orgId.
   const key = orgId ?? BRANDING_KEY;

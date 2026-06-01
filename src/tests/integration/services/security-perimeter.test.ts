@@ -27,7 +27,7 @@ import { ensureMongo, resetDatabase } from "@/tests/utils/db";
  * Two invariants the tests guard:
  *
  *  1. Payments fail closed when a non-legacy tenant has no per-org
- *     gateway credentials — they MUST NOT silently fall back to the
+ *     gateway credentials, they MUST NOT silently fall back to the
  *     platform's env-based Stripe account. (loadGatewayCredential)
  *
  *  2. Reserved slugs (`admin`, `api`, `payops`, …) get suffix-resolved
@@ -80,7 +80,7 @@ async function seedLegacyOrg(): Promise<string> {
   return String(org._id);
 }
 
-describe("loadGatewayCredential — env-fallback restricted to legacy", () => {
+describe("loadGatewayCredential, env-fallback restricted to legacy", () => {
   it("LEGACY org with no per-org row falls back to env (back-compat)", async () => {
     const legacyOrgId = await seedLegacyOrg();
     const creds = await loadGatewayCredential(
@@ -91,7 +91,7 @@ describe("loadGatewayCredential — env-fallback restricted to legacy", () => {
     expect(creds?.source).toBe("env");
   });
 
-  it("NEW tenant with no per-org row returns null — refuses env fallback", async () => {
+  it("NEW tenant with no per-org row returns null, refuses env fallback", async () => {
     await seedLegacyOrg();
     const newTenantId = newOrgId();
     const creds = await loadGatewayCredential(
@@ -145,7 +145,7 @@ describe("loadGatewayCredential — env-fallback restricted to legacy", () => {
   });
 });
 
-describe("Signup — reserved slug denylist", () => {
+describe("Signup, reserved slug denylist", () => {
   const baseBody = {
     name: "Ada Lovelace",
     password: "Hunter2Hunter2",
@@ -160,7 +160,7 @@ describe("Signup — reserved slug denylist", () => {
     );
   }
 
-  it("rejects 'admin' as a slug — gets a -2 suffix instead", async () => {
+  it("rejects 'admin' as a slug, gets a -2 suffix instead", async () => {
     const res = await signup("admin", "a@x.test");
     const { body } = await jsonBody(res);
     const slug = (body as { data: { orgSlug: string } }).data.orgSlug;
@@ -168,21 +168,21 @@ describe("Signup — reserved slug denylist", () => {
     expect(slug).toMatch(/^admin-\d+$/);
   });
 
-  it("rejects 'payops' as a slug — platform brand reserved", async () => {
+  it("rejects 'payops' as a slug, platform brand reserved", async () => {
     const res = await signup("PayOps", "b@x.test");
     const { body } = await jsonBody(res);
     const slug = (body as { data: { orgSlug: string } }).data.orgSlug;
     expect(slug).not.toBe("payops");
   });
 
-  it("rejects 'legacy' as a slug — collides with the migration tenant", async () => {
+  it("rejects 'legacy' as a slug, collides with the migration tenant", async () => {
     const res = await signup("Legacy", "c@x.test");
     const { body } = await jsonBody(res);
     const slug = (body as { data: { orgSlug: string } }).data.orgSlug;
     expect(slug).not.toBe("legacy");
   });
 
-  it("rejects 'google' — common squat target", async () => {
+  it("rejects 'google', common squat target", async () => {
     const res = await signup("Google", "d@x.test");
     const { body } = await jsonBody(res);
     const slug = (body as { data: { orgSlug: string } }).data.orgSlug;

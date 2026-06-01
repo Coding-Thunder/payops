@@ -12,11 +12,11 @@ import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 
 /**
- * Firebase Admin SDK — server-side init.
+ * Firebase Admin SDK, server-side init.
  *
  * Reads FIREBASE_SERVICE_ACCOUNT from env (single-line JSON), parses
  * it once, and caches the resulting Auth instance. Returns null when
- * the env var is missing or malformed — callers in API routes return
+ * the env var is missing or malformed, callers in API routes return
  * 503 in that case so the UI can fall back to the legacy bcrypt
  * sign-in path.
  *

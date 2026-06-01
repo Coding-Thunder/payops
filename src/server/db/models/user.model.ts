@@ -28,7 +28,7 @@ export interface UserDoc {
   /** External-auth bindings. Populated when the user signs in via a
    *  third-party identity provider (Firebase Auth today) so future
    *  sign-ins resolve to this Mongo User by the provider's stable id
-   *  rather than by email — which lets the user later change their
+   *  rather than by email, which lets the user later change their
    *  Firebase email without orphaning the row. */
   externalAuth?: {
     firebaseUid?: string | null;

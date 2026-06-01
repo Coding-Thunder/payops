@@ -4,14 +4,14 @@ import { ImageResponse } from "next/og";
  * Dynamic Open Graph image for the marketing landing.
  *
  * Auto-served by Next 16 at `/opengraph-image` and referenced
- * automatically in <meta property="og:image"> — overrides any
+ * automatically in <meta property="og:image">, overrides any
  * static OG image set in the root metadata. Same image is used by
  * Twitter (summary_large_image card).
  *
  * Why dynamic over a static PNG:
  *   - It renders with the actual brand obsidian + gradient palette,
  *     so the card matches what a visitor sees when they click.
- *   - Copy stays in code — if positioning shifts, this updates in
+ *   - Copy stays in code, if positioning shifts, this updates in
  *     the next deploy with no Photoshop loop.
  *   - 1200×630 is the canonical OG size (Slack / LinkedIn / Twitter
  *     all crop to this).
@@ -22,7 +22,7 @@ import { ImageResponse } from "next/og";
 
 export const runtime = "edge";
 export const alt =
-  "TraceTxn — When the chargeback lands six weeks later, the evidence is already filed.";
+  "TraceTxn, When the chargeback lands six weeks later, the evidence is already filed.";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -43,7 +43,7 @@ export default async function OgImage() {
           color: "white",
         }}
       >
-        {/* Aurora orbs — match the hero's color signature */}
+        {/* Aurora orbs, match the hero's color signature */}
         <div
           style={{
             position: "absolute",
@@ -84,7 +84,7 @@ export default async function OgImage() {
           }}
         />
 
-        {/* Top chromatic stroke — same gradient as the in-app telemetry strip */}
+        {/* Top chromatic stroke, same gradient as the in-app telemetry strip */}
         <div
           style={{
             position: "absolute",
@@ -97,7 +97,7 @@ export default async function OgImage() {
           }}
         />
 
-        {/* Brand block — top-left */}
+        {/* Brand block, top-left */}
         <div
           style={{
             display: "flex",
@@ -181,7 +181,7 @@ export default async function OgImage() {
           </div>
         </div>
 
-        {/* Sub-line — privately deployed signal */}
+        {/* Sub-line, privately deployed signal */}
         <div
           style={{
             marginTop: "auto",

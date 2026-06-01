@@ -45,7 +45,7 @@ afterEach(() => {
 });
 
 /** Seed the legacy organization so `isLegacyTenant(<id>)` resolves
- *  to true for the returned id — required by Pass 5a's env-fallback
+ *  to true for the returned id, required by Pass 5a's env-fallback
  *  gate in `loadGatewayCredential`. */
 async function seedLegacyOrg(): Promise<string> {
   const ownerId = new Types.ObjectId();
@@ -79,7 +79,7 @@ describe("loadGatewayCredential", () => {
   it("falls back to env for STRIPE when the LEGACY org has no per-org row (Tenant #1 path)", async () => {
     // Pass 5a: env-fallback is gated by `isLegacyTenant`. Seeding
     // the legacy org BEFORE calling makes the lookup resolve and
-    // permits the fallback — exactly the behaviour Tenant #1 relies
+    // permits the fallback, exactly the behaviour Tenant #1 relies
     // on through the cutover.
     const legacyOrgId = await seedLegacyOrg();
     const creds = await loadGatewayCredential(
@@ -151,7 +151,7 @@ describe("saveGatewayCredential + loadGatewayCredential round-trip", () => {
       { actor: actor(), orgId: orgA, request: null },
     );
 
-    // Read the raw doc from Mongo — neither the secret nor the webhook
+    // Read the raw doc from Mongo, neither the secret nor the webhook
     // signing secret should appear in clear.
     const raw = await GatewayCredential.findOne({
       orgId: new Types.ObjectId(orgA),
@@ -215,7 +215,7 @@ describe("saveGatewayCredential + loadGatewayCredential round-trip", () => {
       request: null,
     });
     const loaded = await loadGatewayCredential(orgA, PaymentGatewayKey.STRIPE);
-    // Disabled per-org row returns null — does NOT fall back to env
+    // Disabled per-org row returns null, does NOT fall back to env
     // because the operator explicitly turned this off.
     expect(loaded).toBeNull();
   });

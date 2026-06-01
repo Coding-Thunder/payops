@@ -24,7 +24,7 @@ import {
 import { formatEmailDate, formatEmailDay, formatMoney } from "../format";
 
 /**
- * Pass 5f — Composable email block library.
+ * Pass 5f, Composable email block library.
  *
  * The confirmation + payment-request emails are now assembled from this
  * finite set of blocks. ItemType.confirmationEmailBlocks declares which
@@ -37,7 +37,7 @@ import { formatEmailDate, formatEmailDay, formatMoney } from "../format";
  *   2. Add a component + register it in `BLOCK_COMPONENTS` below.
  *   3. Add it to `BLOCK_ORDER` so the layout is deterministic.
  *
- * Tenants cannot mint new blocks — that would be a markup-injection
+ * Tenants cannot mint new blocks, that would be a markup-injection
  * surface in customer-facing email. They CAN choose which platform
  * blocks their ItemType opts into via the admin UI (Pass 5e).
  */
@@ -486,7 +486,7 @@ function TrackingInfoBlock({ ctx }: BlockProps): React.ReactElement | null {
       ) : (
         <MetadataRow
           label="Carrier"
-          value={carrier ?? "—"}
+          value={carrier ?? "-"}
           isLast={!carrier}
         />
       )}

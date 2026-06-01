@@ -5,17 +5,17 @@ import { env } from "@/lib/env";
  *
  * Three top-level objects in a single @graph payload:
  *
- *  1. Organization — entity that publishes the page. Pinned with
+ *  1. Organization, entity that publishes the page. Pinned with
  *     `@id` so the other entities can reference it.
- *  2. WebSite — the canonical site, with a SearchAction sitelinks
+ *  2. WebSite, the canonical site, with a SearchAction sitelinks
  *     box (helps Google render the search box in the SERP for
  *     branded queries).
- *  3. SoftwareApplication — the product itself. Pricing model is
+ *  3. SoftwareApplication, the product itself. Pricing model is
  *     "QuotePending" (no fixed price; quote-based) and category is
  *     `BusinessApplication`. Google + Bing both ingest this for
  *     product knowledge panels.
  *
- * One <script> tag with a single graph is the recommended pattern —
+ * One <script> tag with a single graph is the recommended pattern -
  * cleaner than three separate script tags, indexed identically.
  */
 
@@ -29,7 +29,7 @@ interface StructuredDataProps {
 export function StructuredData({
   baseUrl,
   brand = env.public.NEXT_PUBLIC_APP_NAME,
-  description = "TraceTxn is the payment operations platform for the full order lifecycle — hashed dispute evidence, hosted consent, multi-gateway orchestration, and append-only audit. Built for retail, services, repair, dealership, B2B, and any commerce shape that takes money seriously.",
+  description = "TraceTxn is the payment operations platform for the full order lifecycle, hashed dispute evidence, hosted consent, multi-gateway orchestration, and append-only audit. Built for retail, services, repair, dealership, B2B, and any commerce shape that takes money seriously.",
 }: StructuredDataProps) {
   const url = (baseUrl ?? env.public.NEXT_PUBLIC_APP_URL).replace(/\/$/, "");
 
@@ -100,7 +100,7 @@ export function StructuredData({
       {
         "@type": "SoftwareApplication",
         "@id": `${url}/#software`,
-        name: `${brand} — Payment Operations Platform`,
+        name: `${brand}, Payment Operations Platform`,
         description,
         applicationCategory: "BusinessApplication",
         applicationSubCategory: "PaymentOperationsPlatform",
@@ -114,14 +114,14 @@ export function StructuredData({
         ],
         featureList: [
           "Lifecycle visibility per order",
-          "Hashed evidence chain — SHA-256 chained per-order",
+          "Hashed evidence chain, SHA-256 chained per-order",
           "Hosted customer consent + signature capture",
           "Multi-gateway orchestration (Stripe live; Razorpay, Authorize.net, Adyen, PayPal adapters)",
           "Idempotent webhook handling",
           "Append-only audit log",
           "Realtime SSE updates",
           "PDF + CSV dispute evidence export",
-          "Multi-tenant — every workspace fully isolated",
+          "Multi-tenant, every workspace fully isolated",
           "Self-serve onboarding with vertical templates",
           "Universal item + order primitives across business types",
         ],
@@ -149,7 +149,7 @@ export function StructuredData({
             name: "Is TraceTxn a multi-tenant SaaS?",
             acceptedAnswer: {
               "@type": "Answer",
-              text: "Yes. TraceTxn is a multi-tenant operational platform — every workspace is fully isolated by tenant boundary, with its own catalog, orders, evidence, and audit trail. Sign up free, connect Stripe, and run your first order within minutes.",
+              text: "Yes. TraceTxn is a multi-tenant operational platform, every workspace is fully isolated by tenant boundary, with its own catalog, orders, evidence, and audit trail. Sign up free, connect Stripe, and run your first order within minutes.",
             },
           },
           {
@@ -157,7 +157,7 @@ export function StructuredData({
             name: "What kinds of businesses use TraceTxn?",
             acceptedAnswer: {
               "@type": "Answer",
-              text: "Retail, grocery, pharmacy, repair, dealership, services, equipment, B2B workflows, rentals, and any custom commerce shape that needs operational payment infrastructure — order workflows, evidence chains, dispute readiness, consent capture, and multi-gateway routing.",
+              text: "Retail, grocery, pharmacy, repair, dealership, services, equipment, B2B workflows, rentals, and any custom commerce shape that needs operational payment infrastructure, order workflows, evidence chains, dispute readiness, consent capture, and multi-gateway routing.",
             },
           },
           {
@@ -165,7 +165,7 @@ export function StructuredData({
             name: "Which payment gateways does TraceTxn support?",
             acceptedAnswer: {
               "@type": "Answer",
-              text: "Stripe is fully live today — checkout, webhooks, disputes, refunds. Razorpay and Authorize.net adapters are scaffolded for activation on credentials. Adyen and PayPal are on the roadmap. The orchestration layer was built gateway-agnostic from day one.",
+              text: "Stripe is fully live today, checkout, webhooks, disputes, refunds. Razorpay and Authorize.net adapters are scaffolded for activation on credentials. Adyen and PayPal are on the roadmap. The orchestration layer was built gateway-agnostic from day one.",
             },
           },
           {
@@ -173,7 +173,7 @@ export function StructuredData({
             name: "How does TraceTxn help with chargeback disputes?",
             acceptedAnswer: {
               "@type": "Answer",
-              text: "Every order persists a hashed, append-only evidence chain — payment intent, charge id, customer consent signature, email correspondence, IP/UA capture, gateway receipts. When a dispute fires, the order auto-flags, the chain freezes, and a one-click PDF export is ready to forward to the bank.",
+              text: "Every order persists a hashed, append-only evidence chain, payment intent, charge id, customer consent signature, email correspondence, IP/UA capture, gateway receipts. When a dispute fires, the order auto-flags, the chain freezes, and a one-click PDF export is ready to forward to the bank.",
             },
           },
           {
@@ -181,7 +181,7 @@ export function StructuredData({
             name: "How is pricing structured?",
             acceptedAnswer: {
               "@type": "Answer",
-              text: "Self-serve workspaces start free. Custom routing, high-volume, regional gateway selection, or procurement-driven engagements run on a quote — start a conversation from the closing section of the landing page.",
+              text: "Self-serve workspaces start free. Custom routing, high-volume, regional gateway selection, or procurement-driven engagements run on a quote, start a conversation from the closing section of the landing page.",
             },
           },
           {
@@ -189,7 +189,7 @@ export function StructuredData({
             name: "How quickly can I be live?",
             acceptedAnswer: {
               "@type": "Answer",
-              text: "Self-serve onboarding takes a few minutes — create your workspace, connect Stripe (one-click test + auto-registered webhook), seed your catalog from a vertical template, and run your first order. Custom setups land within 1–2 weeks of quotation acceptance.",
+              text: "Self-serve onboarding takes a few minutes, create your workspace, connect Stripe (one-click test + auto-registered webhook), seed your catalog from a vertical template, and run your first order. Custom setups land within 1–2 weeks of quotation acceptance.",
             },
           },
         ],

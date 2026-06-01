@@ -32,7 +32,7 @@ interface EnqueueInput {
 
 /**
  * Enqueue an email for post-commit delivery. MUST be called inside the
- * same `withTx` block that mutates the order/audit/evidence — if the
+ * same `withTx` block that mutates the order/audit/evidence, if the
  * transaction aborts, the row never lands. The caller is expected to
  * pass the active mongoose `session`; pass `null` for non-tx callers.
  *
@@ -68,7 +68,7 @@ export async function enqueueEmail(
 /**
  * Fire-and-forget drain triggered from a route handler AFTER its
  * response has been committed (typically via `setImmediate`). Best-effort
- * — if it fails, the periodic in-process drainer picks up the row.
+ *, if it fails, the periodic in-process drainer picks up the row.
  *
  * Skipped in test mode so tests can deterministically inspect the
  * PendingEmail row before any background work fires.
@@ -102,7 +102,7 @@ function ensureBackgroundDrainer(): void {
       });
     });
   }, DRAIN_INTERVAL_MS);
-  // Don't keep the process alive solely for this timer — let Node exit
+  // Don't keep the process alive solely for this timer, let Node exit
   // naturally on shutdown rather than blocking. Some Node typings mark
   // `unref` as Node-only so guard for safety.
   const timer = g.__tracetxnOutboxCron as unknown as { unref?: () => void };
@@ -172,7 +172,7 @@ export async function drainOnePendingEmail(): Promise<
 
 /**
  * Drain up to `max` rows sequentially. Sequential (not parallel) on
- * $5 tier — the SMTP pool has 3 connections so parallel gains are
+ * $5 tier, the SMTP pool has 3 connections so parallel gains are
  * modest, and serial keeps memory/CPU calm.
  */
 export async function drainPendingEmails(
@@ -202,13 +202,13 @@ async function processPendingEmail(
   doc: PendingEmailDoc & { _id: Types.ObjectId },
 ): Promise<void> {
   // Re-render from current order state. We deliberately don't snapshot
-  // the order at enqueue time — branding / template / customer-email
+  // the order at enqueue time, branding / template / customer-email
   // edits between enqueue and drain should appear in the actual send.
   const order = await fetchOrderForOutbox(String(doc.orderId));
   if (doc.kind === EmailKind.PAYMENT_CONFIRMATION) {
     await sendPaymentConfirmationEmail(order);
     // Mark the order so the UI timeline + DTO can show "confirmation
-    // sent". Conditional on the field being null so re-drains (rare —
+    // sent". Conditional on the field being null so re-drains (rare -
     // shouldn't happen given outbox status gating) can't ratchet
     // backwards.
     await Order.updateOne(
@@ -223,7 +223,7 @@ async function processPendingEmail(
   throw new Error(`Outbox does not handle email kind: ${doc.kind}`);
 }
 
-/** System-actor fetch — skips per-actor permission checks via a synthetic
+/** System-actor fetch, skips per-actor permission checks via a synthetic
  *  SUPER_ADMIN context. The outbox drainer is not a per-user request. */
 async function fetchOrderForOutbox(orderId: string) {
   return getOrderById(orderId, {

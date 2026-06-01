@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 /**
  * POST /api/admin/gateways/stripe/test
  *
- * Pass 6a — "Did this key actually work?" probe. Hits Stripe's
+ * Pass 6a, "Did this key actually work?" probe. Hits Stripe's
  * `/v1/balance` with the supplied key + checks the mode prefix. NEVER
  * persists or encrypts. Used by the admin UI to show ✓ / ✗ before the
  * operator commits to save.

@@ -10,19 +10,19 @@ import { registerModel } from "./register";
 /**
  * Server-backed autosave for partially-completed create-order workflows.
  *
- * Drafts are intentionally schemaless inside `data` — the create-order form
+ * Drafts are intentionally schemaless inside `data`, the create-order form
  * shape evolves, and validation happens at submit time. The DB only enforces
  * ownership, size, and a TTL so abandoned drafts don't accumulate.
  */
 export interface OrderDraftDoc {
   ownerId: Types.ObjectId;
-  /** Tenant boundary — drafts belong to the org the operator was in
+  /** Tenant boundary, drafts belong to the org the operator was in
    *  at save time. Pinned on every read so a user moving between orgs
    *  doesn't see a previous org's drafts. Nullable during the
    *  multi-tenant migration; required for new rows. */
   orgId?: Types.ObjectId | null;
   /**
-   * Raw form snapshot — exactly what react-hook-form has at the moment of
+   * Raw form snapshot, exactly what react-hook-form has at the moment of
    * autosave. Shape mirrors `CreateOrderInput` but with all fields optional.
    */
   data: Record<string, unknown>;
@@ -33,7 +33,7 @@ export interface OrderDraftDoc {
     orderAmount?: number | null;
     currency?: string | null;
   };
-  /** Bumped on every save — clients use it to resolve write conflicts. */
+  /** Bumped on every save, clients use it to resolve write conflicts. */
   revision: number;
   /** When the user last touched this draft. Drives TTL. */
   lastEditedAt: Date;

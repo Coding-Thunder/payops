@@ -32,7 +32,7 @@ export const GET = withApi(async (req: NextRequest) => {
   const query = querySchema.parse(
     Object.fromEntries(url.searchParams.entries()),
   );
-  // Strict per-org filter — Phase 3d retired the legacy null-orgId
+  // Strict per-org filter, Phase 3d retired the legacy null-orgId
   // fallback. Each tenant sees only their own audit trail.
   const data = await listAuditLogs({
     entityType: query.entityType as AuditEntity | undefined,

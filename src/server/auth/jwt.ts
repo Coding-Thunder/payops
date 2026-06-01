@@ -76,7 +76,7 @@ export async function signSession(payload: SessionPayload): Promise<string> {
   };
   // Only include org claims when present. Pre-migration code that calls
   // `signSession` without an orgId continues to produce a backwards-
-  // compatible token — `verifySession` returns `orgId: undefined` and
+  // compatible token, `verifySession` returns `orgId: undefined` and
   // the session resolver falls back to `User.primaryOrgId`.
   if (payload.orgId) claims.orgId = payload.orgId;
   if (payload.orgIds && payload.orgIds.length > 0) {

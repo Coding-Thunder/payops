@@ -18,7 +18,7 @@ import { cleanup } from "@testing-library/react";
  *     doesn't ship (matchMedia, ResizeObserver, IntersectionObserver) so
  *     components that read them at mount time don't crash.
  *
- * Network calls are intentionally NOT mocked here — unit tests should
+ * Network calls are intentionally NOT mocked here, unit tests should
  * never make them. If a test triggers one it's a sign the test belongs in
  * the integration project instead.
  */
@@ -70,14 +70,14 @@ if (typeof window !== "undefined") {
 }
 
 /**
- * Global fetch fence — fail loud if a unit test slips a real network call.
+ * Global fetch fence, fail loud if a unit test slips a real network call.
  * Tests that need fetch should mock it explicitly with vi.stubGlobal.
  */
 vi.stubGlobal(
   "fetch",
   vi.fn(() => {
     throw new Error(
-      "[unit] fetch() is forbidden in unit tests — mock it with vi.stubGlobal('fetch', ...) or move the test to the integration project.",
+      "[unit] fetch() is forbidden in unit tests, mock it with vi.stubGlobal('fetch', ...) or move the test to the integration project.",
     );
   }),
 );

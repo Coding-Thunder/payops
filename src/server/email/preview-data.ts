@@ -17,7 +17,7 @@ interface BuildPaymentPreviewArgs {
 }
 
 /**
- * Pass 5h — preview seed for the admin template preview.
+ * Pass 5h, preview seed for the admin template preview.
  *
  * Builds a synthetic universal-shape OrderDTO so the admin can preview
  * the template against a representative line item without needing real

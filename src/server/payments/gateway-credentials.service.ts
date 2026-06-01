@@ -40,7 +40,7 @@ import {
  *
  * `loadGatewayCredential(orgId, gateway)` is the single source of truth
  * for "what API keys do we use to talk to this gateway on behalf of
- * this org". It returns DECRYPTED credentials — caller MUST treat them
+ * this org". It returns DECRYPTED credentials, caller MUST treat them
  * as sensitive (pass directly into the gateway SDK; never log).
  *
  * Legacy tenant: when no row exists and the gateway is STRIPE, we fall
@@ -85,7 +85,7 @@ export async function loadGatewayCredential(
 ): Promise<ResolvedCredential | null> {
   await connectMongo();
 
-  // Per-org lookup — only when caller passed an org.
+  // Per-org lookup, only when caller passed an org.
   if (orgId) {
     requireOrgId(orgId);
     const doc = await GatewayCredential.findOne({
@@ -106,7 +106,7 @@ export async function loadGatewayCredential(
         source: "org",
       };
     }
-    // Per-org row missing — env-fallback eligibility is decided below.
+    // Per-org row missing, env-fallback eligibility is decided below.
     // Phase-4b SECURITY GATE: only the legacy tenant gets to use env
     // credentials. Any other tenant without their own row fails closed
     // so we never silently route Tenant #2's money to the platform's
@@ -116,7 +116,7 @@ export async function loadGatewayCredential(
     }
   }
 
-  // Env-fallback path. Reserved for the LEGACY tenant only — see the
+  // Env-fallback path. Reserved for the LEGACY tenant only, see the
   // SECURITY GATE above. Reached when:
   //   - orgId is null/undefined (un-migrated legacy callers), OR
   //   - orgId points at the legacy organization and has no per-org row.
@@ -162,7 +162,7 @@ export interface SavedCredentialDTO {
   enabled: boolean;
   publishableKey: string | null;
   accountId: string | null;
-  /** Last 4 of the secret key — useful for "did I paste the right one"
+  /** Last 4 of the secret key, useful for "did I paste the right one"
    *  confirmation in the admin UI without re-exposing the secret. */
   secretKeyLast4: string;
   configuredAt: string;
@@ -188,7 +188,7 @@ function buildDTO(doc: GatewayCredentialDoc, secretKeyPlaintext: string): SavedC
  * `TRACETXN_MASTER_KEY` before writing. Re-saving for the same
  * (orgId, gateway) replaces the encrypted blobs (key rotation).
  *
- * Refuses to write when `TRACETXN_MASTER_KEY` is missing — fail loudly
+ * Refuses to write when `TRACETXN_MASTER_KEY` is missing, fail loudly
  * so an operator never persists "encrypted" data they can't decrypt.
  */
 export async function saveGatewayCredential(
@@ -304,7 +304,7 @@ export async function disableGatewayCredential(
   });
 }
 
-/* ───────────────────── Pass 6a — Stripe auto-connect ──────────────────── */
+/* ───────────────────── Pass 6a, Stripe auto-connect ──────────────────── */
 
 export interface ConnectStripeInput {
   mode: GatewayMode;
@@ -427,7 +427,7 @@ export async function connectStripeCredential(
 /**
  * Lightweight "did the operator paste a key that actually works?"
  * check. Used by the admin UI to give an instant ✓ / ✗ before they
- * commit to save. NEVER persists or encrypts anything — pure
+ * commit to save. NEVER persists or encrypts anything, pure
  * read-through to Stripe.
  */
 export async function testStripeSecret(
@@ -454,12 +454,12 @@ export async function testStripeSecret(
 
 /**
  * Probe the org's saved Stripe credential and return a webhook-health
- * report — what's subscribed vs what TraceTxn needs vs what's extra.
+ * report, what's subscribed vs what TraceTxn needs vs what's extra.
  * Pure read; safe to call repeatedly from the admin UI.
  *
  * Pulls the per-org webhook endpoint id off the saved credential
  * (stored on connect) so subsequent verify calls don't have to re-list
- * the operator's Stripe webhooks just to find ours by URL — though
+ * the operator's Stripe webhooks just to find ours by URL, though
  * verifyStripeWebhookHealth also does that fallback.
  */
 export async function probeStripeWebhookForOrg(args: {
@@ -506,7 +506,7 @@ export async function repairStripeWebhookForOrg(args: {
   );
   if (!resolved) return { ok: false, reason: "no_credential" };
 
-  // Need the endpointId — try the saved credential first, fall back to
+  // Need the endpointId, try the saved credential first, fall back to
   // a live lookup against the operator's Stripe account.
   const doc = await GatewayCredential.findOne({
     orgId: orgIdFilter(args.orgId),
@@ -549,7 +549,7 @@ export async function listGatewayCredentialsForOrg(
     enabled: d.enabled,
     publishableKey: d.publishableKey ?? null,
     accountId: d.accountId ?? null,
-    // We don't decrypt here — last-4 only available right after a save
+    // We don't decrypt here, last-4 only available right after a save
     // (see `buildDTO`). Listing shows the mode + enabled state, not
     // the secret fingerprint. Operators rotating need to re-paste.
     secretKeyLast4: "****",

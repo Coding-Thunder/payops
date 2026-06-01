@@ -7,7 +7,7 @@ import { connectMongo } from "@/server/db/mongoose";
 import { orgIdFilter, requireOrgId } from "@/server/db/org/org-context";
 
 /**
- * Pass 6d — saved customer records.
+ * Pass 6d, saved customer records.
  *
  * Two callers only:
  *  - `upsertCustomerFromOrder` fires after every successful order
@@ -49,7 +49,7 @@ export interface UpsertCustomerInput {
 
 /**
  * Idempotent upsert by (orgId, lower-cased email). Latest-write-wins
- * on name + phone — the operator's most recent typing is treated as
+ * on name + phone, the operator's most recent typing is treated as
  * the freshest signal. `ordersCount` increments only when called from
  * the create-order path (`countAsOrder: true`).
  */
@@ -81,7 +81,7 @@ export async function upsertCustomerFromOrder(
   );
 }
 
-/** Email lookup — returns the saved record or null. Powers the order
+/** Email lookup, returns the saved record or null. Powers the order
  *  form's "we know this customer" prefill. Case-insensitive (the
  *  model lower-cases on write). */
 export async function findCustomerByEmail(

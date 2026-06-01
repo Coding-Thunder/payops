@@ -11,7 +11,7 @@ import {
  * even if the notification email is lost.
  *
  * Stripped down on purpose: there is no PII gating, no encryption, no
- * lifecycle — this is a B2B contact form, not a financial record.
+ * lifecycle, this is a B2B contact form, not a financial record.
  */
 export interface QuotationDoc {
   fullName: string;
@@ -26,14 +26,14 @@ export interface QuotationDoc {
   timeline: string;
   customRequirements: string;
   notes: string;
-  /** Status tracked by sales — pending until someone picks it up. */
+  /** Status tracked by sales, pending until someone picks it up. */
   status: "PENDING" | "CONTACTED" | "QUALIFIED" | "ARCHIVED";
   source:
     | "landing"
     | "contact_sales"
     | "email_requirements"
     | "waitlist";
-  /** Email delivery state for the internal notification — separate from
+  /** Email delivery state for the internal notification, separate from
    *  the record itself so a transient SMTP outage never drops the
    *  inbound lead. */
   notificationStatus: "SENT" | "FAILED" | "SKIPPED";

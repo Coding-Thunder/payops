@@ -14,7 +14,7 @@ import {
 export const metadata: Metadata = {
   title: "Privacy Policy",
   description:
-    "How TraceTxn collects, uses, shares, and protects personal information — including the sub-processors we rely on, how long we keep data, and your rights.",
+    "How TraceTxn collects, uses, shares, and protects personal information, including the sub-processors we rely on, how long we keep data, and your rights.",
   alternates: { canonical: "/privacy" },
 };
 
@@ -34,7 +34,7 @@ const SECTIONS: LegalSection[] = [
         </P>
         <Note>
           <strong>Controller vs. processor.</strong> We act as a{" "}
-          <em>data controller</em> for information about you — the
+          <em>data controller</em> for information about you, the
           operator who signed up for TraceTxn. We act as a{" "}
           <em>data processor</em> for information you handle through
           TraceTxn about your customers and end users. Your obligations
@@ -59,7 +59,7 @@ const SECTIONS: LegalSection[] = [
         <H3>Workspace usage</H3>
         <P>
           As you use TraceTxn, we record activity needed to run the
-          Service — orders you create, evidence events, audit-log
+          Service, orders you create, evidence events, audit-log
           entries, sub-processor jobs (e.g. emails queued for delivery),
           and feature interactions. This usage data is scoped to your
           workspace.
@@ -77,14 +77,14 @@ const SECTIONS: LegalSection[] = [
           When subscription billing is active, the payment instrument
           itself is handled by our subscription processor; we store only
           the billing email, last 4 digits, brand, country, and the
-          processor&apos;s opaque customer identifier — never full card
+          processor&apos;s opaque customer identifier, never full card
           data.
         </P>
         <H3>Technical data</H3>
         <P>
           We collect device, browser, IP address, request timestamps,
           and rough geo-location (country/region) for security,
-          fraud-prevention, and observability — including failed login
+          fraud-prevention, and observability, including failed login
           attempts and bot-protection challenge results.
         </P>
         <H3>Cookies</H3>
@@ -115,7 +115,7 @@ const SECTIONS: LegalSection[] = [
           </li>
           <li>
             send transactional email (sign-up confirmation, password
-            reset, billing notices, security alerts) — these are
+            reset, billing notices, security alerts), these are
             necessary for the Service and cannot be opted out of while
             your account is active;
           </li>
@@ -128,7 +128,7 @@ const SECTIONS: LegalSection[] = [
             Service;
           </li>
           <li>
-            improve the Service — primarily through aggregated metrics
+            improve the Service, primarily through aggregated metrics
             (latency, error rates, feature adoption) rather than
             individual profiling.
           </li>
@@ -147,13 +147,13 @@ const SECTIONS: LegalSection[] = [
         <UL>
           <li>
             <strong>Contract.</strong> To create your account, provide
-            the Service, and process payments — without this, we cannot
+            the Service, and process payments, without this, we cannot
             deliver what you signed up for.
           </li>
           <li>
             <strong>Legitimate interests.</strong> To secure the Service
             against abuse, run analytics for product improvement, and
-            send transactional messages — balanced against your rights.
+            send transactional messages, balanced against your rights.
           </li>
           <li>
             <strong>Legal obligation.</strong> To meet tax, accounting,
@@ -179,22 +179,22 @@ const SECTIONS: LegalSection[] = [
         </P>
         <UL>
           <li>
-            <strong>Sub-processors</strong> (listed below) — hosting,
+            <strong>Sub-processors</strong> (listed below), hosting,
             database, authentication, email delivery, payment
             processing, bot protection.
           </li>
           <li>
-            <strong>Within your workspace</strong> — members of your
+            <strong>Within your workspace</strong>, members of your
             workspace see data your role permits them to see. Workspace
             owners see all workspace data.
           </li>
           <li>
-            <strong>Legal compliance</strong> — when required by law,
+            <strong>Legal compliance</strong>, when required by law,
             valid legal process, or to protect rights, property, or
             safety.
           </li>
           <li>
-            <strong>Business transfers</strong> — in connection with a
+            <strong>Business transfers</strong>, in connection with a
             merger, acquisition, or sale of assets, subject to the
             successor honouring this Policy.
           </li>
@@ -252,7 +252,7 @@ const SECTIONS: LegalSection[] = [
               <tr>
                 <td className="px-4 py-3 font-medium">Stripe</td>
                 <td className="px-4 py-3 text-muted-foreground">
-                  Subscription billing (TraceTxn fees) — tenant payment
+                  Subscription billing (TraceTxn fees), tenant payment
                   processing uses your own Stripe account
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">United States / Ireland</td>
@@ -354,7 +354,7 @@ const SECTIONS: LegalSection[] = [
         <P>
           For requests about <em>your customers&apos;</em> personal
           information that we process on your behalf, please direct
-          those requests to your workspace owner — they are the
+          those requests to your workspace owner, they are the
           controller of that data.
         </P>
       </>
@@ -367,7 +367,7 @@ const SECTIONS: LegalSection[] = [
       <>
         <P>
           We use technical and organisational safeguards to protect
-          personal information — encryption in transit, encryption at
+          personal information, encryption in transit, encryption at
           rest for credentials, scoped access controls, audit logging,
           tenant isolation at the data layer, and bot protection on
           public forms.

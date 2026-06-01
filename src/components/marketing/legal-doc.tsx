@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
  * on the left at lg+. Mobile collapses to single column with an
  * inline "On this page" pill row.
  *
- * Each page passes a `sections` array — { id, title, children } — and
+ * Each page passes a `sections` array, { id, title, children }, and
  * the shell handles anchor links + TOC + dividers. Page bodies stay
  * focused on the legal copy.
  */

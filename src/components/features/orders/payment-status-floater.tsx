@@ -85,7 +85,7 @@ export function PaymentStatusFloater({ order }: PaymentStatusFloaterProps) {
     null,
   );
 
-  // Standard "react to event-bus state" pattern — the setState calls
+  // Standard "react to event-bus state" pattern, the setState calls
   // inside this effect run on every match. The lint rule's "don't
   // setState in effects" is a false-positive for event-driven flows.
   React.useEffect(() => {

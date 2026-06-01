@@ -51,7 +51,7 @@ export function EmailFooter({
           color: COLOR.textMuted,
         }}
       >
-        © {year} {brandName}. Automated payment receipt — replies route to
+        © {year} {brandName}. Automated payment receipt, replies route to
         our support team.
       </Text>
       {supportEmail || legalAddress ? (

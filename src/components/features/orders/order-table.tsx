@@ -198,7 +198,7 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
                 </TableCell>
                 <TableCell className="hidden lg:table-cell">
                   <div className="text-[13px] font-medium leading-tight">
-                    {o.lineItems[0]?.name ?? "—"}
+                    {o.lineItems[0]?.name ?? "-"}
                   </div>
                   {o.lineItems.length > 1 ? (
                     <div className="text-[11.5px] text-muted-foreground leading-tight mt-0.5">

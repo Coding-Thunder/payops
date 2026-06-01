@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Pass 6b — POST /api/onboarding/business-setup
+ * Pass 6b, POST /api/onboarding/business-setup
  *
  * Wizard's final commit. Body carries the vertical + the (possibly
  * edited) ItemType template. Server seeds an ItemType for the caller's

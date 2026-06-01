@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 /**
  * POST /api/admin/gateways/stripe/connect
  *
- * Pass 6a — one-shot Stripe connect. Body carries just `mode` +
+ * Pass 6a, one-shot Stripe connect. Body carries just `mode` +
  * `secretKey` (+ optional `publishableKey`, `accountId`); the server
  * verifies the key against Stripe, auto-registers TraceTxn as a webhook
  * endpoint, captures the signing secret on the create response, and

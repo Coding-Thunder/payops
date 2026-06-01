@@ -70,7 +70,7 @@ function summarize(
 
 interface ActorCtx {
   actor: SessionUser;
-  /** Tenant boundary — required for new drafts so they pin to the
+  /** Tenant boundary, required for new drafts so they pin to the
    *  org the operator is currently in. Optional in the type for
    *  legacy callers; the service falls back to null (which means
    *  the draft can't be cross-tenant since reads filter by ownerId
@@ -164,7 +164,7 @@ export async function updateDraft(
     });
     if (!exists) throw new NotFoundError("Draft not found");
     throw new ConflictError(
-      "Draft was modified elsewhere — refresh to pick up the latest changes",
+      "Draft was modified elsewhere, refresh to pick up the latest changes",
     );
   }
   return toDTO(updated);

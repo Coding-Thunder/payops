@@ -12,7 +12,7 @@ interface Params {
   params: Promise<{ id: string }>;
 }
 
-/** DELETE /api/admin/workflow/transitions/:id — remove an edge by id.
+/** DELETE /api/admin/workflow/transitions/:id, remove an edge by id.
  *  Always safe (transitions have no downstream references). */
 export const DELETE = withApi(
   async (_req: NextRequest, { params }: Params) => {

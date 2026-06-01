@@ -24,7 +24,7 @@ interface ConsentPageProps {
  */
 export default async function ConsentPage({ params }: ConsentPageProps) {
   const { token } = await params;
-  // Resolve THIS order's tenant before fetching branding — never the
+  // Resolve THIS order's tenant before fetching branding, never the
   // legacy singleton.
   const orgId = await resolveOrderOrgIdFromConsentToken(token);
   const branding = await getBranding(orgId);

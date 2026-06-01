@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  *
  * Idempotent: backfills the canonical `TRACETXN_STRIPE_EVENTS` list
  * onto the org's existing Stripe webhook endpoint. Doesn't change the
- * endpoint id or signing secret — our stored webhookSecret still
+ * endpoint id or signing secret, our stored webhookSecret still
  * verifies signatures after this call.
  *
  * Surfaced by the admin gateways page when the health probe reports
@@ -37,7 +37,7 @@ export const POST = withApi(async () => {
         "No Stripe credential configured. Connect Stripe first, then re-run repair.",
       );
     }
-    // no_endpoint — credential exists but Stripe has no webhook for us
+    // no_endpoint, credential exists but Stripe has no webhook for us
     throw new NotFoundError(
       "No Stripe webhook endpoint is registered for this workspace yet. Re-connect Stripe to register one.",
     );

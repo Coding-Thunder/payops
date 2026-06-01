@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  * (see `password-reset.service`) so a replayed link can't undo the
  * change after the fact.
  *
- * No session cookie is set — the caller must log in fresh with the
+ * No session cookie is set, the caller must log in fresh with the
  * new password. That's deliberate: a "set new password AND log in
  * the same browser session" flow makes it harder to detect a
  * compromised token mid-flight, since the attacker would already

@@ -19,7 +19,7 @@ interface Params {
 
 /**
  * Public consent endpoint. Both GET (load) and POST (confirm) are
- * unauthenticated — auth is the HMAC-signed token in the URL.
+ * unauthenticated, auth is the HMAC-signed token in the URL.
  *
  * The trimmed PublicConsentView is the ONLY shape we return; never the
  * internal PaymentConsentDTO. That keeps audit metadata (IP, UA,

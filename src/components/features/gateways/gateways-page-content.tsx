@@ -44,25 +44,25 @@ import { PaymentGatewayKey } from "@/lib/constants/enums";
 import { connectStripeSchema } from "@/lib/validation";
 import type { z } from "zod";
 
-// Form binds to the schema's INPUT shape (before transforms) — RHF v7
+// Form binds to the schema's INPUT shape (before transforms), RHF v7
 // resolvers expect the value type to be assignable to the field types.
 type ConnectStripeFormInput = z.input<typeof connectStripeSchema>;
 
 /**
- * Pass 6a — Stripe auto-connect onboarding.
+ * Pass 6a, Stripe auto-connect onboarding.
  *
  * Two-step flow:
- *   1. (Optional) Click "Test connection" — server hits Stripe's
+ *   1. (Optional) Click "Test connection", server hits Stripe's
  *      /v1/balance with the pasted key. ✓ if Stripe accepts, ✗ with a
  *      friendly reason if not.
- *   2. Click "Connect Stripe" — server verifies, auto-registers our
+ *   2. Click "Connect Stripe", server verifies, auto-registers our
  *      webhook endpoint on the operator's Stripe account, captures
  *      the signing secret on the create response, persists both
  *      encrypted. The operator never has to leave this page or visit
  *      Stripe's Webhooks settings.
  *
  * Only Stripe is supported. Other gateway stubs (Razorpay / PayPal /
- * Authorize.net) were removed in Pass 6a — we'll add them back the
+ * Authorize.net) were removed in Pass 6a, we'll add them back the
  * day we have a real adapter for each.
  */
 
@@ -280,7 +280,7 @@ function WebhookHealthPanel({ canEdit }: { canEdit: boolean }) {
         requiredEvents: string[];
       }>("/api/admin/gateways/stripe/repair-webhook", {});
       toast.success(
-        `Webhook updated — ${res.subscribedEvents.length} events subscribed`,
+        `Webhook updated, ${res.subscribedEvents.length} events subscribed`,
       );
       // Re-verify so the panel reflects the now-healthy state.
       await verify();
@@ -645,7 +645,7 @@ function ConnectStripeCard({
                         Stripe dashboard → Developers → API keys
                         <ExternalLinkIcon className="size-3" />
                       </a>
-                      . Look for &quot;Secret key&quot; — click{" "}
+                      . Look for &quot;Secret key&quot;, click{" "}
                       <em>Reveal</em> and copy the <code>sk_…</code> value.
                       We encrypt it before saving and never display the
                       full value again.
@@ -754,7 +754,7 @@ function NoAccountYetCard() {
             Don&apos;t have a Stripe account yet?
           </p>
           <p className="text-[12px] text-muted-foreground">
-            Create one in a couple of minutes — Stripe is free to sign up
+            Create one in a couple of minutes, Stripe is free to sign up
             and free to use in test mode.
           </p>
         </div>

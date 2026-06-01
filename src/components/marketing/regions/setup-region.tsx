@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ArrowRightIcon, CheckIcon } from "lucide-react";
 
 /**
- * Setup region — closes the document with a numbered procedure.
+ * Setup region, closes the document with a numbered procedure.
  *
  * Sits in a soft inset surface for region rhythm + uses green
  * numbered ring pills on the steps (same operational identity
@@ -13,7 +13,7 @@ const STEPS: Array<{ k: string; title: string; body: string }> = [
   {
     k: "1",
     title: "Create your workspace",
-    body: "Sign up, name your business, pick a vertical template — retail, services, rental, repair, dealership, generic. The catalog seeds itself; the operator console is live.",
+    body: "Sign up, name your business, pick a vertical template, retail, services, rental, repair, dealership, generic. The catalog seeds itself; the operator console is live.",
   },
   {
     k: "2",
@@ -28,7 +28,7 @@ const STEPS: Array<{ k: string; title: string; body: string }> = [
 ];
 
 const INCLUDED: string[] = [
-  "Org-isolated data — your tenant, your records",
+  "Org-isolated data, your tenant, your records",
   "Branded customer-facing payment pages",
   "Role + permission matrix (Admin, Staff, custom)",
   "Audit-grade hashed evidence chain",
@@ -60,7 +60,7 @@ export function SetupRegion() {
           <p className="mt-4 max-w-[44ch] text-[14px] leading-relaxed text-muted-foreground">
             Item types, orders, evidence, and consent are universal
             primitives. Pick a vertical template, connect Stripe, run a
-            real order through the lifecycle — all of it inside your
+            real order through the lifecycle, all of it inside your
             tenant from the first minute.
           </p>
 
@@ -73,7 +73,7 @@ export function SetupRegion() {
           </Link>
         </div>
 
-        {/* Numbered procedure — green ring pills + connector line.
+        {/* Numbered procedure, green ring pills + connector line.
             Same operational identity element the case-file timeline
             uses on its events. */}
         <ol className="relative space-y-6">

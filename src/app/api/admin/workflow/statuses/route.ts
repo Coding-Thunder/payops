@@ -9,7 +9,7 @@ import { addStatus } from "@/server/services/workflow.service";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** POST /api/admin/workflow/statuses — append a new status to the
+/** POST /api/admin/workflow/statuses, append a new status to the
  *  tenant's workflow. Status keys must be unique within the workflow;
  *  service throws ValidationError on collision. */
 export const POST = withApi(async (req: NextRequest) => {

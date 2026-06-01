@@ -4,7 +4,7 @@ export const size = { width: 180, height: 180 };
 export const contentType = "image/png";
 
 /**
- * Apple touch icon — rendered to PNG at build/request time via
+ * Apple touch icon, rendered to PNG at build/request time via
  * ImageResponse so iOS home-screen pins get the proper rounded-square
  * format (Safari doesn't render SVG apple-touch-icons).
  *

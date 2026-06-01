@@ -18,7 +18,7 @@ interface Params {
  *
  * Asks Stripe directly whether the customer has paid this session.
  * Drives the same atomic PAID transition the webhook uses when Stripe
- * says yes — backstops dropped / delayed webhooks and the local-dev
+ * says yes, backstops dropped / delayed webhooks and the local-dev
  * "stripe listen isn't running" case.
  *
  * Authorized as ORDER_VIEW_OWN (staff can reconcile orders they
@@ -37,7 +37,7 @@ export const POST = withApi(
     return jsonOk(result);
   },
   {
-    // Each call hits Stripe's API — cap so a polling client (or a
+    // Each call hits Stripe's API, cap so a polling client (or a
     // misbehaving tab) can't burn the merchant's Stripe rate budget.
     rateLimit: { route: "order-reconcile", max: 30, windowMs: 60_000 },
   },

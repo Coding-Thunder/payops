@@ -23,12 +23,12 @@ import {
 import { ensureMongo, resetDatabase } from "@/tests/utils/db";
 
 /**
- * Document service — issue + read + numbering + tenant isolation.
+ * Document service, issue + read + numbering + tenant isolation.
  *
  * Critical invariants asserted:
  *   1. Number allocation is monotonic per (orgId, kind).
  *   2. Two orgs allocate the same INV sequence (orgId scopes it).
- *   3. Issued docs are append-only — re-render reads the snapshot,
+ *   3. Issued docs are append-only, re-render reads the snapshot,
  *      not the live order.
  *   4. getDocumentById refuses cross-tenant id-guesses.
  *   5. RECEIPT requires the order to be paid.
@@ -224,7 +224,7 @@ describe("document.service", () => {
     expect(list.map((d) => d.id)).toEqual([second.id, first.id]);
   });
 
-  it("documents are append-only — directly trying to update throws", async () => {
+  it("documents are append-only, directly trying to update throws", async () => {
     const a = await persistOrgAndOrder("alpha");
     const doc = await issueDocument(
       { orderId: a.orderId, kind: DocumentKind.INVOICE },

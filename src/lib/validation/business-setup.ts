@@ -11,12 +11,12 @@ import {
 import { BUSINESS_VERTICALS } from "@/lib/constants/business-templates";
 
 /**
- * Pass 6b — onboarding wizard payload.
+ * Pass 6b, onboarding wizard payload.
  *
  * The wizard prepopulates the form from the platform-defined template
  * (see `business-templates.ts`), lets the founder edit lightly, then
  * POSTs the resulting ItemType definition. The shape is intentionally
- * the same as what `createItemType` would accept directly — the
+ * the same as what `createItemType` would accept directly, the
  * wizard is a UX wrapper around the existing service, not a parallel
  * pipeline.
  */

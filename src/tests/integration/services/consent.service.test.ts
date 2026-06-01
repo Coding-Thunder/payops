@@ -20,7 +20,7 @@ import { createOrder as factoryCreateOrder } from "@/tests/factories/order.facto
 import { createSettings } from "@/tests/factories/settings.factory";
 
 /**
- * Consent service — full integration. Locks down the contract the hosted
+ * Consent service, full integration. Locks down the contract the hosted
  * page depends on: signedName is required to flip REQUESTED → RECEIVED,
  * replays are idempotent (refresh-after-consent must NOT 422), and the
  * returned PublicConsentView always carries the Stripe URL so the page
@@ -130,7 +130,7 @@ describe("recordConsentFromToken", () => {
       },
     );
 
-    // Customer submission IS the verification — status lands on VERIFIED.
+    // Customer submission IS the verification, status lands on VERIFIED.
     expect(view.status).toBe(ConsentStatus.VERIFIED);
     expect(view.paymentUrl).toBe(
       "https://checkout.stripe.com/c/pay/cs_test_seed",
@@ -183,7 +183,7 @@ describe("recordConsentFromToken", () => {
     );
     expect(replay.status).toBe(ConsentStatus.VERIFIED);
     expect(replay.alreadyConfirmedAt).toBe(first.alreadyConfirmedAt);
-    // Exactly one CONSENT_RECEIVED audit row — no duplicate written on replay.
+    // Exactly one CONSENT_RECEIVED audit row, no duplicate written on replay.
     const audits = await AuditLog.find({
       action: AuditAction.CONSENT_RECEIVED,
     }).lean();

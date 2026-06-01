@@ -12,14 +12,14 @@ import { AppError } from "@/lib/errors";
  * `sameSite=strict` cookie + Content-Type=application/json as the
  * three-layer CSRF defense.
  *
- * Webhook routes don't call this — they're gateway-signature-authed
+ * Webhook routes don't call this, they're gateway-signature-authed
  * and originate from the gateway, not the browser. The `withApi`
  * wrapper accepts an `allowCrossOrigin` opt-out for any future route
  * that needs it.
  */
 export async function enforceSameOrigin(): Promise<void> {
   // Test harness drives handlers without going through a real browser,
-  // so the Origin header is rarely set. Skip the guard there — same
+  // so the Origin header is rarely set. Skip the guard there, same
   // contract as `enforceRateLimit`. Production still enforces.
   if (process.env.TRACETXN_TEST_MODE) return;
   const h = await headers();
@@ -55,7 +55,7 @@ function normalize(url: string): string {
 export const DEFAULT_BODY_LIMIT_BYTES = 32 * 1024;
 
 /**
- * Reject requests with Content-Length above the cap. Cheap pre-flight —
+ * Reject requests with Content-Length above the cap. Cheap pre-flight -
  * pair with bounded reads in routes that don't trust Content-Length.
  */
 export async function enforceBodyLimit(
@@ -84,7 +84,7 @@ const buckets = new Map<string, Bucket>();
 let lastSweepAt = 0;
 
 interface RateLimitOptions {
-  /** Logical route name — namespace for the bucket. */
+  /** Logical route name, namespace for the bucket. */
   route: string;
   /** Caller key (user id, IP, tokenHash, etc.). */
   key: string;
@@ -95,7 +95,7 @@ interface RateLimitOptions {
 }
 
 /**
- * In-process token bucket. Single-instance only — that's intentional
+ * In-process token bucket. Single-instance only, that's intentional
  * for the $5 tier. Same signature carries over when you swap the Map
  * for a Redis store later. Throws RATE_LIMITED (429) on excess.
  */
@@ -118,7 +118,7 @@ export function enforceRateLimit(opts: RateLimitOptions): void {
     );
     throw new AppError(
       "RATE_LIMITED",
-      "Too many requests — please try again shortly",
+      "Too many requests, please try again shortly",
       429,
       { details: { retryAfterSec } },
     );
@@ -196,7 +196,7 @@ export function releaseSseSlot(userId: string): void {
 /** Apply HSTS + private-cache headers to every JSON response. HSTS is
  *  harmless over HTTP (browsers ignore); enforced by browsers once HTTPS
  *  is seen. `Cache-Control: no-store, private` blocks upstream proxies
- *  from caching authed JSON — non-overriding so callers can still opt
+ *  from caching authed JSON, non-overriding so callers can still opt
  *  into long-cache for genuinely public assets. */
 export function applySecurityHeaders(res: Response): void {
   res.headers.set(

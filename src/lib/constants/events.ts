@@ -28,7 +28,7 @@ export const DomainEventType = {
 /**
  * The set of event types whose payload references a specific orderId. The
  * client uses this to know when to invalidate the per-order React Query
- * cache — adding a new order:* event? Add it here too.
+ * cache, adding a new order:* event? Add it here too.
  */
 export const ORDER_LIFECYCLE_EVENT_TYPES = new Set<string>([
   "order:created",
@@ -50,7 +50,7 @@ export type DomainEventType =
   (typeof DomainEventType)[keyof typeof DomainEventType];
 
 /**
- * Audience scoping rules — drives the SSE filter on the server.
+ * Audience scoping rules, drives the SSE filter on the server.
  *  - `all`     : visible to everyone with an active session
  *  - `admins`  : ADMIN + SUPER_ADMIN only
  *  - `creator` : the user who created the underlying record (plus admins)
@@ -74,13 +74,13 @@ export interface DomainEvent<TPayload = Record<string, unknown>> {
   };
   /** Tenant boundary on the event. Required for any event scoped to a
    *  business record; nullable only for system-wide events that have
-   *  no tenant context (rare — at the time of writing, none).
+   *  no tenant context (rare, at the time of writing, none).
    *
    *  The SSE filter (`isEventVisibleToUser`) gates delivery on this:
    *  viewers only see events whose `orgId` matches their own active
    *  org. An event with no `orgId` (legacy + system) is treated as
    *  "scope unknown" and delivered ONLY when the audience-kind filter
-   *  also passes — see the comment in `bus.ts` for the truth table. */
+   *  also passes, see the comment in `bus.ts` for the truth table. */
   orgId: string | null;
   audience: DomainEventAudience;
   payload: TPayload;

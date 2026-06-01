@@ -8,9 +8,9 @@ import { BrandFooter } from "@/components/marketing/brand-footer";
 import { BrandNav } from "@/components/marketing/brand-nav";
 
 export const metadata: Metadata = {
-  title: "Pricing — Starter, Growth, Scale",
+  title: "Pricing, Starter, Growth, Scale",
   description:
-    "TraceTxn pricing — three tiers from $39/month. Full evidence chain, audit trail, lifecycle tracking, and PDF export on every plan. Anchored against $500-$1,000/month enterprise dispute tools.",
+    "TraceTxn pricing, three tiers from $39/month. Full evidence chain, audit trail, lifecycle tracking, and PDF export on every plan. Anchored against $500-$1,000/month enterprise dispute tools.",
   alternates: { canonical: "/pricing" },
 };
 
@@ -31,7 +31,10 @@ interface Tier {
   ctaLabel: string;
   ctaHref: string;
   recommended?: boolean;
+  trialLine: string;
 }
+
+const TRIAL_LINE = "14 day free trial. No credit card required.";
 
 const TIERS: Tier[] = [
   {
@@ -39,62 +42,67 @@ const TIERS: Tier[] = [
     price: 39,
     cadence: "per month",
     blurb:
-      "Everything a solo operator needs to take payments and resolve disputes — without an enterprise contract.",
+      "Everything you need to take payments and win disputes from day one.",
     ordersLabel: "Up to 30 active orders at a time",
     usersLabel: "Solo operator",
     highlights: [
-      "Hashed evidence chain on every order",
-      "Full audit trail + payment lifecycle tracking",
-      "PDF receipt + invoice export",
-      "Hosted consent flow for dispute defence",
-      "Per-org Stripe connect — your keys encrypted",
+      "Dispute-ready evidence chain on every order",
+      "Full payment lifecycle and audit trail",
+      "Customer consent flow with timestamp and IP capture",
+      "PDF evidence export, bank-submittable",
+      "Real-time payment monitoring via Stripe",
+      "PDF receipt and invoice export",
+      "Stripe connection with encrypted key storage",
     ],
     ctaLabel: "Start with Starter",
     ctaHref: "/signup",
+    trialLine: TRIAL_LINE,
   },
   {
     name: "Growth",
     price: 99,
     cadence: "per month",
     blurb:
-      "The conversion tier — 5–10× cheaper than enterprise dispute tools for the same core need.",
+      "For growing teams handling real dispute volume. Cheaper than one lost chargeback per month.",
     ordersLabel: "Up to 150 active orders at a time",
     usersLabel: "Up to 3 team members",
     highlights: [
       "Everything in Starter",
       "Webhook delivery monitoring",
-      "Reason-code analytics + dispute trends",
-      "Priority email support",
-      "Configurable order workflows",
-      "Custom branding on payment + consent pages",
+      "Reason code analytics and dispute trends",
+      "Custom order stages and status automation",
+      "Custom branding on payment and consent pages",
+      "Priority email support with 48 hour response",
     ],
     ctaLabel: "Start with Growth",
     ctaHref: "/signup",
     recommended: true,
+    trialLine: TRIAL_LINE,
   },
   {
     name: "Scale",
     price: 249,
     cadence: "per month",
     blurb:
-      "For teams where one won dispute per month more than covers the cost. Immediate ROI.",
+      "For operations where dispute readiness is a daily job, not a monthly fire drill.",
     ordersLabel: "Unlimited orders",
     usersLabel: "Unlimited team members",
     highlights: [
       "Everything in Growth",
-      "Full analytics suite",
-      "API access for custom integrations",
+      "Full analytics suite including revenue trends, conversion tracking, and staff performance",
+      "API access to read orders, pull evidence chains, and push events to your own systems",
       "Custom branding on PDF evidence exports",
-      "Dedicated onboarding session",
-      "SLA-backed support",
+      "Dedicated onboarding session plus 30 day check-in call",
+      "Priority support with 12 hour SLA",
     ],
     ctaLabel: "Start with Scale",
     ctaHref: "/signup",
+    trialLine: TRIAL_LINE,
   },
 ];
 
-/* Side-by-side feature matrix — quick comparison without re-listing
- * the bullets above. ✓ / "—" only; no "Coming soon" weasel-words. */
+/* Side-by-side feature matrix, quick comparison without re-listing
+ * the bullets above. ✓ / "-" only; no "Coming soon" weasel-words. */
 interface MatrixRow {
   label: string;
   starter: boolean | string;
@@ -105,47 +113,54 @@ interface MatrixRow {
 const MATRIX: MatrixRow[] = [
   { label: "Active orders at a time", starter: "30", growth: "150", scale: "Unlimited" },
   { label: "Team members", starter: "Solo operator", growth: "Up to 3", scale: "Unlimited" },
-  { label: "Hashed evidence chain", starter: true, growth: true, scale: true },
+  { label: "Dispute-ready evidence chain", starter: true, growth: true, scale: true },
   { label: "Audit trail", starter: true, growth: true, scale: true },
   { label: "Payment lifecycle tracking", starter: true, growth: true, scale: true },
+  { label: "Customer consent flow (timestamp + IP)", starter: true, growth: true, scale: true },
   { label: "PDF invoice + receipt export", starter: true, growth: true, scale: true },
-  { label: "Hosted consent flow", starter: true, growth: true, scale: true },
-  { label: "Per-org Stripe connect", starter: true, growth: true, scale: true },
-  { label: "Webhook monitoring", starter: false, growth: true, scale: true },
-  { label: "Reason-code analytics", starter: false, growth: true, scale: true },
-  { label: "Configurable workflows", starter: false, growth: true, scale: true },
-  { label: "Custom-branded payment pages", starter: false, growth: true, scale: true },
+  { label: "PDF evidence export", starter: true, growth: true, scale: true },
+  { label: "Real-time Stripe payment monitoring", starter: true, growth: true, scale: true },
+  { label: "Stripe connection (encrypted keys)", starter: true, growth: true, scale: true },
+  { label: "Webhook delivery monitoring", starter: false, growth: true, scale: true },
+  { label: "Reason code analytics", starter: false, growth: true, scale: true },
+  { label: "Custom order stages + status automation", starter: false, growth: true, scale: true },
+  { label: "Custom-branded payment + consent pages", starter: false, growth: true, scale: true },
   { label: "Full analytics suite", starter: false, growth: false, scale: true },
   { label: "API access", starter: false, growth: false, scale: true },
   { label: "Custom-branded PDF evidence", starter: false, growth: false, scale: true },
-  { label: "Dedicated onboarding", starter: false, growth: false, scale: true },
-  { label: "Support", starter: "Email", growth: "Priority email", scale: "SLA-backed" },
+  { label: "Dedicated onboarding + 30 day check-in", starter: false, growth: false, scale: true },
+  {
+    label: "Support",
+    starter: "Email",
+    growth: "Priority, 48h response",
+    scale: "Priority, 12h SLA",
+  },
 ];
 
 const FAQS: Array<{ q: string; a: string }> = [
   {
     q: "What counts as an active order?",
-    a: "Any order created in TraceTxn during the calendar month — paid, pending, failed, or in dispute. Archived orders from previous months don't count; you can keep historical evidence chains indefinitely.",
+    a: "An order with a status that is not yet terminal: NOT_INITIATED, LINK_GENERATED, or PAYMENT_PENDING. Once an order is paid, failed, or expired it frees a slot. You can keep historical evidence chains indefinitely.",
   },
   {
     q: "Can I switch tiers later?",
-    a: "Yes, up or down at any time. Tier change takes effect on the next billing cycle. Order limits, user seats, and feature gates flip immediately on the new tier.",
+    a: "Yes, up or down at any time. Tier change takes effect on the next billing cycle. Order limits, team-member seats, and feature gates flip immediately on the new tier.",
   },
   {
     q: "What happens if I exceed my order limit?",
-    a: "We notify you when you hit 80% of your tier's monthly limit. If you cross the limit, new orders queue as drafts until you upgrade or until the next month rolls over. We never silently fail payments mid-month.",
+    a: "Order creation is blocked with a clear upgrade prompt the moment you reach the cap. Existing orders stay editable and payments keep flowing. Resolve a pending order (mark it paid, expire it, or archive it) to free a slot, or upgrade for more headroom.",
   },
   {
     q: "Do you charge per transaction or take a cut of payments?",
-    a: "No. TraceTxn is a flat subscription. Your Stripe processing fees stay between you and Stripe — we never touch the money. Your customers see your business name + Stripe as the processor.",
+    a: "No. TraceTxn is a flat subscription. Your Stripe processing fees stay between you and Stripe, and we never touch the money. Your customers see your business name plus Stripe as the processor.",
   },
   {
     q: "Is there a free trial?",
-    a: "Every workspace gets a 14-day full-feature trial on the Growth tier. No card required to start. At day 14 you pick a plan or your workspace becomes read-only until you do.",
+    a: "Every paid tier starts with a 14 day full-feature trial. No credit card required. At day 14 you pick a plan or your workspace becomes read-only until you do.",
   },
   {
-    q: "How does pricing compare to ChargeSentry or enterprise dispute tools?",
-    a: "ChargeSentry starts at $99.95/month for an entry tier that gets weak reviews. Enterprise dispute platforms (Justt, Chargebacks911, etc.) typically run $500–$1,000/month for small businesses. TraceTxn covers the core lifecycle + evidence + consent flow that those tools sell, at a fraction of the price.",
+    q: "How does pricing compare to enterprise dispute tools?",
+    a: "Most enterprise dispute platforms run $500 to $1,000 a month for small businesses. TraceTxn covers the core lifecycle, evidence, and consent flow that those tools sell, at a fraction of the price.",
   },
 ];
 
@@ -174,14 +189,13 @@ export default function PricingPage() {
             Pricing
           </p>
           <h1 className="mx-auto mt-6 max-w-2xl font-display text-[clamp(2rem,5vw,3.6rem)] font-medium leading-[1.05] tracking-[-0.025em]">
-            Three tiers. No transaction fees.{" "}
+            Simple pricing.{" "}
             <span className="font-semibold text-[color:var(--brand-emerald)]">
-              Cancel anytime.
+              No enterprise contracts.
             </span>
           </h1>
           <p className="mx-auto mt-5 max-w-xl text-[15px] leading-relaxed text-muted-foreground">
-            Flat monthly pricing. Your Stripe processing fees stay between
-            you and Stripe — TraceTxn never touches the money.
+            Start free for 14 days. No credit card required.
           </p>
         </div>
       </section>
@@ -195,9 +209,7 @@ export default function PricingPage() {
         </div>
 
         <p className="mx-auto mt-10 max-w-2xl text-center text-[12.5px] text-muted-foreground">
-          14-day full-feature trial on Growth. No credit card required to
-          start. Pricing applies in USD; per-region pricing rolls out
-          later this year.
+          Pricing shown in USD. Per-region pricing rolls out later this year.
         </p>
       </section>
 
@@ -349,7 +361,7 @@ function TierCard({ tier }: { tier: Tier }) {
         ))}
       </ul>
 
-      <div className="mt-7">
+      <div className="mt-7 space-y-2.5">
         <Button
           asChild
           className="w-full gap-1.5"
@@ -360,6 +372,9 @@ function TierCard({ tier }: { tier: Tier }) {
             <ArrowRightIcon className="size-3.5" />
           </Link>
         </Button>
+        <p className="text-center text-[11px] text-muted-foreground">
+          {tier.trialLine}
+        </p>
       </div>
     </div>
   );

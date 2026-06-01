@@ -1,5 +1,5 @@
 /**
- * Document footer — the final closing strip.
+ * Document footer, the final closing strip.
  *
  * Reads as the bottom-of-document footer of an exported artifact, not
  * a sitewide marketing footer. One line of wordmark + tagline +

@@ -11,7 +11,7 @@ import { registerModel } from "./register";
  * Issued accounting documents (invoices, receipts, future: credit
  * notes / quotes).
  *
- * Append-only. Once a document is issued, it's frozen — re-rendering
+ * Append-only. Once a document is issued, it's frozen, re-rendering
  * always uses the stored snapshot, never re-derives from the current
  * Order. That preserves the document's integrity for accounting and
  * audit purposes: an invoice from March 2026 must show the brand /
@@ -20,7 +20,7 @@ import { registerModel } from "./register";
  *
  * Numbering: monotonic per (orgId, kind), allocated atomically via
  * DocumentSequence. Required for tax/accounting compliance in most
- * jurisdictions — sequential, no gaps, no duplicates.
+ * jurisdictions, sequential, no gaps, no duplicates.
  *
  * MVP storage: HTML snapshot only. PDF is generated on-demand by the
  * browser via a print-stylesheet route ("Save as PDF" from the print
@@ -36,7 +36,7 @@ export const DocumentKind = {
 export type DocumentKind = (typeof DocumentKind)[keyof typeof DocumentKind];
 export const DOCUMENT_KINDS = Object.values(DocumentKind) as DocumentKind[];
 
-/** Snapshotted at issue time. Renderer reads these — never the live
+/** Snapshotted at issue time. Renderer reads these, never the live
  *  order/branding rows. */
 export interface DocumentSnapshot {
   /** Tenant brand + support details as they were at issue time. */
@@ -86,7 +86,7 @@ export interface DocumentDoc {
   orderId: Types.ObjectId;
   kind: DocumentKind;
   /** Tenant-facing identifier, e.g. "INV-2026-0001". Unique within
-   *  (orgId, kind) — the index below enforces this. */
+   *  (orgId, kind), the index below enforces this. */
   number: string;
   issuedAt: Date;
   /** Null for system-issued docs (auto-receipt on payment). */
@@ -159,7 +159,7 @@ documentSchema.index({ orderId: 1, kind: 1, issuedAt: -1 });
 documentSchema.index({ orgId: 1, issuedAt: -1 });
 
 // Append-only safety. Once a document is issued, snapshot + html
-// must NEVER mutate — the document IS the record. Trying to re-save
+// must NEVER mutate, the document IS the record. Trying to re-save
 // throws so a stray service-layer bug can't silently rewrite history.
 documentSchema.pre("findOneAndUpdate", function () {
   throw new Error(
@@ -186,7 +186,7 @@ export const Document: Model<DocumentDoc> = registerModel<DocumentDoc>(
  * allocator without a transaction.
  *
  * Format produced by the service (NOT by this collection): a tenant-
- * friendly string like "INV-2026-0001" — see formatDocumentNumber.
+ * friendly string like "INV-2026-0001", see formatDocumentNumber.
  */
 export interface DocumentSequenceDoc {
   orgId: Types.ObjectId;

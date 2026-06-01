@@ -33,7 +33,7 @@ interface Params {
  *   1. In-process semaphore caps concurrent renders to 1. Excess
  *      callers get 503 + Retry-After so the UI backs off cleanly
  *      rather than fighting for memory.
- *   2. Chain-size cap (`PDF_MAX_EVENTS`) — refuse very large chains
+ *   2. Chain-size cap (`PDF_MAX_EVENTS`), refuse very large chains
  *      with 413. Forces an upstream chunking strategy before the
  *      renderer can OOM the box.
  *   3. The slot is released in `finally` so a throw inside the renderer

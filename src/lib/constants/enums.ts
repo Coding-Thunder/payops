@@ -25,14 +25,14 @@ export const RECORD_STATES = Object.values(RecordState) as RecordState[];
 
 export const OrderStatus = {
   /** Order has been created but no payment session exists yet. Default
-   *  state for new orders — no gateway has been called, the order is
+   *  state for new orders, no gateway has been called, the order is
    *  editable, no payment side-effects. */
   NOT_INITIATED: "NOT_INITIATED",
   /** Gateway session created, payment URL persisted. The agent has
    *  generated the link but the payment-request email has NOT been
    *  sent yet. The customer can't reach this state on their own. */
   LINK_GENERATED: "LINK_GENERATED",
-  /** Email sent — customer can now click through to checkout. Payment
+  /** Email sent, customer can now click through to checkout. Payment
    *  is in flight. */
   PAYMENT_PENDING: "PAYMENT_PENDING",
   PAID: "PAID",
@@ -207,11 +207,11 @@ export type EmailKind = (typeof EmailKind)[keyof typeof EmailKind];
 /**
  * Lifecycle of the pre-payment customer acknowledgement.
  *
- *  NOT_REQUESTED — order exists but no consent has been asked for yet
- *  REQUESTED     — consent record created and an email/link was sent
- *  RECEIVED      — customer clicked through and confirmed (hosted page)
+ *  NOT_REQUESTED, order exists but no consent has been asked for yet
+ *  REQUESTED    , consent record created and an email/link was sent
+ *  RECEIVED     , customer clicked through and confirmed (hosted page)
  *                  or replied via mailto fallback
- *  VERIFIED      — agent has reviewed the received consent and marked it
+ *  VERIFIED     , agent has reviewed the received consent and marked it
  *                  as a clean, dispute-grade record
  */
 export const ConsentStatus = {
@@ -238,8 +238,8 @@ export const CONSENT_METHODS = Object.values(ConsentMethod) as ConsentMethod[];
 
 /**
  * Operational policy for how strictly we want consent before payment.
- * Defaults to ADVISORY — we record consent but never block the customer
- * from paying — until the org explicitly tightens it.
+ * Defaults to ADVISORY, we record consent but never block the customer
+ * from paying, until the org explicitly tightens it.
  */
 export const ConsentMode = {
   ADVISORY: "ADVISORY",

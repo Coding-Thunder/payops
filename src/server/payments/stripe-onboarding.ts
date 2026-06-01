@@ -7,7 +7,7 @@ import { GatewayMode } from "@/server/db/models";
 import { getStripeForSecret } from "./stripe";
 
 /**
- * Pass 6a — Stripe onboarding helpers.
+ * Pass 6a, Stripe onboarding helpers.
  *
  * Goal: cut the gateway-setup ritual ("paste secret → go to Stripe →
  * register webhook → paste resulting whsec back here") down to a
@@ -18,13 +18,13 @@ import { getStripeForSecret } from "./stripe";
  *
  * Why this is safe: the secret key the operator pastes IS the
  * authorization. With it we can do whatever Stripe lets account-level
- * keys do — including managing webhook endpoints. We never store the
+ * keys do, including managing webhook endpoints. We never store the
  * key in plaintext beyond the request lifetime; the encryption + audit
  * trail in `gateway-credentials.service.ts` is unchanged.
  */
 
 /** Events TraceTxn subscribes to. Mirrors `mapStripeEventType` in
- *  `gateways/stripe.ts` — any new event handled there must be added
+ *  `gateways/stripe.ts`, any new event handled there must be added
  *  here so newly-registered endpoints actually receive it. */
 export const TRACETXN_STRIPE_EVENTS = [
   "checkout.session.completed",
@@ -143,7 +143,7 @@ export async function registerStripeWebhookEndpoint(args: {
       }
     }
   } catch {
-    // List failed (permissions?) — fall through to create.
+    // List failed (permissions?), fall through to create.
   }
 
   const created = await stripe.webhookEndpoints.create({
@@ -151,7 +151,7 @@ export async function registerStripeWebhookEndpoint(args: {
     enabled_events: [
       ...TRACETXN_STRIPE_EVENTS,
     ] as unknown as Stripe.WebhookEndpointCreateParams.EnabledEvent[],
-    description: "TraceTxn — auto-registered by the admin onboarding flow.",
+    description: "TraceTxn, auto-registered by the admin onboarding flow.",
   });
   if (!created.secret) {
     throw new Error(
@@ -249,7 +249,7 @@ export type WebhookHealthStatus =
   /** No endpoint at our callback URL. Either the operator deleted it
    *  from Stripe, or we never finished the connect flow. */
   | "not_found"
-  /** Stripe rejected our key — auth failure, revoked key, etc. */
+  /** Stripe rejected our key, auth failure, revoked key, etc. */
   | "auth_failed"
   /** Couldn't reach Stripe at all. */
   | "unreachable";
@@ -268,7 +268,7 @@ export interface WebhookHealthReport {
   subscribedEvents: string[];
   /** Events TraceTxn relies on that are NOT on the endpoint. */
   missingEvents: string[];
-  /** Events subscribed but not in TraceTxn's required list — only
+  /** Events subscribed but not in TraceTxn's required list, only
    *  informational. Doesn't block "healthy" status. */
   extraEvents: string[];
   /** Human-readable summary for surfacing in the UI alert. */
@@ -287,7 +287,7 @@ function normalize(events: readonly string[]): string[] {
  * events against TRACETXN_STRIPE_EVENTS. Returns a structured report
  * the admin UI renders verbatim.
  *
- * Pure read — no mutation. Repair lives in `repairStripeWebhookEvents`.
+ * Pure read, no mutation. Repair lives in `repairStripeWebhookEvents`.
  */
 export async function verifyStripeWebhookHealth(args: {
   secretKey: string;
@@ -307,7 +307,7 @@ export async function verifyStripeWebhookHealth(args: {
 
   const stripe = getStripeForSecret(args.secretKey);
 
-  // 1. Key health probe — same call we use during initial verify so
+  // 1. Key health probe, same call we use during initial verify so
   // failure modes surface identically.
   let livemode: boolean | null = null;
   try {
@@ -352,7 +352,7 @@ export async function verifyStripeWebhookHealth(args: {
   }
 
   const subscribed = normalize(endpoint.enabled_events ?? []);
-  // "*" means "all events" — Stripe accepts it as a wildcard; treat
+  // "*" means "all events", Stripe accepts it as a wildcard; treat
   // it as covering every required event.
   const isWildcard = subscribed.includes("*");
   const missing = isWildcard
@@ -408,7 +408,7 @@ export async function verifyStripeWebhookHealth(args: {
  * Idempotent: re-running is safe; Stripe accepts the full event list
  * and just updates `enabled_events` to that set.
  *
- * Does NOT change the endpoint id or signing secret — so our encrypted
+ * Does NOT change the endpoint id or signing secret, so our encrypted
  * webhookSecret in `gateway_credentials` keeps validating signatures.
  */
 export async function repairStripeWebhookEvents(args: {

@@ -14,7 +14,7 @@ import { createOrder } from "@/server/services/order.service";
 import { ensureMongo, resetDatabase } from "@/tests/utils/db";
 
 /**
- * Pass 5d coverage — polymorphic createOrder accepts BOTH the legacy
+ * Pass 5d coverage, polymorphic createOrder accepts BOTH the legacy
  * rental shape AND the universal lineItems[] shape, and the universal
  * path enforces ItemType tenant isolation + per-attribute validation.
  *
@@ -96,7 +96,7 @@ async function seedMilkCartonType(orgId: string): Promise<void> {
   });
 }
 
-describe("createOrder — universal shape (Pass 5d)", () => {
+describe("createOrder, universal shape (Pass 5d)", () => {
   it("persists a single-line milk order, recomputes total, and writes lineItems", async () => {
     const orgId = new Types.ObjectId().toString();
     await seedSettingsForOrg(orgId);
@@ -139,7 +139,7 @@ describe("createOrder — universal shape (Pass 5d)", () => {
   it("REFUSES a universal order when the itemType is unknown for this org", async () => {
     const orgId = new Types.ObjectId().toString();
     await seedSettingsForOrg(orgId);
-    // No ItemType seeded — milk_carton doesn't exist for this org.
+    // No ItemType seeded, milk_carton doesn't exist for this org.
 
     await expect(
       createOrder(
@@ -167,7 +167,7 @@ describe("createOrder — universal shape (Pass 5d)", () => {
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
-  it("REFUSES cross-tenant ItemType reuse — Org B cannot reference Org A's milk_carton", async () => {
+  it("REFUSES cross-tenant ItemType reuse, Org B cannot reference Org A's milk_carton", async () => {
     const orgA = new Types.ObjectId().toString();
     const orgB = new Types.ObjectId().toString();
     await seedSettingsForOrg(orgA);
@@ -220,7 +220,7 @@ describe("createOrder — universal shape (Pass 5d)", () => {
               quantity: 1,
               unitPrice: 4,
               total: 4,
-              // Missing `fat_percent` — required by the schema.
+              // Missing `fat_percent`, required by the schema.
               attributes: { carton_size: "1L" },
             },
           ],

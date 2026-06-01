@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 interface SectionProps {
   title: string;
   description?: string;
-  /** Right-aligned slot in the header — useful for "Edit" buttons. */
+  /** Right-aligned slot in the header, useful for "Edit" buttons. */
   action?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
@@ -12,7 +12,7 @@ interface SectionProps {
 }
 
 /**
- * Section — Stripe-style settings panel: a titled card with a left-aligned
+ * Section, Stripe-style settings panel: a titled card with a left-aligned
  * description column on desktop and a right-aligned content column. Pairs
  * well with form fields grouped by topic.
  *

@@ -70,7 +70,7 @@ function ensureCanManageRole(actor: UserActor, targetRole: UserRole) {
 /**
  * Resolve the userIds that belong to a given org via the OrgMember
  * join. Used by every user-management read so admins of org A never
- * see — or operate on — users from org B.
+ * see, or operate on, users from org B.
  *
  * Membership is the source of truth: User.primaryOrgId is informative
  * but not authoritative (a user could be invited to a second org and
@@ -105,7 +105,7 @@ export async function listUsers(
 ) {
   await connectMongo();
   const memberIds = await memberUserIdsForOrg(ctx.orgId);
-  // No members yet — short-circuit to an empty page so the rest of the
+  // No members yet, short-circuit to an empty page so the rest of the
   // query never sees a filter that would match the global collection.
   if (memberIds.length === 0) {
     return { items: [], total: 0, page: query.page, pageSize: query.pageSize };
@@ -153,7 +153,7 @@ export async function getUserById(
 ): Promise<PublicUser> {
   await connectMongo();
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("User not found");
-  // Membership pin first — strangers get the same 404 a missing user
+  // Membership pin first, strangers get the same 404 a missing user
   // gets, so an admin of org A can't enumerate ids that belong to org B.
   await assertMember(ctx.orgId, id);
   const doc = await User.findById(id).lean<UserDoc & { _id: Types.ObjectId }>();
@@ -216,7 +216,7 @@ export async function createUser(
     type: DomainEventType.USER_CREATED,
     audience: { kind: "admins" },
     actor: { id: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
-    // Scope the SSE delivery to the creating tenant — admins in
+    // Scope the SSE delivery to the creating tenant, admins in
     // other orgs will not receive this user-creation notification.
     orgId: ctx.orgId ?? null,
     payload: {

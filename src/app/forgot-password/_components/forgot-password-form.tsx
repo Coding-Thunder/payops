@@ -52,7 +52,7 @@ export function ForgotPasswordForm({ turnstileSiteKey }: Props) {
         ...values,
         cfToken: cfToken ?? undefined,
       });
-      // Same UI regardless of whether the email existed — never
+      // Same UI regardless of whether the email existed, never
       // reveal account enumeration in the client either.
       setSent(true);
     } catch (err) {
@@ -82,7 +82,7 @@ export function ForgotPasswordForm({ turnstileSiteKey }: Props) {
       <form className="space-y-5" onSubmit={form.handleSubmit(onSubmit)} noValidate>
         {error ? (
           <Alert variant="destructive">
-            <AlertTitle>Couldn't send the link</AlertTitle>
+            <AlertTitle>Couldn&apos;t send the link</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}

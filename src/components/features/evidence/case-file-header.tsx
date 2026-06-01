@@ -6,7 +6,7 @@ import { formatUtcTimestamp } from "@/lib/format";
 /**
  * Dark header band at the top of the evidence case file.
  *
- * Designed to read as the cover sheet of an exported document — not
+ * Designed to read as the cover sheet of an exported document, not
  * an app page header. Wordmark + case ref on the left, document
  * metadata in the center, single muted export action on the right.
  * No call-to-action buttons; the export is a small inline link, not
@@ -37,7 +37,7 @@ export function CaseFileHeader({
 
   return (
     <header className="border-b border-white/10 bg-[oklch(0.13_0.012_286)] text-white print:border-b print:border-[oklch(0.13_0.012_286)] print:bg-white print:text-[oklch(0.13_0.012_286)]">
-      {/* Top utility row — back to order, no chrome */}
+      {/* Top utility row, back to order, no chrome */}
       <div className="border-b border-white/5 px-8 py-2.5 print:hidden">
         <Link
           href={`/app/orders/${orderId}`}

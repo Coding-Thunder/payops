@@ -3,8 +3,8 @@ import { z } from "zod";
 /**
  * Quotation form payload. Required fields mirror what sales actually
  * needs to triage a lead: who they are, where, scale, and what they
- * want. The free-text fields are loose-typed — sales will read them
- * — but bounded so a 100KB paste can't blow up the server.
+ * want. The free-text fields are loose-typed, sales will read them
+ *, but bounded so a 100KB paste can't blow up the server.
  */
 export const quotationSchema = z.object({
   fullName: z.string().trim().min(2, "Please share your full name").max(120),
@@ -19,7 +19,7 @@ export const quotationSchema = z.object({
     .toLowerCase()
     .email("Use your work email address")
     .max(254),
-  // Landing-page form no longer collects a phone number — but the
+  // Landing-page form no longer collects a phone number, but the
   // field stays optional so older payloads / API callers don't break
   // and server-side rendering of stored quotations (which may
   // include legacy phone values) keeps working.
@@ -54,7 +54,7 @@ export const quotationSchema = z.object({
   cfToken: z.string().max(2048).optional(),
 });
 
-/** Input shape (what the form submits) — optional fields stay optional
+/** Input shape (what the form submits), optional fields stay optional
  *  pre-default; the parsed/output type fills them with empty strings. */
 export type QuotationInput = z.input<typeof quotationSchema>;
 export type ParsedQuotationInput = z.output<typeof quotationSchema>;

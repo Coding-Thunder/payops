@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Pass 5e — Per-tenant active ItemType catalog.
+ * Pass 5e, Per-tenant active ItemType catalog.
  *
  * The dynamic create-order form reads this once on mount to build the
  * "what kind of order is this?" picker + the per-attribute renderer.

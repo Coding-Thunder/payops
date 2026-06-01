@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * POST /api/quotations — landing-page contact endpoint.
+ * POST /api/quotations, landing-page contact endpoint.
  *
  * Public (no auth). Persists the quotation and best-effort dispatches
  * an internal notification email to the sales address. Always returns

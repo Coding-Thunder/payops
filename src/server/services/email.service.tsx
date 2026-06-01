@@ -51,8 +51,8 @@ interface SendArgs {
   orderId?: string | null;
   /** Tenant brand name used as the friendly-name portion of the From
    *  header. Mailbox stays platform-controlled (SPF/DKIM aligned with
-   *  the relay), but the part the recipient SEES — "TenantBrand
-   *  <noreply@platform.com>" — comes from the tenant's Branding doc.
+   *  the relay), but the part the recipient SEES, "TenantBrand
+   *  <noreply@platform.com>", comes from the tenant's Branding doc.
    *  When omitted, falls back to whatever's in EMAIL_FROM (which is
    *  only correct for the legacy single-tenant deployment). */
   fromName?: string | null;
@@ -68,7 +68,7 @@ interface SendArgs {
 /** Extract the mailbox portion of an RFC-5322 address header so we can
  *  rebuild it with a per-tenant friendly name. Handles both
  *  `"Name" <addr@x>` and bare `addr@x` forms. Returns the input
- *  unchanged when no mailbox is parseable — safer than throwing on a
+ *  unchanged when no mailbox is parseable, safer than throwing on a
  *  send path. */
 function extractMailbox(headerValue: string): string {
   const angle = headerValue.match(/<([^>]+)>/);
@@ -89,7 +89,7 @@ function buildFromHeader(
   return `"${escapedName}" <${mailbox}>`;
 }
 
-/** Reduce a full email to `a***@example.com` for logger output — keeps
+/** Reduce a full email to `a***@example.com` for logger output, keeps
  *  ops-grade signal (domain, first char) while dropping the PII surface
  *  on log spills. */
 function maskEmail(addr: string): string {
@@ -186,11 +186,11 @@ export async function sendPaymentConfirmationEmail(
   order: OrderDTO,
 ): Promise<{ id: string | null }> {
   // Pass 5f: composable block renderer. The template now works for ANY
-  // order shape — rental, milk shop, pharmacy, subscription. The legacy
+  // order shape, rental, milk shop, pharmacy, subscription. The legacy
   // rental "vehicle + trip" UI is just one block layout among many,
   // contributed by the auto-seeded rental_booking ItemType.
   //
-  // Branding lookup is scoped to the ORDER's organization — so Tenant
+  // Branding lookup is scoped to the ORDER's organization, so Tenant
   // #2's customer sees Tenant #2's brand on their receipt, not the
   // legacy singleton's.
   const [branding, tpl] = await Promise.all([
@@ -207,7 +207,7 @@ export async function sendPaymentConfirmationEmail(
     : formatEmailDate(new Date());
   // Pre-inline the rental hero image if present so the receipt renders
   // without an external network round-trip. Other verticals can supply
-  // an `image_url` attribute on their line items for the same effect —
+  // an `image_url` attribute on their line items for the same effect -
   // the resolver below picks whichever one is set.
   await inlineFirstHeroImage(order);
 
@@ -306,7 +306,7 @@ async function inlineFirstHeroImage(order: OrderDTO): Promise<void> {
   if (!url) return;
   const inlined = await inlinePublicImage(url);
   if (inlined) {
-    // Mutate in place — the block renderer reads the same field.
+    // Mutate in place, the block renderer reads the same field.
     if (attrs.vehicle_image_url) {
       (line.attributes as Record<string, unknown>).vehicle_image_url = inlined;
     } else {
@@ -367,7 +367,7 @@ export async function composePaymentRequestProps(
     consentRequired: boolean;
   } | null,
 ): Promise<ComposedPaymentRequest> {
-  // Pass 5f: composable block renderer. Works for any ItemType — the
+  // Pass 5f: composable block renderer. Works for any ItemType, the
   // block list is resolved from the order's lineItems' ItemTypes plus
   // platform defaults. The legacy "vehicle + trip" UI is just one set
   // of contributed blocks (SCHEDULING_WINDOW + ITEM_HERO) on the
@@ -419,7 +419,7 @@ export async function composePaymentRequestProps(
         url: checkoutUrl,
         label: `Pay ${formattedAmount} securely →`,
         helperText:
-          "You already confirmed this order — this opens secure checkout.",
+          "You already confirmed this order, this opens secure checkout.",
       }
     : consentUrl
       ? {
@@ -540,7 +540,7 @@ export async function sendPaymentRequestEmail(
 ): Promise<{ id: string | null; consentToken: string | null }> {
   if (!order.payment.paymentUrl) {
     throw new Error(
-      "Order has no payment link yet — generate the link via the email composer before sending the request.",
+      "Order has no payment link yet, generate the link via the email composer before sending the request.",
     );
   }
   const [branding, tpl, settings] = await Promise.all([
@@ -565,7 +565,7 @@ export async function sendPaymentRequestEmail(
           customerName: order.customer.name,
           consentMessage: settings.consentMessage,
           consentEmailSubject: subject,
-          // Pass 5f: universal snapshot — rental fields populate when
+          // Pass 5f: universal snapshot, rental fields populate when
           // the order carries them, otherwise the `summary` +
           // `startsAt/endsAt` describe the line items + scheduling.
           snapshot: buildConsentSnapshot(order, order.payment.paymentUrl),
@@ -582,7 +582,7 @@ export async function sendPaymentRequestEmail(
       consentUrl = result.consentUrl;
       consentToken = result.token;
     } catch (err) {
-      // Consent persistence should never block the email send — log and
+      // Consent persistence should never block the email send, log and
       // continue with no consentUrl (only the mailto fallback survives).
       logger.error("email.consent_request_failed", {
         orderId: order.id,
@@ -694,7 +694,7 @@ export async function sendPaymentRequestEmail(
           role: context.actor.role,
         }
       : undefined,
-    // DTO carries the order's tenant — same value the order was
+    // DTO carries the order's tenant, same value the order was
     // stamped with at creation, can't drift.
     orgId: order.orgId,
     payload: {

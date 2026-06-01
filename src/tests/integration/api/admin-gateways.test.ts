@@ -60,7 +60,7 @@ describe("POST /api/admin/gateways (RBAC + happy path)", () => {
     expect(status).toBe(201);
     expectOk(body as never);
 
-    // Persisted with encrypted blobs — no plaintext leaks to disk.
+    // Persisted with encrypted blobs, no plaintext leaks to disk.
     const raw = await GatewayCredential.findOne({
       gateway: PaymentGatewayKey.STRIPE,
     }).lean();
@@ -128,7 +128,7 @@ describe("POST /api/admin/gateways (RBAC + happy path)", () => {
       gateway: PaymentGatewayKey.STRIPE,
     }).lean<{ secretKey: { ciphertext: string } }>();
     expect(second?.secretKey.ciphertext).not.toBe(first?.secretKey.ciphertext);
-    // Still exactly one row — rotation, not duplicate.
+    // Still exactly one row, rotation, not duplicate.
     const count = await GatewayCredential.countDocuments({});
     expect(count).toBe(1);
   });
@@ -173,7 +173,7 @@ describe("GET /api/admin/gateways", () => {
 });
 
 describe("DELETE /api/admin/gateways/[gateway]", () => {
-  it("disables the gateway (soft) — keeps the row for audit", async () => {
+  it("disables the gateway (soft), keeps the row for audit", async () => {
     session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     await saveRoute(
       buildRequest("/api/admin/gateways", {

@@ -4,7 +4,7 @@ import { ArrowRightIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 /**
- * Brand-v1 CTA strip — the conversion moment between the rich
+ * Brand-v1 CTA strip, the conversion moment between the rich
  * content regions and the footer. Deep Navy panel on Cloud, single
  * emerald accent on the eyebrow. Reads as a calm "ready when you
  * are" statement, not a marketing scream.
@@ -17,7 +17,7 @@ export function BrandCtaStrip() {
           className="relative overflow-hidden rounded-2xl p-10 sm:p-14"
           style={{ background: "var(--ink-navy)" }}
         >
-          {/* Quiet emerald wash in the corner — same vocabulary as
+          {/* Quiet emerald wash in the corner, same vocabulary as
               the wordmark accent, no decorative gradients. */}
           <div
             aria-hidden

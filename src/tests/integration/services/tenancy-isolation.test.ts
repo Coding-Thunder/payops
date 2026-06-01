@@ -35,7 +35,7 @@ import { ensureMongo, resetDatabase } from "@/tests/utils/db";
  * lookup-by-id pins both _id and orgId at read time).
  */
 
-describe("tenancy isolation — OrderEvidence", () => {
+describe("tenancy isolation, OrderEvidence", () => {
   beforeEach(async () => {
     await ensureMongo();
   });

@@ -47,7 +47,7 @@ interface OrderDetailPageContentProps {
 }
 
 /**
- * Order detail — the operational source-of-truth screen for one order.
+ * Order detail, the operational source-of-truth screen for one order.
  *
  * Linear routing: this is a real page at `/orders/[id]`, NOT an internal
  * workspace tab. The server route guards access + existence; this client
@@ -64,7 +64,7 @@ interface OrderDetailPageContentProps {
  *     state)
  *
  * The agent reaches the email composer via the inline "Edit payment
- * email" / "Compose payment request" CTAs — there is no persistent tab
+ * email" / "Compose payment request" CTAs, there is no persistent tab
  * to switch back to.
  */
 export function OrderDetailPageContent({
@@ -179,7 +179,7 @@ export function OrderDetailPageContent({
 
       {needsPaymentLink ? (
         <Alert>
-          <AlertTitle>Order ready — payment not initiated yet</AlertTitle>
+          <AlertTitle>Order ready, payment not initiated yet</AlertTitle>
           <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <span>
               The Stripe payment link is generated when you send the

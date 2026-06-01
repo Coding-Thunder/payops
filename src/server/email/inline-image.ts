@@ -9,7 +9,7 @@ import { logger } from "@/lib/logger";
  * Email image inliner.
  *
  * Email clients (Gmail, Outlook, Apple Mail) fetch `<img src>` URLs through
- * a proxy that runs on the public internet — `http://localhost:3000/...`
+ * a proxy that runs on the public internet, `http://localhost:3000/...`
  * resolves to *their* server, not yours, so the image silently fails in
  * dev and in any deploy without a publicly reachable APP_URL.
  *
@@ -62,7 +62,7 @@ export async function inlinePublicImage(
     try {
       const url = new URL(src);
       // Localhost / 127.0.0.1 / 0.0.0.0 always treated as "this server".
-      // For remote hosts we don't fetch — return null and let the caller
+      // For remote hosts we don't fetch, return null and let the caller
       // ship the absolute URL (where it may or may not work in email).
       const isLocal = /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/i.test(
         url.hostname,
@@ -79,7 +79,7 @@ export async function inlinePublicImage(
   const cached = dataUriCache.get(publicPath);
   if (cached) return cached;
 
-  // Path-traversal guard — keep callers inside public/.
+  // Path-traversal guard, keep callers inside public/.
   const resolved = path.normalize(path.join(PUBLIC_DIR, publicPath));
   if (!resolved.startsWith(PUBLIC_DIR + path.sep) && resolved !== PUBLIC_DIR) {
     cacheNegative.add(publicPath);

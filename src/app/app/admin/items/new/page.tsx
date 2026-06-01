@@ -18,7 +18,7 @@ export default async function NewItemPage() {
     <div className="space-y-6">
       <PageHeader
         title="Add catalog item"
-        description="Save a product / service once. Operators pick it on every future order — name, SKU, attributes all pre-fill."
+        description="Save a product / service once. Operators pick it on every future order, name, SKU, attributes all pre-fill."
       />
       <ItemForm itemTypes={itemTypes} defaultCurrency={settings.defaultCurrency} />
     </div>

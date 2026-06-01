@@ -11,7 +11,7 @@ import type Stripe from "stripe";
  *   - checkout.session.async_payment_failed
  *   - payment_intent.payment_failed
  *
- * Plus `signWebhook` — a helper that constructs the exact
+ * Plus `signWebhook`, a helper that constructs the exact
  * `t=<unix>,v1=<sig>` header Stripe sends, so tests can verify our
  * signature-handling code end-to-end.
  *

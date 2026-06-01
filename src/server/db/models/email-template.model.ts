@@ -24,7 +24,7 @@ export type { EmailTemplateKey };
  * notes without a redeploy.
  *
  * Versioning model:
- *   - one document per (templateKey, version) — `version` is monotonic
+ *   - one document per (templateKey, version), `version` is monotonic
  *     per key, starts at 1, increments on each new save.
  *   - exactly one row per key has `active = true` ("the live copy").
  *   - rows are immutable except for `active` and `updatedAt` (so an
@@ -125,7 +125,7 @@ emailTemplateSchema.index(
   { templateKey: 1, version: 1 },
   { unique: true, name: "email_templates_key_version" },
 );
-// Only one active row per key — enforced at the service layer (Mongo's
+// Only one active row per key, enforced at the service layer (Mongo's
 // partial-unique-index syntax is hairy with bool true filter under
 // concurrent writes; serializing activation through a single service
 // is cleaner).

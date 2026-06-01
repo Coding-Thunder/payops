@@ -20,7 +20,7 @@ import { quotationSchema, type QuotationInput } from "@/lib/validation";
 import { api, ApiClientError } from "@/lib/api-client";
 
 /**
- * Quotation form — bare body, no section chrome.
+ * Quotation form, bare body, no section chrome.
  *
  * Drops the MarketingSection wrapper + the sticky-aside contact card
  * so the form can be embedded inside the document's ClosingRegion

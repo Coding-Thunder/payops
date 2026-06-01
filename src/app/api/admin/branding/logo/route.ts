@@ -21,7 +21,7 @@ export const POST = withApi(
     const actor = await requirePermission(Permission.BRANDING_MANAGE);
 
     // Pre-flight Content-Length cap: anything over 1 MB never reaches
-    // formData() — the service-level 512 KB cap is the hard ceiling.
+    // formData(), the service-level 512 KB cap is the hard ceiling.
     const declared = req.headers.get("content-length");
     if (declared) {
       const n = Number.parseInt(declared, 10);

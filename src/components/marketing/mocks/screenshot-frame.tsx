@@ -5,14 +5,14 @@ import { cn } from "@/lib/utils";
 interface ScreenshotFrameProps {
   src: string | StaticImageData;
   alt: string;
-  /** Hint shown in the fake URL bar — e.g. "tracetxn.example.com / dashboard". */
+  /** Hint shown in the fake URL bar, e.g. "tracetxn.example.com / dashboard". */
   urlLabel?: string;
   /** Pinned width/height of the source image so Next/Image can lay out
    *  without CLS. Captured shots are 1440×900. */
   width?: number;
   height?: number;
   className?: string;
-  /** Hide the chrome bar — used when the screenshot itself includes
+  /** Hide the chrome bar, used when the screenshot itself includes
    *  enough product context to stand alone (rare). */
   bare?: boolean;
   /** `priority` on the LCP screenshot only (typically the hero). */
@@ -22,8 +22,8 @@ interface ScreenshotFrameProps {
 /**
  * Frames an authed-app screenshot inside a subtle browser-chrome
  * wrapper so the landing page reads as "real product", not "naked PNG".
- * The chrome is intentionally light — minimal traffic lights + URL pill
- * — so the screenshot itself stays the focal point.
+ * The chrome is intentionally light, minimal traffic lights + URL pill
+ *, so the screenshot itself stays the focal point.
  */
 export function ScreenshotFrame({
   src,

@@ -33,17 +33,17 @@ import { api, ApiClientError } from "@/lib/api-client";
 import { CURRENCIES, type Currency } from "@/lib/constants/enums";
 
 /**
- * Setup wizard — 6 sequential steps. Each step is self-contained;
+ * Setup wizard, 6 sequential steps. Each step is self-contained;
  * the shell handles step navigation + progress indicator.
  *
  * State design: every step's inputs are derived from server-fetched
  * data passed in as `initial*` props. The wizard owns the "current
  * step" cursor + a mirror of each step's last-saved values. Saves go
  * directly to the underlying admin endpoints (org rename, settings,
- * branding) — same endpoints the dedicated admin pages use. The
+ * branding), same endpoints the dedicated admin pages use. The
  * wizard is pure UI orchestration over those primitives.
  *
- * Skipping: each step can be skipped via "Skip for now" — moves the
+ * Skipping: each step can be skipped via "Skip for now", moves the
  * cursor forward without saving. The dashboard checklist will still
  * nag for incomplete steps after the wizard closes.
  */
@@ -304,7 +304,7 @@ function CompanyStep({
         />
         <p className="text-[11.5px] text-muted-foreground">
           URL slug stays{" "}
-          <code className="font-mono">{organization.slug}</code> — renaming
+          <code className="font-mono">{organization.slug}</code>, renaming
           the slug would break shared URLs.
         </p>
       </div>
@@ -550,7 +550,7 @@ function StripeStep({
         <div className="space-y-1">
           <p className="text-[13.5px]">
             Connect your Stripe account so customers can actually pay.
-            You&apos;ll need your Stripe secret key — paste it once, and
+            You&apos;ll need your Stripe secret key, paste it once, and
             we register the webhook automatically.
           </p>
           <p className="text-[12px] text-muted-foreground">
@@ -563,7 +563,7 @@ function StripeStep({
             >
               Create one in 2 minutes
             </a>{" "}
-            — Stripe is free to sign up and free to use in test mode.
+           , Stripe is free to sign up and free to use in test mode.
           </p>
         </div>
       </div>
@@ -631,7 +631,7 @@ function CatalogStep({
         <div className="space-y-1">
           <p className="text-[13.5px]">
             Define what you sell. We&apos;ll preconfigure the order form
-            and emails to match — whether it&apos;s a service appointment,
+            and emails to match, whether it&apos;s a service appointment,
             a product, a subscription, or something else entirely.
           </p>
         </div>

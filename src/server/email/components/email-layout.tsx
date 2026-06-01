@@ -36,7 +36,7 @@ export function EmailLayout({ preview, children }: EmailLayoutProps) {
       <Head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        {/* Light-only — emails read better on a known background. */}
+        {/* Light-only, emails read better on a known background. */}
         <meta name="color-scheme" content="light" />
         <meta name="supported-color-schemes" content="light" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />

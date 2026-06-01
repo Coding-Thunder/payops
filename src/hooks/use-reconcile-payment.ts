@@ -23,7 +23,7 @@ interface ReconcileResponse {
 
 interface UseReconcilePaymentArgs {
   orderId: string;
-  /** Current cached status — drives whether we auto-trigger once. */
+  /** Current cached status, drives whether we auto-trigger once. */
   status: string | undefined;
   /** True iff the order has a Stripe session id to reconcile against.
    *  Auto-trigger is skipped without one. */
@@ -31,7 +31,7 @@ interface UseReconcilePaymentArgs {
 }
 
 interface ReconcileHandle {
-  /** Manual button trigger. Always safe — the service short-circuits if
+  /** Manual button trigger. Always safe, the service short-circuits if
    *  the order is already terminal. */
   trigger: () => void;
   isReconciling: boolean;
@@ -45,7 +45,7 @@ interface ReconcileHandle {
  *   - Auto-triggers ONCE per mount, ~2.5 s after the page opens, but only
  *     when the order is PAYMENT_PENDING and has a Stripe session id.
  *     This covers the local-dev case where the webhook never reaches
- *     localhost (no `stripe listen` forwarder) — the agent doesn't need
+ *     localhost (no `stripe listen` forwarder), the agent doesn't need
  *     to click anything; the UI self-heals shortly after navigation.
  *   - Exposes a manual `trigger()` for the explicit "Check payment with
  *     Stripe" button (where applicable).

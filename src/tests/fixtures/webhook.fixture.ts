@@ -3,7 +3,7 @@ import type { VerifiedPaymentEvent } from "@/server/payments/gateway";
 /**
  * Normalised payment-event fixtures. The webhook processor (and its
  * tests) operate against the gateway-agnostic `VerifiedPaymentEvent`
- * shape — these helpers produce that shape directly, no Stripe SDK
+ * shape, these helpers produce that shape directly, no Stripe SDK
  * needed in tests.
  */
 

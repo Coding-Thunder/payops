@@ -15,12 +15,12 @@ import {
 export const metadata: Metadata = {
   title: "Terms of Service",
   description:
-    "Terms of Service for TraceTxn — the obligations between you (the operator using the platform) and us (the operator of TraceTxn).",
+    "Terms of Service for TraceTxn, the obligations between you (the operator using the platform) and us (the operator of TraceTxn).",
   alternates: { canonical: "/terms" },
 };
 
 /**
- * Baseline ToS — not a substitute for counsel. Reviewed before
+ * Baseline ToS, not a substitute for counsel. Reviewed before
  * relying on these for any commercial dispute. India operates as
  * the governing law because TraceTxn is run by an Indian
  * sole-proprietor today; rewrite this section if the entity moves.
@@ -64,9 +64,9 @@ const SECTIONS: LegalSection[] = [
         <P>
           TraceTxn is a software platform that helps operators take
           payments, capture customer consent, track payment lifecycle
-          events, and assemble evidence for chargeback / dispute defence.
+          events, and assemble evidence for chargeback / dispute defense.
           TraceTxn connects to your own payment-processor account (today,
-          Stripe) using credentials you provide — a model commonly called
+          Stripe) using credentials you provide, a model commonly called
           &quot;bring your own Stripe&quot; (BYOS).
         </P>
         <P>
@@ -101,7 +101,7 @@ const SECTIONS: LegalSection[] = [
           You must be at least 18 years old, legally capable of entering
           into binding contracts, and not barred under applicable law
           from receiving the Service. The Service is intended for
-          business use — not for personal, family, or household purposes.
+          business use, not for personal, family, or household purposes.
         </P>
         <H3>Workspace ownership</H3>
         <P>
@@ -173,7 +173,7 @@ const SECTIONS: LegalSection[] = [
         </P>
         <P>
           You represent that you have all rights, consents, and legal
-          bases needed to submit Your Data to the Service — including
+          bases needed to submit Your Data to the Service, including
           for any personal information of your customers.
         </P>
         <P>
@@ -195,7 +195,7 @@ const SECTIONS: LegalSection[] = [
         <P>
           You connect your own Stripe account to TraceTxn. Funds
           collected through that account flow directly between your
-          customers and Stripe and then to your bank — TraceTxn never
+          customers and Stripe and then to your bank, TraceTxn never
           holds settlement funds. Your contractual relationship for
           payment processing is with Stripe, governed by Stripe&apos;s
           terms.
@@ -357,7 +357,7 @@ const SECTIONS: LegalSection[] = [
         </P>
         <P>
           Nothing in these Terms limits liability that cannot be limited
-          under applicable law — for example, liability for gross
+          under applicable law, for example, liability for gross
           negligence, willful misconduct, or fraud.
         </P>
       </>

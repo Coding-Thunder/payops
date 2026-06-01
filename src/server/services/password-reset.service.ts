@@ -24,13 +24,13 @@ import { recordAudit } from "./audit.service";
  *
  * The `passwordHashHead` is the FIRST 8 bytes of the user's current
  * passwordHash. Including it means the token auto-invalidates the
- * moment the user (or anyone) changes the password — the new hash
+ * moment the user (or anyone) changes the password, the new hash
  * has a different head, so a previously-issued reset link can't
  * un-do a successful change. This is the same trick Devise +
  * Microsoft Identity use; lighter than a separate `password_reset`
  * collection.
  *
- * TTL is 30 minutes — long enough for a coffee-break email round
+ * TTL is 30 minutes, long enough for a coffee-break email round
  * trip, short enough that a stolen inbox can't sit on the link.
  */
 
@@ -38,7 +38,7 @@ const MAX_AGE_SECONDS = 30 * 60;
 
 function secret(): string {
   // Re-use JWT_SECRET so deploys don't need a fresh env var. If you
-  // ever rotate JWT_SECRET, in-flight reset links invalidate — that's
+  // ever rotate JWT_SECRET, in-flight reset links invalidate, that's
   // the correct security posture (treat password material like
   // session material).
   return env.server.JWT_SECRET;
@@ -123,7 +123,7 @@ interface InitiateContext {
  * Initiate a password reset.
  *
  * Always returns successfully regardless of whether the email exists
- * — never reveals to the caller whether an account is registered. If
+ *, never reveals to the caller whether an account is registered. If
  * the user exists, we sign a token and send the email; otherwise we
  * silently no-op + log so an operator can spot enumeration attempts
  * via audit grep.
@@ -191,7 +191,7 @@ export async function initiatePasswordReset(
 /**
  * Send the reset-link email via the standard SMTP transporter.
  *
- * Inline HTML — deliberately not a React Email template, since this
+ * Inline HTML, deliberately not a React Email template, since this
  * is one-off transactional copy that almost never changes and isn't
  * branded per-tenant (the recovery flow runs before any session
  * context exists). Plain ops-grade copy keeps spam filters happier
@@ -205,7 +205,7 @@ async function sendResetEmail(args: {
   const mailer = getMailer();
   if (!mailer) {
     // No SMTP configured (local dev). Log the link so the operator
-    // can copy it from their console — same UX as Rails dev mode.
+    // can copy it from their console, same UX as Rails dev mode.
     logger.warn("password_reset.smtp_missing", {
       to: args.to,
       resetUrl: args.resetUrl,
@@ -219,9 +219,9 @@ async function sendResetEmail(args: {
     If that was you, click the link below to set a new password. The link
     expires in 30 minutes.</p>
     <p><a href="${args.resetUrl}">Reset your password</a></p>
-    <p>If you didn't request this, you can ignore this email — your
+    <p>If you didn't request this, you can ignore this email, your
     current password stays unchanged.</p>
-    <p>— ${escapeHtml(appName)}</p>
+    <p>- ${escapeHtml(appName)}</p>
   `;
   const text = [
     `Hi ${args.name},`,
@@ -231,10 +231,10 @@ async function sendResetEmail(args: {
     "",
     args.resetUrl,
     "",
-    `If you didn't request this, ignore this email — your current`,
+    `If you didn't request this, ignore this email, your current`,
     `password stays unchanged.`,
     "",
-    `— ${appName}`,
+    `- ${appName}`,
   ].join("\n");
   try {
     await mailer.sendMail({
@@ -247,7 +247,7 @@ async function sendResetEmail(args: {
       headers: { "X-Entity-Kind": "PASSWORD_RESET" },
     });
   } catch (err) {
-    // Bury the SMTP error — never surface it to the caller because
+    // Bury the SMTP error, never surface it to the caller because
     // that would reveal whether the email existed (different code
     // paths on failure vs success). Audit row carries the diagnostic.
     logger.error("password_reset.email_failed", {
@@ -282,7 +282,7 @@ export async function completePasswordReset(
     "+passwordHash _id name email role status",
   );
   if (!user) {
-    // Bad-token error rather than NotFound — both should look the
+    // Bad-token error rather than NotFound, both should look the
     // same to callers (no enumeration), and the recovery UI shows a
     // generic "link no longer valid" message either way.
     throw new BadRequestError("Invalid or expired reset link");
@@ -295,7 +295,7 @@ export async function completePasswordReset(
   // head no longer matches and we refuse the call.
   if (passwordHashHead(user.passwordHash) !== parsed.passwordHashHead) {
     throw new BadRequestError(
-      "This reset link is no longer valid — the password has already been changed.",
+      "This reset link is no longer valid, the password has already been changed.",
     );
   }
 
@@ -318,7 +318,7 @@ export async function completePasswordReset(
   });
 }
 
-/** Test-only — direct token mint for fast green-path coverage. */
+/** Test-only, direct token mint for fast green-path coverage. */
 export function _generateResetTokenForTesting(user: UserDoc & { _id: unknown }): string {
   return generateResetToken({
     _id: user._id as { toString(): string },

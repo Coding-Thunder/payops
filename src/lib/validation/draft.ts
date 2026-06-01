@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /**
  * Validation for the order-draft autosave API. The body is intentionally
- * permissive — the create-order form snapshot is a partial CreateOrderInput
+ * permissive, the create-order form snapshot is a partial CreateOrderInput
  * and we don't want to reject a draft just because the user hasn't typed
  * the phone number yet. We only enforce shape + size constraints to keep
  * payloads bounded.

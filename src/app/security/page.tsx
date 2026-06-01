@@ -15,7 +15,7 @@ import { BrandFooter } from "@/components/marketing/brand-footer";
 import { BrandNav } from "@/components/marketing/brand-nav";
 
 export const metadata: Metadata = {
-  title: "Security — Operational trust",
+  title: "Security, Operational trust",
   description:
     "How TraceTxn protects your tenant data: encrypted Stripe credentials, hashed evidence chain, tenant-isolated collections, webhook signing-secret verification, bot protection.",
   alternates: { canonical: "/security" },
@@ -39,18 +39,18 @@ const PILLARS: Pillar[] = [
   {
     icon: KeyRoundIcon,
     title: "Encrypted credentials",
-    body: "Your Stripe secret key never sits in plaintext at rest. AES-256 envelope encryption with a per-deployment master key — TraceTxn operators can't read your Stripe key from the database, full stop.",
+    body: "Your Stripe secret key never sits in plaintext at rest. AES-256 envelope encryption with a per-deployment master key, TraceTxn operators can't read your Stripe key from the database, full stop.",
     points: [
-      "Per-org `gateway_credentials` row — your key never mingles with another tenant's",
+      "Per-org `gateway_credentials` row, your key never mingles with another tenant's",
       "Webhook signing-secret captured at registration time + stored encrypted",
       "Decryption only at request scope, never logged",
-      "Loss of the master key locks all encrypted rows — rotation is documented",
+      "Loss of the master key locks all encrypted rows, rotation is documented",
     ],
   },
   {
     icon: ShieldCheckIcon,
     title: "Hashed evidence chain",
-    body: "Every state change on every order appends a SHA-256-linked event. The chain is append-only at the model layer — service-layer bugs can't silently rewrite history.",
+    body: "Every state change on every order appends a SHA-256-linked event. The chain is append-only at the model layer, service-layer bugs can't silently rewrite history.",
     points: [
       "Each event hash includes the previous event's hash (Merkle-style)",
       "Update hooks throw on any `findOneAndUpdate` against evidence",
@@ -61,7 +61,7 @@ const PILLARS: Pillar[] = [
   {
     icon: DatabaseIcon,
     title: "Tenant isolation",
-    body: "Every business-data row carries `orgId`. Lookup-by-id pins both `_id` AND `orgId` at the query layer, so a Tenant-A actor holding a guessed Tenant-B id gets a clean 404 — not a real document.",
+    body: "Every business-data row carries `orgId`. Lookup-by-id pins both `_id` AND `orgId` at the query layer, so a Tenant-A actor holding a guessed Tenant-B id gets a clean 404, not a real document.",
     points: [
       "11 collections hardened: orders, items, item-types, branding, etc.",
       "Child models (disputes, evidence, consent, drafts, outbox) all carry orgId",
@@ -93,7 +93,7 @@ const PILLARS: Pillar[] = [
   },
   {
     icon: LockIcon,
-    title: "Bot protection + abuse defence",
+    title: "Bot protection + abuse defense",
     body: "Cloudflare Turnstile gates every public form (login, signup, quotation, contact). Rate-limits at the request layer protect the auth + payment-exchange endpoints from credential-stuffing.",
     points: [
       "Turnstile-required on login + signup + waitlist forms",
@@ -104,7 +104,7 @@ const PILLARS: Pillar[] = [
   },
 ];
 
-/* Honesty section — what we DON'T have. Saying it out loud is the
+/* Honesty section, what we DON'T have. Saying it out loud is the
  * single highest-signal trust move on a startup security page. */
 const HONEST: Array<{ label: string; body: string }> = [
   {
@@ -121,7 +121,7 @@ const HONEST: Array<{ label: string; body: string }> = [
   },
   {
     label: "PCI scope: we never touch card data",
-    body: "TraceTxn is BYOS-Stripe — Stripe takes the card data, not us. We never see, store, or process card numbers. PCI scope sits with Stripe and your business directly, not TraceTxn.",
+    body: "TraceTxn is BYOS-Stripe, Stripe takes the card data, not us. We never see, store, or process card numbers. PCI scope sits with Stripe and your business directly, not TraceTxn.",
   },
 ];
 
@@ -156,7 +156,7 @@ export default function SecurityPage() {
             </span>
           </h1>
           <p className="mx-auto mt-5 max-w-xl text-[15px] leading-relaxed text-muted-foreground">
-            What we protect, how we protect it, and — honestly — what we
+            What we protect, how we protect it, and, honestly, what we
             don&apos;t have yet. Updated as the posture evolves.
           </p>
         </div>
@@ -226,7 +226,7 @@ export default function SecurityPage() {
                 If you believe you&apos;ve found a security vulnerability in
                 TraceTxn, please email us before disclosing publicly. We
                 acknowledge within 48 hours and ship the fix as soon as
-                it&apos;s validated. We don&apos;t run a paid bug-bounty yet —
+                it&apos;s validated. We don&apos;t run a paid bug-bounty yet -
                 public hall-of-fame credit is the recognition path today.
               </p>
               <ul className="mt-6 space-y-2 text-[13.5px]">

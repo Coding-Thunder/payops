@@ -68,7 +68,7 @@ async function seedOrgScaffold(actor: AuthenticatedUser): Promise<void> {
 }
 
 /**
- * Reconcile contract — the state-sync backstop that recovers when the
+ * Reconcile contract, the state-sync backstop that recovers when the
  * Stripe webhook never reaches us (local dev without `stripe listen`,
  * dropped webhook delivery, throttled retry).
  *
@@ -145,7 +145,7 @@ describe("reconcileOrderPayment", () => {
     ).toBe("reconcile");
   });
 
-  it("is idempotent on repeat calls after PAID — no double audit, no second email claim", async () => {
+  it("is idempotent on repeat calls after PAID, no double audit, no second email claim", async () => {
     const actor = actorFor(UserRole.ADMIN);
     await seedOrgScaffold(actor);
     const stripe = getCurrentTestStripe();
@@ -239,7 +239,7 @@ describe("reconcileOrderPayment", () => {
     ).rejects.toThrow(/orders you created/i);
   });
 
-  it("allows public reconcile when the session id matches — used by /pay/success", async () => {
+  it("allows public reconcile when the session id matches, used by /pay/success", async () => {
     const actor = actorFor(UserRole.ADMIN);
     await seedOrgScaffold(actor);
     const stripe = getCurrentTestStripe();

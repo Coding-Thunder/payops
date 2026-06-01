@@ -46,7 +46,7 @@ interface TurnstileWidgetProps {
   onExpire?: () => void;
   /** Called on a Turnstile-side error (network, ratelimit). */
   onError?: () => void;
-  /** Light / dark — falls back to "auto" matching system preference. */
+  /** Light / dark, falls back to "auto" matching system preference. */
   theme?: "light" | "dark" | "auto";
   /** Cosmetic className for the wrapper div. */
   className?: string;
@@ -106,7 +106,7 @@ export function TurnstileWidget({
         try {
           window.turnstile.remove(widgetId.current);
         } catch {
-          // Already torn down — Turnstile sometimes throws on double-remove.
+          // Already torn down, Turnstile sometimes throws on double-remove.
         }
         widgetId.current = null;
       }

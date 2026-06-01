@@ -33,14 +33,14 @@ export function useRealtimeStatus(): RealtimeStatus {
 }
 
 /**
- * RealtimeProvider — wraps the authenticated layout with:
+ * RealtimeProvider, wraps the authenticated layout with:
  *   1. An ActivityFeedProvider so any descendant can render the live feed.
  *   2. A single EventSource connection to /api/events.
  *   3. Side-effects per event: toast notifications + debounced
  *      router.refresh() so server components re-render with fresh data.
  *   4. A connection status context for tiny chrome indicators.
  *
- * Database is still the source of truth — events are notifications only.
+ * Database is still the source of truth, events are notifications only.
  * `router.refresh()` triggers a Next.js server render, which re-fetches
  * from Mongo through the service layer.
  */
@@ -101,7 +101,7 @@ function RealtimeBridge({
       // Per-order lifecycle events: invalidate the React Query cache for
       // the specific orderId so any mounted <OrderDetail /> refetches
       // immediately. router.refresh() below covers server components
-      // (orders list, etc.) — this covers the client-side cached query.
+      // (orders list, etc.), this covers the client-side cached query.
       if (ORDER_LIFECYCLE_EVENT_TYPES.has(event.type)) {
         const orderId =
           (event.payload as { orderId?: string } | undefined)?.orderId ?? null;
@@ -112,7 +112,7 @@ function RealtimeBridge({
           });
         }
         // Listing endpoints (orders list, at-risk, activity feed) all
-        // pivot off the orders collection — drop any cached page so the
+        // pivot off the orders collection, drop any cached page so the
         // table re-fetches on next mount/scroll.
         queryClientRef.current.invalidateQueries({
           queryKey: ["orders"],
@@ -184,7 +184,7 @@ function notifyForEvent(event: DomainEvent) {
       });
       return;
     case DomainEventType.ORDER_EMAIL_SENT:
-      // Quiet by default — the agent triggered this, they don't need a
+      // Quiet by default, the agent triggered this, they don't need a
       // toast on top of the in-page success state. The cache invalidation
       // alone is enough to flip the timeline.
       return;
@@ -199,7 +199,7 @@ function notifyForEvent(event: DomainEvent) {
       });
       return;
     case DomainEventType.ORDER_DISPUTE_UPDATED:
-      // Quieter than created — only the at-risk dashboard cares about
+      // Quieter than created, only the at-risk dashboard cares about
       // mid-life status changes. The cache invalidation handles the
       // visible refresh.
       return;

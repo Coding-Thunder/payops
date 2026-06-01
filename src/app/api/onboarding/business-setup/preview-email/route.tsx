@@ -21,19 +21,19 @@ const previewQuerySchema = z.object({
 });
 
 /**
- * Pass 6b — GET /api/onboarding/business-setup/preview-email
+ * Pass 6b, GET /api/onboarding/business-setup/preview-email
  *
  * Renders the confirmation email a customer would receive once the
  * wizard's ItemType is saved + an order is paid against it. Uses the
  * same `buildPaymentPreviewProps` helper that powers the admin
- * email-templates preview pane — we don't ship a vertical-specific
+ * email-templates preview pane, we don't ship a vertical-specific
  * synthetic order yet because the universal template already
  * gracefully degrades for any line-item shape.
  *
  * Returned `{ html }` is dropped into an `<iframe srcDoc=…>` in the
  * wizard's step 4 preview pane.
  *
- * Read-only — no DB writes. Gated by `ITEM_TYPE_VIEW` so any staff
+ * Read-only, no DB writes. Gated by `ITEM_TYPE_VIEW` so any staff
  * member who can preview the wizard can also see the resulting email.
  */
 export const GET = withApi(async (req: NextRequest) => {

@@ -14,13 +14,13 @@ interface PaymentSuccessAutoRefreshProps {
 
 /**
  * Tiny client component the customer sees ONLY when Stripe sent them to
- * the success page but our backend hasn't recorded PAID yet — typically
+ * the success page but our backend hasn't recorded PAID yet, typically
  * because the webhook hasn't landed and our server-side reconcile
  * couldn't reach Stripe (offline / transient error).
  *
  * Strategy: reload the whole page on a short interval. Each reload
  * re-runs the server-side reconcile which is the only thing that
- * matters — once the order flips to PAID the page will paint with the
+ * matters, once the order flips to PAID the page will paint with the
  * normal "Payment confirmed" hero and this component unmounts.
  *
  * We cap the loop so we don't spin forever for a genuinely failed

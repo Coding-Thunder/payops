@@ -21,7 +21,7 @@ const phoneRegex = /^[+0-9()\-\s]{7,32}$/;
 /**
  * Body for POST /api/orders/[id]/send-payment-request.
  *
- * `customer` patches the order in place — agent can fix the recipient's
+ * `customer` patches the order in place, agent can fix the recipient's
  * email/name/phone right before sending. Empty / absent = no change.
  */
 export const sendPaymentRequestSchema = z.object({

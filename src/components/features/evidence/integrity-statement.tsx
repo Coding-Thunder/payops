@@ -3,7 +3,7 @@ import { formatHashShort, formatUtcTimestamp } from "@/lib/format";
 /**
  * Footer integrity statement on the case file. Two short paragraphs +
  * the chain head hash. Reads like the disclosure block at the bottom
- * of a regulated document — calm, formal, not decorative.
+ * of a regulated document, calm, formal, not decorative.
  */
 
 interface IntegrityStatementProps {

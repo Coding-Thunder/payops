@@ -15,7 +15,7 @@ interface Params {
 }
 
 /**
- * DELETE — flip `enabled: false` on the per-org credential row.
+ * DELETE, flip `enabled: false` on the per-org credential row.
  *
  * We deliberately don't hard-delete: a future re-enable should
  * re-encrypt + re-save, not silently reuse a row that might have

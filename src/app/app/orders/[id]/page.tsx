@@ -13,7 +13,7 @@ interface OrderPageProps {
 }
 
 /**
- * Read-only order detail. Linear routing — this IS the page. No
+ * Read-only order detail. Linear routing, this IS the page. No
  * workspace tab shell, no internal tab strip. The server does the auth +
  * existence check at the edge so a deep link to a missing order returns
  * a real 404 before the client fetch fires; the visible content is

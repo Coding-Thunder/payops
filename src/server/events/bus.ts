@@ -14,7 +14,7 @@ import { logger } from "@/lib/logger";
  * In-memory event bus.
  *
  * NB: this is per-process. For multi-instance deployments swap the transport
- * for Redis pub/sub (or Ably/Pusher) — keep the same `publishEvent`/
+ * for Redis pub/sub (or Ably/Pusher), keep the same `publishEvent`/
  * `subscribeEvents` signature and only the implementation changes.
  *
  * The bus is mounted on `globalThis` so dev-mode HMR doesn't multiply the
@@ -42,7 +42,7 @@ interface PublishInput<TPayload extends Record<string, unknown>> {
   /** Tenant boundary. Required on every business-event publish so the
    *  SSE filter can keep Tenant A's events out of Tenant B's stream.
    *  Pass `null` ONLY for system-wide events that legitimately span
-   *  tenants (currently: none — reserved for a future
+   *  tenants (currently: none, reserved for a future
    *  `platform:announcement` family). */
   orgId: string | null;
 }
@@ -87,10 +87,10 @@ export function subscribeEvents(
 
 /**
  * Determines whether a given event should be delivered to a session
- * with the supplied org / role / userId. Pure function — easy to
+ * with the supplied org / role / userId. Pure function, easy to
  * unit-test.
  *
- * Truth table (Pass 5a — closes the cross-tenant SSE bleed):
+ * Truth table (Pass 5a, closes the cross-tenant SSE bleed):
  *
  *   1. event.orgId === null         → "system" event. Apply the
  *                                     audience filter only (no tenant
@@ -107,7 +107,7 @@ export function subscribeEvents(
  *
  * Before this change `viewer.role !== "STAFF"` was enough for an
  * admin in Tenant A to see Tenant B's `order:created` event payload
- * over SSE — a real, exploitable cross-tenant leak. Documented in
+ * over SSE, a real, exploitable cross-tenant leak. Documented in
  * the Phase-A audit risk #4.2.
  */
 export function isEventVisibleToUser(
@@ -121,12 +121,12 @@ export function isEventVisibleToUser(
     orgId: string | null;
   },
 ): boolean {
-  // Tenant gate first — runs before any audience-kind check.
+  // Tenant gate first, runs before any audience-kind check.
   if (event.orgId !== null) {
     if (!viewer.orgId) return false;
     if (event.orgId !== viewer.orgId) return false;
   }
-  // Tenant match (or system event) — apply the audience filter.
+  // Tenant match (or system event), apply the audience filter.
   switch (event.audience.kind) {
     case "all":
       return true;

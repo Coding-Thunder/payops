@@ -39,13 +39,13 @@ interface NavSection {
 }
 
 /**
- * Sidebar information architecture — operational, not marketing.
+ * Sidebar information architecture, operational, not marketing.
  *
  *   OPERATIONS   the daily-use surfaces (dashboard, orders, disputes)
  *   CATALOG      the merchant's product world (item types, items)
  *   SETTINGS     team + integrations + brand + emails + audit + config
  *
- * Active selection is a 2px emerald rail on the left edge — the brand
+ * Active selection is a 2px emerald rail on the left edge, the brand
  * accent. No pulse animations, no decorative dots; this is an ops
  * console and a steady left-edge rail is enough.
  */
@@ -211,7 +211,7 @@ export function Sidebar({ role, brand, variant = "full" }: SidebarProps) {
                           : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
                       )}
                     >
-                      {/* Active rail — flat 2px emerald edge marker.
+                      {/* Active rail, flat 2px emerald edge marker.
                           No gradient, no pulse, no marketing accent;
                           a single brand color line that just says
                           "you are here". */}

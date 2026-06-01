@@ -11,7 +11,7 @@ import { completeBusinessSetup } from "@/server/services/business-setup.service"
 import { ensureMongo, resetDatabase } from "@/tests/utils/db";
 
 /**
- * Pass 6b — onboarding wizard seed coverage.
+ * Pass 6b, onboarding wizard seed coverage.
  *
  * Verifies that for every shipped vertical:
  *   1. The template can be persisted as-is via `completeBusinessSetup`.
@@ -42,7 +42,7 @@ function ctxFor(orgId: string) {
   };
 }
 
-describe("completeBusinessSetup — every shipped vertical", () => {
+describe("completeBusinessSetup, every shipped vertical", () => {
   for (const vertical of BUSINESS_VERTICALS) {
     it(`seeds the "${vertical}" template successfully`, async () => {
       const orgId = new Types.ObjectId().toString();
@@ -93,7 +93,7 @@ describe("completeBusinessSetup — every shipped vertical", () => {
   }
 });
 
-describe("completeBusinessSetup — collisions + isolation", () => {
+describe("completeBusinessSetup, collisions + isolation", () => {
   it("refuses to seed the same (orgId, key) twice", async () => {
     const orgId = new Types.ObjectId().toString();
     const template = BUSINESS_TEMPLATES.retail;
@@ -191,8 +191,8 @@ describe("completeBusinessSetup — collisions + isolation", () => {
       ctxFor(orgId),
     );
 
-    // Second vertical: services (key=engagement). Different key — no
-    // collision — append succeeds.
+    // Second vertical: services (key=engagement). Different key, no
+    // collision, append succeeds.
     const services = BUSINESS_TEMPLATES.services;
     await completeBusinessSetup(
       {

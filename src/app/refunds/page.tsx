@@ -73,7 +73,7 @@ const SECTIONS: LegalSection[] = [
           <li>your workspace name (or slug),</li>
           <li>the date of the charge you&apos;d like refunded,</li>
           <li>
-            optionally, a one-line reason — only if you want to. It
+            optionally, a one-line reason, only if you want to. It
             helps us improve the product. It&apos;s not required.
           </li>
         </UL>
@@ -116,14 +116,14 @@ const SECTIONS: LegalSection[] = [
           <li>
             <strong>Stripe processing fees</strong> on payments your
             customers made <em>to you</em> through your connected Stripe
-            account. We never received that money — it went directly
+            account. We never received that money, it went directly
             from your customer to your Stripe to your bank. Refunding it
             is between you and Stripe, not us.
           </li>
           <li>
             <strong>Renewal charges after day 14.</strong> If you cancel
             after the window closes, the cancellation takes effect at
-            the end of the paid period — no pro-rata refund of the
+            the end of the paid period, no pro-rata refund of the
             current period.
           </li>
           <li>
@@ -156,7 +156,7 @@ const SECTIONS: LegalSection[] = [
             paid for;
           </li>
           <li>
-            stops auto-renewal — you won&apos;t be charged again;
+            stops auto-renewal, you won&apos;t be charged again;
           </li>
           <li>
             preserves read-only access to your workspace data for at
@@ -166,7 +166,7 @@ const SECTIONS: LegalSection[] = [
         <H3>Annual plans</H3>
         <P>
           The 14-day guarantee applies to annual plans the same way it
-          applies to monthly plans — full refund within 14 days of the
+          applies to monthly plans, full refund within 14 days of the
           first charge. After day 14, annual plans run to the end of the
           paid year; we don&apos;t pro-rate annual refunds outside the
           guarantee window.
@@ -175,7 +175,7 @@ const SECTIONS: LegalSection[] = [
         <P>
           Upgrades take effect immediately; we charge the prorated
           difference. Downgrades take effect at the start of your next
-          billing cycle — you keep the higher tier&apos;s features until
+          billing cycle, you keep the higher tier&apos;s features until
           then.
         </P>
       </>
@@ -189,7 +189,7 @@ const SECTIONS: LegalSection[] = [
         <P>
           If TraceTxn experiences a major outage or a billing error on
           our side, we may issue credits or refunds outside the
-          guarantee window — case-by-case, in your favour. Email{" "}
+          guarantee window, case-by-case, in your favour. Email{" "}
           <Mail address="billing@tracetxn.com" /> with the details and
           we&apos;ll work it out quickly.
         </P>

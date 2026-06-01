@@ -2,7 +2,7 @@
 
 A three-tier test suite designed for reliability, deterministic execution,
 and confidence during refactors. Every tier runs against its own
-environment with strict isolation guarantees — nothing in this suite
+environment with strict isolation guarantees, nothing in this suite
 touches the development or production database.
 
 ## Layout
@@ -52,11 +52,11 @@ npm run test:all                # unit + integration + smoke
 | `.env.prod`   | Production          | MongoDB Atlas                              |
 
 Smoke tests refuse to run if `MONGODB_URI` does not contain
-`tracetxn-smoke` — a hard guard against accidentally targeting dev / prod.
+`tracetxn-smoke`, a hard guard against accidentally targeting dev / prod.
 
 ## Tier 1 · Unit tests
 
-- **Environment** — jsdom by default; server modules declare
+- **Environment**, jsdom by default; server modules declare
   `// @vitest-environment node` at the top.
 - **No DB**, **no network**. A global `fetch` fence throws on any
   accidental real call.
@@ -80,35 +80,35 @@ What's covered:
 
 ## Tier 2 · Integration tests
 
-- **Environment** — node.
-- **MongoDB** — `mongodb-memory-server` boots one mongod per run; each
+- **Environment**, node.
+- **MongoDB**, `mongodb-memory-server` boots one mongod per run; each
   test file gets its own logical database namespace (`it-<uuid>`),
   collections are wiped in `afterEach`. Indexes survive between tests
   for speed.
-- **Stripe** — replaced by an in-process stub (`stripe-stub.ts`) that
+- **Stripe**, replaced by an in-process stub (`stripe-stub.ts`) that
   records `checkout.sessions.create` calls, lets tests pre-stage
   failures, and validates webhook signatures with the same HMAC scheme
   Stripe uses.
-- **Email** — SMTP is left empty so the email service degrades to
+- **Email**, SMTP is left empty so the email service degrades to
   `EMAIL_FAILED` audit rows, which tests assert against.
 
 What's covered:
 
-- `authenticate` — successful login, wrong password, disabled account,
+- `authenticate`, successful login, wrong password, disabled account,
   unknown email enumeration protection, JWT round-trip.
-- `createOrder` — Stripe session creation, idempotency key, audit row,
+- `createOrder`, Stripe session creation, idempotency key, audit row,
   policy snapshot, Stripe failure rolls back to FAILED.
-- `listOrders` — STAFF scoped to own orders, ADMIN sees all.
+- `listOrders`, STAFF scoped to own orders, ADMIN sees all.
 - `getOrderById`, `archiveOrder`, `regeneratePaymentLink`.
 - `createUser` / `updateUser` / `resetUserPassword` with RBAC guards.
-- Webhook processor — paid transitions, duplicate dedupe, concurrent
+- Webhook processor, paid transitions, duplicate dedupe, concurrent
   delivery email-claim race, expired + failed events, lookup by
   `client_reference_id` AND fallback to `stripeSessionId`.
-- `POST /api/auth/login` — 200/401/422 envelopes + session cookie set.
-- `POST /api/orders` — RBAC + happy path + zod errors.
-- `POST /api/webhooks/stripe` — missing / invalid / valid / duplicate
+- `POST /api/auth/login`, 200/401/422 envelopes + session cookie set.
+- `POST /api/orders`, RBAC + happy path + zod errors.
+- `POST /api/webhooks/stripe`, missing / invalid / valid / duplicate
   signatures, audit rows.
-- `POST /api/admin/users` — full RBAC matrix (STAFF blocked, ADMIN
+- `POST /api/admin/users`, full RBAC matrix (STAFF blocked, ADMIN
   can't escalate to SUPER_ADMIN).
 
 ## Tier 3 · Smoke tests (Playwright)
@@ -116,33 +116,33 @@ What's covered:
 Boot a real Next.js server against `tracetxn-smoke`, then drive critical
 business workflows over HTTP.
 
-- **Global setup** — connects to Mongo, drops the smoke DB, seeds an
+- **Global setup**, connects to Mongo, drops the smoke DB, seeds an
   admin + staff user, writes credentials to `reports/.smoke-creds.json`.
-- **Global teardown** — drops the smoke DB and removes the creds file.
-- **Stripe** — `PAYOPS_TEST_MODE=smoke` activates the in-process stub,
+- **Global teardown**, drops the smoke DB and removes the creds file.
+- **Stripe**, `PAYOPS_TEST_MODE=smoke` activates the in-process stub,
   so checkout session creation never opens a network socket.
-- **Webhook signing** — tests sign synthetic events with the smoke
+- **Webhook signing**, tests sign synthetic events with the smoke
   webhook secret. The real `Stripe.webhooks.constructEvent` (from the
   stub) validates the signature, so we exercise the production code
   path end-to-end.
 
 Specs:
 
-1. `01-health-and-login.spec.ts` — `/api/health`, anonymous redirect,
+1. `01-health-and-login.spec.ts`, `/api/health`, anonymous redirect,
    admin login UI, invalid-credentials inline error.
-2. `02-order-flow.spec.ts` — admin creates order → webhook flips it to
+2. `02-order-flow.spec.ts`, admin creates order → webhook flips it to
    PAID → idempotent duplicate delivery → invalid signature rejected.
-3. `03-rbac.spec.ts` — anonymous → `/admin` bounces to `/login`,
+3. `03-rbac.spec.ts`, anonymous → `/admin` bounces to `/login`,
    STAFF → `/admin` bounces to `/dashboard`, STAFF → `/api/admin/users`
    returns 403 JSON, ADMIN reaches `/admin`.
-4. `04-admin-operations.spec.ts` — admin creates a STAFF user via the
+4. `04-admin-operations.spec.ts`, admin creates a STAFF user via the
    API, `/api/auth/me`, no `passwordHash` in list responses, dashboard
    renders without console errors.
 
 ## Factories
 
 Every factory exposes a pure `build…()` (for unit tests) and a
-`create…()` (persists). Factories never connect to Mongo themselves —
+`create…()` (persists). Factories never connect to Mongo themselves -
 they assume `ensureMongo()` has been called by the test setup.
 
 ```ts
@@ -153,8 +153,8 @@ const settings = await createSettings();
 
 ## Mocks
 
-- `mocks/server-only.ts` — no-op replacement aliased by Vitest.
-- `mocks/stripe-stub.ts` — programmable Stripe surface. Set up by
+- `mocks/server-only.ts`, no-op replacement aliased by Vitest.
+- `mocks/stripe-stub.ts`, programmable Stripe surface. Set up by
   `integration.setup.ts`; tests retrieve it via
   `getCurrentTestStripe()`.
 
@@ -187,5 +187,5 @@ const settings = await createSettings();
 - Integration suite: ~6 s on a warm mongod; ~10 s cold.
 - Smoke suite: depends on Next build time; under 60 s once cached.
 
-If a unit test takes longer than 5 s the runner fails it — that's the
+If a unit test takes longer than 5 s the runner fails it, that's the
 canary for "this belongs in the integration tier".

@@ -78,7 +78,7 @@ const validBody = {
   ],
 };
 
-describe("POST /api/admin/item-types — create", () => {
+describe("POST /api/admin/item-types, create", () => {
   it("ADMIN can create a new item type for their org", async () => {
     session = await mockSession(actorFor(UserRole.ADMIN));
     const res = await createAdmin(
@@ -94,7 +94,7 @@ describe("POST /api/admin/item-types — create", () => {
     expect(persisted?.orgId.toString()).toBe(session.user.orgId);
   });
 
-  it("STAFF is forbidden — ITEM_TYPE_MANAGE is admin-only", async () => {
+  it("STAFF is forbidden, ITEM_TYPE_MANAGE is admin-only", async () => {
     session = await mockSession(actorFor(UserRole.STAFF));
     const res = await createAdmin(
       buildRequest("/api/admin/item-types", {
@@ -106,7 +106,7 @@ describe("POST /api/admin/item-types — create", () => {
     expect(status).toBe(403);
   });
 
-  it("REFUSES duplicate (orgId, key) — returns 409", async () => {
+  it("REFUSES duplicate (orgId, key), returns 409", async () => {
     session = await mockSession(actorFor(UserRole.ADMIN));
     const first = await createAdmin(
       buildRequest("/api/admin/item-types", {
@@ -177,7 +177,7 @@ describe("POST /api/admin/item-types — create", () => {
   });
 });
 
-describe("GET /api/item-types — caller-org active list", () => {
+describe("GET /api/item-types, caller-org active list", () => {
   it("returns only ACTIVE rows in the actor's org (cross-tenant refusal)", async () => {
     const orgA = new Types.ObjectId();
     const orgB = new Types.ObjectId();
@@ -346,7 +346,7 @@ describe("PATCH /api/admin/item-types/[id]", () => {
   });
 });
 
-describe("GET /api/admin/item-types/[id] — read one", () => {
+describe("GET /api/admin/item-types/[id], read one", () => {
   it("returns the row when the actor owns it", async () => {
     session = await mockSession(actorFor(UserRole.ADMIN));
     const created = await createAdmin(

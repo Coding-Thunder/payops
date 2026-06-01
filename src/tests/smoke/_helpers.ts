@@ -12,7 +12,7 @@ import { type APIRequestContext, type Page, expect } from "@playwright/test";
  *   - `loginAs(page, user)` drives the real login form. Returns once the
  *     dashboard has rendered.
  *   - `loginAsApi(request, user)` short-circuits the UI for tests that
- *     don't care about the login flow itself — POSTs /api/auth/login and
+ *     don't care about the login flow itself, POSTs /api/auth/login and
  *     hands the request context back with the cookie set.
  *   - `postSignedWebhook(request, event)` signs a Stripe event with the
  *     smoke webhook secret and posts it to /api/webhooks/stripe.
@@ -43,7 +43,7 @@ export function getSmokeCreds(): SmokeCreds {
   if (cached) return cached;
   if (!fs.existsSync(CREDS_FILE)) {
     throw new Error(
-      `[smoke] credentials file missing — did playwright.global-setup.ts run? Expected ${CREDS_FILE}`,
+      `[smoke] credentials file missing, did playwright.global-setup.ts run? Expected ${CREDS_FILE}`,
     );
   }
   cached = JSON.parse(fs.readFileSync(CREDS_FILE, "utf8")) as SmokeCreds;

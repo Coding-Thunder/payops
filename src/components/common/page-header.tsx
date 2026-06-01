@@ -9,12 +9,12 @@ interface PageHeaderProps {
 }
 
 /**
- * Page header — operator-grade. Neutral by default; let the page
+ * Page header, operator-grade. Neutral by default; let the page
  * content carry the brand voice. Tightens the editorial scale of
  * the previous version (28→24px h1, 14→13px description) so the
  * page chrome reads as ops console, not marketing landing.
  *
- * The previous `accent` prop is removed — page identity now lives
+ * The previous `accent` prop is removed, page identity now lives
  * in the breadcrumb + the body content, not in colored eyebrow text.
  */
 export function PageHeader({

@@ -19,7 +19,7 @@ export default async function AdminWorkflowPage() {
     <div className="space-y-6">
       <PageHeader
         title="Order workflow"
-        description="The list of statuses an order can move through and the transitions between them. Defaults match the legacy enum (NOT_INITIATED → … → PAID / FAILED / EXPIRED); customise statuses for your business — pharmacy verification, hotel check-in, SaaS trial, etc. Stripe webhook events always land on the payment-success and payment-failure target keys at the bottom, so re-point those after renaming."
+        description="The list of statuses an order can move through and the transitions between them. Defaults match the legacy enum (NOT_INITIATED → … → PAID / FAILED / EXPIRED); customise statuses for your business, pharmacy verification, hotel check-in, SaaS trial, etc. Stripe webhook events always land on the payment-success and payment-failure target keys at the bottom, so re-point those after renaming."
       />
       <WorkflowBuilder initial={workflow} canEdit={canEdit} />
     </div>

@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
  *
  * Inspired by Stripe / Linear / Ramp: thin, calm, generous left
  * indent for the wordmark, a small nav, a primary CTA on the right.
- * No mega-menus, no animated underlines — restraint is the point.
+ * No mega-menus, no animated underlines, restraint is the point.
  */
 
 const NAV_LINKS = [

@@ -7,8 +7,8 @@ import { User, type UserDoc, type UserDocument } from "@/server/db/models";
 /**
  * User factory.
  *
- *   - `buildUser()`  — pure object (no DB write). For unit tests.
- *   - `createUser()` — persists a hashed user. For integration tests.
+ *   - `buildUser()` , pure object (no DB write). For unit tests.
+ *   - `createUser()`, persists a hashed user. For integration tests.
  *
  * `password` is hashed lazily so unit tests that never touch bcrypt don't
  * pay the ~250ms cost.

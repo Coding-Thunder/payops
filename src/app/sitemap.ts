@@ -3,7 +3,7 @@ import type { MetadataRoute } from "next";
 import { env } from "@/lib/env";
 
 /**
- * sitemap.xml — surfaced by Next at `/sitemap.xml`.
+ * sitemap.xml, surfaced by Next at `/sitemap.xml`.
  *
  * Scope is intentionally tiny: TraceTxn is a multi-tenant SaaS,
  * the only crawler-eligible surfaces are the marketing landing and

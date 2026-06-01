@@ -99,7 +99,7 @@ export function ItemTable({ items }: ItemTableProps) {
               {it.sku ? (
                 <code className="text-[12px]">{it.sku}</code>
               ) : (
-                <span className="text-muted-foreground/60">—</span>
+                <span className="text-muted-foreground/60">-</span>
               )}
             </TableCell>
             <TableCell>

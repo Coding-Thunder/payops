@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /**
- * Badge — Stripe / Linear style: soft pastel fills, hairline ring,
+ * Badge, Stripe / Linear style: soft pastel fills, hairline ring,
  * compact pill. Uses semantic variants so status badges stay consistent
  * regardless of where they appear (table cell, page header, etc.).
  */
@@ -29,7 +29,7 @@ const badgeVariants = cva(
           "bg-destructive-soft text-destructive ring-destructive-border/60",
         info:
           "bg-info-soft text-info ring-info-border/60",
-        // ─── Marketing palette accents — for chromatic moments in the
+        // ─── Marketing palette accents, for chromatic moments in the
         // authed app (paid receipt, dispute opened, settled batch). The
         // soft + ring colors lean on CSS color-mix against the
         // marketing tokens so they stay perfectly tuned to the brand.

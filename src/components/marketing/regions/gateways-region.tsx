@@ -1,5 +1,5 @@
 /**
- * Gateways region — the dark code block as the centerpiece, with
+ * Gateways region, the dark code block as the centerpiece, with
  * compact prose flowing around it and a quiet status table below.
  *
  * Different rhythm from the regions above: tight composition, dark
@@ -63,7 +63,7 @@ export function GatewaysRegion() {
             The orchestration layer under TraceTxn was built
             gateway-agnostic from day one. New adapters slot in without
             rewriting the order lifecycle, the webhook contract, or the
-            audit chain — they implement one interface and the rest of
+            audit chain, they implement one interface and the rest of
             the platform doesn&apos;t know which provider routed a
             specific charge.
           </p>
@@ -132,7 +132,7 @@ export function GatewaysRegion() {
         </div>
       </div>
 
-      {/* Compact status table — no per-card chrome */}
+      {/* Compact status table, no per-card chrome */}
       <div className="mt-10 border-y border-border">
         {(["live", "next", "roadmap"] as const).map((status) => {
           const rows = GATEWAYS.filter((g) => g.status === status);

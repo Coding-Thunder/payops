@@ -15,7 +15,7 @@ interface ImageUrlPreviewProps {
     ok?: string;
     error?: string;
   };
-  /** Hide the helper text — handy in dense forms. */
+  /** Hide the helper text, handy in dense forms. */
   hideHelper?: boolean;
 }
 
@@ -25,7 +25,7 @@ interface ImageUrlPreviewProps {
  * pill when the URL doesn't resolve.
  *
  * Only the async LOAD RESULT lives in state. The "loading" state is
- * derived by comparing the stored result's URL with the current URL —
+ * derived by comparing the stored result's URL with the current URL -
  * when they don't match we know we're still waiting on the new load.
  */
 export function ImageUrlPreview({
@@ -71,7 +71,7 @@ export function ImageUrlPreview({
         style={{ width: size, height: size }}
       >
         {status === "ok" ? (
-          // eslint-disable-next-line @next/next/no-img-element -- the image is
+           
           // user-pasted from the wider web; next/image would proxy it and
           // hide load failures we want to surface here.
           <img
@@ -92,9 +92,9 @@ export function ImageUrlPreview({
           {status === "loading"
             ? (label?.loading ?? "Checking image…")
             : status === "ok"
-              ? (label?.ok ?? "Image looks good — this is what the customer will see.")
+              ? (label?.ok ?? "Image looks good, this is what the customer will see.")
               : (label?.error ??
-                "We couldn't load that URL. The customer will see a broken image — paste a different public link.")}
+                "We couldn't load that URL. The customer will see a broken image, paste a different public link.")}
         </p>
       )}
     </div>

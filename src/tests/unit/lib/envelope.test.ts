@@ -70,7 +70,7 @@ describe("envelope encryption", () => {
     });
 
     it("throws when TRACETXN_MASTER_KEY is the wrong length", () => {
-      // 16 bytes — too short for AES-256.
+      // 16 bytes, too short for AES-256.
       process.env.TRACETXN_MASTER_KEY = Buffer.alloc(16).toString("base64");
       expect(() => encryptSecret("anything")).toThrowError(/32 bytes/i);
     });
@@ -123,7 +123,7 @@ describe("envelope encryption", () => {
     it("rejects decryption with a different master key", () => {
       process.env.TRACETXN_MASTER_KEY = freshMasterKey();
       const enc = encryptSecret("sk_live_originalkey");
-      // Rotate the env to a different key — old blobs no longer decrypt.
+      // Rotate the env to a different key, old blobs no longer decrypt.
       process.env.TRACETXN_MASTER_KEY = freshMasterKey();
       _resetMasterKeyForTesting();
       expect(() => decryptSecret(enc)).toThrow();

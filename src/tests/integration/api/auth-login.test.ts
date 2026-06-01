@@ -7,7 +7,7 @@ import { ensureMongo } from "@/tests/utils/db";
 import { createUser } from "@/tests/factories/user.factory";
 
 /**
- * /api/auth/login route — drives the real handler with a constructed
+ * /api/auth/login route, drives the real handler with a constructed
  * NextRequest. We assert:
  *
  *   - happy-path returns the public user envelope + sets the session cookie

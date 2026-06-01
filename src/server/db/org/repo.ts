@@ -19,7 +19,7 @@ type AnyOptions = Record<string, unknown>;
  *
  *   Every multi-tenant production incident eventually traces back to one
  *   forgotten `orgId` clause. We do NOT trust ourselves to remember it on
- *   every query — we channel reads/writes through these helpers and
+ *   every query, we channel reads/writes through these helpers and
  *   require `orgId` at the type level.
  *
  * Phase 0 ships the pattern + the helpers. Phase 0 does NOT rewrite every

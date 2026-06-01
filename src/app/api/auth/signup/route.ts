@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
  * session cookie so the browser lands logged-in.
  *
  * Bot protection: Turnstile pre-flight, then a tight rate limit (5
- * per 15 min per IP) — paired with the per-failure audit row we get
+ * per 15 min per IP), paired with the per-failure audit row we get
  * via the standard `withApi` pipeline, this kills disposable-email
  * abuse without locking real founders out.
  *
@@ -36,7 +36,7 @@ export const POST = withApi(
 
     const result = await signupFounder(input, ctx);
 
-    // Mint a JWT for the brand-new founder — same shape login emits,
+    // Mint a JWT for the brand-new founder, same shape login emits,
     // including the orgIds array so a future multi-org user can switch
     // without re-issuance.
     const token = await signSession({

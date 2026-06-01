@@ -16,7 +16,7 @@ import { connectMongo } from "@/server/db/mongoose";
  * Test-mode fallback: `mongodb-memory-server` (single node) cannot
  * transact. When the integration harness sets
  * `TRACETXN_TEST_MODE=integration` we skip the session entirely and run
- * the callback directly — production (Atlas, replica-set) takes the
+ * the callback directly, production (Atlas, replica-set) takes the
  * real transaction path. Same code path; the same code is tested.
  *
  * The callback receives `null` in test mode and a `ClientSession` in
@@ -68,7 +68,7 @@ export function sessionOpt(
  * (or a prior delivery) already claimed it.
  *
  * The unique index on `gatewayEventId` is the durable idempotency
- * primitive — webhook + reconcile collisions both race here and only
+ * primitive, webhook + reconcile collisions both race here and only
  * one wins. Lives in this module rather than the service layer so it
  * can be reused by any consumer that needs gateway-event dedupe.
  */
@@ -109,12 +109,12 @@ export async function tryClaimGatewayEvent(
       },
     );
     // `new: false` returns the PRE-upsert doc; `null` means nothing
-    // existed before — we created it. A non-null result means it was
+    // existed before, we created it. A non-null result means it was
     // already there (duplicate).
     return res === null;
   } catch (err) {
     // The only expected error is a duplicate-key under racey concurrent
-    // upserts; treat as "already claimed" — caller short-circuits as
+    // upserts; treat as "already claimed", caller short-circuits as
     // duplicate.
     if (isDuplicateKeyError(err)) return false;
     throw err;

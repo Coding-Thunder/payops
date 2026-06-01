@@ -96,7 +96,7 @@ export function EvidenceSearchForm() {
         <CardTitle>Evidence search</CardTitle>
         <CardDescription>
           Find the originating order from any reference quoted in a
-          dispute letter — transaction id, customer email, gateway event
+          dispute letter, transaction id, customer email, gateway event
           id, signed name. Raw consent tokens are hashed before lookup.
         </CardDescription>
       </CardHeader>
@@ -168,7 +168,7 @@ export function EvidenceSearchForm() {
                     <TableCell className="font-mono text-[12px]">
                       {r.orderNumber}
                     </TableCell>
-                    <TableCell>{r.customerEmail ?? "—"}</TableCell>
+                    <TableCell>{r.customerEmail ?? "-"}</TableCell>
                     <TableCell>
                       <Badge variant="secondary">{r.matchedField}</Badge>
                     </TableCell>

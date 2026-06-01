@@ -92,7 +92,7 @@ function TimelineRow({
 
   return (
     <li className="relative grid grid-cols-[1.75rem_1fr_auto] items-start gap-x-3 py-2.5 first:pt-0 last:pb-0">
-      {/* Numbered green ring node — bold operational identity
+      {/* Numbered green ring node, bold operational identity
           marker. Replaces the prior tiny sequence + tick combo. */}
       <span
         className={`relative z-10 grid size-7 place-items-center rounded-full text-[11px] font-semibold ${
@@ -126,7 +126,7 @@ function TimelineRow({
         {isBrokenHead ? (
           <p className="mt-1 inline-flex items-center gap-1.5 text-[11.5px] font-medium text-destructive">
             <AlertTriangleIcon className="size-3" aria-hidden />
-            Chain breaks at this event — payload or hash mutated
+            Chain breaks at this event, payload or hash mutated
           </p>
         ) : null}
         <RowExpand event={event} html={html} />
@@ -287,9 +287,9 @@ function EmailRender({
         </p>
         <dl className="grid grid-cols-[4rem_1fr] gap-x-3 gap-y-0.5 text-[11.5px]">
           <dt className="text-muted-foreground">From</dt>
-          <dd className="text-foreground">{from || "—"}</dd>
+          <dd className="text-foreground">{from || "-"}</dd>
           <dt className="text-muted-foreground">To</dt>
-          <dd className="text-foreground">{to || "—"}</dd>
+          <dd className="text-foreground">{to || "-"}</dd>
           {replyTo ? (
             <>
               <dt className="text-muted-foreground">Reply-To</dt>

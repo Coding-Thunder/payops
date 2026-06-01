@@ -22,7 +22,7 @@ let cachedLegacyOrgId: string | null | undefined = undefined;
  * Resolve the legacy organization's id. Returns null when no legacy
  * org exists (fresh install that never ran the migration script).
  *
- * Cached per process — the legacy org never changes id at runtime. If
+ * Cached per process, the legacy org never changes id at runtime. If
  * you ever need to bust the cache outside tests, restart the worker.
  */
 export async function getLegacyOrgId(): Promise<string | null> {
@@ -55,7 +55,7 @@ export async function isLegacyTenant(
   return orgId === legacyId;
 }
 
-/** Test-only — clears the process-scoped cache. */
+/** Test-only, clears the process-scoped cache. */
 export function _resetLegacyOrgIdForTesting(): void {
   cachedLegacyOrgId = undefined;
 }

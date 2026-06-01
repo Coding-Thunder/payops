@@ -23,7 +23,7 @@ import {
 import { ensureMongo, resetDatabase } from "@/tests/utils/db";
 
 /**
- * Pass 6c — catalog Item service coverage.
+ * Pass 6c, catalog Item service coverage.
  *
  * Focus on the business-critical edges:
  *   - Attribute payloads are validated against the referenced
@@ -40,7 +40,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  // Nothing to undo — resetDatabase covers it in beforeEach.
+  // Nothing to undo, resetDatabase covers it in beforeEach.
 });
 
 function ctxFor(orgId: string) {

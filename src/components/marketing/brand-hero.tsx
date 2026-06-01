@@ -4,16 +4,16 @@ import { ArrowRightIcon, CheckCircle2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 /**
- * Brand-v1 hero — layered dark composition over an Unsplash analytics
+ * Brand-v1 hero, layered dark composition over an Unsplash analytics
  * photo, lifted from the earlier CoverBand treatment.
  *
  * Layer stack:
  *   -z-20  Unsplash analytics-dashboard photo (filter darkens it so it
  *          sits BEHIND the type rather than competing with it).
- *   -z-10  Dark navy gradient — pins the headline area dark for
+ *   -z-10  Dark navy gradient, pins the headline area dark for
  *          contrast, lightens toward the right where the emerald wash
  *          sits.
- *    -z-0  Emerald radial wash — single accent, brand-aligned.
+ *    -z-0  Emerald radial wash, single accent, brand-aligned.
  *
  * Single column (no right-side diagram). All copy is white / slate
  * over the dark cover; the chip + CTAs are inverted to match.
@@ -24,7 +24,7 @@ export function BrandHero() {
       className="relative isolate overflow-hidden border-b border-border"
       style={{ background: "var(--ink-navy)" }}
     >
-      {/* Photo layer — operational, not promotional. To swap: change URL. */}
+      {/* Photo layer, operational, not promotional. To swap: change URL. */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 -z-20 bg-cover bg-center"
@@ -34,7 +34,7 @@ export function BrandHero() {
           filter: "brightness(0.42) saturate(0.9)",
         }}
       />
-      {/* Dark gradient overlay — keeps the headline area highest-contrast. */}
+      {/* Dark gradient overlay, keeps the headline area highest-contrast. */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 -z-10"
@@ -43,7 +43,7 @@ export function BrandHero() {
             "linear-gradient(110deg, color-mix(in oklch, var(--ink-navy) 92%, transparent) 0%, color-mix(in oklch, var(--ink-navy) 72%, transparent) 55%, color-mix(in oklch, var(--ink-navy) 55%, transparent) 100%)",
         }}
       />
-      {/* Emerald radial wash — single brand accent. */}
+      {/* Emerald radial wash, single brand accent. */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 -z-0"
@@ -75,7 +75,7 @@ export function BrandHero() {
             TraceTxn is the operational console between you and your payment
             processor. Lifecycle visibility on every order, a hashed
             evidence chain on every transition, hosted consent before the
-            charge — so chargebacks resolve in your favour and your team
+            charge, so chargebacks resolve in your favour and your team
             spends time on growth, not paperwork.
           </p>
 
@@ -99,7 +99,7 @@ export function BrandHero() {
           <ul className="mt-10 grid grid-cols-1 gap-y-2 text-[12.5px] text-white/75 sm:grid-cols-2 sm:gap-x-6">
             {[
               "Hashed evidence chain per order",
-              "Per-org Stripe routing — your keys, encrypted",
+              "Per-org Stripe routing, your keys, encrypted",
               "Tenant-configurable order workflows",
               "Hosted consent + dispute-ready receipts",
             ].map((line) => (

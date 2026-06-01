@@ -19,7 +19,7 @@ export default async function SignupPage() {
 
   return (
     <div className="grid min-h-screen w-full grid-cols-1 lg:grid-cols-[1.05fr_1fr]">
-      {/* Left panel — Unsplash photo behind a dark gradient overlay.
+      {/* Left panel, Unsplash photo behind a dark gradient overlay.
           Same treatment as the login cover so signup ↔ login feels
           consistent. To swap the photo, change the URL below. */}
       <section
@@ -76,7 +76,7 @@ export default async function SignupPage() {
           <ul className="space-y-2.5 pt-1 text-[12.5px] text-white/80">
             {[
               "Dispute-grade evidence chain on every order",
-              "Per-org Stripe routing — your keys stay encrypted",
+              "Per-org Stripe routing, your keys stay encrypted",
               "Branded customer emails out of the box",
             ].map((line) => (
               <li
@@ -98,7 +98,7 @@ export default async function SignupPage() {
         </p>
       </section>
 
-      {/* Right panel — the form */}
+      {/* Right panel, the form */}
       <section className="flex items-center justify-center bg-background px-6 py-12 sm:px-12">
         <div className="w-full max-w-sm space-y-8">
           <div className="space-y-4">

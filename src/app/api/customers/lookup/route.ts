@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Pass 6d — saved customer prefill lookup.
+ * Pass 6d, saved customer prefill lookup.
  *
  * The create-order dynamic form calls this on email-field blur. A
  * match pre-fills name + phone if those fields are still empty.

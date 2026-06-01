@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 /**
  * Initiate a password reset.
  *
- * Always returns 200 — never reveals whether the email is registered.
+ * Always returns 200, never reveals whether the email is registered.
  * The service handles the "no user / disabled user" cases internally
  * by emitting an audit row + no email. Combined with the Turnstile
  * pre-flight + tight rate limit, this kills both account-enumeration

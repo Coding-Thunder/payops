@@ -27,7 +27,7 @@ const SECTIONS: LegalSection[] = [
       <>
         <P>
           A Data Processing Addendum (&quot;DPA&quot;) is a contract
-          between two parties — typically a controller and a processor —
+          between two parties, typically a controller and a processor -
           that sets out how personal data will be handled by the
           processor on the controller&apos;s behalf. Under the EU/UK
           GDPR (and equivalent laws in other regions), a controller is
@@ -60,7 +60,7 @@ const SECTIONS: LegalSection[] = [
           </li>
           <li>
             you fall under another regional law that requires
-            documented controller-processor terms — for example, India&apos;s
+            documented controller-processor terms, for example, India&apos;s
             Digital Personal Data Protection Act, Brazil&apos;s LGPD,
             California&apos;s CCPA/CPRA, or Quebec&apos;s Law 25.
           </li>
@@ -68,7 +68,7 @@ const SECTIONS: LegalSection[] = [
         <Note>
           If you only process personal data of individuals located in
           jurisdictions that don&apos;t require a DPA, you can still
-          request one — many customers prefer to have one on file
+          request one, many customers prefer to have one on file
           regardless.
         </Note>
       </>
@@ -100,7 +100,7 @@ const SECTIONS: LegalSection[] = [
           </li>
           <li>
             <strong>Security measures.</strong> Technical and
-            organisational measures we apply — encryption, access
+            organisational measures we apply, encryption, access
             control, tenant isolation, audit logging, secure software
             development. Detailed on our{" "}
             <PageLink href="/security">Security page</PageLink>.
@@ -157,12 +157,12 @@ const SECTIONS: LegalSection[] = [
             <strong>Registered address</strong> of the controller;
           </li>
           <li>
-            <strong>Signatory name &amp; title</strong> — the person
+            <strong>Signatory name &amp; title</strong>, the person
             who&apos;ll counter-sign on the controller side;
           </li>
           <li>
             <strong>Region(s)</strong> where your data subjects are
-            located — used to attach the right transfer mechanism
+            located, used to attach the right transfer mechanism
             (SCCs / UK Addendum / etc.) where applicable;
           </li>
           <li>
@@ -189,12 +189,12 @@ const SECTIONS: LegalSection[] = [
             processor.
           </li>
           <li>
-            Honour data-subject requests from your customers — we
+            Honour data-subject requests from your customers, we
             cooperate, but we are not authorised to act on your
             customers&apos; requests without your instruction.
           </li>
           <li>
-            Keep your authorised users list current — anyone who can
+            Keep your authorised users list current, anyone who can
             sign into your workspace can see workspace data.
           </li>
         </UL>

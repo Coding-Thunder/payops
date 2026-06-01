@@ -68,7 +68,7 @@ interface ProcessEventResult {
 /**
  * Optional scope hint. When supplied by the per-org webhook route, the
  * order-lookup helpers below scope to `orgId` so a Stripe event
- * delivered to org A's URL can never resolve org B's order — even if
+ * delivered to org A's URL can never resolve org B's order, even if
  * org B's `paymentIntentId` happens to be the same string (it won't
  * be, since intents are globally unique on Stripe's side, but the
  * scope is still the right semantic boundary).
@@ -87,7 +87,7 @@ export interface ProcessEventScope {
  * double-mail.
  *
  * Accepts a normalised `VerifiedPaymentEvent` produced by any gateway's
- * `verifyWebhook` — the webhook route owns the gateway selection (per
+ * `verifyWebhook`, the webhook route owns the gateway selection (per
  * route prefix), and this service stays gateway-agnostic.
  */
 export async function processGatewayEvent(
@@ -101,7 +101,7 @@ export async function processGatewayEvent(
     orgId: scope.orgId ?? undefined,
   });
 
-  // Best-effort: WEBHOOK_RECEIVED is non-transactional — observability
+  // Best-effort: WEBHOOK_RECEIVED is non-transactional, observability
   // only. The dedupe-claim inside each handler is the real guard.
   await recordAudit({
     action: AuditAction.WEBHOOK_RECEIVED,
@@ -146,14 +146,14 @@ async function findOrderForEvent(
   // When a scope is supplied by the per-org webhook route, every
   // lookup pins the orgId so a cross-tenant collision can never
   // resolve the wrong order. Without a scope (legacy route) we keep
-  // pre-Phase-3 behaviour — Tenant #1's flow unchanged.
+  // pre-Phase-3 behaviour, Tenant #1's flow unchanged.
   const scopeClause =
     scope.orgId && Types.ObjectId.isValid(scope.orgId)
       ? { orgId: new Types.ObjectId(scope.orgId) }
       : null;
 
   // Order id round-tripped via the gateway's metadata is the most
-  // reliable identifier — it survives session-id rotation and works
+  // reliable identifier, it survives session-id rotation and works
   // for events that don't carry a session id.
   if (event.orderId && Types.ObjectId.isValid(event.orderId)) {
     const filter = scopeClause
@@ -209,7 +209,7 @@ interface PaidTransitionInput {
   sessionId: string;
   paymentIntentId: string | null;
   /** Stripe minor-unit amount. When null we fall back to the order's
-   *  pricing.amount — same defensive default the original webhook used. */
+   *  pricing.amount, same defensive default the original webhook used. */
   amountTotal: number | null;
   paidAtMs: number;
   source: "webhook" | "reconcile";
@@ -225,10 +225,10 @@ interface PaidTransitionInput {
  *    delivery, throttled retry)
  *
  * Idempotent on three axes:
- *  1. `processedWebhookEventIds` — same event id is never applied twice
- *  2. `confirmationEmailSentAt`  — single confirmation send (see
+ *  1. `processedWebhookEventIds`, same event id is never applied twice
+ *  2. `confirmationEmailSentAt` , single confirmation send (see
  *     sendConfirmationOnce)
- *  3. `isAlreadyPaid` snapshot   — domain event + email skipped when
+ *  3. `isAlreadyPaid` snapshot  , domain event + email skipped when
  *     the order was already PAID prior to this call
  */
 export async function applyCheckoutPaid(
@@ -237,7 +237,7 @@ export async function applyCheckoutPaid(
 ): Promise<ProcessEventResult> {
   const gatewayKey = order.payment.gateway ?? "STRIPE";
   // Resolve the tenant's paid-status-key from their workflow. Defaults
-  // to "PAID" for tenants who haven't customized — so the existing
+  // to "PAID" for tenants who haven't customized, so the existing
   // dashboard rollups + email triggers that key off status === "PAID"
   // keep working until those callers are migrated to read isPaid from
   // the workflow.
@@ -254,7 +254,7 @@ export async function applyCheckoutPaid(
       };
 
   const outcome: TxOutcome = await withTx(async (session) => {
-    // 1. Durable dedupe — the unique index on `gatewayEventId` is the
+    // 1. Durable dedupe, the unique index on `gatewayEventId` is the
     // real idempotency primitive. Webhook + reconcile races collapse
     // here. The Order array push below is defense-in-depth.
     const claimed = await tryClaimGatewayEvent(
@@ -276,11 +276,11 @@ export async function applyCheckoutPaid(
         ? input.amountTotal / 100
         : order.pricing.amount;
 
-    // 2. Conditional update — flips current → workflow.paymentSuccess
+    // 2. Conditional update, flips current → workflow.paymentSuccess
     // exactly once. The `status: { $ne: paidStatusKey }` guard is the
     // serialization point against webhook-vs-reconcile races that
     // synthesize DIFFERENT dedupe keys (`evt_xyz` vs `reconcile:cs_xyz`)
-    // — both pass the ProcessedWebhookEvent claim, but only one can
+    //, both pass the ProcessedWebhookEvent claim, but only one can
     // flip the status. The loser falls through to the duplicate branch
     // and never enqueues a second confirmation email.
     //
@@ -314,7 +314,7 @@ export async function applyCheckoutPaid(
 
     if (!updated) {
       // Order is already PAID (another transition won the race).
-      // No audit, no evidence, no outbox enqueue — exactly one
+      // No audit, no evidence, no outbox enqueue, exactly one
       // confirmation email lifecycle per order.
       return { duplicate: true };
     }
@@ -373,7 +373,7 @@ export async function applyCheckoutPaid(
       session,
     );
 
-    // 4. Enqueue confirmation email — in-tx so the row never lands
+    // 4. Enqueue confirmation email, in-tx so the row never lands
     // if the order update aborts. `isAlreadyPaid` only fires for the
     // edge case where the in-memory order doc passed in was already
     // PAID before this call (would have been caught above by the
@@ -457,7 +457,7 @@ export async function applyCheckoutPaid(
 
 // `sendConfirmationOnce` and `orderDocToDTO` are gone. The confirmation
 // email now lands in the `PendingEmail` outbox inside the same
-// transaction that flips the order to PAID — the post-commit
+// transaction that flips the order to PAID, the post-commit
 // `kickPostCommitDrain` ships it sub-second on the happy path, and a
 // 60s in-process drainer (plus restarts) retries on transient SMTP
 // failures. No more inline retry-on-duplicate-webhook footgun.
@@ -747,9 +747,9 @@ async function failOrder(
 
 /**
  * Find the order targeted by a dispute / refund event. We never receive
- * `client_reference_id` on these — the lookup chain is:
+ * `client_reference_id` on these, the lookup chain is:
  *   1. metadata.orderId (charge metadata, if the gateway forwarded it)
- *   2. payment.paymentIntentId — both Dispute and Charge carry the PI id
+ *   2. payment.paymentIntentId, both Dispute and Charge carry the PI id
  *
  * Returns null if neither match (e.g. dispute on a charge created
  * outside this platform, or before we stored the PI id).
@@ -806,7 +806,7 @@ async function handleDisputeCreated(
       };
 
   const outcome: Outcome = await withTx(async (session) => {
-    // Primary dedupe — durable, collection-backed.
+    // Primary dedupe, durable, collection-backed.
     const claimed = await tryClaimGatewayEvent(
       {
         gatewayEventId: event.eventId,
@@ -1000,7 +1000,7 @@ async function handleDisputeUpdated(
     gatewayDisputeId: d.gatewayDisputeId,
   });
   if (!dispute) {
-    // Update arrived before created — rare but possible if Stripe retried
+    // Update arrived before created, rare but possible if Stripe retried
     // out of order. Treat as a create and let that handler reconcile.
     return handleDisputeCreated(event, scope);
   }
@@ -1101,7 +1101,7 @@ async function handleDisputeClosed(
   let materialisedDuringClose = false;
   if (!dispute) {
     // Closed before we saw created. Materialise it now so the audit
-    // trail isn't lost — then apply the close on top. The created
+    // trail isn't lost, then apply the close on top. The created
     // handler will register this event-id on the new dispute; we strip
     // it back off so the close transition below isn't treated as a
     // duplicate of itself.
@@ -1137,7 +1137,7 @@ async function handleDisputeClosed(
   const outcome: Outcome = await withTx(async (session) => {
     // When `materialisedDuringClose` is true the `handleDisputeCreated`
     // call above already inserted a ProcessedWebhookEvent row for this
-    // event id — that's the "we created the dispute from a close" race.
+    // event id, that's the "we created the dispute from a close" race.
     // Try-claim is idempotent (returns false if already claimed) so this
     // branch correctly falls through without re-applying anything new.
     if (!materialisedDuringClose) {
@@ -1273,7 +1273,7 @@ async function handleDisputeFundsWithdrawn(
   }
 
   // Re-use the dispute_updated push so the UI invalidates and surfaces
-  // any balance-impact copy. No separate domain event type for now —
+  // any balance-impact copy. No separate domain event type for now -
   // operators care more about created/closed.
   publishEvent({
     type: DomainEventType.ORDER_DISPUTE_UPDATED,

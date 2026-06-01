@@ -27,7 +27,7 @@ import type {
  * Design rule: every consumer (order.service, webhook.service,
  * dashboard rollups, admin UI) reads through THIS service. Direct
  * `Workflow.findOne(...)` calls from outside this file are a code
- * smell — they bypass the seed-on-miss + DTO normalisation here.
+ * smell, they bypass the seed-on-miss + DTO normalisation here.
  */
 
 // ──────────────────────────────────────────────────────────────────
@@ -44,7 +44,7 @@ import type {
  *   - any tenant that NEVER opens the workflow builder sees today's
  *     behavior unchanged.
  *
- * Tenants that DO customize override these — the field names below
+ * Tenants that DO customize override these, the field names below
  * are seed defaults, not platform invariants.
  */
 const DEFAULT_STATUSES: WorkflowStatusSpec[] = [
@@ -228,7 +228,7 @@ export async function getOrCreateDefaultWorkflow(
     const created = await Workflow.create(buildDefaultWorkflow(orgId));
     return toDTO(created.toObject() as WorkflowDoc & { _id: unknown });
   } catch (err) {
-    // Concurrent seed race — re-read.
+    // Concurrent seed race, re-read.
     if ((err as { code?: number }).code === 11000) {
       const raced = await Workflow.findOne(filter).lean<
         WorkflowDoc & { _id: unknown }
@@ -249,7 +249,7 @@ export async function getWorkflow(orgId: string): Promise<WorkflowDTO> {
 
 /**
  * Resolve whether moving an order from `fromKey` to `toKey` is allowed
- * under the org's workflow. Pure read — no mutation. Used by:
+ * under the org's workflow. Pure read, no mutation. Used by:
  *
  *   - order.service before persisting a status change
  *   - webhook.service before applying a gateway-driven status change
@@ -401,7 +401,7 @@ interface EditStatusInput {
   isPaid?: boolean;
 }
 
-/** Edit a status's display fields. The `key` is immutable — renaming a
+/** Edit a status's display fields. The `key` is immutable, renaming a
  *  status would orphan every Order.status currently pointing at it.
  *  Operators who want a different key delete + recreate (which the UI
  *  blocks anyway, since the platform-required keys are referenced from
@@ -424,7 +424,7 @@ export async function editStatus(
   if (input.label !== undefined) status.label = input.label;
   if (input.color !== undefined) status.color = input.color;
   if (input.isTerminal !== undefined) status.isTerminal = input.isTerminal;
-  // isPaid toggle has financial implications — guard against turning
+  // isPaid toggle has financial implications, guard against turning
   // OFF the flag for the status currently mapped as payment-success;
   // that would silently drop paid orders from the dashboard rollup.
   if (input.isPaid !== undefined) {
@@ -433,7 +433,7 @@ export async function editStatus(
       wfDoc.paymentSuccessStatusKey === statusKey
     ) {
       throw new ValidationError(
-        `Cannot clear isPaid on "${statusKey}" — it's the current payment-success target. Re-point payment mapping first.`,
+        `Cannot clear isPaid on "${statusKey}", it's the current payment-success target. Re-point payment mapping first.`,
       );
     }
     status.isPaid = input.isPaid;
@@ -452,7 +452,7 @@ export async function editStatus(
  *  - the ONLY initial status remaining
  *
  *  This service does NOT check whether live orders are currently in
- *  this status — that's the route's job (it has access to Order
+ *  this status, that's the route's job (it has access to Order
  *  models without dragging the import into the workflow service). */
 export async function removeStatus(
   orgId: string,
@@ -468,17 +468,17 @@ export async function removeStatus(
 
   if (wfDoc.initialStatusKey === statusKey) {
     throw new ValidationError(
-      `Cannot delete "${statusKey}" — it's the workflow's initial status. Set a different initial status first.`,
+      `Cannot delete "${statusKey}", it's the workflow's initial status. Set a different initial status first.`,
     );
   }
   if (wfDoc.paymentSuccessStatusKey === statusKey) {
     throw new ValidationError(
-      `Cannot delete "${statusKey}" — it's the payment-success target. Re-point payment mapping first.`,
+      `Cannot delete "${statusKey}", it's the payment-success target. Re-point payment mapping first.`,
     );
   }
   if (wfDoc.paymentFailureStatusKey === statusKey) {
     throw new ValidationError(
-      `Cannot delete "${statusKey}" — it's the payment-failure target. Re-point payment mapping first.`,
+      `Cannot delete "${statusKey}", it's the payment-failure target. Re-point payment mapping first.`,
     );
   }
   const referencingTransitions = wfDoc.transitions.filter(
@@ -487,7 +487,7 @@ export async function removeStatus(
   if (referencingTransitions.length > 0) {
     const labels = referencingTransitions.map((t) => t.label).join(", ");
     throw new ValidationError(
-      `Cannot delete "${statusKey}" — it's referenced by transition(s): ${labels}. Delete those first.`,
+      `Cannot delete "${statusKey}", it's referenced by transition(s): ${labels}. Delete those first.`,
     );
   }
 
@@ -497,7 +497,7 @@ export async function removeStatus(
   return toDTO(wfDoc.toObject() as WorkflowDoc & { _id: unknown });
 }
 
-/** Delete a transition by id. Always safe — transitions are pure edges
+/** Delete a transition by id. Always safe, transitions are pure edges
  *  with no downstream references. */
 export async function removeTransition(
   orgId: string,
@@ -519,7 +519,7 @@ export async function removeTransition(
 
 /**
  * Update the payment-success / payment-failure status mappings. These
- * are what the webhook handler writes into — renaming a status without
+ * are what the webhook handler writes into, renaming a status without
  * updating the mapping would silently route payments to the wrong
  * state.
  */
@@ -548,7 +548,7 @@ export async function setPaymentStatusMapping(
       `Unknown failure status "${input.paymentFailureStatusKey}"`,
     );
   }
-  // Success status must be flagged isPaid — otherwise the dashboard's
+  // Success status must be flagged isPaid, otherwise the dashboard's
   // revenue rollup will silently exclude paid orders.
   const success = wfDoc.statuses.find(
     (s) => s.key === input.paymentSuccessStatusKey,

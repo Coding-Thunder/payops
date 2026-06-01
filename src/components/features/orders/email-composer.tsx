@@ -110,7 +110,7 @@ export function EmailComposer({
   // Watch the activity feed for an ORDER_PAID matching this order so
   // the composer flips into the paid state instantly. setState +
   // side-effects (toast, router.refresh) live inside the effect by
-  // design — running them during render would fire on every parent
+  // design, running them during render would fire on every parent
   // re-render. The rule's recommended "don't setState in effects" is a
   // false positive for this event-driven pattern.
   React.useEffect(() => {
@@ -355,7 +355,7 @@ export function EmailComposer({
               </div>
               <p className="text-[12px] text-muted-foreground">
                 The composer is now read-only. Track the payment status on
-                this page — it will update the moment Stripe reports a
+                this page, it will update the moment Stripe reports a
                 success or failure.
               </p>
             </CardContent>
@@ -373,7 +373,7 @@ export function EmailComposer({
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
                   disabled={Boolean(order.payment.paymentUrl)}
                   defaultValue={order.payment.gateway ?? "STRIPE"}
-                  // No onChange — single enabled option means there's
+                  // No onChange, single enabled option means there's
                   // nothing to track here. Wire useState when a second
                   // gateway ships.
                 >
@@ -393,7 +393,7 @@ export function EmailComposer({
                 </select>
               </Field>
 
-              {/* Two-step CTA — generate link first, send second. Once a
+              {/* Two-step CTA, generate link first, send second. Once a
                   link exists the generate button flips to a disabled
                   "Link generated" affordance (re-running would orphan
                   the existing session on the gateway side) and the
@@ -403,7 +403,7 @@ export function EmailComposer({
                   {previewLoading
                     ? "Updating preview…"
                     : order.payment.paymentUrl
-                      ? "Link ready — send the email when you're done editing."
+                      ? "Link ready, send the email when you're done editing."
                       : "Generate the payment link to enable sending."}
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
@@ -548,7 +548,7 @@ function PaymentSummaryCard({
           <Meta label="Amount" value={formatAmount(order)} />
           <Meta
             label={order.lineItems.length === 1 ? "Item" : "Items"}
-            value={order.lineItems[0]?.name ?? "—"}
+            value={order.lineItems[0]?.name ?? "-"}
           />
         </dl>
         {order.payment.paymentUrl ? (

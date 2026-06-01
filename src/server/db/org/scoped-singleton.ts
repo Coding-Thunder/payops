@@ -41,7 +41,7 @@ interface ReadOptions<TDoc> {
   legacyKeyValue: string;
   /** Build the seed payload for a new per-org row. Called with the
    *  legacy row (if any) so the caller can clone its fields onto the
-   *  new row. MUST NOT include `key` — the partial-unique on `key`
+   *  new row. MUST NOT include `key`, the partial-unique on `key`
    *  reserves that field for the legacy singleton. */
   seedFor: (legacy: TDoc | null, orgId: string) => Record<string, unknown>;
 }
@@ -79,7 +79,7 @@ export async function loadScopedSingleton<TDoc extends { orgId?: unknown }>(
     .findOne({ [opts.legacyKeyField]: opts.legacyKeyValue })
     .lean()) as TDoc | null;
   const seed = opts.seedFor(legacy, opts.orgId);
-  // Defensive: never let a caller smuggle `key` into a per-org row —
+  // Defensive: never let a caller smuggle `key` into a per-org row -
   // doing so would re-engage the legacy unique constraint and prevent
   // future seeds for other orgs.
   if ("key" in seed) {

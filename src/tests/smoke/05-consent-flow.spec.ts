@@ -15,7 +15,7 @@ import {
  *   2. Send the payment-request email → consent record is provisioned
  *      and the response carries the signed consent token.
  *   3. Hit the PUBLIC consent API as the customer would
- *      (no session — auth comes from the HMAC token):
+ *      (no session, auth comes from the HMAC token):
  *        GET  /api/consent/[token]   loads the trimmed PublicConsentView
  *        POST /api/consent/[token]   records the acknowledgement
  *   4. Verify the order's consent pointer flipped to RECEIVED, with
@@ -23,7 +23,7 @@ import {
  *   5. Drive the order to PAID via the same Stripe webhook used in
  *      02-order-flow and prove the consent fields survive intact.
  *
- * The new public route must remain reachable WITHOUT a session cookie —
+ * The new public route must remain reachable WITHOUT a session cookie -
  * customers don't log in. The hosted-page form posts an `acknowledgement`
  * value that the server compares against the stored consent message; we
  * also assert a tampered acknowledgement is rejected.
@@ -57,7 +57,7 @@ test.describe("consent + payment lifecycle", () => {
     const { order } = created.data;
     expect(order.consent.status).toBe("NOT_REQUESTED");
 
-    // 2) Send the payment-request email — service creates a consent
+    // 2) Send the payment-request email, service creates a consent
     //    record + returns the signed token in the API response.
     const sendRes = await request.post(
       `/api/orders/${order.id}/send-payment-request`,
@@ -72,7 +72,7 @@ test.describe("consent + payment lifecycle", () => {
     expect(sent.data.order.consent.requestedAt).toBeTruthy();
 
     // 3a) The hosted page renders from this PUBLIC endpoint. No cookie,
-    //     no session — token-only auth. We reuse the test's request
+    //     no session, token-only auth. We reuse the test's request
     //     context (admin cookies attached) because the server explicitly
     //     ignores any session on /api/consent/* routes; the test still
     //     proves the public path works for an unauthenticated customer.
@@ -98,7 +98,7 @@ test.describe("consent + payment lifecycle", () => {
     });
     expect(tampered.status()).toBe(400);
 
-    // 3c) Missing signature is rejected even with a valid acknowledgement —
+    // 3c) Missing signature is rejected even with a valid acknowledgement -
     //     server-side check that a hand-rolled request can't slip past
     //     the UI's required field.
     const noSig = await request.post(`/api/consent/${token}`, {
@@ -123,10 +123,10 @@ test.describe("consent + payment lifecycle", () => {
     expect(confirmed.alreadyConfirmedAt).toBeTruthy();
     // Confirmed view MUST carry the Stripe URL so the hosted page can
     // auto-redirect into checkout. Empty would leave the customer
-    // stranded — that's the conversion bug we're guarding against.
+    // stranded, that's the conversion bug we're guarding against.
     expect(confirmed.paymentUrl).toMatch(/^http/);
 
-    // 3e) Submitting again is idempotent — same state returned even
+    // 3e) Submitting again is idempotent, same state returned even
     //     without a signature (the replay path doesn't carry one).
     const replay = await request.post(`/api/consent/${token}`, {
       data: { acknowledgement: view.consentMessage },
@@ -136,7 +136,7 @@ test.describe("consent + payment lifecycle", () => {
     expect(replayed.status).toBe("VERIFIED");
     expect(replayed.alreadyConfirmedAt).toBe(confirmed.alreadyConfirmedAt);
 
-    // 4) Agent re-fetches the order — denormalised pointer is up to date.
+    // 4) Agent re-fetches the order, denormalised pointer is up to date.
     const afterConsent = await request.get(`/api/orders/${order.id}`);
     expect(afterConsent.status()).toBe(200);
     const afterDto = (await afterConsent.json()).data;
@@ -174,7 +174,7 @@ test.describe("consent + payment lifecycle", () => {
     const finalDto = (await final.json()).data;
     expect(finalDto.status).toBe("PAID");
     expect(finalDto.payment.amountReceived).toBe(250);
-    // Consent is dispute-grade evidence — the payment webhook must NOT
+    // Consent is dispute-grade evidence, the payment webhook must NOT
     // erase it. Customer submission auto-verifies, so the order stays
     // on VERIFIED through PAID.
     expect(finalDto.consent.status).toBe("VERIFIED");

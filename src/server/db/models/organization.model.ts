@@ -11,14 +11,14 @@ import { registerModel } from "./register";
  * Tenant boundary for the SaaS platform. Every business-data row owns an
  * `orgId` that points at one of these. Created via the self-serve signup
  * flow (later phase) or seeded by the migration script for the legacy
- * tenant. Hard-delete is not supported — disabled orgs flip `status` to
+ * tenant. Hard-delete is not supported, disabled orgs flip `status` to
  * SUSPENDED so audit / financial history remains queryable.
  */
 
 export const OrgStatus = {
   /** Owner signed up but verification (email domain / manual) is pending. */
   PENDING: "PENDING",
-  /** Operational — can create orders, accept payments, send emails. */
+  /** Operational, can create orders, accept payments, send emails. */
   ACTIVE: "ACTIVE",
   /** Platform-side hold (billing past-due, ToS violation). Reads continue;
    *  writes are blocked at the service layer. */

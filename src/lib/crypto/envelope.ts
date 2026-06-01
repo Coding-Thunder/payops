@@ -10,7 +10,7 @@ import {
  * Used by `GatewayCredential` to store Stripe / Razorpay / etc. secret
  * keys + webhook secrets without exposing them in DB dumps, logs, or
  * stack traces. The master key lives in `TRACETXN_MASTER_KEY` (32 bytes,
- * base64-encoded) and is rotated out-of-band — re-encrypt every row
+ * base64-encoded) and is rotated out-of-band, re-encrypt every row
  * with the new key when rotating.
  *
  * Why a flat AES-GCM design and not full envelope-with-data-keys:
@@ -19,21 +19,21 @@ import {
  *     keys backed by a KMS (so a leaked DB dump can't be decrypted
  *     without the KMS itself). At TraceTxn's current scale + ops model,
  *     the master key would live in the same secrets manager the data
- *     key would — no extra blast-radius reduction.
+ *     key would, no extra blast-radius reduction.
  *   - The `keyVersion` field below leaves the door open: a future
  *     rotation just writes new rows with `keyVersion: 'v2'`, and
  *     `decrypt()` dispatches on the field.
  *
  * Output shape (stored on the model):
  *   {
- *     iv:         base64,  // 12 bytes — GCM nonce
+ *     iv:         base64,  // 12 bytes, GCM nonce
  *     ciphertext: base64,  // length == plaintext length
- *     authTag:    base64,  // 16 bytes — GCM auth tag
+ *     authTag:    base64,  // 16 bytes, GCM auth tag
  *     keyVersion: 'v1',
  *   }
  *
  * Tamper detection: GCM's auth tag fails decryption on any single-bit
- * flip in iv / ciphertext / authTag — there's no need for a separate
+ * flip in iv / ciphertext / authTag, there's no need for a separate
  * HMAC.
  */
 
@@ -53,7 +53,7 @@ let cachedKey: Buffer | null = null;
 
 /**
  * Resolve the master key once per process. Reads from
- * `TRACETXN_MASTER_KEY` (base64). Throws if missing or malformed —
+ * `TRACETXN_MASTER_KEY` (base64). Throws if missing or malformed -
  * callers should let the error propagate so a misconfigured deploy
  * fails loudly instead of silently writing plaintext.
  */
@@ -62,7 +62,7 @@ function getMasterKey(): Buffer {
   const raw = process.env.TRACETXN_MASTER_KEY;
   if (!raw) {
     throw new Error(
-      "TRACETXN_MASTER_KEY is not set — required to encrypt or decrypt gateway credentials. " +
+      "TRACETXN_MASTER_KEY is not set, required to encrypt or decrypt gateway credentials. " +
         "Generate one with: openssl rand -base64 32",
     );
   }
@@ -77,14 +77,14 @@ function getMasterKey(): Buffer {
   return buf;
 }
 
-/** Test-only — clears the cached master key so a test can swap envs. */
+/** Test-only, clears the cached master key so a test can swap envs. */
 export function _resetMasterKeyForTesting(): void {
   cachedKey = null;
 }
 
 /**
  * Encrypt a UTF-8 string with the master key. The result is safe to
- * persist verbatim — the auth tag detects any tampering at decrypt
+ * persist verbatim, the auth tag detects any tampering at decrypt
  * time.
  */
 export function encryptSecret(plaintext: string): EncryptedSecret {
@@ -113,7 +113,7 @@ export function encryptSecret(plaintext: string): EncryptedSecret {
  *   - unknown `keyVersion`
  *   - any tampering (GCM auth tag mismatch)
  *
- * Caller MUST treat the return value as sensitive — pass it directly
+ * Caller MUST treat the return value as sensitive, pass it directly
  * into the Stripe (or other gateway) client; never log it.
  */
 export function decryptSecret(encrypted: EncryptedSecret): string {

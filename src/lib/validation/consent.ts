@@ -3,7 +3,7 @@ import { z } from "zod";
 import { CONSENT_METHODS } from "@/lib/constants/enums";
 
 /**
- * Body for POST /api/consent/[token] — the public confirmation endpoint
+ * Body for POST /api/consent/[token], the public confirmation endpoint
  * the hosted page hits. The `acknowledgement` field is echoed back so
  * we can detect a tampered DOM before persisting.
  *

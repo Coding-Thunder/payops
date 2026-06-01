@@ -9,21 +9,21 @@ export const dynamic = "force-dynamic";
 
 /**
  * Public per-org logo handler. The bytes live on the Branding doc so
- * uploaded logos survive deploys and are shared across app instances —
+ * uploaded logos survive deploys and are shared across app instances -
  * the alternative (writing to `public/branding/`) only works in dev
  * because DigitalOcean App Platform's filesystem is ephemeral.
  *
  * URL shape: `/api/branding/logo/{orgId}/{hash}.{ext}`.
  *  - `orgId` is the tenant lookup. Legacy single-tenant rows live under
  *    the literal segment `default` (matching `BRANDING_KEY`).
- *  - `{hash}.{ext}` is purely a cache-buster — the route ignores both
+ *  - `{hash}.{ext}` is purely a cache-buster, the route ignores both
  *    segments and serves the current `logoBytes` for the org. Updates
  *    bump the hash in `Branding.logo`, which forces clients + email
  *    pipelines to refetch.
  *
  * No auth: customer surfaces (transactional emails, /pay landing
  * pages) need to hot-link this. The orgId is treated like an opaque
- * identifier — the URL is shared with the customer, so possession of
+ * identifier, the URL is shared with the customer, so possession of
  * the URL is the access grant.
  */
 interface RouteParams {
@@ -49,10 +49,10 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 
   // Aggressive caching is safe because new uploads change the URL hash
   // segment, so customer clients pulling the new email / page get a
-  // fresh URL. Old URLs continue resolving to the current bytes too —
+  // fresh URL. Old URLs continue resolving to the current bytes too -
   // logo updates are visual identity, not security-sensitive.
   // Copy into a fresh Uint8Array over a plain ArrayBuffer so the body
-  // type lines up with BodyInit — Buffer's ArrayBufferLike (which can
+  // type lines up with BodyInit, Buffer's ArrayBufferLike (which can
   // be SharedArrayBuffer) is not assignable to it under strict TS.
   const owned = new Uint8Array(doc.logoBytes.byteLength);
   owned.set(doc.logoBytes);

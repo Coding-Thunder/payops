@@ -31,7 +31,7 @@ export async function resetDatabase(): Promise<void> {
 /**
  * Strong-form reset used by Playwright global-setup. Drops the whole
  * database. Slower than `resetDatabase`, but guarantees a pristine state
- * including indexes — useful between full test runs.
+ * including indexes, useful between full test runs.
  */
 export async function dropDatabase(): Promise<void> {
   await ensureMongo();

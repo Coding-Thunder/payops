@@ -24,7 +24,7 @@ export const dynamic = "force-dynamic";
  *   - The bus subscription, slot, and any in-flight controller all
  *     unregister on `req.signal.abort` and on stream `cancel`.
  *
- * `Last-Event-ID` replay is NOT implemented in this patch — events
+ * `Last-Event-ID` replay is NOT implemented in this patch, events
  * emitted during a disconnect are lost. Acceptable for now since the
  * UI also runs a polling backstop via React Query. Replay is a P1.
  */
@@ -51,7 +51,7 @@ function startHeartbeatIfNeeded() {
       try {
         client.controller.enqueue(ping);
       } catch {
-        // Stream already torn down — let the abort/cancel handler clean
+        // Stream already torn down, let the abort/cancel handler clean
         // it up. Swallowing is safe because heartbeat is best-effort.
       }
     }
@@ -99,7 +99,7 @@ export async function GET(req: NextRequest) {
         try {
           controller.enqueue(encoder.encode(chunk));
         } catch {
-          // Stream already closed — abort handler will fire.
+          // Stream already closed, abort handler will fire.
         }
       };
 
@@ -108,7 +108,7 @@ export async function GET(req: NextRequest) {
 
       unsubscribe = subscribeEvents((event) => {
         // Pass orgId so the bus filters cross-tenant events out of
-        // this connection — Pass 5a closes the SSE bleed flagged in
+        // this connection, Pass 5a closes the SSE bleed flagged in
         // the Phase-A audit risk #4.2.
         if (
           !isEventVisibleToUser(event, {

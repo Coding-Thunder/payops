@@ -19,7 +19,7 @@ interface RealtimeIndicatorProps {
  *  - "reconnecting" → warning spinner + "Reconnecting"
  *  - "offline"      → red dot + "Offline"
  *
- * Designed to live in tight chrome — page headers, card titles, footers.
+ * Designed to live in tight chrome, page headers, card titles, footers.
  * Visual weight scales down with the surrounding text.
  */
 export function RealtimeIndicator({

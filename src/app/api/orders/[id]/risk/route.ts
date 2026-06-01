@@ -15,7 +15,7 @@ interface Params {
 }
 
 /**
- * POST /api/orders/:id/risk — toggles the at-risk / disputes flag on an
+ * POST /api/orders/:id/risk, toggles the at-risk / disputes flag on an
  * order. Admin/super-admin only.
  */
 export const POST = withApi(async (req: NextRequest, { params }: Params) => {

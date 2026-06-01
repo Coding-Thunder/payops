@@ -34,7 +34,7 @@ export default async function PaymentSuccessPage({
 
   // Pull THIS order's tenant branding (not the legacy singleton). When
   // the order pairing fails above, fall back to the no-orgId path which
-  // returns neutral empty defaults — the page below already handles a
+  // returns neutral empty defaults, the page below already handles a
   // missing-order state, so the brand isn't rendered in that case.
   const branding = await getBranding(order?.orgId ?? null);
 
@@ -216,7 +216,7 @@ export default async function PaymentSuccessPage({
 
           {/* ─── Stripe trust line ─── */}
           <div className="border-t border-slate-100 px-8 py-4 text-center text-[11px] text-slate-500">
-            Payment processed securely by Stripe — PCI-DSS Level 1 certified.
+            Payment processed securely by Stripe, PCI-DSS Level 1 certified.
           </div>
         </>
       ) : null}

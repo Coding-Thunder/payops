@@ -22,7 +22,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   return (
     <div className="grid min-h-screen w-full grid-cols-1 lg:grid-cols-[1.05fr_1fr]">
-      {/* Left panel — Unsplash photo behind a dark gradient overlay
+      {/* Left panel, Unsplash photo behind a dark gradient overlay
           so the white brand text + accents stay readable. To swap the
           photo, change the `unsplashUrl` constant. */}
       <section
@@ -50,7 +50,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               "linear-gradient(135deg, color-mix(in oklch, var(--ink-navy) 88%, transparent) 0%, color-mix(in oklch, var(--ink-navy) 55%, transparent) 60%, color-mix(in oklch, var(--ink-navy) 88%, transparent) 100%)",
           }}
         />
-        {/* Top layer: existing emerald radial wash — unchanged so the
+        {/* Top layer: existing emerald radial wash, unchanged so the
             brand accent still reads through the photo. */}
         <div
           aria-hidden
@@ -76,13 +76,13 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           </h2>
           <p className="max-w-sm text-[13.5px] leading-relaxed text-white/72">
             Track the full payment lifecycle, capture dispute-grade
-            evidence, and orchestrate gateways — all from one console
+            evidence, and orchestrate gateways, all from one console
             built for operations, finance, and trust teams.
           </p>
           <ul className="space-y-2.5 pt-1 text-[12.5px] text-white/80">
             {[
               "Hashed evidence chain on every order",
-              "Per-org Stripe routing — your keys stay encrypted",
+              "Per-org Stripe routing, your keys stay encrypted",
               "Realtime SSE lifecycle updates",
             ].map((line) => (
               <li

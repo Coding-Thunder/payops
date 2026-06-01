@@ -69,7 +69,7 @@ function Calendar({
           "[&>button]:hover:bg-foreground [&>button]:hover:text-background",
           "[&>button]:focus:bg-foreground [&>button]:focus:text-background",
         ),
-        // Today: only a subtle accent tint — never wins over selected.
+        // Today: only a subtle accent tint, never wins over selected.
         today: "[&>button]:bg-accent/60 [&>button]:font-medium",
         outside:
           "[&>button]:text-muted-foreground/40 [&>button]:hover:bg-transparent [&>button]:hover:text-muted-foreground/40",

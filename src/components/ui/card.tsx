@@ -3,7 +3,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Card — refined for "professionally designed" SaaS feel.
+ * Card, refined for "professionally designed" SaaS feel.
  *
  *   - Default tone: clean white with a soft hairline border. NO
  *     drop-shadow by default (shadows on every card is the #1 AI-
@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
  *     close to the content), content gets generous bottom space.
  *     Beats the "perfectly uniform inset" pattern.
  *   - Radius uses the panel scale (12px) instead of `rounded-lg`
- *     blanket — readable as a card, not a chip.
+ *     blanket, readable as a card, not a chip.
  *   - `accent` prop paints a hairline gradient stroke at the top
  *     edge for "important" surfaces. Use sparingly.
  */
@@ -79,7 +79,7 @@ function CardHeader({
     <div
       data-slot="card-header"
       className={cn(
-        // Tighter top, looser bottom — pulls the title block close
+        // Tighter top, looser bottom, pulls the title block close
         // to the divider-free transition into content.
         "flex flex-col gap-1.5 px-5 pt-5 pb-3 sm:px-6 sm:pt-5 sm:pb-3.5",
         className,
@@ -99,7 +99,7 @@ function CardTitle({
       className={cn(
         // Weight + size + tighter tracking so the title clearly
         // out-weights the description below. `leading-none` was the
-        // tell — replaced with `leading-[1.25]` so multi-line titles
+        // tell, replaced with `leading-[1.25]` so multi-line titles
         // breathe without falling apart.
         "text-[14.5px] font-semibold leading-[1.25] tracking-[-0.014em]",
         className,
@@ -163,7 +163,7 @@ function CardFooter({
     <div
       data-slot="card-footer"
       className={cn(
-        // Top-divider footer pattern — clearly partitions actions
+        // Top-divider footer pattern, clearly partitions actions
         // from content without resorting to a colored band.
         "flex items-center gap-2 border-t border-border px-5 py-3.5 sm:px-6 sm:py-4",
         className,

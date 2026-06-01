@@ -24,7 +24,7 @@ const tone = cva("", {
  * Operational KPI tile.
  *
  * The reference dashboard's KPI cards lead with a colored icon
- * block on the left — green/amber/purple/blue identity tiles that
+ * block on the left, green/amber/purple/blue identity tiles that
  * encode the metric's role at a glance. This component now supports
  * that pattern via the optional `icon` + `iconTone` props. When
  * passed, the tile renders icon-on-left + content-on-right; when
@@ -119,7 +119,7 @@ export function StatCard({
     );
   }
 
-  // Legacy compact layout — used in analytics + places that
+  // Legacy compact layout, used in analytics + places that
   // render many tiles in a tight row without identity icons.
   return (
     <div

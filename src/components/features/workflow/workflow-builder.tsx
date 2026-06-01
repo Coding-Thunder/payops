@@ -29,17 +29,17 @@ import { api, ApiClientError } from "@/lib/api-client";
 import type { WorkflowDTO, WorkflowStatusDTO } from "@/types/workflow";
 
 /**
- * Workflow builder — tenant edits the order lifecycle.
+ * Workflow builder, tenant edits the order lifecycle.
  *
  * Three regions:
  *
- *   1. Statuses — list with edit (label/color/flags) + delete.
+ *   1. Statuses, list with edit (label/color/flags) + delete.
  *      Service refuses deletes for load-bearing statuses; we surface
  *      that as a toast.
- *   2. Transitions — list (read-only labels) + add form + delete.
+ *   2. Transitions, list (read-only labels) + add form + delete.
  *      No edit-in-place; if an operator wants different copy on a
  *      transition they delete + re-add. Keeps the UI simple.
- *   3. Payment mapping — two dropdowns: which status the Stripe
+ *   3. Payment mapping, two dropdowns: which status the Stripe
  *      success / failure webhook lands on. Save submits both at once
  *      since the service enforces them together.
  *
@@ -343,7 +343,7 @@ function StatusRow({
             disabled={busy || isLoadBearing}
             title={
               isLoadBearing
-                ? "Load-bearing status — re-point payment mappings or initial-status before deleting"
+                ? "Load-bearing status, re-point payment mappings or initial-status before deleting"
                 : undefined
             }
           >
@@ -809,7 +809,7 @@ function PaymentMappingPanel({
               <SelectContent>
                 {paidStatuses.length === 0 ? (
                   <div className="px-2 py-1.5 text-[12px] text-muted-foreground">
-                    No paid statuses available — flag one with &quot;Counts
+                    No paid statuses available, flag one with &quot;Counts
                     as paid&quot; first.
                   </div>
                 ) : (

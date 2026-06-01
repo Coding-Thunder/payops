@@ -24,7 +24,7 @@ interface RecordAuditInput {
   action: AuditAction;
   entityType: AuditEntity;
   entityId?: string | null;
-  /** Active organization. Optional during the multi-tenant migration —
+  /** Active organization. Optional during the multi-tenant migration -
    *  callers that haven't been org-aware-ified yet pass nothing, the
    *  row lands with `orgId: null`, and per-tenant audit views ignore
    *  it. New code paths (and refactors of touched code) MUST pass
@@ -39,7 +39,7 @@ interface RecordAuditInput {
  * Record an audit log entry.
  *
  * Two call shapes:
- *   - Default (no `session`): failures are swallowed and logged — used
+ *   - Default (no `session`): failures are swallowed and logged, used
  *     by best-effort audit hooks (e.g. login failures) that must never
  *     block the caller.
  *   - With `session`: the audit row joins the caller's mongoose
@@ -101,11 +101,11 @@ interface ListAuditQuery {
   action?: AuditAction;
   page?: number;
   pageSize?: number;
-  /** Active org. When supplied, the filter pins on `orgId` strictly —
+  /** Active org. When supplied, the filter pins on `orgId` strictly -
    *  the legacy null-orgId fallback was retired in Phase 3d once the
    *  Phase-0/1 migration backfilled every audit row. Cross-tenant
    *  admin views (platform-side analytics) bypass this by omitting
-   *  the field — and should add a `// SCOPE_OK:` comment so reviewers
+   *  the field, and should add a `// SCOPE_OK:` comment so reviewers
    *  see the intent. */
   orgId?: string | null;
 }
@@ -160,7 +160,7 @@ export async function listAuditLogs(query: ListAuditQuery = {}) {
     // Strict per-org filter. Tenants only see their own audit trail.
     // Migration script backfilled orgId onto every legacy row in
     // Phase 0+1, so there should be no null-orgId rows left. If any
-    // slip through, they're invisible to per-org admin views — which
+    // slip through, they're invisible to per-org admin views, which
     // is the desired security posture going forward.
     filter.orgId = new Types.ObjectId(query.orgId);
   }

@@ -47,10 +47,10 @@ export interface OrderPricing {
 }
 
 export interface OrderPayment {
-  /** Gateway routing this payment. Null while NOT_INITIATED — no
+  /** Gateway routing this payment. Null while NOT_INITIATED, no
    *  gateway has been contacted. */
   gateway: PaymentGatewayKey | null;
-  /** Provider-side session id. Generic name surfaced to callers — the
+  /** Provider-side session id. Generic name surfaced to callers, the
    *  underlying schema field is `stripeSessionId` for historical
    *  reasons but holds whatever the gateway returned. */
   paymentSessionId: string | null;
@@ -122,7 +122,7 @@ export interface OrderDisputePointer {
 
 /* ───────── Universal commerce DTO additions (Pass 5d) ─────────────── */
 
-/** Snapshot of the time window an order is bound to. Optional —
+/** Snapshot of the time window an order is bound to. Optional -
  *  retail / one-shot orders have null. ISO-8601 strings on the wire. */
 export interface OrderSchedulingDTO {
   type: "FIXED_WINDOW" | "OPEN_ENDED" | "RECURRING_INTERVAL";
@@ -171,10 +171,10 @@ export interface OrderDTO {
    *  refund webhook lands. */
   refundedAmount: number;
   notes?: string | null;
-  /** Pass 5b/5d — universal commerce line items. Required field;
+  /** Pass 5b/5d, universal commerce line items. Required field;
    *  legacy rental orders pre-Pass-5c-backfill have `[]`. */
   lineItems: OrderLineItemDTO[];
-  /** Pass 5b/5d — optional time window for the order. Null for
+  /** Pass 5b/5d, optional time window for the order. Null for
    *  retail / one-shot orders. */
   scheduling: OrderSchedulingDTO | null;
   createdAt: string;
@@ -183,7 +183,7 @@ export interface OrderDTO {
 
 /**
  * Persisted Dispute record exposed to the admin UI. One per chargeback
- * attempt — the order keeps a lightweight pointer (`OrderDisputePointer`)
+ * attempt, the order keeps a lightweight pointer (`OrderDisputePointer`)
  * for list views and joins to the full record for detail pages.
  */
 export interface DisputeDTO {
@@ -244,7 +244,7 @@ export interface PaymentConsentDTO {
   updatedAt: string;
 }
 
-/** Trimmed shape used by the unauthenticated hosted consent page — never
+/** Trimmed shape used by the unauthenticated hosted consent page, never
  *  leaks IP / UA / verifier metadata to the customer. */
 export interface PublicConsentView {
   status: ConsentStatus;
@@ -346,7 +346,7 @@ export interface OrderEvidenceChainDTO {
    *  see the legacy enum values unchanged. */
   status: string;
     state: RecordState;
-    /** Universal commerce — line items snapshot for the evidence page. */
+    /** Universal commerce, line items snapshot for the evidence page. */
     lineItems: OrderLineItemDTO[];
     /** Optional time window for the order (scheduled / windowed items). */
     scheduling: OrderSchedulingDTO | null;
@@ -411,7 +411,7 @@ export interface BrandingDTO {
   supportEmail: string;
   supportPhone: string;
   /** Tenant-chosen From address for outbound transactional emails.
-   *  Empty string means "use the platform default" — appropriate for
+   *  Empty string means "use the platform default", appropriate for
    *  tenants who haven't completed SPF/DKIM for their own domain. */
   senderEmail: string;
   logo: string;
@@ -443,7 +443,7 @@ export interface CarLinkDTO {
   id: string;
   carMake: string;
   carType: string;
-  /** The full display label — `${carMake} ${carType}`. Server-computed
+  /** The full display label, `${carMake} ${carType}`. Server-computed
    *  so every consumer renders it identically. */
   label: string;
   imageUrl: string;

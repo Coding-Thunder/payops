@@ -53,7 +53,7 @@ interface ConsentActor {
 }
 
 /**
- * Pass 5h: snapshot helpers — universal shape only. Translate between
+ * Pass 5h: snapshot helpers, universal shape only. Translate between
  * input (ISO strings), Mongoose doc (Date instances), and evidence
  * payloads (ISO strings).
  */
@@ -158,7 +158,7 @@ export interface RequestConsentResult {
  * Idempotent on re-send: if the order already has an outstanding REQUESTED
  * consent, we reuse its id so the existing /consent/:token link in the
  * customer's inbox keeps working. Once the customer has confirmed, a new
- * record is created — old confirmations are immutable.
+ * record is created, old confirmations are immutable.
  */
 export async function requestConsent(
   input: RequestConsentInput,
@@ -193,7 +193,7 @@ export async function requestConsent(
   let doc: PaymentConsentDoc & { _id: Types.ObjectId };
   if (existing) {
     // Refresh the snapshot in case the agent edited the order between
-    // sends — the customer should always see the latest details.
+    // sends, the customer should always see the latest details.
     existing.customerEmail = input.customerEmail;
     existing.customerName = input.customerName;
     existing.consentMessage = input.consentMessage;
@@ -219,7 +219,7 @@ export async function requestConsent(
   }
 
   // Point the order at the fresh request, but DO NOT downgrade a previous
-  // RECEIVED/VERIFIED status — a re-send shouldn't erase prior consent.
+  // RECEIVED/VERIFIED status, a re-send shouldn't erase prior consent.
   const shouldPromote =
     order.consent?.status !== ConsentStatus.RECEIVED &&
     order.consent?.status !== ConsentStatus.VERIFIED;
@@ -232,7 +232,7 @@ export async function requestConsent(
     };
     await order.save();
   } else {
-    // Already received — still track that we re-requested in case ops needs
+    // Already received, still track that we re-requested in case ops needs
     // to see the resend history, but keep the dominant status.
     order.consent.requestedAt = doc.requestedAt;
     await order.save();
@@ -310,7 +310,7 @@ async function loadConsentByTokenOrThrow(token: string) {
  * tenant's branding (per-org), not the legacy {key:"default"} singleton
  * that falls back to env-default brand names.
  *
- * Returns null when the order is un-migrated and has no orgId yet —
+ * Returns null when the order is un-migrated and has no orgId yet -
  * caller passes null to getBranding which falls back to the legacy
  * path (acceptable; that path is only hit by the single legacy tenant
  * during the multi-tenant migration window).
@@ -340,7 +340,7 @@ export async function getPublicConsentView(
   // SCOPE_OK: public hosted-consent view. Authn is the HMAC-signed
   // token (verified above) which is cryptographically bound to the
   // consent record id, which carries the orderId. The trust chain
-  // means we don't need a separate orgId pin — the customer holds a
+  // means we don't need a separate orgId pin, the customer holds a
   // capability token issued specifically for this order.
   const order = await Order.findById(doc.orderId).lean();
   return {
@@ -370,7 +370,7 @@ export interface RecordConsentInput {
   token: string;
   signedName?: string | null;
   /** Verbatim acknowledgement statement the customer confirmed. Echo of
-   *  what the page rendered — we re-verify it matches the stored message
+   *  what the page rendered, we re-verify it matches the stored message
    *  to guard against tampering. */
   acknowledgement: string;
   method?: ConsentMethod;
@@ -391,7 +391,7 @@ export async function recordConsentFromToken(
     input.acknowledgement.trim().toLowerCase() !==
     doc.consentMessage.trim().toLowerCase()
   ) {
-    // Echo mismatch — refuse rather than silently accepting tampered copy.
+    // Echo mismatch, refuse rather than silently accepting tampered copy.
     throw new BadRequestError("Acknowledgement statement does not match");
   }
 
@@ -410,7 +410,7 @@ export async function recordConsentFromToken(
     throw new BadRequestError("Please type your full name as a digital signature.");
   }
 
-  // Customer submission IS the verification — there is no separate admin
+  // Customer submission IS the verification, there is no separate admin
   // verify step any more. The hosted page is the only path; the customer
   // typed their name as a digital signature against the same message we
   // displayed, captured server-side with IP + user-agent. That's the
@@ -444,7 +444,7 @@ export async function recordConsentFromToken(
     entityType: AuditEntity.CONSENT,
     entityId: String(doc._id),
     actor: {
-      // Customer-side action — actor.userId is intentionally null. We
+      // Customer-side action, actor.userId is intentionally null. We
       // attribute via the email on the consent record.
       userId: null,
       name: doc.customerName,
@@ -461,7 +461,7 @@ export async function recordConsentFromToken(
   });
 
   // Evidence chain: this is the strongest single piece of dispute
-  // defense — the customer typed their name against the same statement
+  // defense, the customer typed their name against the same statement
   // the page displayed, captured server-side with IP + UA at receipt
   // time. We persist all of it including the hashed token so a future
   // search by token lands on this event.
@@ -495,7 +495,7 @@ export async function recordConsentFromToken(
   });
 
   // Realtime push so the agent's order detail page flips the "Consent
-  // received" timeline node instantly. Audience is the order creator —
+  // received" timeline node instantly. Audience is the order creator -
   // the SSE filter widens it to admins of the same org. The orgId
   // projection below pins delivery to the correct tenant.
   const owner = await Order.findById(doc.orderId)
@@ -531,7 +531,7 @@ export async function recordConsentFromToken(
 
 /**
  * Admin action: lock a RECEIVED consent record as dispute-grade evidence.
- * Only the consent itself moves to VERIFIED — we don't retroactively
+ * Only the consent itself moves to VERIFIED, we don't retroactively
  * mutate the customer-facing copy or timestamps.
  */
 export async function verifyConsent(
@@ -552,7 +552,7 @@ export async function verifyConsent(
   }
   if (doc.status === ConsentStatus.REQUESTED) {
     throw new ConflictError(
-      "Customer has not yet confirmed — wait for the hosted page click",
+      "Customer has not yet confirmed, wait for the hosted page click",
     );
   }
   if (doc.status === ConsentStatus.VERIFIED) {
@@ -657,7 +657,7 @@ export async function getConsentById(
   return consentToDTO(doc as unknown as PaymentConsentDoc & { _id: Types.ObjectId });
 }
 
-/** Best-effort audit row for "payment after consent" — fires from the
+/** Best-effort audit row for "payment after consent", fires from the
  *  Stripe webhook path when an order with a RECEIVED/VERIFIED consent
  *  finishes payment. Operational signal only; never throws. */
 export async function recordPaymentAfterConsent(

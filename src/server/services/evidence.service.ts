@@ -71,7 +71,7 @@ export interface RecordEvidenceInput {
  * The append protocol is:
  *   1. Look up the latest event for this order (by sequence desc).
  *   2. Compute snapshotHash and chained hash deterministically.
- *   3. Insert with the unique `{ orderId, sequence }` index — concurrent
+ *   3. Insert with the unique `{ orderId, sequence }` index, concurrent
  *      writers race on this index; the loser retries up to 3 times.
  *
  * Failures throw. Callers in the operational path MUST wrap this in a
@@ -106,9 +106,9 @@ export async function recordEvidence(
 
   // Normalise the payload BEFORE hashing so the stored bytes and the
   // hashed bytes agree. Two steps:
-  //   1. JSON round-trip — strips Mongoose subdoc parent-pointers
+  //   1. JSON round-trip, strips Mongoose subdoc parent-pointers
   //      / circular refs, serialises Dates + ObjectIds via toJSON.
-  //   2. Strip empty objects / empty arrays — Mongoose's Schema.Types
+  //   2. Strip empty objects / empty arrays, Mongoose's Schema.Types
   //      .Mixed silently drops empty subobjects when it persists, so
   //      a payload that hashes with `attributes: {}` would NOT match
   //      after Mongo round-trip (which yields no `attributes` key at
@@ -180,7 +180,7 @@ export async function recordEvidence(
       );
     } catch (err) {
       if (isDuplicateKeyError(err) && attempt < MAX_APPEND_RETRIES) {
-        // Another concurrent writer took our sequence — re-read latest
+        // Another concurrent writer took our sequence, re-read latest
         // and try again. (Only meaningful for the non-tx path; a
         // serializable tx would have aborted earlier.)
         continue;
@@ -204,7 +204,7 @@ export async function captureEvidenceSafe(
   session: ClientSession | null = null,
 ): Promise<void> {
   // Transactional callers: the evidence write joins the caller's tx
-  // and any failure aborts the operational write — that's the desired
+  // and any failure aborts the operational write, that's the desired
   // contract for dispute-grade flows. Bubble the error.
   if (session) {
     await recordEvidence(input, session);
@@ -240,7 +240,7 @@ export async function captureEvidenceSafe(
         },
       });
     } catch {
-      // Audit fallback already swallows — nothing else to do.
+      // Audit fallback already swallows, nothing else to do.
     }
   }
 }
@@ -285,7 +285,7 @@ interface EvidenceContext {
     email: string;
     role: UserRole;
   };
-  /** Active organization. Threaded through Pass 5a — every Order
+  /** Active organization. Threaded through Pass 5a, every Order
    *  lookup pins this to prevent a Tenant A admin from reading the
    *  evidence chain of a Tenant B order by guessing the id. */
   orgId?: string | null;
@@ -678,7 +678,7 @@ export async function getEvidenceChainSummary(
   }
   // Pass 5a tenant gate: verify the orderId belongs to the actor's
   // org BEFORE we surface its evidence-chain summary. OrderEvidence
-  // doesn't carry orgId on its own schema (yet) — we trust the
+  // doesn't carry orgId on its own schema (yet), we trust the
   // transitive scope via the order it points at. Returns the empty
   // summary on a miss rather than throwing, matching the existing
   // behaviour for invalid ObjectIds above.

@@ -6,7 +6,7 @@ import { getSmokeCreds, loginAs } from "./_helpers";
  * Smallest possible smoke: the server is alive, the login form exists,
  * and a seeded admin can authenticate and land on the dashboard.
  *
- * If this file fails every other smoke spec will fail too — keep it
+ * If this file fails every other smoke spec will fail too, keep it
  * first so a broken environment surfaces cheaply.
  */
 

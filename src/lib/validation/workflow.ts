@@ -7,7 +7,7 @@ import { z } from "zod";
  * distinct from labels (which are free-form display copy). Labels can
  * use any printable text; the schema just caps length.
  *
- * Colors are 6-digit hex — same constraint as Branding.primaryColor —
+ * Colors are 6-digit hex, same constraint as Branding.primaryColor -
  * because the status badge renderer doesn't have a `bg-…` lookup for
  * arbitrary OKLCH / named colors, only inline CSS.
  */
@@ -47,7 +47,7 @@ export const addTransitionSchema = z.object({
   fromKey: statusKeySchema,
   toKey: statusKeySchema,
   label: labelSchema,
-  // Free string — the platform doesn't enforce that this matches a
+  // Free string, the platform doesn't enforce that this matches a
   // real Permission key, because tenants can layer custom roles later.
   // Empty string normalised to null.
   requiredPermission: z

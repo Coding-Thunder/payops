@@ -23,11 +23,11 @@ export interface AuthenticatedUser {
   /** Active organization id for this session. Resolved from the JWT
    *  claim when present (new logins) or from `User.primaryOrgId` as a
    *  fallback (legacy tokens issued before the multi-tenant migration).
-   *  Null only when the user has no membership at all — which should
+   *  Null only when the user has no membership at all, which should
    *  never happen post-migration. Treat `null` as a fatal session
    *  state and force re-login at the call site. */
   orgId: string | null;
-  /** All org memberships the user has (any status). Populated lazily —
+  /** All org memberships the user has (any status). Populated lazily -
    *  callers that don't need the full list can ignore. */
   orgIds: string[];
 }
@@ -109,11 +109,11 @@ export async function requireRole(
 /**
  * Tenant-aware variant: returns the authenticated user AND guarantees a
  * non-null `orgId`. Callers that need to build an `OrgContext` should
- * use this — never read `user.orgId` directly without a null check.
+ * use this, never read `user.orgId` directly without a null check.
  *
  * Throws UnauthorizedError when no session is present and ForbiddenError
  * when the session exists but has no resolvable org (data inconsistency
- * — the only way to land here is if the migration script never ran for
+ *, the only way to land here is if the migration script never ran for
  * this user, or every membership was deleted).
  */
 export async function requireOrgUser(): Promise<

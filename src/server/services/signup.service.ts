@@ -38,7 +38,7 @@ export interface SignupResult {
 
 /**
  * Founder-onboarding flow. Atomically creates an Organization +
- * SUPER_ADMIN User + OrgMember row inside one Mongo transaction —
+ * SUPER_ADMIN User + OrgMember row inside one Mongo transaction -
  * either all three land or none do, so a half-built tenant never
  * persists.
  *
@@ -56,7 +56,7 @@ export async function signupFounder(
   const email = input.email.trim().toLowerCase();
 
   // Pre-flight email uniqueness check OUTSIDE the transaction. The
-  // unique index on `User.email` is the authoritative guard — this
+  // unique index on `User.email` is the authoritative guard, this
   // check just returns a friendly error before we hash a bcrypt
   // (~250ms per attempt). The race window between check + insert is
   // safely covered by the unique index throwing E11000 on collision.
@@ -64,7 +64,7 @@ export async function signupFounder(
     .select({ _id: 1 })
     .lean<{ _id: unknown } | null>();
   if (existing) {
-    // Same response regardless of whether the email exists — avoids
+    // Same response regardless of whether the email exists, avoids
     // a user-enumeration oracle the way the login route does.
     throw new ConflictError(
       "An account with that email may already exist. Try signing in instead.",
@@ -75,7 +75,7 @@ export async function signupFounder(
   const slug = await uniqueOrgSlug(input.orgName);
 
   const result = await withTx(async (session) => {
-    // 1. User first — Org needs `ownerUserId` to point at a real row.
+    // 1. User first, Org needs `ownerUserId` to point at a real row.
     const [userDoc] = await User.create(
       [
         {
@@ -90,7 +90,7 @@ export async function signupFounder(
     );
     const userId = userDoc._id as Types.ObjectId;
 
-    // 2. Org with this user as owner. Starts ACTIVE — no email
+    // 2. Org with this user as owner. Starts ACTIVE, no email
     //    verification gate today, but `verifiedAt` is set to `null`
     //    so a future enforcement pass can require it.
     const [orgDoc] = await Organization.create(
@@ -131,7 +131,7 @@ export async function signupFounder(
       sessionOpt(session),
     );
 
-    // 5. Audit row. This is the canonical "tenant onboarded" record —
+    // 5. Audit row. This is the canonical "tenant onboarded" record -
     //    useful for funnel analysis once self-serve volume picks up.
     await recordAudit(
       {
@@ -181,7 +181,7 @@ export interface FirebaseSignupInput {
 /**
  * Atomic founder-onboarding for a user arriving via Firebase Auth.
  * Same tenant-shape as signupFounder (Org + SUPER_ADMIN User +
- * OrgMember + primaryOrgId stamp) but skips the bcrypt password — the
+ * OrgMember + primaryOrgId stamp) but skips the bcrypt password, the
  * Firebase UID is the credential, stored on `externalAuth.firebaseUid`.
  *
  * `passwordHash` gets a sentinel ("firebase:<uid>") to satisfy the
@@ -190,7 +190,7 @@ export interface FirebaseSignupInput {
  * can never authenticate a Firebase-only user by accident.
  *
  * The org name is synthesized from the user's display name or email
- * local-part — the user can rename it later in /admin/settings.
+ * local-part, the user can rename it later in /admin/settings.
  */
 export async function signupFounderFromFirebase(
   input: FirebaseSignupInput,
@@ -199,7 +199,7 @@ export async function signupFounderFromFirebase(
   await connectMongo();
   const email = input.email.trim().toLowerCase();
 
-  // Race-safe email check — the unique index is authoritative.
+  // Race-safe email check, the unique index is authoritative.
   const existing = await User.findOne({ email })
     .select({ _id: 1 })
     .lean<{ _id: unknown } | null>();
@@ -306,7 +306,7 @@ export async function signupFounderFromFirebase(
 /**
  * Build a unique, URL-safe slug from a free-form org name. Iterates
  * with a `-2`, `-3`, … suffix on collision. Bounded retry: bails after
- * 50 attempts and throws — a user trying to register the 51st
+ * 50 attempts and throws, a user trying to register the 51st
  * "Acme Inc" should pick a more specific name.
  */
 async function uniqueOrgSlug(name: string): Promise<string> {
@@ -323,7 +323,7 @@ async function uniqueOrgSlug(name: string): Promise<string> {
 
 /**
  * Slugs reserved for platform / brand / routing safety. Signup never
- * mints any of these — `uniqueOrgSlug` treats them as "taken" so the
+ * mints any of these, `uniqueOrgSlug` treats them as "taken" so the
  * suffix loop produces e.g. "admin-2" instead. A future operator can
  * still seed a legitimate org with a reserved slug via the migration
  * script (which bypasses signup).
@@ -333,7 +333,7 @@ async function uniqueOrgSlug(name: string): Promise<string> {
  *   - TraceTxn brand (and the legacy PayOps name) + the legacy tenant key
  *   - generic trademark / abuse magnets (microsoft, google, …)
  *
- * Kept conservative — adding more is cheap, removing one mid-flight
+ * Kept conservative, adding more is cheap, removing one mid-flight
  * doesn't break anything that's already registered.
  */
 const RESERVED_SLUGS = new Set<string>([
@@ -360,13 +360,13 @@ const RESERVED_SLUGS = new Set<string>([
   "support",
   "system",
   "www",
-  // Platform brand — both the current and the legacy name stay
+  // Platform brand, both the current and the legacy name stay
   // reserved so neither can be registered as an org slug.
   "tracetxn",
   "payops",
-  // Legacy tenant slug — reserved so a future signup never collides.
+  // Legacy tenant slug, reserved so a future signup never collides.
   "legacy",
-  // Common big-brand squat targets — block at registration so a
+  // Common big-brand squat targets, block at registration so a
   // pre-launch abuse wave doesn't park them.
   "amazon",
   "apple",

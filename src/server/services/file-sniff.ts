@@ -3,7 +3,7 @@ import "server-only";
 /**
  * Verify that an uploaded buffer's leading bytes match its declared MIME
  * type. The Content-Type that arrives via `formData()` is attacker-
- * controlled, so we never trust it without a sniff — otherwise an HTML
+ * controlled, so we never trust it without a sniff, otherwise an HTML
  * or SVG payload labelled as `image/png` lands on disk under a `.png`
  * extension and Next's static handler still serves it as PNG, which is
  * fine, but if someone changes the extension logic the file pivots into

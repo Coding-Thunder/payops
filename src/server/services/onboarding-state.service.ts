@@ -19,8 +19,8 @@ import { orgIdFilter } from "@/server/db/org/org-context";
  *
  * The dashboard's setup banner reads this once on render and shows a
  * checkbox per step. We only count a step as "done" when there's
- * concrete proof — a saved row, a created order, a real second
- * teammate — never just "the page was visited". That keeps the
+ * concrete proof, a saved row, a created order, a real second
+ * teammate, never just "the page was visited". That keeps the
  * checklist honest as a status, not a guilt nag.
  *
  * The legacy tenant is special-cased to `complete: true` so the
@@ -32,17 +32,17 @@ export interface OnboardingState {
   orgId: string;
   /** Computed roll-up: all required steps satisfied. */
   complete: boolean;
-  /** Set when the org is the legacy migration tenant — the checklist
+  /** Set when the org is the legacy migration tenant, the checklist
    *  is suppressed regardless of step state. */
   isLegacy: boolean;
   steps: {
     /** Gateway credentials saved (any provider, enabled). */
     gatewayConfigured: boolean;
     /** Pass 6b: at least one ItemType defined for this org. Gates the
-     *  dynamic create-order form — without it, /app/orders/create
+     *  dynamic create-order form, without it, /app/orders/create
      *  shows an empty state. */
     businessSetupDone: boolean;
-    /** Branding edited at least once — brandName not the env default. */
+    /** Branding edited at least once, brandName not the env default. */
     brandingSet: boolean;
     /** At least one order persisted (in any state). */
     firstOrderCreated: boolean;
@@ -62,7 +62,7 @@ const REQUIRED_STEPS: (keyof OnboardingState["steps"])[] = [
 /**
  * Compute the onboarding state for an org. Cheap: 4 narrowly-projected
  * count/exists queries, no joins. Safe to call on every dashboard
- * render — the dashboard already pulls way more from Mongo than this.
+ * render, the dashboard already pulls way more from Mongo than this.
  *
  * `orgId` null / undefined → returns a noop state (`complete: true`,
  * `isLegacy: false`) so a dashboard rendered for a legacy un-migrated
@@ -107,14 +107,14 @@ export async function getOnboardingState(
     ]);
 
   // Branding is "set" when the doc exists AND has non-empty brandName
-  // distinct from the env default. We're permissive here — the
+  // distinct from the env default. We're permissive here, the
   // CUSTOMER_BRAND_NAME env default is "Rental Confirmation" for
   // tenant #1; non-legacy tenants land with their orgName as the
   // initial brandName, which counts as "set" once they've reviewed it.
   const brandingSet = Boolean(
     branding?.brandName && branding.brandName.trim().length > 0,
   );
-  // Logo upload is the strong signal — almost no one ships without
+  // Logo upload is the strong signal, almost no one ships without
   // touching their logo, so we count "branded" as either the
   // brandName check above OR an uploaded logo. Logo-only tenants
   // (legitimate edge case) still get credit.

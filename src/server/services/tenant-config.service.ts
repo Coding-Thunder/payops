@@ -7,7 +7,7 @@ import type { BrandingDTO } from "@/types";
 import type { WorkflowDTO } from "@/types/workflow";
 
 /**
- * TenantConfig — single accessor for everything tenant-configurable.
+ * TenantConfig, single accessor for everything tenant-configurable.
  *
  * Phase 1 of the multi-tenant transformation: every business service
  * that needs tenant configuration reads through this aggregate

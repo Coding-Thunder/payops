@@ -9,7 +9,7 @@ import { setPaymentStatusMapping } from "@/server/services/workflow.service";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** PATCH /api/admin/workflow/payment-mapping — re-point the
+/** PATCH /api/admin/workflow/payment-mapping, re-point the
  *  payment-success / payment-failure target status keys. These are
  *  what the Stripe webhook writes into when a checkout completes or
  *  fails, so renaming statuses without updating these would silently

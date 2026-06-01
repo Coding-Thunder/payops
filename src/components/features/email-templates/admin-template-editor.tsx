@@ -112,7 +112,7 @@ export function AdminTemplateEditor({
     }
   }, [activeVersion]);
 
-  // Debounced preview render — same endpoint the no-save preview uses.
+  // Debounced preview render, same endpoint the no-save preview uses.
   React.useEffect(() => {
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
@@ -322,7 +322,7 @@ export function AdminTemplateEditor({
         </div>
         <p className="text-[11px] text-muted-foreground">
           Saving creates a new immutable version and activates it. Old
-          versions stay in history below — you can roll back at any time.
+          versions stay in history below, you can roll back at any time.
         </p>
 
         <VersionsList
@@ -456,7 +456,7 @@ function VersionsList({
       <Card>
         <CardContent className="pt-5">
           <p className="text-[12px] text-muted-foreground">
-            No saved versions yet — the email uses the system defaults.
+            No saved versions yet, the email uses the system defaults.
             Save the editor above to create version 1.
           </p>
         </CardContent>

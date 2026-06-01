@@ -9,7 +9,7 @@ import { addTransition } from "@/server/services/workflow.service";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** POST /api/admin/workflow/transitions — add an edge between two
+/** POST /api/admin/workflow/transitions, add an edge between two
  *  existing statuses. Service validates both sides exist + no duplicate
  *  (from, to) pair. */
 export const POST = withApi(async (req: NextRequest) => {

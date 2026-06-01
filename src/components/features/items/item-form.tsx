@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 
@@ -70,7 +71,7 @@ function stateFromInitial(initial: ItemDTO): FormState {
 }
 
 /**
- * Pass 6c — Item catalog form.
+ * Pass 6c, Item catalog form.
  *
  * The attribute section re-renders whenever the operator picks a new
  * ItemType: it pulls that type's `attributeSchema` and shows the right
@@ -163,9 +164,9 @@ export function ItemForm({
       <Alert>
         <AlertDescription>
           No item types yet. Define at least one via{" "}
-          <a href="/app/admin/item-types" className="underline">
+          <Link href="/app/admin/item-types" className="underline">
             Admin → Item types
-          </a>{" "}
+          </Link>{" "}
           before adding catalog items.
         </AlertDescription>
       </Alert>
@@ -190,7 +191,7 @@ export function ItemForm({
               setState((s) => ({
                 ...s,
                 itemTypeKey: v,
-                // Reset attributes when switching type — old keys
+                // Reset attributes when switching type, old keys
                 // wouldn't validate against the new schema.
                 attributes: {},
               }))
@@ -211,7 +212,7 @@ export function ItemForm({
           </Select>
           <p className="text-[11.5px] text-muted-foreground">
             {isEdit
-              ? "Type is locked — historical orders reference it."
+              ? "Type is locked, historical orders reference it."
               : "Decides what fields this item carries."}
           </p>
         </div>

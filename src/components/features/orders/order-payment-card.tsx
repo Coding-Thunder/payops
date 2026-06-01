@@ -107,7 +107,7 @@ export function OrderPaymentCard({
             value={
               order.payment.expiresAt
                 ? formatDateTime(order.payment.expiresAt)
-                : "—"
+                : "-"
             }
           />
           <Field
@@ -115,12 +115,12 @@ export function OrderPaymentCard({
             value={
               order.payment.gateway
                 ? PaymentGatewayLabel[order.payment.gateway]
-                : "—"
+                : "-"
             }
           />
           <Field
             label="Payment session"
-            value={order.payment.paymentSessionId ?? "—"}
+            value={order.payment.paymentSessionId ?? "-"}
             mono
           />
         </div>

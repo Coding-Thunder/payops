@@ -40,7 +40,7 @@ const validPayload = {
 };
 
 describe("POST /api/auth/signup", () => {
-  it("creates an org, user, and member atomically — returns the founder + slug", async () => {
+  it("creates an org, user, and member atomically, returns the founder + slug", async () => {
     const res = await signupRoute(
       buildRequest("/api/auth/signup", {
         method: "POST",
@@ -120,7 +120,7 @@ describe("POST /api/auth/signup", () => {
     );
   });
 
-  it("refuses to register a duplicate email — generic message (no enumeration)", async () => {
+  it("refuses to register a duplicate email, generic message (no enumeration)", async () => {
     await signupRoute(
       buildRequest("/api/auth/signup", {
         method: "POST",

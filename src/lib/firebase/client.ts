@@ -1,9 +1,9 @@
 /**
- * Firebase Web SDK — browser-side init.
+ * Firebase Web SDK, browser-side init.
  *
  * Lazy-initialized so the bundle stays tree-shakeable for any page
  * that doesn't actually call into Firebase Auth. Returns null when
- * the NEXT_PUBLIC_FIREBASE_* config is incomplete — callers must
+ * the NEXT_PUBLIC_FIREBASE_* config is incomplete, callers must
  * handle that and fall back to the legacy bcrypt path.
  */
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";

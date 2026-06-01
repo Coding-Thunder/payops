@@ -23,7 +23,7 @@ import { signupSchema, type SignupInput } from "@/lib/validation";
 
 interface SignupFormProps {
   /** Cloudflare Turnstile site key. When null the widget is omitted
-   *  entirely and the form posts without a `cfToken` — server-side
+   *  entirely and the form posts without a `cfToken`, server-side
    *  verification also no-ops in that case, so dev keeps working. */
   turnstileSiteKey?: string | null;
 }
@@ -69,7 +69,7 @@ export function SignupForm({ turnstileSiteKey }: SignupFormProps) {
       router.replace("/app/dashboard");
       router.refresh();
     } catch (err) {
-      // CF tokens are single-use — reset the widget so the user can retry.
+      // CF tokens are single-use, reset the widget so the user can retry.
       setCfToken(null);
       if (err instanceof ApiClientError) {
         setError(err.message);
@@ -84,7 +84,7 @@ export function SignupForm({ turnstileSiteKey }: SignupFormProps) {
       <form className="space-y-5" onSubmit={form.handleSubmit(onSubmit)} noValidate>
         {error ? (
           <Alert variant="destructive">
-            <AlertTitle>Couldn't create your workspace</AlertTitle>
+            <AlertTitle>Couldn&apos;t create your workspace</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}

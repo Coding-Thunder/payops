@@ -72,7 +72,7 @@ export default async function CreateOrderPage() {
                     {quota.current}
                   </span>{" "}
                   open. Resolve a pending order (mark it paid, expire it,
-                  or archive it) — or upgrade for more headroom.
+                  or archive it), or upgrade for more headroom.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">

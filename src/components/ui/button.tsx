@@ -5,7 +5,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /**
- * Button — refined polish pass.
+ * Button, refined polish pass.
  *
  *   - Radius bumped from `rounded-md` (8px) to a custom 9px via the
  *     `--radius-button` token. Just barely softer than inputs (6px),
@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
  *     edge) for dimensionality without skeuomorph.
  *   - Press feedback: 1px translate-down on `:active`. Tactile, not
  *     a `:hover:scale` clown bounce.
- *   - Shadow scale calibrated to the new token system — `shadow-xs`
+ *   - Shadow scale calibrated to the new token system, `shadow-xs`
  *     reads as "barely there", `shadow-sm` is the new default for
  *     primary CTAs.
  */
@@ -59,7 +59,7 @@ const buttonVariants = cva(
           "[box-shadow:var(--shadow-sm),var(--shadow-inset-hi)]",
           "hover:bg-success/90 active:translate-y-px",
         ].join(" "),
-        // Brand-accent variants — for chromatic CTAs that earn weight
+        // Brand-accent variants, for chromatic CTAs that earn weight
         // (dispute action, payment-link send, branding save).
         accent: [
           "text-white",

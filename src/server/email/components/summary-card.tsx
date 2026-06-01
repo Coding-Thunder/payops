@@ -15,7 +15,7 @@ interface SummaryCardProps {
 
 /**
  * Section wrapper for metadata groups (booking details, payment details).
- * Renders as a plain padded block, NOT a colored card — the visual
+ * Renders as a plain padded block, NOT a colored card, the visual
  * separation comes from spacing + the per-row dividers in MetadataRow.
  */
 export function SummaryCard({

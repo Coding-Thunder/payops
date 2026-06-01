@@ -16,7 +16,7 @@ import { recordAudit } from "./audit.service";
  * Kept narrowly-scoped: the only field the tenant edits via the admin
  * UI today is the display name (which they typically rename from the
  * "X's workspace" the founder signup auto-synthesised). Slug stays
- * immutable post-creation — it's URL-visible in places like the
+ * immutable post-creation, it's URL-visible in places like the
  * webhook path, and renaming a slug would orphan all those references.
  * If a tenant truly needs a new slug, they delete + recreate.
  */
@@ -77,7 +77,7 @@ export async function renameOrganization(
 
   const previous = doc.name;
   if (previous === next) {
-    // No-op — return current state without an audit row.
+    // No-op, return current state without an audit row.
     return {
       id: String(doc._id),
       slug: doc.slug,

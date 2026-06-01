@@ -15,7 +15,7 @@ interface Params {
 
 /**
  * Admin action: lock a RECEIVED consent record as dispute-grade
- * evidence. Permission gate intentionally narrower than CONSENT_VIEW —
+ * evidence. Permission gate intentionally narrower than CONSENT_VIEW -
  * staff who can read records still can't rubber-stamp them.
  */
 export const POST = withApi(async (_req: NextRequest, { params }: Params) => {
