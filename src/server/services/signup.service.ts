@@ -101,6 +101,10 @@ export async function signupFounder(
           ownerUserId: userId,
           status: OrgStatus.ACTIVE,
           verifiedAt: null,
+          // Stamp the trial clock at signup so the billing gate
+          // doesn't fall back to createdAt. Future migrations that
+          // touch createdAt (e.g. anonymisation) won't reset the trial.
+          trialStartsAt: new Date(),
         },
       ],
       sessionOpt(session),
@@ -238,6 +242,10 @@ export async function signupFounderFromFirebase(
           ownerUserId: userId,
           status: OrgStatus.ACTIVE,
           verifiedAt: null,
+          // Stamp the trial clock at signup so the billing gate
+          // doesn't fall back to createdAt. Future migrations that
+          // touch createdAt (e.g. anonymisation) won't reset the trial.
+          trialStartsAt: new Date(),
         },
       ],
       sessionOpt(session),

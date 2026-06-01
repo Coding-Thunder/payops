@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { Sidebar } from "@/components/app-shell/sidebar";
 import { TelemetryStrip } from "@/components/app-shell/telemetry-strip";
 import { Topbar } from "@/components/app-shell/topbar";
+import { TrialBanner } from "@/components/app-shell/trial-banner";
 import { CommandPalette } from "@/components/command-palette";
 import { RouteTransitionLoader } from "@/components/common/route-transition-loader";
 import { RealtimeProvider } from "@/components/providers/realtime-provider";
@@ -46,6 +47,9 @@ export default async function AuthenticatedLayout({
           </div>
           <div className="print:hidden">
             <Topbar user={user} brand={brand} />
+          </div>
+          <div className="print:hidden">
+            <TrialBanner orgId={user.orgId ?? null} />
           </div>
           {/* Shell padding lives inside main so every page gets a
               consistent inset on all four sides without a coloured

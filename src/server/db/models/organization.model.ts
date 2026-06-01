@@ -45,6 +45,12 @@ export interface OrganizationDoc {
   status: OrgStatus;
   /** First time the org was promoted from PENDING → ACTIVE. */
   verifiedAt?: Date | null;
+  /** Start of the 15-day evaluation trial. When null the billing
+   *  service falls back to createdAt, but new signups stamp this
+   *  explicitly so the clock is independent of any future migration
+   *  that touches createdAt. Operators can extend a tenant's trial
+   *  manually by pushing this date forward. */
+  trialStartsAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -78,6 +84,7 @@ const organizationSchema = new Schema<OrganizationDoc>(
       index: true,
     },
     verifiedAt: { type: Date, default: null },
+    trialStartsAt: { type: Date, default: null, index: true },
   },
   {
     timestamps: true,

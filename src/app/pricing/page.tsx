@@ -34,7 +34,7 @@ interface Tier {
   trialLine: string;
 }
 
-const TRIAL_LINE = "14 day free trial. No credit card required.";
+const TRIAL_LINE = "15 day free trial. No credit card required.";
 
 const TIERS: Tier[] = [
   {
@@ -156,7 +156,7 @@ const FAQS: Array<{ q: string; a: string }> = [
   },
   {
     q: "Is there a free trial?",
-    a: "Every paid tier starts with a 14 day full-feature trial. No credit card required. At day 14 you pick a plan or your workspace becomes read-only until you do.",
+    a: "Every paid tier starts with a 15 day full-feature trial. No credit card required. At day 15, order creation pauses until you pick a plan or email sales to extend, your existing orders and evidence stay intact either way.",
   },
   {
     q: "How does pricing compare to enterprise dispute tools?",
@@ -195,7 +195,7 @@ export default function PricingPage() {
             </span>
           </h1>
           <p className="mx-auto mt-5 max-w-xl text-[15px] leading-relaxed text-muted-foreground">
-            Start free for 14 days. No credit card required.
+            Start free for 15 days. No credit card required.
           </p>
         </div>
       </section>

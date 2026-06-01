@@ -4,7 +4,7 @@ import { Types } from "mongoose";
 
 import { OrderStatus } from "@/lib/constants/enums";
 import { QuotaExceededError } from "@/lib/errors";
-import { Order } from "@/server/db/models";
+import { Order, Organization } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 
 /**
@@ -101,14 +101,94 @@ export async function getOrderQuotaSnapshot(
   };
 }
 
+/* ─── Trial enforcement ──────────────────────────────────────────────────
+ *
+ * v1: every workspace gets a 15-day evaluation window. There's no
+ * upgrade flow yet (Stripe Billing is parked until first customer
+ * confirms), so the expired-trial path is "email sales@ to extend".
+ *
+ * The clock reads from Organization.trialStartsAt; legacy rows with
+ * a null value fall back to createdAt so they aren't grandfathered
+ * into forever-free.
+ * ──────────────────────────────────────────────────────────────────── */
+
+export const TRIAL_DAYS = 15;
+/** Banner turns amber at this remaining count to nudge the operator
+ *  before the gate slams shut. */
+export const TRIAL_WARN_DAYS = 3;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export interface TrialState {
+  /** When the trial started for this tenant. Resolves from
+   *  Organization.trialStartsAt with a createdAt fallback. */
+  startedAt: Date;
+  /** Day index, 1 = first day. */
+  daysElapsed: number;
+  /** Whole days remaining; floored, can be negative when expired. */
+  daysRemaining: number;
+  /** True when the trial window has fully elapsed. */
+  expired: boolean;
+  /** Soft signal for the UI to render the amber-warn banner. */
+  atRisk: boolean;
+}
+
+export async function getTrialState(orgId: string | null): Promise<TrialState | null> {
+  if (!orgId) return null;
+  await connectMongo();
+  const org = await Organization.findById(orgId)
+    .select({ trialStartsAt: 1, createdAt: 1 })
+    .lean<{ trialStartsAt?: Date | null; createdAt: Date }>();
+  if (!org) return null;
+  // Fallback chain: explicit trialStartsAt > legacy createdAt. Legacy
+  // rows that pre-date this feature get backfilled by the operator's
+  // script; until then they read from createdAt so the clock is
+  // deterministic without further migration.
+  const startedAt = org.trialStartsAt ?? org.createdAt;
+  const now = Date.now();
+  const elapsedMs = now - startedAt.getTime();
+  const daysElapsed = Math.max(0, Math.floor(elapsedMs / DAY_MS));
+  const daysRemaining = TRIAL_DAYS - daysElapsed;
+  return {
+    startedAt,
+    daysElapsed,
+    daysRemaining,
+    expired: daysRemaining <= 0,
+    atRisk: daysRemaining > 0 && daysRemaining <= TRIAL_WARN_DAYS,
+  };
+}
+
 /**
  * Throws `QuotaExceededError` (HTTP 402) when the tenant has hit
- * their active-orders cap. Called at the top of every order-create
- * path so the gate sits in one place, the UI can't bypass it by
- * routing through a different endpoint.
+ * their active-orders cap OR when the evaluation trial has expired.
+ * Called at the top of every order-create path so the gate sits in
+ * one place, the UI can't bypass it by routing through a different
+ * endpoint.
+ *
+ * Trial check fires first so an at-limit but expired tenant gets the
+ * "trial ended" message rather than the misleading "upgrade for more
+ * orders" one.
  */
 export async function assertCanCreateOrder(orgId: string | null): Promise<void> {
   if (!orgId) return; // legacy migration window, no metering
+
+  // Trial gate first.
+  const trial = await getTrialState(orgId);
+  if (trial?.expired) {
+    throw new QuotaExceededError(
+      `Your 15-day evaluation trial ended ${Math.abs(trial.daysRemaining)} day${
+        Math.abs(trial.daysRemaining) === 1 ? "" : "s"
+      } ago. Email sales@tracetxn.com to extend or to pick a plan.`,
+      {
+        plan: "trial",
+        resource: "trial",
+        limit: TRIAL_DAYS,
+        current: trial.daysElapsed,
+      },
+    );
+  }
+
+  // Active-orders cap.
   const snapshot = await getOrderQuotaSnapshot(orgId);
   if (!snapshot.atLimit) return;
   throw new QuotaExceededError(
