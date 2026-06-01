@@ -89,13 +89,16 @@ export type { OrderDraftDoc, OrderDraftDocument } from "./order-draft.model";
 
 export {
   EmailTemplate,
-  EMAIL_TEMPLATE_KEYS,
+  SYSTEM_EMAIL_TEMPLATE_KEYS,
+  CUSTOM_TEMPLATE_KEY_REGEX,
 } from "./email-template.model";
 export type {
   EmailTemplateContent,
   EmailTemplateDoc,
   EmailTemplateDocument,
-  EmailTemplateKey,
+  EmailTemplateKind,
+  EmailTemplateTriggerBinding,
+  SystemEmailTemplateKey,
 } from "./email-template.model";
 
 export { PaymentConsent } from "./payment-consent.model";

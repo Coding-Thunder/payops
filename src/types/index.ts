@@ -422,7 +422,13 @@ export interface BrandingDTO {
 
 export interface EmailTemplateVersionDTO {
   id: string;
-  templateKey: "payment-confirmation" | "payment-request";
+  /** System keys come from SYSTEM_EMAIL_TEMPLATE_KEYS; custom keys are
+   *  tenant-defined slugs matching CUSTOM_TEMPLATE_KEY_REGEX. */
+  templateKey: string;
+  kind: "system" | "custom";
+  displayName: string;
+  description: string | null;
+  triggerBindings: Array<{ event: string; enabled: boolean }>;
   version: number;
   active: boolean;
 
@@ -437,6 +443,20 @@ export interface EmailTemplateVersionDTO {
   createdBy: { userId: string | null; name: string };
   createdAt: string;
   updatedAt: string;
+}
+
+/** Lightweight row for the "send a template" picker — what a tenant
+ *  sees when choosing which custom template to fire from the order /
+ *  customer / payment detail surfaces. Omits versioning detail. */
+export interface EmailTemplateSummaryDTO {
+  templateKey: string;
+  kind: "system" | "custom";
+  displayName: string;
+  description: string | null;
+  /** Whether the tenant has an active version saved. Without it the
+   *  picker falls back to the code default for system kinds, and the
+   *  custom kind isn't sendable. */
+  hasActiveVersion: boolean;
 }
 
 export interface CarLinkDTO {

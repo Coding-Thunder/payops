@@ -5,13 +5,20 @@ import {
   type Types,
 } from "mongoose";
 
-import { EMAIL_TEMPLATE_KEYS } from "@/lib/constants/email-templates";
-import type { EmailTemplateKey } from "@/lib/constants/email-templates";
+import {
+  CUSTOM_TEMPLATE_KEY_REGEX,
+  SYSTEM_EMAIL_TEMPLATE_KEYS,
+  type EmailTemplateKind,
+  type SystemEmailTemplateKey,
+} from "@/lib/constants/email-templates";
 
 import { registerModel } from "./register";
 
-export { EMAIL_TEMPLATE_KEYS };
-export type { EmailTemplateKey };
+export {
+  SYSTEM_EMAIL_TEMPLATE_KEYS,
+  CUSTOM_TEMPLATE_KEY_REGEX,
+};
+export type { SystemEmailTemplateKey, EmailTemplateKind };
 
 /**
  * Versioned email-template content.
@@ -49,11 +56,43 @@ export interface EmailTemplateContent {
   footerNote: string | null;
 }
 
+/**
+ * Future automation hook. Empty array today (no auto-trigger engine
+ * yet); when status-driven automations land, each binding fires the
+ * template on a matching domain event. Schema lives on the template
+ * itself so we never have to migrate to wire automations later.
+ */
+export interface EmailTemplateTriggerBinding {
+  /** Domain event identifier, e.g. "order.status.PAID". */
+  event: string;
+  /** Per-binding kill-switch so an admin can pause a single auto-fire
+   *  without deleting it. */
+  enabled: boolean;
+}
+
 export interface EmailTemplateDoc extends EmailTemplateContent {
   /** Tenant boundary. Nullable during migration; per-org template
    *  overrides land once the column is fully backfilled. */
   orgId?: Types.ObjectId | null;
-  templateKey: EmailTemplateKey;
+  /** System keys (payment-request, payment-confirmation) match
+   *  SystemEmailTemplateKey. Custom kinds carry tenant-defined slugs
+   *  matched against CUSTOM_TEMPLATE_KEY_REGEX. */
+  templateKey: string;
+  /** Discriminator between platform-defined ("system") templates and
+   *  tenant-defined ("custom") ones. Drives admin UI behaviour
+   *  (system templates can be edited but not renamed/deleted; custom
+   *  templates are fully tenant-controlled). */
+  kind: EmailTemplateKind;
+  /** Operator-facing label. Required for custom templates ("Payment
+   *  Reminder", "Refund Approved"); falls back to a code-defined
+   *  label for system templates. */
+  displayName: string;
+  /** Optional operator-facing note shown in the admin list — what the
+   *  template is for, when to send it. */
+  description?: string | null;
+  /** Future automation hook. Empty today, populated once the
+   *  workflow engine grows status-driven dispatch. */
+  triggerBindings: EmailTemplateTriggerBinding[];
   version: number;
   active: boolean;
 
@@ -86,9 +125,35 @@ const emailTemplateSchema = new Schema<EmailTemplateDoc>(
     },
     templateKey: {
       type: String,
-      enum: EMAIL_TEMPLATE_KEYS,
       required: true,
+      maxlength: 64,
+      // Relaxed from the SYSTEM_EMAIL_TEMPLATE_KEYS enum so tenant
+      // custom kinds can occupy the same collection. The service layer
+      // enforces the right shape: system keys must come from the
+      // constant; custom keys must match CUSTOM_TEMPLATE_KEY_REGEX
+      // AND must not collide with any system key.
       index: true,
+    },
+    kind: {
+      type: String,
+      enum: ["system", "custom"] satisfies EmailTemplateKind[],
+      required: true,
+      default: "system",
+      index: true,
+    },
+    displayName: { type: String, default: "", maxlength: 120, trim: true },
+    description: { type: String, default: null, maxlength: 500, trim: true },
+    triggerBindings: {
+      type: [
+        new Schema<EmailTemplateTriggerBinding>(
+          {
+            event: { type: String, required: true, maxlength: 120 },
+            enabled: { type: Boolean, required: true, default: true },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
     },
     version: { type: Number, required: true, min: 1, index: true },
     active: { type: Boolean, required: true, default: false, index: true },
