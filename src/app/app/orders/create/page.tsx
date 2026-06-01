@@ -83,9 +83,9 @@ export default async function CreateOrderPage() {
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button asChild size="sm" className="gap-1.5">
-                  <a href="mailto:sales@tracetxn.com?subject=TraceTxn%20trial%20extension">
+                  <a href="mailto:earlyaccess@tracetxn.com?subject=TraceTxn%20trial%20extension">
                     <MailIcon className="size-3.5" />
-                    Email sales
+                    Email early access
                   </a>
                 </Button>
                 <Button asChild size="sm" variant="outline">

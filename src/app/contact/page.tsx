@@ -43,7 +43,7 @@ const LANES: Lane[] = [
     eyebrow: "Sales",
     title: "Talk to sales",
     body: "Prospect questions on pricing, deployment, custom requirements, multi-team setup, or enterprise terms. Most prospects don't need a call, you can spin up a workspace directly and we'll reach out if you flag something on signup.",
-    email: "sales@tracetxn.com",
+    email: "hello@tracetxn.com",
     icon: BriefcaseIcon,
     altCta: { label: "Open a workspace yourself", href: "/signup" },
   },

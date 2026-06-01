@@ -45,10 +45,10 @@ export function ClosingRegion({ turnstileSiteKey }: ClosingRegionProps) {
               Direct line
             </p>
             <a
-              href="mailto:vinaymaheshwari35@gmail.com?subject=TraceTxn%20%E2%80%94%20requirements"
+              href="mailto:hello@tracetxn.com?subject=TraceTxn%20requirements"
               className="mt-1.5 inline-block text-[14.5px] font-medium text-foreground hover:underline underline-offset-2 decoration-foreground/30"
             >
-              vinaymaheshwari35@gmail.com
+              hello@tracetxn.com
             </a>
             <p className="mt-1 text-[12.5px] text-muted-foreground">
               Reaches the team building and operating TraceTxn. No drip,

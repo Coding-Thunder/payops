@@ -54,7 +54,7 @@ export function StructuredData({
         contactPoint: [
           {
             "@type": "ContactPoint",
-            email: "vinaymaheshwari35@gmail.com",
+            email: "hello@tracetxn.com",
             contactType: "sales",
             areaServed: "Worldwide",
             availableLanguage: ["en"],
@@ -66,7 +66,7 @@ export function StructuredData({
         "@id": `${url}/#founder`,
         name: "Vinay Maheshwari",
         jobTitle: "Founder · Principal Engineer",
-        email: "vinaymaheshwari35@gmail.com",
+        email: "hello@tracetxn.com",
         worksFor: { "@id": `${url}/#organization` },
         knowsAbout: [
           "Payment Operations",

@@ -178,7 +178,7 @@ export async function assertCanCreateOrder(orgId: string | null): Promise<void> 
     throw new QuotaExceededError(
       `Your 15-day evaluation trial ended ${Math.abs(trial.daysRemaining)} day${
         Math.abs(trial.daysRemaining) === 1 ? "" : "s"
-      } ago. Email sales@tracetxn.com to extend or to pick a plan.`,
+      } ago. Email earlyaccess@tracetxn.com to extend or to pick a plan.`,
       {
         plan: "trial",
         resource: "trial",

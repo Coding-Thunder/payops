@@ -28,7 +28,7 @@ const SECTIONS: LegalSection[] = [
           We offer a <strong>14-day no-questions money-back
           guarantee</strong> on new paid TraceTxn subscriptions. If
           TraceTxn isn&apos;t a fit for you in the first 14 days, email{" "}
-          <Mail address="billing@tracetxn.com" /> from your workspace
+          <Mail address="support@tracetxn.com" /> from your workspace
           email address and we&apos;ll refund the subscription fee in
           full. No survey, no save-attempt phone call, no friction.
         </P>
@@ -66,7 +66,7 @@ const SECTIONS: LegalSection[] = [
     children: (
       <>
         <P>
-          Email <Mail address="billing@tracetxn.com" /> from the email
+          Email <Mail address="support@tracetxn.com" /> from the email
           associated with your workspace. Include:
         </P>
         <UL>
@@ -190,13 +190,13 @@ const SECTIONS: LegalSection[] = [
           If TraceTxn experiences a major outage or a billing error on
           our side, we may issue credits or refunds outside the
           guarantee window, case-by-case, in your favour. Email{" "}
-          <Mail address="billing@tracetxn.com" /> with the details and
+          <Mail address="support@tracetxn.com" /> with the details and
           we&apos;ll work it out quickly.
         </P>
         <P>
           If you suspect fraudulent charges (e.g. someone else used your
           card to sign up), email{" "}
-          <Mail address="billing@tracetxn.com" /> immediately. We work
+          <Mail address="support@tracetxn.com" /> immediately. We work
           with your card issuer to resolve and refund.
         </P>
       </>

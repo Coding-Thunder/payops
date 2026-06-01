@@ -348,7 +348,7 @@ const SECTIONS: LegalSection[] = [
         <P>
           To exercise these rights for personal information we hold{" "}
           <em>about you as a TraceTxn operator</em>, email{" "}
-          <Mail address="privacy@tracetxn.com" /> from the email address
+          <Mail address="legal@tracetxn.com" /> from the email address
           associated with your workspace. We respond within 30 days.
         </P>
         <P>
@@ -394,7 +394,7 @@ const SECTIONS: LegalSection[] = [
           children under 16. We do not knowingly collect personal
           information from children. If you believe a child has provided
           personal information to us, email{" "}
-          <Mail address="privacy@tracetxn.com" /> and we will delete it.
+          <Mail address="legal@tracetxn.com" /> and we will delete it.
         </P>
       </>
     ),
@@ -421,7 +421,7 @@ const SECTIONS: LegalSection[] = [
       <>
         <P>
           Questions about this Policy or our handling of personal
-          information? Email <Mail address="privacy@tracetxn.com" />.
+          information? Email <Mail address="legal@tracetxn.com" />.
         </P>
       </>
     ),

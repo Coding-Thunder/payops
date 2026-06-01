@@ -40,11 +40,11 @@ export async function TrialBanner({ orgId }: TrialBannerProps) {
           </span>
         </div>
         <a
-          href="mailto:sales@tracetxn.com?subject=TraceTxn%20trial%20extension"
+          href="mailto:earlyaccess@tracetxn.com?subject=TraceTxn%20trial%20extension"
           className="inline-flex items-center gap-1.5 font-medium underline-offset-4 hover:underline"
         >
           <MailIcon className="size-3.5" />
-          Email sales to continue
+          Email early access to continue
         </a>
       </div>
     );
@@ -68,7 +68,7 @@ export async function TrialBanner({ orgId }: TrialBannerProps) {
         </span>
       </div>
       <a
-        href="mailto:sales@tracetxn.com?subject=TraceTxn%20plan%20enquiry"
+        href="mailto:earlyaccess@tracetxn.com?subject=TraceTxn%20plan%20enquiry"
         className="text-[11.5px] underline-offset-4 hover:underline"
       >
         Talk to us about a plan →

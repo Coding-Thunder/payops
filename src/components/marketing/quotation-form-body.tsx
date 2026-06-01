@@ -109,7 +109,7 @@ export function QuotationFormBody({
       const message =
         err instanceof ApiClientError
           ? err.message
-          : "Could not submit your request. Please email vinaymaheshwari35@gmail.com.";
+          : "Could not submit your request. Please email hello@tracetxn.com.";
       setState({ kind: "error", message });
     }
   }
@@ -334,7 +334,7 @@ function SuccessPanel({ reference }: { reference: string }) {
       </div>
       <p className="mt-3 max-w-[44ch] text-[13.5px] leading-relaxed text-muted-foreground">
         Your requirements landed. Expect a personal reply within one
-        business day from vinaymaheshwari35@gmail.com.
+        business day from hello@tracetxn.com.
       </p>
       <p className="mt-5 font-mono text-[11px] tabular-nums text-muted-foreground">
         ref · {reference.slice(0, 12)}
