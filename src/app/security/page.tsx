@@ -63,7 +63,7 @@ const PILLARS: Pillar[] = [
     title: "Tenant isolation",
     body: "Every business-data row carries `orgId`. Lookup-by-id pins both `_id` AND `orgId` at the query layer, so a Tenant-A actor holding a guessed Tenant-B id gets a clean 404, not a real document.",
     points: [
-      "11 collections hardened: orders, items, item-types, branding, etc.",
+      "18 business-data collections carry orgId at the schema layer",
       "Child models (disputes, evidence, consent, drafts, outbox) all carry orgId",
       "Cross-tenant tests in CI prove id-guesses fail",
       "Per-tenant indexes on every business collection",

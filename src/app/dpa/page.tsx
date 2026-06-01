@@ -171,8 +171,12 @@ const SECTIONS: LegalSection[] = [
           </li>
         </OL>
         <P>
-          We aim to send a counter-signed PDF back within 2 business
-          days. Most customers sign our standard DPA without redlines.
+          We acknowledge every DPA request within one business day and
+          send a counter-signed PDF as soon as our standard template is
+          ready, today that&apos;s typically inside a week for a
+          first-time agreement. If your procurement timeline is tighter,
+          flag the deadline in your initial email and we&apos;ll work
+          backwards from it.
         </P>
       </>
     ),
