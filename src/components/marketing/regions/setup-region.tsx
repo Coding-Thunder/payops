@@ -1,29 +1,47 @@
 import Link from "next/link";
-import { ArrowRightIcon, CheckIcon } from "lucide-react";
+import {
+  ArrowRightIcon,
+  CheckIcon,
+  LinkIcon,
+  PlayCircleIcon,
+  SparklesIcon,
+} from "lucide-react";
 
 /**
- * Setup region, closes the document with a numbered procedure.
+ * Setup region, brand-v1 rebuild.
  *
- * Sits in a soft inset surface for region rhythm + uses green
- * numbered ring pills on the steps (same operational identity
- * marker the reference's case-file timeline uses on its events).
+ * Replaces the two-column "copy left, numbered ol right" layout with
+ * the same vocabulary used on Pricing and Security: cloud band
+ * background, emerald eyebrow chip, navy headline with an emerald
+ * accent, three step cards in a grid, then a compact "What you get"
+ * chip row inside its own card.
  */
 
-const STEPS: Array<{ k: string; title: string; body: string }> = [
+interface SetupStep {
+  index: string;
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  body: string;
+}
+
+const STEPS: SetupStep[] = [
   {
-    k: "1",
+    index: "01",
+    icon: SparklesIcon,
     title: "Create your workspace",
-    body: "Sign up, name your business, pick a vertical template, retail, services, rental, repair, dealership, generic. The catalog seeds itself; the operator console is live.",
+    body: "Sign up, name your business, pick a vertical template (retail, services, rental, repair, dealership, generic). The catalog seeds itself; the operator console is live.",
   },
   {
-    k: "2",
+    index: "02",
+    icon: LinkIcon,
     title: "Connect Stripe",
     body: "One-click test, auto-registered webhook endpoint, deep links into your Stripe dashboard. Razorpay and Authorize.net adapters slot in next.",
   },
   {
-    k: "3",
+    index: "03",
+    icon: PlayCircleIcon,
     title: "Run your first order",
-    body: "Catalog → order → payment link → consent → paid. Every transition recorded on the evidence chain from minute one.",
+    body: "Catalog, order, payment link, consent, paid. Every transition recorded on the evidence chain from minute one.",
   },
 ];
 
@@ -35,99 +53,109 @@ const INCLUDED: string[] = [
   "Hosted consent capture",
   "PDF + CSV dispute exports",
   "Realtime SSE lifecycle updates",
-  "Stripe live · Razorpay + Authorize.net adapters next",
+  "Stripe live, Razorpay + Authorize.net adapters next",
 ];
 
 export function SetupRegion() {
   return (
     <section
       id="setup"
-      className="scroll-mt-20 mt-20 sm:mt-28 -mx-6 lg:-mx-10 px-6 lg:px-10 py-16 sm:py-20"
-      style={{ background: "var(--surface-1)" }}
+      className="scroll-mt-20 -mx-6 lg:-mx-10 px-6 lg:px-10 py-20 sm:py-24 mt-20 sm:mt-28"
+      style={{ background: "var(--background)" }}
     >
-      <div className="grid grid-cols-1 gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] lg:items-start">
-        <div>
-          <p
-            className="font-mono text-[10.5px] uppercase tracking-[0.16em]"
-            style={{ color: "var(--success-strong)" }}
-          >
+      <div className="mx-auto max-w-[1280px]">
+        {/* Header */}
+        <div className="max-w-3xl">
+          <p className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-3 py-1 font-display text-[10.5px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+            <span
+              aria-hidden
+              className="size-1.5 rounded-full"
+              style={{ background: "var(--brand-emerald)" }}
+            />
             Setup
           </p>
-          <h2 className="mt-3 max-w-[20ch] text-balance text-[24px] sm:text-[28px] font-semibold leading-[1.15] tracking-[-0.018em]">
-            Create the workspace. Run your first order before the day
-            ends.
+          <h2 className="mt-6 font-display text-[clamp(1.8rem,4vw,2.8rem)] font-medium leading-[1.08] tracking-[-0.022em]">
+            Create the workspace.{" "}
+            <span className="font-semibold text-[color:var(--brand-emerald)]">
+              Run your first paid order before the day ends.
+            </span>
           </h2>
-          <p className="mt-4 max-w-[44ch] text-[14px] leading-relaxed text-muted-foreground">
+          <p className="mt-5 max-w-xl text-[14.5px] leading-relaxed text-muted-foreground">
             Item types, orders, evidence, and consent are universal
             primitives. Pick a vertical template, connect Stripe, run a
-            real order through the lifecycle, all of it inside your
-            tenant from the first minute.
+            real order through the lifecycle, all of it inside your tenant
+            from the first minute.
           </p>
-
-          <Link
-            href="/signup"
-            className="group mt-7 inline-flex items-center gap-2 rounded-md bg-foreground px-3.5 py-2 text-[13px] font-medium text-background transition-opacity hover:opacity-90"
-          >
-            Start free
-            <ArrowRightIcon className="size-3.5 transition-transform group-hover:translate-x-0.5" />
-          </Link>
+          <div className="mt-7">
+            <Link
+              href="/signup"
+              className="group inline-flex items-center gap-2 rounded-md bg-foreground px-3.5 py-2 text-[13px] font-medium text-background transition-opacity hover:opacity-90"
+            >
+              Start free
+              <ArrowRightIcon className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+            </Link>
+          </div>
         </div>
 
-        {/* Numbered procedure, green ring pills + connector line.
-            Same operational identity element the case-file timeline
-            uses on its events. */}
-        <ol className="relative space-y-6">
-          {/* Vertical green connector line behind the pills */}
-          <span
-            aria-hidden
-            className="pointer-events-none absolute left-[1.125rem] top-2 bottom-2 w-[2px] rounded-full"
-            style={{ background: "var(--success)" }}
-          />
+        {/* Step cards */}
+        <div className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-3">
           {STEPS.map((s) => (
-            <li
-              key={s.k}
-              className="relative grid grid-cols-[2.25rem_1fr] items-start gap-x-4"
-            >
-              <span
-                className="relative z-10 grid size-9 place-items-center rounded-full text-[13px] font-semibold text-white shadow-[0_4px_12px_-4px_color-mix(in_oklch,var(--success)_55%,transparent)]"
-                style={{ background: "var(--success)" }}
-              >
-                {s.k}
-              </span>
-              <div className="pt-1">
-                <h3 className="text-[15.5px] font-semibold tracking-tight">
-                  {s.title}
-                </h3>
-                <p className="mt-1.5 max-w-[52ch] text-[13.5px] leading-relaxed text-muted-foreground">
-                  {s.body}
-                </p>
-              </div>
-            </li>
+            <StepCard key={s.index} step={s} />
           ))}
-        </ol>
-      </div>
+        </div>
 
-      {/* What every workspace gets */}
-      <div className="mt-16 border-t border-border pt-8">
-        <p className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted-foreground">
-          What every workspace gets
-        </p>
-        <ul className="mt-4 grid grid-cols-1 gap-x-8 gap-y-2.5 sm:grid-cols-2 lg:grid-cols-2">
-          {INCLUDED.map((item) => (
-            <li
-              key={item}
-              className="grid grid-cols-[1rem_1fr] items-baseline gap-x-2 text-[13.5px] leading-relaxed"
-            >
-              <CheckIcon
-                className="mt-[3px] size-3.5 shrink-0 text-success"
-                strokeWidth={2.5}
-                aria-hidden
-              />
-              <span>{item}</span>
-            </li>
-          ))}
-        </ul>
+        {/* Included card */}
+        <div className="mt-10 rounded-2xl border border-border bg-white p-7">
+          <p className="font-display text-[10.5px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            What every workspace gets
+          </p>
+          <ul className="mt-5 grid grid-cols-1 gap-x-8 gap-y-2.5 sm:grid-cols-2">
+            {INCLUDED.map((item) => (
+              <li
+                key={item}
+                className="flex items-start gap-2 text-[13.5px] leading-relaxed"
+              >
+                <CheckIcon
+                  className="mt-[3px] size-3.5 shrink-0"
+                  strokeWidth={2.5}
+                  style={{ color: "var(--brand-emerald)" }}
+                  aria-hidden
+                />
+                <span className="text-foreground/85">{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
     </section>
+  );
+}
+
+function StepCard({ step }: { step: SetupStep }) {
+  const Icon = step.icon;
+  return (
+    <div className="rounded-2xl border border-border bg-white p-6">
+      <div className="flex items-center gap-3">
+        <span
+          className="inline-flex size-10 items-center justify-center rounded-lg"
+          style={{
+            background:
+              "color-mix(in oklch, var(--brand-emerald) 12%, white)",
+            color: "var(--brand-emerald-strong)",
+          }}
+        >
+          <Icon className="size-5" />
+        </span>
+        <span className="font-mono text-[11px] tabular-nums uppercase tracking-[0.16em] text-muted-foreground">
+          Step {step.index}
+        </span>
+      </div>
+      <h3 className="mt-4 font-display text-[16px] font-semibold tracking-tight">
+        {step.title}
+      </h3>
+      <p className="mt-2 text-[13.5px] leading-relaxed text-muted-foreground">
+        {step.body}
+      </p>
+    </div>
   );
 }
