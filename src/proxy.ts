@@ -24,6 +24,21 @@ const PUBLIC_PATHS = [
   "/login",
   "/signup",
   "/forgot-password",
+  // Marketing surfaces. Every page below either renders static
+  // brand-v1 content or POSTs to an already-public API. Without
+  // these entries, an unauthenticated visitor clicking a footer
+  // link gets bounced to /login, which kills SEO + customer trust.
+  "/pricing",
+  "/features",
+  "/security",
+  "/contact",
+  "/waitlist",
+  // Legal pages — long-form documents referenced from signup
+  // click-wrap, footer, and DPA workflows. Public by definition.
+  "/terms",
+  "/privacy",
+  "/refunds",
+  "/dpa",
   "/api/auth/login",
   "/api/auth/signup",
   "/api/auth/forgot-password",
@@ -75,6 +90,10 @@ function isPublic(pathname: string): boolean {
   // public/marketing/. Without this they'd 307 through proxy → /login
   // and the landing page would render broken images.
   if (pathname.startsWith("/marketing/")) return true;
+  // Public per-org brand logo route. Customer surfaces (transactional
+  // emails, /pay landing) hot-link these without any session — the URL
+  // itself carries the orgId segment.
+  if (pathname.startsWith("/api/branding/logo/")) return true;
   // Marketing surface only lives at "/"; everything else routed through
   // here gets evaluated normally.
   return false;
