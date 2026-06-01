@@ -63,6 +63,19 @@ const serverSchema = z.object({
   EMAIL_FROM: z
     .string()
     .default("TraceTxn <no-reply@tracetxn.example.com>"),
+  /**
+   * Sender for platform-side account-lifecycle emails: password reset,
+   * email verification, signup welcome, trial-started / trial-ending-
+   * soon notifications, subscription activated / cancelled, security
+   * alerts. Separate from EMAIL_FROM (which is the catch-all for
+   * tenant-side commerce mail when a tenant hasn't customised
+   * Branding.senderEmail) so ops can deliver platform mail from a
+   * dedicated mailbox even when tenant mail goes through a different
+   * relay or SPF chain.
+   */
+  EMAIL_FROM_ACCOUNTS: z
+    .string()
+    .default("TraceTxn Accounts <accounts@tracetxn.com>"),
   EMAIL_REPLY_TO: z.string().optional(),
   /**
    * Deprecated platform-wide support contacts. Empty defaults, each

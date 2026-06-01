@@ -238,7 +238,12 @@ async function sendResetEmail(args: {
   ].join("\n");
   try {
     await mailer.sendMail({
-      from: env.server.EMAIL_FROM,
+      // Account-lifecycle mail (password reset, future signup welcome
+      // + trial notifications + subscription events) always leaves
+      // from EMAIL_FROM_ACCOUNTS so the customer sees a consistent
+      // platform identity, not whichever address happens to be the
+      // catch-all today.
+      from: env.server.EMAIL_FROM_ACCOUNTS,
       to: args.to,
       replyTo: env.server.EMAIL_REPLY_TO || undefined,
       subject: `Reset your ${appName} password`,
