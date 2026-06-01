@@ -17,7 +17,10 @@ export default async function AdminUsersPage({ searchParams }: UsersPageProps) {
   const actor = await requirePermission(Permission.USER_VIEW);
   const sp = await searchParams;
   const query = listUsersQuerySchema.parse(flatten(sp));
-  const data = await listUsers(query);
+  if (!actor.orgId) {
+    throw new Error("Active organization required to view the team");
+  }
+  const data = await listUsers(query, { orgId: actor.orgId });
 
   return (
     <div className="space-y-6">

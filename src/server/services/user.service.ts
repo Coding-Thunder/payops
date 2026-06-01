@@ -22,7 +22,7 @@ import type {
   ResetUserPasswordInput,
   UpdateUserInput,
 } from "@/lib/validation";
-import { User, type UserDoc } from "@/server/db/models";
+import { OrgMember, User, type UserDoc } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 import type { PublicUser } from "@/types";
 
@@ -67,9 +67,51 @@ function ensureCanManageRole(actor: UserActor, targetRole: UserRole) {
   }
 }
 
-export async function listUsers(query: ListUsersQuery) {
+/**
+ * Resolve the userIds that belong to a given org via the OrgMember
+ * join. Used by every user-management read so admins of org A never
+ * see — or operate on — users from org B.
+ *
+ * Membership is the source of truth: User.primaryOrgId is informative
+ * but not authoritative (a user could be invited to a second org and
+ * their primaryOrgId would still point at the first).
+ */
+async function memberUserIdsForOrg(orgId: string): Promise<Types.ObjectId[]> {
+  const memberships = await OrgMember.find({
+    orgId: new Types.ObjectId(orgId),
+    status: { $ne: RecordState.ARCHIVED },
+  })
+    .select({ userId: 1, _id: 0 })
+    .lean<{ userId: Types.ObjectId }[]>();
+  return memberships.map((m) => m.userId);
+}
+
+async function assertMember(orgId: string, userId: string): Promise<void> {
+  const exists = await OrgMember.exists({
+    orgId: new Types.ObjectId(orgId),
+    userId: new Types.ObjectId(userId),
+    status: { $ne: RecordState.ARCHIVED },
+  });
+  if (!exists) throw new NotFoundError("User not found");
+}
+
+interface ScopedListContext {
+  orgId: string;
+}
+
+export async function listUsers(
+  query: ListUsersQuery,
+  ctx: ScopedListContext,
+) {
   await connectMongo();
-  const filter: Record<string, unknown> = {};
+  const memberIds = await memberUserIdsForOrg(ctx.orgId);
+  // No members yet — short-circuit to an empty page so the rest of the
+  // query never sees a filter that would match the global collection.
+  if (memberIds.length === 0) {
+    return { items: [], total: 0, page: query.page, pageSize: query.pageSize };
+  }
+
+  const filter: Record<string, unknown> = { _id: { $in: memberIds } };
   if (query.role) filter.role = query.role;
   if (query.status) filter.status = query.status;
   if (query.q) {
@@ -101,9 +143,19 @@ export async function listUsers(query: ListUsersQuery) {
   };
 }
 
-export async function getUserById(id: string): Promise<PublicUser> {
+interface ScopedByIdContext {
+  orgId: string;
+}
+
+export async function getUserById(
+  id: string,
+  ctx: ScopedByIdContext,
+): Promise<PublicUser> {
   await connectMongo();
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("User not found");
+  // Membership pin first — strangers get the same 404 a missing user
+  // gets, so an admin of org A can't enumerate ids that belong to org B.
+  await assertMember(ctx.orgId, id);
   const doc = await User.findById(id).lean<UserDoc & { _id: Types.ObjectId }>();
   if (!doc) throw new NotFoundError("User not found");
   return toPublic(doc);
@@ -116,12 +168,20 @@ export async function createUser(
   await connectMongo();
   ensureCanManageRole(ctx.actor, input.role);
 
+  // orgId is required for new admin-provisioned users so the resulting
+  // OrgMember row pins them to the inviting org. Without it the user
+  // would exist but be unreachable from any tenant's team listing.
+  if (!ctx.orgId) {
+    throw new ValidationError("Active organization required to create a user");
+  }
+
   const existing = await User.exists({ email: input.email.toLowerCase() });
   if (existing) {
     throw new ConflictError("A user with that email already exists");
   }
 
   const passwordHash = await hashPassword(input.password);
+  const orgObjectId = new Types.ObjectId(ctx.orgId);
   const doc = await User.create({
     name: input.name,
     email: input.email.toLowerCase(),
@@ -129,6 +189,18 @@ export async function createUser(
     role: input.role,
     status: RecordState.ACTIVE,
     createdBy: new Types.ObjectId(ctx.actor.id),
+    primaryOrgId: orgObjectId,
+  });
+
+  // Pin the new user into the inviting org so the team listing (now
+  // scoped via OrgMember) actually shows them.
+  await OrgMember.create({
+    orgId: orgObjectId,
+    userId: doc._id,
+    role: input.role,
+    status: RecordState.ACTIVE,
+    invitedBy: new Types.ObjectId(ctx.actor.id),
+    joinedAt: new Date(),
   });
 
   await recordAudit({
@@ -165,6 +237,12 @@ export async function updateUser(
 ): Promise<PublicUser> {
   await connectMongo();
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("User not found");
+  if (!ctx.orgId) {
+    throw new ValidationError("Active organization required to update a user");
+  }
+  // Cross-tenant guard: same 404 a missing user gets so admins of org A
+  // can't probe org B for user ids.
+  await assertMember(ctx.orgId, id);
   const doc = await User.findById(id);
   if (!doc) throw new NotFoundError("User not found");
 
@@ -249,6 +327,12 @@ export async function resetUserPassword(
 ): Promise<void> {
   await connectMongo();
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("User not found");
+  if (!ctx.orgId) {
+    throw new ValidationError(
+      "Active organization required to reset a user's password",
+    );
+  }
+  await assertMember(ctx.orgId, id);
   const doc = await User.findById(id);
   if (!doc) throw new NotFoundError("User not found");
   ensureCanManageRole(ctx.actor, doc.role);
