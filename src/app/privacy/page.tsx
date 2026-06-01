@@ -322,8 +322,12 @@ const SECTIONS: LegalSection[] = [
             jurisdiction.
           </li>
           <li>
-            <strong>Security &amp; abuse-prevention logs:</strong> up to
-            12 months, then deleted or rolled up to aggregates.
+            <strong>Security &amp; abuse-prevention signals:</strong>{" "}
+            most live in our auth provider&apos;s logs (Firebase) or
+            in-process counters that aren&apos;t separately stored.
+            When we do persist a security signal on our side, it&apos;s
+            kept up to 12 months and then deleted or rolled up to
+            aggregates.
           </li>
           <li>
             <strong>Marketing / transactional email logs:</strong>{" "}
