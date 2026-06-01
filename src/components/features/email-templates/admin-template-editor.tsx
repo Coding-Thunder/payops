@@ -23,17 +23,19 @@ import { LoadingButton } from "@/components/ui/loading-button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
 import { api, ApiClientError } from "@/lib/api-client";
-import type { EmailTemplateKey } from "@/lib/constants/email-templates";
 import { cn } from "@/lib/utils";
 import type { EmailTemplateVersionDTO } from "@/types";
 
 interface TemplateOption {
-  key: EmailTemplateKey;
+  key: string;
   label: string;
 }
 
 interface AdminTemplateEditorProps {
-  templateKey: EmailTemplateKey;
+  /** Either a SYSTEM_EMAIL_TEMPLATE_KEYS entry or a tenant-defined
+   *  custom kebab slug. The editor doesn't care; the version-create
+   *  route handles both shapes. */
+  templateKey: string;
   templates: readonly TemplateOption[];
   versions: EmailTemplateVersionDTO[];
   activeVersion: EmailTemplateVersionDTO | null;
@@ -390,7 +392,7 @@ function Field({ label, hint, children }: FieldProps) {
 }
 
 interface TemplateSwitcherProps {
-  templateKey: EmailTemplateKey;
+  templateKey: string;
   templates: readonly TemplateOption[];
   activeVersionLabel: number | null;
   totalVersions: number;

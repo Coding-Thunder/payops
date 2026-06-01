@@ -1,6 +1,13 @@
 import Link from "next/link";
-import { FilePenLineIcon, MailIcon } from "lucide-react";
+import {
+  FilePenLineIcon,
+  MailIcon,
+  PlusIcon,
+  SparklesIcon,
+  WrenchIcon,
+} from "lucide-react";
 
+import { NewCustomTemplateButton } from "@/components/features/email-templates/new-custom-template-button";
 import { PageHeader } from "@/components/common/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,158 +19,177 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  EMAIL_TEMPLATE_KEYS,
-  type EmailTemplateKey,
-} from "@/lib/constants/email-templates";
 import { Permission } from "@/lib/constants/permissions";
-import { formatDateTime } from "@/lib/format";
 import { requirePermission } from "@/server/auth/session";
-import {
-  getActiveTemplate,
-  listTemplateVersions,
-} from "@/server/services/email-template.service";
+import { listAllTemplatesSummary } from "@/server/services/email-template.service";
 
 export const metadata = { title: "Email templates" };
 export const dynamic = "force-dynamic";
 
-interface TemplateCardData {
-  key: EmailTemplateKey;
-  label: string;
-  purpose: string;
-  activeVersion: number | null;
-  totalVersions: number;
-  lastUpdatedAt: string | null;
-}
-
-const TEMPLATE_META: Record<
-  EmailTemplateKey,
-  { label: string; purpose: string }
-> = {
-  "payment-request": {
-    label: "Payment request",
-    purpose:
-      "Sent by an agent from the composer. Contains the consent CTA and the Stripe payment link.",
-  },
-  "payment-confirmation": {
-    label: "Payment confirmation",
-    purpose:
-      "Sent automatically after Stripe confirms a payment. The customer's receipt and booking summary.",
-  },
-};
-
 /**
- * Two-template list view.
- *
- * Linear, equal-citizen layout: both `payment-request` AND
- * `payment-confirmation` are surfaced as separate first-class cards. No
- * more redirect-to-default. Each card shows the active version, total
- * version count, last-updated stamp, and an "Edit" CTA that routes to
- * the isolated editor for that template (separate version histories).
+ * Two sections: System (platform-defined kinds, always present) and
+ * Custom (tenant-defined, can be empty until the operator creates
+ * one). Both render the same card shape so the visual hierarchy is
+ * consistent.
  */
 export default async function AdminEmailTemplatesIndex() {
   const user = await requirePermission(Permission.EMAIL_TEMPLATE_VIEW);
+  if (!user.orgId) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Admin"
+          title="Email templates"
+          description="Active organization required."
+        />
+      </div>
+    );
+  }
 
-  const cards: TemplateCardData[] = await Promise.all(
-    EMAIL_TEMPLATE_KEYS.map(async (key) => {
-      const [active, versions] = await Promise.all([
-        getActiveTemplate(key, user.orgId),
-        listTemplateVersions(key, user.orgId),
-      ]);
-      return {
-        key,
-        label: TEMPLATE_META[key].label,
-        purpose: TEMPLATE_META[key].purpose,
-        activeVersion: active?.version ?? null,
-        totalVersions: versions.length,
-        lastUpdatedAt: versions[0]?.updatedAt ?? null,
-      };
-    }),
-  );
+  const summaries = await listAllTemplatesSummary(user.orgId);
+  const system = summaries.filter((s) => s.kind === "system");
+  const custom = summaries.filter((s) => s.kind === "custom");
 
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="Admin"
         title="Email templates"
-        description="Customer transactional email copy, versioned per template. Each template has its own history and editor."
+        description="System templates ship with the platform; custom templates are yours to name, edit, and send manually from any order, customer, or payment screen."
+        actions={<NewCustomTemplateButton />}
       />
 
-      <div className="grid gap-4 md:grid-cols-2">
-        {cards.map((card) => (
-          <Card key={card.key} className="flex flex-col">
-            <CardHeader>
-              <div className="flex items-start justify-between gap-3">
-                <div className="space-y-1.5">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <MailIcon
-                      className="size-4 text-muted-foreground"
-                      aria-hidden
-                    />
-                    {card.label}
-                  </CardTitle>
-                  <CardDescription>{card.purpose}</CardDescription>
-                </div>
-                {card.activeVersion != null ? (
-                  <Badge variant="info">v{card.activeVersion}</Badge>
-                ) : (
-                  <Badge variant="muted">System default</Badge>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent className="flex-1 space-y-2 text-[12.5px]">
-              <Row label="Active version">
-                {card.activeVersion != null
-                  ? `v${card.activeVersion}`
-                  : "Built-in fallback (no override saved)"}
-              </Row>
-              <Row label="Versions">
-                {card.totalVersions === 0
-                  ? "-"
-                  : `${card.totalVersions} version${card.totalVersions === 1 ? "" : "s"}`}
-              </Row>
-              <Row label="Last updated">
-                {card.lastUpdatedAt
-                  ? formatDateTime(card.lastUpdatedAt)
-                  : "-"}
-              </Row>
+      <section className="space-y-3">
+        <SectionHeading
+          icon={WrenchIcon}
+          title="System templates"
+          subtitle="Platform-defined, always present. Edit the copy to match your brand voice."
+        />
+        <div className="grid gap-4 md:grid-cols-2">
+          {system.map((card) => (
+            <TemplateCard
+              key={card.templateKey}
+              templateKey={card.templateKey}
+              displayName={card.displayName}
+              description={card.description}
+              kind="system"
+              hasActiveVersion={card.hasActiveVersion}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <SectionHeading
+          icon={SparklesIcon}
+          title="Custom templates"
+          subtitle="Tenant-defined. Name them, draft the copy, then fire from any order or customer surface."
+        />
+        {custom.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-start gap-3 pt-6 pb-6">
+              <p className="text-[13.5px] text-muted-foreground">
+                No custom templates yet. Create one for &ldquo;Payment
+                Reminder&rdquo;, &ldquo;Booking Confirmation&rdquo;, or any
+                ad-hoc message your team sends repeatedly.
+              </p>
+              <NewCustomTemplateButton variant="outline" />
             </CardContent>
-            <CardFooter className="flex justify-end gap-2">
-              <Button asChild variant="ghost" size="sm">
-                <Link
-                  href={`/app/admin/emails?template=${card.key}`}
-                  prefetch={false}
-                >
-                  Preview
-                </Link>
-              </Button>
-              <Button asChild size="sm">
-                <Link href={`/app/admin/email-templates/${card.key}`}>
-                  <FilePenLineIcon className="size-3.5" />
-                  Edit
-                </Link>
-              </Button>
-            </CardFooter>
           </Card>
-        ))}
-      </div>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {custom.map((card) => (
+              <TemplateCard
+                key={card.templateKey}
+                templateKey={card.templateKey}
+                displayName={card.displayName}
+                description={card.description}
+                kind="custom"
+                hasActiveVersion={card.hasActiveVersion}
+              />
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
 
-function Row({
-  label,
-  children,
+interface TemplateCardProps {
+  templateKey: string;
+  displayName: string;
+  description: string | null;
+  kind: "system" | "custom";
+  hasActiveVersion: boolean;
+}
+
+function TemplateCard({
+  templateKey,
+  displayName,
+  description,
+  kind,
+  hasActiveVersion,
+}: TemplateCardProps) {
+  return (
+    <Card className="flex flex-col">
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1.5 min-w-0">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <MailIcon
+                className="size-4 shrink-0 text-muted-foreground"
+                aria-hidden
+              />
+              <span className="truncate">{displayName}</span>
+            </CardTitle>
+            <CardDescription className="break-words">
+              {description ?? "Tenant-defined transactional template."}
+            </CardDescription>
+          </div>
+          <Badge variant={hasActiveVersion ? "info" : "muted"}>
+            {hasActiveVersion
+              ? kind === "custom"
+                ? "Live"
+                : "Customised"
+              : "System default"}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="flex-1">
+        <p className="font-mono text-[11px] text-muted-foreground">
+          key: {templateKey}
+        </p>
+      </CardContent>
+      <CardFooter className="justify-end gap-2">
+        <Button asChild size="sm">
+          <Link href={`/app/admin/email-templates/${templateKey}`}>
+            <FilePenLineIcon className="size-3.5" />
+            Edit
+          </Link>
+        </Button>
+      </CardFooter>
+    </Card>
+  );
+}
+
+function SectionHeading({
+  icon: Icon,
+  title,
+  subtitle,
 }: {
-  label: string;
-  children: React.ReactNode;
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  subtitle: string;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-3">
-      <dt className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-        {label}
-      </dt>
-      <dd className="text-foreground">{children}</dd>
+    <div className="flex items-start gap-2.5">
+      <Icon className="mt-0.5 size-3.5 text-muted-foreground" aria-hidden />
+      <div>
+        <h2 className="text-[13px] font-semibold tracking-tight text-foreground">
+          {title}
+        </h2>
+        <p className="text-[12px] text-muted-foreground">{subtitle}</p>
+      </div>
     </div>
   );
 }

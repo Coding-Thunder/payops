@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
 
+import { SendTemplateButton } from "@/components/features/email-templates/send-template-button";
 import { ArchiveOrderButton } from "@/components/features/orders/archive-order-button";
 import { OrderConsentCard } from "@/components/features/orders/order-consent-card";
 import { OrderDetailsCard } from "@/components/features/orders/order-details-card";
@@ -158,6 +159,14 @@ export function OrderDetailPageContent({
               <Badge variant="destructive">Flagged</Badge>
             ) : null}
             {canFlagRisk ? <RiskFlagDialog order={order} /> : null}
+            <SendTemplateButton
+              defaultRecipient={order.customer.email}
+              source={{
+                kind: "order",
+                orderId: order.id,
+                orderNumber: order.orderNumber,
+              }}
+            />
             {canArchive ? <ArchiveOrderButton orderId={order.id} /> : null}
           </div>
         }
