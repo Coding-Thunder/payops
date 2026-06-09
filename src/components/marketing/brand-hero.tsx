@@ -65,18 +65,19 @@ export function BrandHero() {
           </p>
 
           <h1 className="mt-7 font-display text-[clamp(2.4rem,6.5vw,4.6rem)] font-medium leading-[1.05] tracking-[-0.025em] text-white">
-            Track every transaction.{" "}
+            Every transaction traced.{" "}
             <span className="block font-semibold text-[color:var(--brand-emerald)]">
-              Evidence built automatically.
+              Every dollar defended.
             </span>
           </h1>
 
           <p className="mt-6 max-w-xl text-[15px] leading-relaxed text-white/75">
-            TraceTxn is the operational console between you and your payment
-            processor. Lifecycle visibility on every order, a hashed
-            evidence chain on every transition, hosted consent before the
-            charge, so chargebacks resolve in your favour and your team
-            spends time on growth, not paperwork.
+            TraceTxn connects your internal order data, customer invoices,
+            and explicit user consent directly to your payment processor.
+          </p>
+          <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-white/75">
+            Eliminate data fragmentation, automate your revenue defense, and
+            secure your financial infrastructure, all in one continuous line.
           </p>
 
           <div className="mt-9 flex flex-wrap items-center gap-3">
@@ -92,7 +93,7 @@ export function BrandHero() {
               variant="outline"
               className="border-white/30 bg-white/5 text-white backdrop-blur-sm hover:bg-white/10 hover:text-white"
             >
-              <Link href="#evidence">See evidence flow</Link>
+              <Link href="#how-it-works">See how it works</Link>
             </Button>
           </div>
 

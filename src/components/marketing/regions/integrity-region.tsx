@@ -37,62 +37,6 @@ const STATS: Stat[] = [
   },
 ];
 
-const SHAPES: Array<{
-  vertical: string;
-  itemTypeKey: string;
-  attrs: string;
-  evidence: string;
-}> = [
-  {
-    vertical: "Retail",
-    itemTypeKey: "product",
-    attrs: "sku · size · color · image",
-    evidence: "gateway receipt + delivery proof",
-  },
-  {
-    vertical: "Grocery",
-    itemTypeKey: "grocery_sku",
-    attrs: "unit · weight · batch_lot",
-    evidence: "pick-list + signed delivery",
-  },
-  {
-    vertical: "Pharmacy",
-    itemTypeKey: "rx_product",
-    attrs: "rx_number · dose · insurance_id",
-    evidence: "rx signature + insurance verify",
-  },
-  {
-    vertical: "Repair",
-    itemTypeKey: "repair_job",
-    attrs: "device_id · diagnosis · parts_used",
-    evidence: "pre/post photos + sign-off",
-  },
-  {
-    vertical: "Dealership",
-    itemTypeKey: "vehicle_sale",
-    attrs: "vin · model_year · financing_terms",
-    evidence: "signed contract + title transfer",
-  },
-  {
-    vertical: "Services",
-    itemTypeKey: "service_visit",
-    attrs: "service_code · technician · duration",
-    evidence: "completion + customer signature",
-  },
-  {
-    vertical: "Equipment",
-    itemTypeKey: "rental_booking",
-    attrs: "asset_id · starts_at · ends_at",
-    evidence: "condition photos + handover log",
-  },
-  {
-    vertical: "B2B",
-    itemTypeKey: "net_invoice",
-    attrs: "po_number · terms_days · contract_ref",
-    evidence: "PO match + remittance trail",
-  },
-];
-
 const PILLARS: Array<{ k: string; title: string; body: string }> = [
   {
     k: "01",
@@ -221,45 +165,6 @@ export function IntegrityRegion() {
             </div>
           </div>
         ))}
-      </div>
-
-      {/* Commerce shapes inline ledger */}
-      <div className="mt-16">
-        <div className="flex items-baseline justify-between border-b border-border pb-2">
-          <h3 className="text-[13px] font-semibold tracking-tight">
-            The schema bends to your business
-          </h3>
-          <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-            itemType · attributes · evidence
-          </span>
-        </div>
-        <ul className="divide-y divide-border">
-          {SHAPES.map((s) => (
-            <li
-              key={s.itemTypeKey}
-              className="grid grid-cols-1 items-baseline gap-x-6 gap-y-1 py-2.5 md:grid-cols-[7rem_minmax(0,10rem)_minmax(0,1fr)_minmax(0,1.1fr)]"
-            >
-              <span className="text-[13px] font-medium">{s.vertical}</span>
-              <span
-                className="font-mono text-[11.5px]"
-                style={{ color: "var(--success-strong)" }}
-              >
-                {s.itemTypeKey}
-              </span>
-              <span className="font-mono text-[11.5px] text-muted-foreground">
-                {s.attrs}
-              </span>
-              <span className="font-mono text-[11.5px] text-muted-foreground">
-                {s.evidence}
-              </span>
-            </li>
-          ))}
-        </ul>
-        <p className="mt-5 max-w-[64ch] text-[13px] leading-relaxed text-muted-foreground">
-          Catalog editor accepts any shape. If your business doesn&apos;t
-          appear above, the same backbone carries it, define your item
-          type, declare your attributes, run your first order.
-        </p>
       </div>
     </section>
   );

@@ -1,4 +1,4 @@
-/* eslint-disable no-console */
+ 
 /**
  * End-to-end user-story exercise — runs against the configured
  * MongoDB (`.env.local`). Drives the same services the API routes

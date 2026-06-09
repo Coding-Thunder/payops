@@ -1,4 +1,4 @@
-/* eslint-disable no-console */
+ 
 import mongoose from "mongoose";
 
 async function main() {

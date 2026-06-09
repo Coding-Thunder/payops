@@ -25,11 +25,14 @@ export interface DocumentAnchor {
 }
 
 const ANCHORS: DocumentAnchor[] = [
-  { id: "evidence", label: "Evidence", index: "01" },
-  { id: "lifecycle", label: "Lifecycle", index: "02" },
-  { id: "gateways", label: "Gateways", index: "03" },
-  { id: "integrity", label: "Integrity", index: "04" },
-  { id: "setup", label: "Setup", index: "05" },
+  { id: "how-it-works", label: "How it works", index: "01" },
+  { id: "audience", label: "Who it's for", index: "02" },
+  { id: "features", label: "Features", index: "03" },
+  { id: "comparison", label: "Comparison", index: "04" },
+  { id: "evidence", label: "Evidence", index: "05" },
+  { id: "integrity", label: "Security", index: "06" },
+  { id: "gateways", label: "Gateways", index: "07" },
+  { id: "setup", label: "Setup", index: "08" },
 ];
 
 /* ─────────────────────────── Top band ───────────────────────────────── */

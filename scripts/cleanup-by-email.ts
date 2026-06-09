@@ -1,4 +1,4 @@
-/* eslint-disable no-console */
+ 
 /**
  * Dev-only cleanup: removes all records associated with a target
  * email across the user-data collections. Reads MONGODB_URI +

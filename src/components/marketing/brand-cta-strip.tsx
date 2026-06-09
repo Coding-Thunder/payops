@@ -36,12 +36,13 @@ export function BrandCtaStrip() {
                 Open a workspace in 3 minutes
               </p>
               <h2 className="mt-3 font-display text-[clamp(1.6rem,3.2vw,2.4rem)] font-medium leading-[1.15] tracking-[-0.015em] text-white">
-                Payment operations,{" "}
-                <span className="font-semibold">simplified.</span>
+                Build bulletproof{" "}
+                <span className="font-semibold">payment operations.</span>
               </h2>
               <p className="mt-4 max-w-xl text-[14px] leading-relaxed text-white/72">
-                Connect your Stripe account, define what you sell, take your
-                first payment. No call required. No engineer required.
+                Connect your core stack, eliminate fragmented tracking gaps,
+                and protect your merchant processing pipeline. No call
+                required. No engineer required.
               </p>
             </div>
 

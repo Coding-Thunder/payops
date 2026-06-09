@@ -1,4 +1,4 @@
-/* eslint-disable no-console */
+ 
 /**
  * Dev-only cleanup: drops EVERY document from EVERY collection
  * EXCEPT `users` across one or more databases. Lists what's there

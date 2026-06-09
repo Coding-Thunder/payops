@@ -73,7 +73,7 @@ const PILLARS: LifecyclePillar[] = [
 export function LifecycleRegion() {
   return (
     <section
-      id="lifecycle"
+      id="how-it-works"
       className="scroll-mt-20 -mx-6 lg:-mx-10 px-6 lg:px-10 py-20 sm:py-24 mt-20 sm:mt-28"
       style={{ background: "var(--background)" }}
     >
@@ -86,18 +86,19 @@ export function LifecycleRegion() {
               className="size-1.5 rounded-full"
               style={{ background: "var(--brand-emerald)" }}
             />
-            Lifecycle
+            How it works
           </p>
           <h2 className="mt-6 font-display text-[clamp(1.8rem,4vw,2.8rem)] font-medium leading-[1.08] tracking-[-0.022em]">
-            One lifecycle, one source of truth.{" "}
+            Every milestone linked{" "}
             <span className="font-semibold text-[color:var(--brand-emerald)]">
-              Visible in realtime.
+              in a single line.
             </span>
           </h2>
           <p className="mt-5 max-w-xl text-[14.5px] leading-relaxed text-muted-foreground">
-            Operators stop asking &ldquo;is this paid yet&rdquo;, the answer
-            is the chain. Ten states, one canonical record, every surface
-            reading the same row.
+            Move away from disconnected tracking. TraceTxn monitors and
+            anchors every stage of the customer journey, from order created
+            to the final payment ledger event, on one canonical chain every
+            surface reads in realtime.
           </p>
         </div>
 

@@ -28,7 +28,7 @@ export default async function ForgotPasswordPage() {
               Reset your password
             </h1>
             <p className="text-[13px] text-muted-foreground leading-relaxed">
-              Enter the email tied to your account. We'll send a link
+              Enter the email tied to your account. We&apos;ll send a link
               that expires in 30 minutes.
             </p>
           </div>

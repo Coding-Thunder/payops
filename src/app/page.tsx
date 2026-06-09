@@ -5,8 +5,11 @@ import { BrandFooter } from "@/components/marketing/brand-footer";
 import { BrandHero } from "@/components/marketing/brand-hero";
 import { BrandNav } from "@/components/marketing/brand-nav";
 import { DocumentRail } from "@/components/marketing/page-chrome";
+import { AudienceRegion } from "@/components/marketing/regions/audience-region";
 import { ClosingRegion } from "@/components/marketing/regions/closing-region";
+import { ComparisonRegion } from "@/components/marketing/regions/comparison-region";
 import { EvidenceRegion } from "@/components/marketing/regions/evidence-region";
+import { FeaturesRegion } from "@/components/marketing/regions/features-region";
 import { GatewaysRegion } from "@/components/marketing/regions/gateways-region";
 import { IntegrityRegion } from "@/components/marketing/regions/integrity-region";
 import { LifecycleRegion } from "@/components/marketing/regions/lifecycle-region";
@@ -18,7 +21,7 @@ export const metadata: Metadata = {
   title:
     "Payment Operations Platform · Chargeback Evidence · Multi-Gateway Orchestration",
   description:
-    "Lifecycle visibility from order creation to chargeback. Hashed evidence chain, hosted consent, multi-gateway orchestration. Built for retail, services, repair, dealership, and B2B commerce. Stripe live · Razorpay + Authorize.net next.",
+    "Every transaction traced, every dollar defended. TraceTxn connects order data, customer invoices, and explicit consent to your payment processor, with a hashed evidence chain, dispute-ready exports, and gateway-agnostic orchestration. Built for Shopify, e-commerce, SaaS, agencies, and B2B commerce. Stripe live · Razorpay + Authorize.net next.",
   alternates: { canonical: "/" },
 };
 
@@ -27,19 +30,25 @@ export const metadata: Metadata = {
  *
  *   1. BrandNav     , sticky top, switches to blurred-white chrome
  *                       on scroll
- *   2. BrandHero     , light-mode hero with the four-node trace
- *                       diagram + dual CTA + checklist
- *   3. Rich regions , existing product content (Evidence, Lifecycle,
- *                       Gateways, Integrity, Setup), wrapped by the
- *                       DocumentRail "table of contents"
- *   4. BrandCtaStrip, Deep Navy conversion panel before the footer
- *   5. ClosingRegion, quotation / sales contact form
+ *   2. BrandHero     , dark hero, "Every transaction traced. Every
+ *                       dollar defended." + dual CTA + checklist
+ *   3. Rich regions , narrative-ordered product content wrapped by the
+ *                       DocumentRail "table of contents":
+ *                         How it works  → LifecycleRegion (timeline)
+ *                         Who it's for  → AudienceRegion (verticals)
+ *                         Features      → FeaturesRegion (capability map)
+ *                         Comparison    → ComparisonRegion (vs. baseline)
+ *                         Evidence      → EvidenceRegion (case file)
+ *                         Security      → IntegrityRegion (compliance)
+ *                         Gateways      → GatewaysRegion (payment infra)
+ *                         Setup         → SetupRegion (onboarding)
+ *   4. ClosingRegion, quotation / sales contact form
+ *   5. BrandCtaStrip, Deep Navy conversion panel before the footer
  *   6. BrandFooter   , brand wordmark + 3 link columns + status pill
  *
- * The rich regions retain their original content + layout, the
- * brand-v1 pass replaces only the chrome (nav, hero, CTA, footer) so
- * the dense product content stays readable while the entry surface
- * matches the spec.
+ * Narrative arc: problem (fragmentation) → solution (one continuous
+ * line) → proof (timeline + features + comparison) → trust (evidence +
+ * security) → conversion (CTA).
  */
 export default function LandingPage() {
   return (
@@ -49,9 +58,8 @@ export default function LandingPage() {
       <BrandHero />
 
       {/* Document body, quiet ledger-grid backing behind the
-          existing rich regions. */}
+          narrative-ordered rich regions. */}
       <main
-        id="features"
         className="relative"
         style={{
           backgroundImage: "var(--doc-grid)",
@@ -62,10 +70,13 @@ export default function LandingPage() {
           <div className="grid grid-cols-1 gap-x-12 lg:grid-cols-[10rem_minmax(0,1fr)] lg:items-start">
             <DocumentRail />
             <div className="min-w-0">
-              <EvidenceRegion />
               <LifecycleRegion />
-              <GatewaysRegion />
+              <AudienceRegion />
+              <FeaturesRegion />
+              <ComparisonRegion />
+              <EvidenceRegion />
               <IntegrityRegion />
+              <GatewaysRegion />
               <SetupRegion />
               <ClosingRegion
                 turnstileSiteKey={

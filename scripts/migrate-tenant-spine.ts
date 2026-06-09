@@ -1,4 +1,4 @@
-/* eslint-disable no-console */
+ 
 /**
  * Phase 0 + Phase 1 migration: introduce the tenant spine.
  *
