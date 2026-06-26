@@ -43,8 +43,26 @@ export function ConfirmationNumberCard({ order }: ConfirmationNumberCardProps) {
   async function resend() {
     setResending(true);
     try {
-      await api.post(`/api/orders/${order.id}/resend-confirmation`, {});
-      toast.success("Confirmation email resent to the customer");
+      // One-click: persist any unsaved edit first so the resent email carries
+      // the number the agent currently sees, then resend.
+      if (value.trim() !== current) {
+        await api.post(`/api/orders/${order.id}/confirmation-number`, {
+          confirmationNumber: value.trim(),
+        });
+      }
+      const res = await api.post<{ emailId: string | null }>(
+        `/api/orders/${order.id}/resend-confirmation`,
+        {},
+      );
+      // `emailId` is null when SMTP isn't configured / the send was skipped —
+      // surface that instead of a false "sent" success.
+      if (res?.emailId) {
+        toast.success("Confirmation email resent to the customer");
+      } else {
+        toast.error(
+          "Saved, but the email was not sent — email delivery isn't configured. Check Admin → email/SMTP settings.",
+        );
+      }
       router.refresh();
     } catch (err) {
       const message =
@@ -132,6 +150,9 @@ export function ConfirmationNumberCard({ order }: ConfirmationNumberCardProps) {
               The confirmation email was sent automatically on payment. If
               you&apos;ve added or changed the confirmation number since, resend
               it so the customer receives the updated copy.
+              {dirty
+                ? " Resending will save your current change first."
+                : ""}
             </p>
             <LoadingButton
               variant="outline"
@@ -139,15 +160,10 @@ export function ConfirmationNumberCard({ order }: ConfirmationNumberCardProps) {
               onClick={resend}
               loading={resending}
               loadingText="Sending"
-              disabled={dirty}
+              disabled={saving}
             >
-              Resend confirmation email
+              {dirty ? "Save & resend confirmation email" : "Resend confirmation email"}
             </LoadingButton>
-            {dirty ? (
-              <p className="text-[11px] text-muted-foreground">
-                Save the confirmation number first, then resend.
-              </p>
-            ) : null}
           </div>
         ) : null}
       </CardContent>
