@@ -15,5 +15,6 @@ export {
   type EmailChargeBreakdown,
   type EmailChargeLine,
 } from "./charge-breakdown";
+export { EmailTermsSection } from "./terms-section";
 export { SupportSection } from "./support-section";
 export * from "./tokens";

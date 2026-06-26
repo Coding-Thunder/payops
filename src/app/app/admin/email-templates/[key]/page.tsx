@@ -75,6 +75,8 @@ export default async function AdminTemplateEditorPage({ params }: PageProps) {
       },
       cancellationPolicy: settings.cancellationPolicy,
       cancellationPolicyVersion: settings.cancellationPolicyVersion,
+      termsAndConditions: settings.termsAndConditions,
+      termsVersion: settings.termsVersion,
       bookingType: BookingType.NEW_BOOKING,
     };
     if (templateKey === "payment-request") {

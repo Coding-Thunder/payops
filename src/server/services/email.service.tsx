@@ -431,6 +431,8 @@ export async function composePaymentRequestProps(
     note: overrides.note ?? tpl?.note ?? null,
     cancellationPolicy: order.policy?.text ?? "",
     cancellationPolicyVersion: order.policy?.version ?? undefined,
+    termsText: order.terms?.text || null,
+    termsVersion: order.terms?.version ?? null,
     primaryCta: primaryCta ?? undefined,
     consentMailto,
     consentRequired,

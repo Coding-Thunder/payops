@@ -108,6 +108,10 @@ export function buildPaymentRequestPreviewProps(
     note: null,
     cancellationPolicy: args.cancellationPolicy,
     cancellationPolicyVersion: args.cancellationPolicyVersion,
+    termsText:
+      args.termsAndConditions ??
+      "The prepaid amount is charged today to secure your reservation. The balance shown as due at counter is collected at pick-up.\nA valid driver's licence and the payment card used must be presented at pick-up.",
+    termsVersion: args.termsVersion ?? "v1",
     primaryCta: {
       url: `${args.appUrl.replace(/\/$/, "")}/consent/preview-token`,
       label: "Review & Confirm Booking",

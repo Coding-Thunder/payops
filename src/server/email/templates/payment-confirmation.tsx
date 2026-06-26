@@ -20,6 +20,7 @@ import {
   EmailFooter,
   EmailHeader,
   EmailLayout,
+  EmailTermsSection,
   MetadataRow,
   ProviderBadge,
   RADIUS,
@@ -93,9 +94,6 @@ export function PaymentConfirmationEmail({
   const preview = `${brandName} — payment confirmed for ${orderNumber} (${amount})`;
   const policyParagraphs = cancellationPolicy
     ? cancellationPolicy.split(/\n+/).filter((p) => p.trim().length > 0)
-    : [];
-  const termsParagraphs = termsText
-    ? termsText.split(/\n+/).filter((p) => p.trim().length > 0)
     : [];
   const pickupValue = trip.pickupLocation
     ? `${trip.pickupDate} · ${trip.pickupLocation}`
@@ -305,74 +303,14 @@ export function PaymentConfirmationEmail({
         </>
       ) : null}
 
-      {termsParagraphs.length > 0 ? (
-        <>
-          <Hr
-            style={{
-              margin: 0,
-              borderColor: COLOR.borderSoft,
-              borderTopWidth: 1,
-            }}
-          />
-          <SummaryCard
-            title="Terms & Conditions"
-            topPadding={SPACE.xl}
-            bottomPadding={SPACE.lg}
-          >
-            {termsParagraphs.map((paragraph, idx) => (
-              <Text
-                key={idx}
-                style={{
-                  ...typeStyle("label"),
-                  margin: 0,
-                  marginTop: idx === 0 ? 0 : 8,
-                  color: COLOR.textSecondary,
-                  fontSize: 13,
-                  lineHeight: "20px",
-                }}
-              >
-                {paragraph}
-              </Text>
-            ))}
-            {acknowledgeUrl ? (
-              <>
-                <Link
-                  href={acknowledgeUrl}
-                  style={{
-                    display: "inline-block",
-                    marginTop: SPACE.lg,
-                    backgroundColor: COLOR.textPrimary,
-                    color: COLOR.textInverted,
-                    fontSize: 14,
-                    fontWeight: 600,
-                    padding: "11px 22px",
-                    borderRadius: RADIUS.md,
-                    textDecoration: "none",
-                    textAlign: "center",
-                  }}
-                >
-                  I Agree
-                </Link>
-                <Text
-                  style={{
-                    ...typeStyle("legal"),
-                    margin: 0,
-                    marginTop: SPACE.sm,
-                    color: COLOR.textMuted,
-                    fontSize: 11,
-                    lineHeight: "16px",
-                  }}
-                >
-                  By clicking &ldquo;I Agree&rdquo; you confirm you have read and
-                  accept these terms
-                  {termsVersion ? ` (version ${termsVersion})` : ""}. Your
-                  acknowledgement is recorded against this booking.
-                </Text>
-              </>
-            ) : null}
-          </SummaryCard>
-        </>
-      ) : null}
+      {/* Shared Terms & Conditions section — same component the payment
+          request email uses, so the T&C never drifts between templates. The
+          confirmation variant also carries the "I Agree" acknowledgement. */}
+      <EmailTermsSection
+        termsText={termsText}
+        termsVersion={termsVersion}
+        acknowledgeUrl={acknowledgeUrl}
+      />
 
       <SupportSection
         orderNumber={orderNumber}

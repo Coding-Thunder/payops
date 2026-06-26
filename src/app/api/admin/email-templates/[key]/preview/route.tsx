@@ -89,6 +89,8 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
     },
     cancellationPolicy: settings.cancellationPolicy,
     cancellationPolicyVersion: settings.cancellationPolicyVersion,
+    termsAndConditions: settings.termsAndConditions,
+    termsVersion: settings.termsVersion,
     bookingType,
   };
 

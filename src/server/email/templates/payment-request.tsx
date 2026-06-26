@@ -20,6 +20,7 @@ import {
   EmailFooter,
   EmailHeader,
   EmailLayout,
+  EmailTermsSection,
   MetadataRow,
   ProviderBadge,
   RADIUS,
@@ -78,6 +79,12 @@ export interface PaymentRequestEmailProps {
   cancellationPolicy?: string;
   cancellationPolicyVersion?: string;
 
+  /** Rental Terms & Conditions — rendered via the shared EmailTermsSection
+   *  just before the footer (text only; the "I Agree" acknowledgement is
+   *  confirmation-email-only). */
+  termsText?: string | null;
+  termsVersion?: string | null;
+
   /** Consent-first flow: callers compute the single primary CTA from the
    *  order's consent state and pass it here.
    *
@@ -131,6 +138,8 @@ export function PaymentRequestEmail({
   note,
   cancellationPolicy,
   cancellationPolicyVersion,
+  termsText,
+  termsVersion,
   primaryCta,
   consentMailto,
   consentRequired,
@@ -499,6 +508,10 @@ export function PaymentRequestEmail({
           </SummaryCard>
         </>
       ) : null}
+
+      {/* Shared Terms & Conditions — same component the confirmation email
+          uses (text only here; no "I Agree" pre-payment). */}
+      <EmailTermsSection termsText={termsText} termsVersion={termsVersion} />
 
       <SupportSection
         orderNumber={orderNumber}
