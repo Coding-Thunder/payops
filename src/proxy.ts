@@ -37,6 +37,13 @@ const PUBLIC_PREFIXES = [
   // whitelisted; consent.service verifies the token before touching DB.
   "/consent/",
   "/api/consent/",
+  // Post-payment Terms acknowledgement — the "I Agree" button in the
+  // confirmation email. Same model as /consent: the customer has NO staff
+  // session, the signed ack token in the URL is the credential. Without
+  // this, the proxy 307s the customer to /login (the internal ops portal).
+  // acknowledgement.service verifies the HMAC token before any DB write.
+  "/acknowledge/",
+  "/api/acknowledge/",
 ];
 
 /** Admin-only path prefixes (super_admin + admin). */
