@@ -15,6 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/sonner";
 import { api, ApiClientError } from "@/lib/api-client";
+import { OrderStatus } from "@/lib/constants/enums";
 import type { OrderDTO } from "@/types";
 
 interface ConfirmationNumberCardProps {
@@ -34,8 +35,27 @@ export function ConfirmationNumberCard({ order }: ConfirmationNumberCardProps) {
   // typed, so the field stays correct without a sync effect.
   const [value, setValue] = useState(current);
   const [saving, setSaving] = useState(false);
+  const [resending, setResending] = useState(false);
 
   const dirty = value.trim() !== current;
+  const isPaid = order.status === OrderStatus.PAID;
+
+  async function resend() {
+    setResending(true);
+    try {
+      await api.post(`/api/orders/${order.id}/resend-confirmation`, {});
+      toast.success("Confirmation email resent to the customer");
+      router.refresh();
+    } catch (err) {
+      const message =
+        err instanceof ApiClientError
+          ? err.message
+          : "Could not resend the confirmation email";
+      toast.error(message);
+    } finally {
+      setResending(false);
+    }
+  }
 
   async function save() {
     setSaving(true);
@@ -104,6 +124,31 @@ export function ConfirmationNumberCard({ order }: ConfirmationNumberCardProps) {
           <p className="text-[11.5px] text-muted-foreground">
             No confirmation number set yet.
           </p>
+        ) : null}
+
+        {isPaid ? (
+          <div className="space-y-2 border-t border-border pt-3">
+            <p className="text-[11.5px] text-muted-foreground">
+              The confirmation email was sent automatically on payment. If
+              you&apos;ve added or changed the confirmation number since, resend
+              it so the customer receives the updated copy.
+            </p>
+            <LoadingButton
+              variant="outline"
+              size="sm"
+              onClick={resend}
+              loading={resending}
+              loadingText="Sending"
+              disabled={dirty}
+            >
+              Resend confirmation email
+            </LoadingButton>
+            {dirty ? (
+              <p className="text-[11px] text-muted-foreground">
+                Save the confirmation number first, then resend.
+              </p>
+            ) : null}
+          </div>
         ) : null}
       </CardContent>
     </Card>

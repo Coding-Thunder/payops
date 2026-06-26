@@ -39,6 +39,7 @@ const ICONS: Partial<Record<OrderEvidenceEventDTO["eventType"], React.ComponentT
   PAYMENT_STARTED: CreditCardIcon,
   PAYMENT_COMPLETED: CheckCircle2Icon,
   CONFIRMATION_EMAIL_SENT: MailIcon,
+  TERMS_ACKNOWLEDGED: FileSignatureIcon,
   PAYMENT_FAILED: XCircleIcon,
   PAYMENT_EXPIRED: XCircleIcon,
 };

@@ -57,6 +57,7 @@ import { generateOrderNumber } from "./order-number";
 import { buildProviderSnapshotFromKey } from "./provider.service";
 import { getBranding } from "./branding.service";
 import { applyCheckoutPaid } from "./webhook.service";
+import { sendPaymentConfirmationEmail } from "./email.service";
 
 const ZERO_DECIMAL_CURRENCIES = new Set([
   "BIF",
@@ -1430,6 +1431,67 @@ export async function setConfirmationNumber(
   });
 
   return orderToDTO(doc.toObject() as OrderDoc & { _id: Types.ObjectId });
+}
+
+/**
+ * Re-send the post-payment confirmation email for a PAID order. The automatic
+ * send fires the moment Stripe confirms payment — which is usually *before*
+ * the agent has the supplier confirmation number. This lets the agent resend
+ * the confirmation (re-rendered from current order state, so it now carries
+ * the pasted confirmation number) so the customer receives the updated copy.
+ *
+ * Ownership-gated like the other staff actions; PAID-only.
+ */
+export async function resendConfirmationEmail(
+  id: string,
+  ctx: OrderContext,
+): Promise<{ order: OrderDTO; emailId: string | null }> {
+  await connectMongo();
+  if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
+  const doc = await Order.findById(id).lean<OrderDoc & { _id: Types.ObjectId }>();
+  if (!doc) throw new NotFoundError("Order not found");
+
+  const canSeeAll = roleHasPermission(ctx.actor.role, Permission.ORDER_VIEW_ALL);
+  if (!canSeeAll && String(doc.createdBy.userId) !== ctx.actor.id) {
+    throw new ForbiddenError(
+      "You can only resend confirmation emails for orders you created",
+    );
+  }
+  if (doc.status !== OrderStatus.PAID) {
+    throw new ConflictError(
+      "Confirmation emails can only be resent for paid orders",
+    );
+  }
+
+  // Re-render from the current DTO so the latest confirmation number /
+  // branding / customer email is reflected. This also appends a fresh
+  // CONFIRMATION_EMAIL_SENT evidence event for the audit trail.
+  const dto = orderToDTO(doc);
+  const sent = await sendPaymentConfirmationEmail(dto);
+
+  await Order.updateOne(
+    { _id: doc._id },
+    { $set: { "payment.confirmationEmailSentAt": new Date() } },
+  );
+
+  await recordAudit({
+    action: AuditAction.ORDER_UPDATED,
+    entityType: AuditEntity.ORDER,
+    entityId: String(doc._id),
+    actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+    request: ctx.request ?? null,
+    metadata: {
+      action: "confirmation_email_resent",
+      orderNumber: doc.orderNumber,
+      confirmationNumber: doc.confirmationNumber ?? null,
+      messageId: sent.id,
+    },
+  });
+
+  const refreshed = await Order.findById(id).lean<
+    OrderDoc & { _id: Types.ObjectId }
+  >();
+  return { order: orderToDTO(refreshed ?? doc), emailId: sent.id };
 }
 
 /**
