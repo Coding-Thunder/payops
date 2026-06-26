@@ -37,6 +37,20 @@ export const DEFAULT_CANCELLATION_POLICY = [
 export const DEFAULT_CONSENT_MESSAGE =
   "I confirm that I understand and agree to proceed with this payment and booking.";
 
+/**
+ * Default rental Terms & Conditions. Snapshotted onto each order at creation
+ * and rendered (with an "I Agree" action) in the confirmation email. Admins
+ * edit this from /admin/settings; the customer-provided T&C drops in here.
+ */
+export const DEFAULT_TERMS_AND_CONDITIONS = [
+  "The prepaid amount is charged today to secure your reservation. Any balance shown as 'due at counter' is collected by the rental location at pick-up.",
+  "A valid driver's licence, the payment card used, and any required deposit must be presented at the counter at pick-up.",
+  "The named driver must meet the rental location's minimum age and licence-held requirements. Additional drivers must be registered at the counter.",
+  "The vehicle must be returned at the agreed drop-off location, on or before the return date/time, with the same fuel level, or additional charges may apply.",
+  "Tolls, traffic fines, fuel, and optional extras are the renter's responsibility and may be charged after the rental.",
+  "Cancellation and refund terms follow the cancellation policy provided with your booking.",
+].join("\n");
+
 export interface SettingDoc {
   key: string;
   paymentExpiryHours: number;
@@ -64,6 +78,12 @@ export interface SettingDoc {
   /** Customer-facing acknowledgement copy. Editable by admins; rendered
    *  verbatim into emails and the hosted consent page. */
   consentMessage: string;
+  /** Rental Terms & Conditions text. Snapshotted onto each order at creation
+   *  and shown (with an "I Agree" action) in the confirmation email. */
+  termsAndConditions: string;
+  /** Auto-bumped version string for the T&C, mirroring the policy version so
+   *  an order can prove which T&C revision the customer accepted. */
+  termsVersion: string;
   updatedBy?: Schema.Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
@@ -131,6 +151,18 @@ const settingSchema = new Schema<SettingDoc>(
       required: true,
       default: DEFAULT_CONSENT_MESSAGE,
       maxlength: 1000,
+    },
+    termsAndConditions: {
+      type: String,
+      required: true,
+      default: DEFAULT_TERMS_AND_CONDITIONS,
+      maxlength: 8000,
+    },
+    termsVersion: {
+      type: String,
+      required: true,
+      default: "v1",
+      maxlength: 16,
     },
     updatedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
   },

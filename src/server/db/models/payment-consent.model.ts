@@ -14,6 +14,8 @@ import {
   ConsentStatus,
   CURRENCIES,
   Currency,
+  PAYMENT_TIMINGS,
+  PaymentTiming,
 } from "@/lib/constants/enums";
 
 /**
@@ -70,8 +72,15 @@ export interface PaymentConsentDoc {
     vehicle: string;
     pickupDate: Date;
     dropoffDate: Date;
+    pickupLocation?: string | null;
+    dropoffLocation?: string | null;
+    /** `amount` is the prepaid/online figure. The full breakdown lives in
+     *  `charges` + `dueAtCounter` + `total`. */
     amount: number;
     currency: Currency;
+    charges?: Array<{ name: string; amount: number; timing: PaymentTiming }>;
+    dueAtCounter?: number;
+    total?: number;
     paymentLinkRef?: string | null;
   };
 
@@ -101,6 +110,15 @@ export interface PaymentConsentDoc {
 
 export type PaymentConsentDocument = HydratedDocument<PaymentConsentDoc>;
 
+const snapshotChargeSchema = new Schema(
+  {
+    name: { type: String, required: true, trim: true, maxlength: 120 },
+    amount: { type: Number, required: true, min: 0 },
+    timing: { type: String, enum: PAYMENT_TIMINGS, required: true },
+  },
+  { _id: false },
+);
+
 const snapshotSchema = new Schema(
   {
     bookingType: { type: String, enum: BOOKING_TYPES, required: true },
@@ -108,8 +126,13 @@ const snapshotSchema = new Schema(
     vehicle: { type: String, required: true, trim: true, maxlength: 160 },
     pickupDate: { type: Date, required: true },
     dropoffDate: { type: Date, required: true },
+    pickupLocation: { type: String, default: null, trim: true, maxlength: 200 },
+    dropoffLocation: { type: String, default: null, trim: true, maxlength: 200 },
     amount: { type: Number, required: true, min: 0 },
     currency: { type: String, enum: CURRENCIES, required: true },
+    charges: { type: [snapshotChargeSchema], default: [] },
+    dueAtCounter: { type: Number, default: 0, min: 0 },
+    total: { type: Number, default: 0, min: 0 },
     paymentLinkRef: { type: String, default: null, maxlength: 2048 },
   },
   { _id: false },

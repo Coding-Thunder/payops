@@ -7,6 +7,7 @@ import {
   OrderEvidenceEventType,
   OrderStatus,
   PaymentGatewayKey,
+  PaymentTiming,
   RecordState,
   UserRole,
 } from "./enums";
@@ -15,6 +16,11 @@ export const BookingTypeLabel: Record<BookingType, string> = {
   NEW_BOOKING: "New booking",
   MODIFICATION: "Modification",
   CANCELLATION_CHARGE: "Cancellation charge",
+};
+
+export const PaymentTimingLabel: Record<PaymentTiming, string> = {
+  PREPAID: "Prepaid",
+  DUE_AT_COUNTER: "Due at counter",
 };
 
 export const OrderStatusLabel: Record<OrderStatus, string> = {
@@ -118,6 +124,7 @@ export const OrderEvidenceEventLabel: Record<OrderEvidenceEventType, string> = {
   PAYMENT_STARTED: "Payment started",
   PAYMENT_COMPLETED: "Payment completed",
   CONFIRMATION_EMAIL_SENT: "Confirmation email sent",
+  TERMS_ACKNOWLEDGED: "Terms acknowledged",
   PAYMENT_FAILED: "Payment failed",
   PAYMENT_EXPIRED: "Payment expired",
   REFUND_ISSUED: "Refund issued",

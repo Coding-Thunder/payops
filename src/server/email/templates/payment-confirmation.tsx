@@ -14,12 +14,15 @@ import type { BookingType } from "@/lib/constants/enums";
 import type { ProviderSnapshot } from "@/lib/constants/providers";
 
 import {
+  ChargeBreakdown,
   COLOR,
+  type EmailChargeBreakdown,
   EmailFooter,
   EmailHeader,
   EmailLayout,
   MetadataRow,
   ProviderBadge,
+  RADIUS,
   SPACE,
   SuccessBanner,
   SummaryCard,
@@ -39,7 +42,20 @@ export interface PaymentConfirmationEmailProps {
   paidOn: string;
   provider: ProviderSnapshot;
   vehicle: { company: string; type: string; imageUrl?: string | null };
-  trip: { pickupDate: string; dropoffDate: string };
+  trip: {
+    pickupDate: string;
+    dropoffDate: string;
+    pickupLocation?: string | null;
+    dropoffLocation?: string | null;
+  };
+  /** Supplier confirmation number — surfaces prominently at the top. */
+  confirmationNumber?: string | null;
+  /** Pre-formatted charge breakdown (prepaid / due-at-counter / total). */
+  chargeBreakdown?: EmailChargeBreakdown;
+  /** Terms & Conditions text + version + the signed "I Agree" link. */
+  termsText?: string | null;
+  termsVersion?: string | null;
+  acknowledgeUrl?: string | null;
   receiptUrl?: string | null;
   cancellationPolicy?: string;
   cancellationPolicyVersion?: string;
@@ -65,6 +81,11 @@ export function PaymentConfirmationEmail({
   provider,
   vehicle,
   trip,
+  confirmationNumber,
+  chargeBreakdown,
+  termsText,
+  termsVersion,
+  acknowledgeUrl,
   receiptUrl,
   cancellationPolicy,
   cancellationPolicyVersion,
@@ -73,6 +94,15 @@ export function PaymentConfirmationEmail({
   const policyParagraphs = cancellationPolicy
     ? cancellationPolicy.split(/\n+/).filter((p) => p.trim().length > 0)
     : [];
+  const termsParagraphs = termsText
+    ? termsText.split(/\n+/).filter((p) => p.trim().length > 0)
+    : [];
+  const pickupValue = trip.pickupLocation
+    ? `${trip.pickupDate} · ${trip.pickupLocation}`
+    : trip.pickupDate;
+  const dropoffValue = trip.dropoffLocation
+    ? `${trip.dropoffDate} · ${trip.dropoffLocation}`
+    : trip.dropoffDate;
 
   return (
     <EmailLayout preview={preview}>
@@ -92,6 +122,45 @@ export function PaymentConfirmationEmail({
           </>
         }
       />
+
+      {confirmationNumber ? (
+        <Section
+          style={{ padding: `${SPACE.md}px ${SPACE.xxxl}px ${SPACE.xs}px` }}
+        >
+          <Section
+            style={{
+              backgroundColor: COLOR.surfaceMuted,
+              border: `1px solid ${COLOR.borderSoft}`,
+              borderRadius: RADIUS.md,
+              padding: `${SPACE.md}px ${SPACE.lg}px`,
+            }}
+          >
+            <Text
+              style={{
+                ...typeStyle("micro"),
+                margin: 0,
+                color: COLOR.textMuted,
+                textTransform: "uppercase",
+              }}
+            >
+              Confirmation number
+            </Text>
+            <Text
+              style={{
+                ...typeStyle("heading"),
+                margin: 0,
+                marginTop: 4,
+                color: COLOR.textPrimary,
+                fontFamily:
+                  "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace",
+                letterSpacing: "0.02em",
+              }}
+            >
+              {confirmationNumber}
+            </Text>
+          </Section>
+        </Section>
+      ) : null}
 
       <PaymentSummary
         amount={amount}
@@ -135,10 +204,10 @@ export function PaymentConfirmationEmail({
           label="Vehicle"
           value={`${vehicle.company} • ${vehicle.type}`}
         />
-        <MetadataRow label="Pick-up" value={trip.pickupDate} />
+        <MetadataRow label="Pick-up" value={pickupValue} />
         <MetadataRow
           label="Drop-off"
-          value={trip.dropoffDate}
+          value={dropoffValue}
           isLast={!receiptUrl}
         />
         {receiptUrl ? (
@@ -160,6 +229,14 @@ export function PaymentConfirmationEmail({
           />
         ) : null}
       </SummaryCard>
+
+      {chargeBreakdown ? (
+        <ChargeBreakdown
+          breakdown={chargeBreakdown}
+          title="Charge breakdown"
+          topPadding={SPACE.md}
+        />
+      ) : null}
 
       <Section
         style={{
@@ -223,6 +300,75 @@ export function PaymentConfirmationEmail({
                 Policy version {cancellationPolicyVersion} • applied at
                 payment
               </Text>
+            ) : null}
+          </SummaryCard>
+        </>
+      ) : null}
+
+      {termsParagraphs.length > 0 ? (
+        <>
+          <Hr
+            style={{
+              margin: 0,
+              borderColor: COLOR.borderSoft,
+              borderTopWidth: 1,
+            }}
+          />
+          <SummaryCard
+            title="Terms & Conditions"
+            topPadding={SPACE.xl}
+            bottomPadding={SPACE.lg}
+          >
+            {termsParagraphs.map((paragraph, idx) => (
+              <Text
+                key={idx}
+                style={{
+                  ...typeStyle("label"),
+                  margin: 0,
+                  marginTop: idx === 0 ? 0 : 8,
+                  color: COLOR.textSecondary,
+                  fontSize: 13,
+                  lineHeight: "20px",
+                }}
+              >
+                {paragraph}
+              </Text>
+            ))}
+            {acknowledgeUrl ? (
+              <>
+                <Link
+                  href={acknowledgeUrl}
+                  style={{
+                    display: "inline-block",
+                    marginTop: SPACE.lg,
+                    backgroundColor: COLOR.textPrimary,
+                    color: COLOR.textInverted,
+                    fontSize: 14,
+                    fontWeight: 600,
+                    padding: "11px 22px",
+                    borderRadius: RADIUS.md,
+                    textDecoration: "none",
+                    textAlign: "center",
+                  }}
+                >
+                  I Agree
+                </Link>
+                <Text
+                  style={{
+                    ...typeStyle("legal"),
+                    margin: 0,
+                    marginTop: SPACE.sm,
+                    color: COLOR.textMuted,
+                    fontSize: 11,
+                    lineHeight: "16px",
+                  }}
+                >
+                  By clicking &ldquo;I Agree&rdquo; you confirm you have read and
+                  accept these terms
+                  {termsVersion ? ` (version ${termsVersion})` : ""}. Your
+                  acknowledgement is recorded against this booking.
+                </Text>
+              </>
             ) : null}
           </SummaryCard>
         </>

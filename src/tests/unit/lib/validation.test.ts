@@ -110,7 +110,9 @@ describe("createOrderSchema", () => {
 
   it("rejects amounts <= 0", () => {
     const r = createOrderSchema.safeParse(
-      validCreateOrderInput({ pricing: { amount: 0, currency: "USD" } }),
+      validCreateOrderInput({
+        charges: [{ name: "Rental cost", amount: 0, timing: "PREPAID" }],
+      }),
     );
     expect(r.success).toBe(false);
   });
@@ -118,7 +120,9 @@ describe("createOrderSchema", () => {
   it("rejects unrealistically large amounts", () => {
     const r = createOrderSchema.safeParse(
       validCreateOrderInput({
-        pricing: { amount: 5_000_000, currency: "USD" },
+        charges: [
+          { name: "Rental cost", amount: 5_000_000, timing: "PREPAID" },
+        ],
       }),
     );
     expect(r.success).toBe(false);

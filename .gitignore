@@ -38,6 +38,10 @@ yarn-error.log*
 .env*
 !.env.example
 
+# DigitalOcean App Platform spec — inlines real secrets (Stripe/Mongo/SMTP).
+# Never commit. Keep a sanitised .do/app.example.yaml if a reference is needed.
+.do/
+
 # vercel
 .vercel
 

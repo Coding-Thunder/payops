@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
 
 import { ArchiveOrderButton } from "@/components/features/orders/archive-order-button";
+import { ConfirmationNumberCard } from "@/components/features/orders/confirmation-number-card";
 import { OrderConsentCard } from "@/components/features/orders/order-consent-card";
 import { OrderDetailsCard } from "@/components/features/orders/order-details-card";
 import { OrderEvidenceCard } from "@/components/features/orders/order-evidence-card";
@@ -214,6 +215,7 @@ export function OrderDetailPageContent({
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
           <OrderDetailsCard order={order} />
+          <ConfirmationNumberCard order={order} />
         </div>
         <div className="space-y-6">
           <OrderPaymentCard order={order} canRegenerate={canRegenerate} />

@@ -71,8 +71,17 @@ function consentToDTO(doc: PaymentConsentDoc & { _id: Types.ObjectId | string })
       vehicle: doc.snapshot.vehicle,
       pickupDate: doc.snapshot.pickupDate.toISOString(),
       dropoffDate: doc.snapshot.dropoffDate.toISOString(),
+      pickupLocation: doc.snapshot.pickupLocation ?? null,
+      dropoffLocation: doc.snapshot.dropoffLocation ?? null,
       amount: doc.snapshot.amount,
       currency: doc.snapshot.currency as Currency,
+      charges: (doc.snapshot.charges ?? []).map((c) => ({
+        name: c.name,
+        amount: c.amount,
+        timing: c.timing,
+      })),
+      dueAtCounter: doc.snapshot.dueAtCounter ?? 0,
+      total: doc.snapshot.total ?? doc.snapshot.amount,
       paymentLinkRef: doc.snapshot.paymentLinkRef ?? null,
     },
     requestedAt: doc.requestedAt.toISOString(),
@@ -135,6 +144,24 @@ export async function requestConsent(
       ? await PaymentConsent.findById(order.consent.currentConsentId)
       : null;
 
+  // Single persisted snapshot shape, reused by the create + refresh paths so
+  // the frozen record always carries locations + the full charge breakdown.
+  const persistedSnapshot = {
+    bookingType: input.snapshot.bookingType,
+    provider: input.snapshot.provider,
+    vehicle: input.snapshot.vehicle,
+    pickupDate: new Date(input.snapshot.pickupDate),
+    dropoffDate: new Date(input.snapshot.dropoffDate),
+    pickupLocation: input.snapshot.pickupLocation ?? null,
+    dropoffLocation: input.snapshot.dropoffLocation ?? null,
+    amount: input.snapshot.amount,
+    currency: input.snapshot.currency,
+    charges: input.snapshot.charges ?? [],
+    dueAtCounter: input.snapshot.dueAtCounter ?? 0,
+    total: input.snapshot.total ?? input.snapshot.amount,
+    paymentLinkRef: input.snapshot.paymentLinkRef ?? null,
+  };
+
   let doc: PaymentConsentDoc & { _id: Types.ObjectId };
   if (existing) {
     // Refresh the snapshot in case the agent edited the order between
@@ -143,16 +170,7 @@ export async function requestConsent(
     existing.customerName = input.customerName;
     existing.consentMessage = input.consentMessage;
     existing.consentEmailSubject = input.consentEmailSubject;
-    existing.snapshot = {
-      bookingType: input.snapshot.bookingType,
-      provider: input.snapshot.provider,
-      vehicle: input.snapshot.vehicle,
-      pickupDate: new Date(input.snapshot.pickupDate),
-      dropoffDate: new Date(input.snapshot.dropoffDate),
-      amount: input.snapshot.amount,
-      currency: input.snapshot.currency,
-      paymentLinkRef: input.snapshot.paymentLinkRef ?? null,
-    };
+    existing.snapshot = persistedSnapshot;
     existing.requestedAt = new Date();
     await existing.save();
     doc = existing as unknown as PaymentConsentDoc & { _id: Types.ObjectId };
@@ -165,16 +183,7 @@ export async function requestConsent(
       customerName: input.customerName,
       consentMessage: input.consentMessage,
       consentEmailSubject: input.consentEmailSubject,
-      snapshot: {
-        bookingType: input.snapshot.bookingType,
-        provider: input.snapshot.provider,
-        vehicle: input.snapshot.vehicle,
-        pickupDate: new Date(input.snapshot.pickupDate),
-        dropoffDate: new Date(input.snapshot.dropoffDate),
-        amount: input.snapshot.amount,
-        currency: input.snapshot.currency,
-        paymentLinkRef: input.snapshot.paymentLinkRef ?? null,
-      },
+      snapshot: persistedSnapshot,
       requestedAt: new Date(),
     });
     doc = created as unknown as PaymentConsentDoc & { _id: Types.ObjectId };
@@ -299,8 +308,17 @@ export async function getPublicConsentView(
       vehicle: doc.snapshot.vehicle,
       pickupDate: doc.snapshot.pickupDate.toISOString(),
       dropoffDate: doc.snapshot.dropoffDate.toISOString(),
+      pickupLocation: doc.snapshot.pickupLocation ?? null,
+      dropoffLocation: doc.snapshot.dropoffLocation ?? null,
       amount: doc.snapshot.amount,
       currency: doc.snapshot.currency as Currency,
+      charges: (doc.snapshot.charges ?? []).map((c) => ({
+        name: c.name,
+        amount: c.amount,
+        timing: c.timing,
+      })),
+      dueAtCounter: doc.snapshot.dueAtCounter ?? 0,
+      total: doc.snapshot.total ?? doc.snapshot.amount,
       paymentLinkRef: doc.snapshot.paymentLinkRef ?? null,
     },
     paymentUrl: order?.payment?.checkoutUrl ?? null,

@@ -22,8 +22,9 @@ import { OrderStatusBadge } from "@/components/common/status-badges";
 import { toast } from "@/components/ui/sonner";
 import { api, ApiClientError } from "@/lib/api-client";
 import { formatCurrency, formatDateTime, formatRelative } from "@/lib/format";
-import { OrderStatus } from "@/lib/constants/enums";
+import { OrderStatus, PaymentTiming } from "@/lib/constants/enums";
 import { PaymentGatewayLabel } from "@/lib/constants/labels";
+import { summarizeCharges } from "@/lib/charges";
 import type { OrderDTO } from "@/types";
 
 interface OrderPaymentCardProps {
@@ -52,6 +53,12 @@ export function OrderPaymentCard({
 
   const amountReceived =
     order.payment.amountReceived ?? order.pricing.amount;
+
+  // Breakdown is derived from the order's charges (legacy orders fall back to
+  // a single prepaid line built from pricing.amount).
+  const breakdown = summarizeCharges(order.charges, order.pricing.amount);
+  const currency = order.pricing.currency;
+  const hasCounterDue = breakdown.dueAtCounter > 0;
 
   async function regenerate() {
     setSubmitting(true);
@@ -93,13 +100,19 @@ export function OrderPaymentCard({
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="grid grid-cols-2 gap-4 text-sm">
-          <Field label="Amount due" value={formatCurrency(order.pricing.amount, order.pricing.currency)} />
+          <Field
+            label={isPaid ? "Paid online" : "Charged online"}
+            value={formatCurrency(
+              isPaid ? amountReceived : breakdown.prepaid,
+              currency,
+            )}
+          />
           <Field
             label={isPaid ? "Amount received" : "Currency"}
             value={
               isPaid
-                ? formatCurrency(amountReceived, order.pricing.currency)
-                : order.pricing.currency
+                ? formatCurrency(amountReceived, currency)
+                : currency
             }
           />
           <Field
@@ -123,6 +136,54 @@ export function OrderPaymentCard({
             value={order.payment.paymentSessionId ?? "—"}
             mono
           />
+        </div>
+
+        {/* Charge breakdown — single source of truth for the three figures.
+            Only render the per-line list / due-at-counter rows when there is
+            something beyond a single prepaid line. */}
+        <div className="space-y-1.5 rounded-md border border-border bg-muted/30 p-3 text-sm">
+          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            Charge breakdown
+          </p>
+          {breakdown.charges.length > 0 ? (
+            <div className="space-y-1 pb-1">
+              {breakdown.charges.map((c, i) => (
+                <div key={i} className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">
+                    {c.name}
+                    <span className="ml-1.5 text-[11px] uppercase tracking-wide">
+                      {c.timing === PaymentTiming.PREPAID
+                        ? "· prepaid"
+                        : "· at counter"}
+                    </span>
+                  </span>
+                  <span className="tabular-nums">
+                    {formatCurrency(c.amount, currency)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <div className="flex items-center justify-between border-t pt-1.5">
+            <span className="text-muted-foreground">Amount paid online</span>
+            <span className="font-medium tabular-nums">
+              {formatCurrency(breakdown.prepaid, currency)}
+            </span>
+          </div>
+          {hasCounterDue ? (
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Amount due at counter</span>
+              <span className="font-medium tabular-nums">
+                {formatCurrency(breakdown.dueAtCounter, currency)}
+              </span>
+            </div>
+          ) : null}
+          <div className="flex items-center justify-between">
+            <span className="font-medium">Total rental cost</span>
+            <span className="font-semibold tabular-nums">
+              {formatCurrency(breakdown.total, currency)}
+            </span>
+          </div>
         </div>
 
         {order.payment.failureReason ? (

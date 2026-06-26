@@ -12,6 +12,7 @@ import type {
   OrderEvidenceEventType,
   OrderStatus,
   PaymentGatewayKey,
+  PaymentTiming,
   RecordState,
   UserRole,
 } from "@/lib/constants/enums";
@@ -54,11 +55,44 @@ export interface OrderVehicle {
 export interface OrderTrip {
   pickupDate: string;
   dropoffDate: string;
+  /** Free-text rental pick-up / drop-off locations. Optional + nullable so
+   *  orders created before this field existed keep validating. */
+  pickupLocation?: string | null;
+  dropoffLocation?: string | null;
+}
+
+/**
+ * One line of the rental charge breakdown. `amount` is in MAJOR units.
+ * `timing` decides whether it is collected online now (PREPAID — the only
+ * thing the gateway charges) or by the counter at pick-up (DUE_AT_COUNTER).
+ */
+export interface OrderCharge {
+  name: string;
+  amount: number;
+  timing: PaymentTiming;
 }
 
 export interface OrderPricing {
+  /** Legacy/derived: equals the sum of PREPAID charges — i.e. the amount the
+   *  gateway is asked to charge. Kept as the reconciliation + analytics
+   *  source so existing consumers don't change meaning. */
   amount: number;
   currency: Currency;
+}
+
+/** Snapshot of the Terms & Conditions the customer is asked to accept,
+ *  frozen onto the order at creation (mirrors `OrderPolicy`). */
+export interface OrderTerms {
+  text: string;
+  version: string;
+}
+
+/** Customer's post-payment "I Agree" acknowledgement of the T&C, captured
+ *  from the confirmation email. Null until they click through. */
+export interface OrderTermsAcknowledgement {
+  acknowledgedAt: string;
+  ip: string | null;
+  userAgent: string | null;
 }
 
 export interface OrderPayment {
@@ -143,6 +177,18 @@ export interface OrderDTO {
   vehicle: OrderVehicle;
   trip: OrderTrip;
   pricing: OrderPricing;
+  /** Rental charge breakdown — source of truth for prepaid / due-at-counter
+   *  / total. Empty for legacy orders (treat `pricing.amount` as one prepaid
+   *  line via `summarizeCharges`). */
+  charges: OrderCharge[];
+  /** Supplier confirmation number, pasted by staff from the admin portal
+   *  after the supplier confirms. Null until entered. Surfaces at the top of
+   *  the confirmation email. */
+  confirmationNumber: string | null;
+  /** T&C snapshot frozen at creation. */
+  terms: OrderTerms;
+  /** Customer's "I Agree" acknowledgement from the confirmation email. */
+  termsAcknowledgement: OrderTermsAcknowledgement | null;
   payment: OrderPayment;
   createdBy: OrderCreator;
   policy: OrderPolicy;
@@ -192,8 +238,17 @@ export interface PaymentConsentSnapshot {
   vehicle: string;
   pickupDate: string;
   dropoffDate: string;
+  /** Optional rental locations — absent on consent records predating them. */
+  pickupLocation?: string | null;
+  dropoffLocation?: string | null;
+  /** `amount` is the prepaid/online figure (what the customer pays now);
+   *  kept for back-compat. The full breakdown lives in `charges` +
+   *  `dueAtCounter` + `total`. */
   amount: number;
   currency: Currency;
+  charges?: OrderCharge[];
+  dueAtCounter?: number;
+  total?: number;
   paymentLinkRef: string | null;
 }
 

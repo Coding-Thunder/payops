@@ -4,6 +4,8 @@ import {
   BOOKING_TYPES,
   CURRENCIES,
   ORDER_STATUSES,
+  PAYMENT_TIMINGS,
+  PaymentTiming,
   RECORD_STATES,
 } from "@/lib/constants/enums";
 import { PROVIDER_KEY_REGEX } from "@/lib/constants/providers";
@@ -14,6 +16,18 @@ const isoDateString = z
   .refine((v) => !Number.isNaN(Date.parse(v)), "Enter a valid date");
 
 const phoneRegex = /^[+0-9()\-\s]{7,32}$/;
+
+/** One line of the rental charge breakdown. */
+export const chargeInputSchema = z.object({
+  name: z.string().trim().min(1, "Charge name is required").max(120),
+  amount: z
+    .number({ error: "Enter a valid amount" })
+    .positive("Amount must be greater than zero")
+    .max(1_000_000, "Amount looks unrealistic"),
+  timing: z.enum(PAYMENT_TIMINGS),
+});
+
+export type ChargeInput = z.infer<typeof chargeInputSchema>;
 
 export const createOrderSchema = z
   .object({
@@ -56,6 +70,16 @@ export const createOrderSchema = z
       .object({
         pickupDate: isoDateString,
         dropoffDate: isoDateString,
+        pickupLocation: z
+          .string()
+          .trim()
+          .min(2, "Pick-up location is required")
+          .max(200),
+        dropoffLocation: z
+          .string()
+          .trim()
+          .min(2, "Drop-off location is required")
+          .max(200),
       })
       .refine(
         (t) => new Date(t.pickupDate) < new Date(t.dropoffDate),
@@ -64,17 +88,40 @@ export const createOrderSchema = z
           message: "Drop-off must be after pick-up",
         },
       ),
-    pricing: z.object({
-      amount: z
-        .number({ error: "Enter a valid amount" })
-        .positive("Amount must be greater than zero")
-        .max(1_000_000, "Amount looks unrealistic"),
-      currency: z.enum(CURRENCIES),
-    }),
+    currency: z.enum(CURRENCIES),
+    /** Charge breakdown. Prepaid lines are charged online via the initial
+     *  payment link; due-at-counter lines are shown but never charged. */
+    charges: z
+      .array(chargeInputSchema)
+      .min(1, "Add at least one charge")
+      .max(20, "Too many charge lines")
+      .refine(
+        (lines) =>
+          lines.some((l) => l.timing === PaymentTiming.PREPAID && l.amount > 0),
+        {
+          message: "At least one prepaid charge is required to collect payment",
+        },
+      ),
+    // Note: the Stripe ~$0.50 minimum on the PREPAID total is enforced
+    // downstream (the order model's `pricing.amount` min:0.5 + the gateway's
+    // own floor), not at the schema layer — the schema only guarantees a
+    // positive prepaid line, mirroring how the single-amount schema deferred
+    // the sub-50¢ floor to the model/Stripe boundary before.
     notes: z.string().trim().max(2000).optional(),
   });
 
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
+
+/** Staff edit of the supplier confirmation number from the admin portal.
+ *  Empty string clears it. */
+export const confirmationNumberSchema = z.object({
+  confirmationNumber: z
+    .string()
+    .trim()
+    .max(64, "Confirmation number must be 64 characters or fewer"),
+});
+
+export type ConfirmationNumberInput = z.infer<typeof confirmationNumberSchema>;
 
 export const listOrdersQuerySchema = z.object({
   q: z.string().trim().max(120).optional(),

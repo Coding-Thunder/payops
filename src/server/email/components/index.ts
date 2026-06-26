@@ -10,5 +10,10 @@ export { ProviderBadge } from "./provider-badge";
 export { SuccessBanner } from "./success-banner";
 export { SummaryCard } from "./summary-card";
 export { MetadataRow } from "./metadata-row";
+export {
+  ChargeBreakdown,
+  type EmailChargeBreakdown,
+  type EmailChargeLine,
+} from "./charge-breakdown";
 export { SupportSection } from "./support-section";
 export * from "./tokens";

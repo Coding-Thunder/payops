@@ -94,11 +94,29 @@ export function OrderDetailsCard({ order }: OrderDetailsCardProps) {
           />
           <Detail
             label="Pick-up"
-            value={formatDateTime(order.trip.pickupDate)}
+            value={
+              <>
+                <div>{formatDateTime(order.trip.pickupDate)}</div>
+                {order.trip.pickupLocation ? (
+                  <div className="text-xs text-muted-foreground">
+                    {order.trip.pickupLocation}
+                  </div>
+                ) : null}
+              </>
+            }
           />
           <Detail
             label="Drop-off"
-            value={formatDateTime(order.trip.dropoffDate)}
+            value={
+              <>
+                <div>{formatDateTime(order.trip.dropoffDate)}</div>
+                {order.trip.dropoffLocation ? (
+                  <div className="text-xs text-muted-foreground">
+                    {order.trip.dropoffLocation}
+                  </div>
+                ) : null}
+              </>
+            }
           />
           <Detail
             label="Created by"

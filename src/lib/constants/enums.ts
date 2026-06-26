@@ -28,6 +28,26 @@ export const BookingType = {
 export type BookingType = (typeof BookingType)[keyof typeof BookingType];
 export const BOOKING_TYPES = Object.values(BookingType) as BookingType[];
 
+/**
+ * When a single charge line is collected from the customer.
+ *
+ *  PREPAID        — collected now, online, via the initial payment link.
+ *                   The sum of PREPAID charges is the ONLY amount the
+ *                   gateway (Stripe) is ever asked to charge.
+ *  DUE_AT_COUNTER — collected by the rental counter at pick-up. Shown to
+ *                   the customer for transparency but never sent to the
+ *                   gateway and never part of our recognised online revenue.
+ *
+ * Rental-specific today; isolated here so it can later move into per-tenant
+ * configuration without touching the platform core.
+ */
+export const PaymentTiming = {
+  PREPAID: "PREPAID",
+  DUE_AT_COUNTER: "DUE_AT_COUNTER",
+} as const;
+export type PaymentTiming = (typeof PaymentTiming)[keyof typeof PaymentTiming];
+export const PAYMENT_TIMINGS = Object.values(PaymentTiming) as PaymentTiming[];
+
 export const OrderStatus = {
   /** Order has been created but no payment session exists yet. Default
    *  state for new orders — no gateway has been called, the order is
@@ -180,6 +200,7 @@ export const OrderEvidenceEventType = {
   PAYMENT_STARTED: "PAYMENT_STARTED",
   PAYMENT_COMPLETED: "PAYMENT_COMPLETED",
   CONFIRMATION_EMAIL_SENT: "CONFIRMATION_EMAIL_SENT",
+  TERMS_ACKNOWLEDGED: "TERMS_ACKNOWLEDGED",
   PAYMENT_FAILED: "PAYMENT_FAILED",
   PAYMENT_EXPIRED: "PAYMENT_EXPIRED",
   REFUND_ISSUED: "REFUND_ISSUED",

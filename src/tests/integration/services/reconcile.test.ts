@@ -59,7 +59,7 @@ describe("reconcileOrderPayment", () => {
     session.status = "complete";
     session.payment_status = "paid";
     session.amount_total = Math.round(
-      validCreateOrderInput().pricing.amount * 100,
+      validCreateOrderInput().charges[0].amount * 100,
     );
 
     const result = await reconcileOrderPayment(created.id, { actor });
@@ -102,7 +102,7 @@ describe("reconcileOrderPayment", () => {
     session.status = "complete";
     session.payment_status = "paid";
     session.amount_total = Math.round(
-      validCreateOrderInput().pricing.amount * 100,
+      validCreateOrderInput().charges[0].amount * 100,
     );
 
     await reconcileOrderPayment(created.id, { actor });
@@ -178,7 +178,7 @@ describe("reconcileOrderPayment", () => {
     session.status = "complete";
     session.payment_status = "paid";
     session.amount_total = Math.round(
-      validCreateOrderInput().pricing.amount * 100,
+      validCreateOrderInput().charges[0].amount * 100,
     );
 
     const result = await reconcileOrderPayment(created.id);

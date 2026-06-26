@@ -14,7 +14,9 @@ import type { BookingType } from "@/lib/constants/enums";
 import type { ProviderSnapshot } from "@/lib/constants/providers";
 
 import {
+  ChargeBreakdown,
   COLOR,
+  type EmailChargeBreakdown,
   EmailFooter,
   EmailHeader,
   EmailLayout,
@@ -47,7 +49,15 @@ export interface PaymentRequestEmailProps {
    *  so the customer recognises the car they reserved as soon as they
    *  open either email. */
   vehicle: { company: string; type: string; imageUrl?: string | null };
-  trip: { pickupDate: string; dropoffDate: string };
+  trip: {
+    pickupDate: string;
+    dropoffDate: string;
+    pickupLocation?: string | null;
+    dropoffLocation?: string | null;
+  };
+  /** Pre-formatted charge breakdown — shows what the customer pays online
+   *  today vs what's due at the counter. */
+  chargeBreakdown?: EmailChargeBreakdown;
 
   /** Hosted-checkout URL — kept on the props for caller compat; the
    *  template no longer renders it directly. The active CTA is
@@ -115,6 +125,7 @@ export function PaymentRequestEmail({
   provider,
   vehicle,
   trip,
+  chargeBreakdown,
   greeting,
   intro,
   note,
@@ -129,6 +140,12 @@ export function PaymentRequestEmail({
   const policyParagraphs = cancellationPolicy
     ? cancellationPolicy.split(/\n+/).filter((p) => p.trim().length > 0)
     : [];
+  const pickupValue = trip.pickupLocation
+    ? `${trip.pickupDate} · ${trip.pickupLocation}`
+    : trip.pickupDate;
+  const dropoffValue = trip.dropoffLocation
+    ? `${trip.dropoffDate} · ${trip.dropoffLocation}`
+    : trip.dropoffDate;
 
   const greetingLine =
     greeting && greeting.trim().length > 0
@@ -167,7 +184,7 @@ export function PaymentRequestEmail({
                 textTransform: "uppercase",
               }}
             >
-              Amount due
+              You pay today
             </Text>
             <Text
               style={{
@@ -367,9 +384,17 @@ export function PaymentRequestEmail({
           label="Vehicle"
           value={`${vehicle.company} • ${vehicle.type}`}
         />
-        <MetadataRow label="Pick-up" value={trip.pickupDate} />
-        <MetadataRow label="Drop-off" value={trip.dropoffDate} isLast />
+        <MetadataRow label="Pick-up" value={pickupValue} />
+        <MetadataRow label="Drop-off" value={dropoffValue} isLast />
       </SummaryCard>
+
+      {chargeBreakdown ? (
+        <ChargeBreakdown
+          breakdown={chargeBreakdown}
+          title="What you're paying"
+          topPadding={SPACE.md}
+        />
+      ) : null}
 
       {/* Optional agent note — only renders when something was typed. */}
       {note && note.trim().length > 0 ? (

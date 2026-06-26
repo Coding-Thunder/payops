@@ -19,6 +19,7 @@ import {
 import {
   DEFAULT_CANCELLATION_POLICY,
   DEFAULT_CONSENT_MESSAGE,
+  DEFAULT_TERMS_AND_CONDITIONS,
 } from "@/server/db/models/setting.model";
 import { connectMongo } from "@/server/db/mongoose";
 import type { UpdateSettingsInput } from "@/lib/validation";
@@ -36,6 +37,8 @@ export interface OperationalSettings {
   cancellationPolicyVersion: string;
   consentMode: ConsentMode;
   consentMessage: string;
+  termsAndConditions: string;
+  termsVersion: string;
   updatedAt: string;
 }
 
@@ -53,6 +56,8 @@ function toDTO(doc: SettingDoc | null): OperationalSettings {
       cancellationPolicyVersion: "v1",
       consentMode: "ADVISORY",
       consentMessage: DEFAULT_CONSENT_MESSAGE,
+      termsAndConditions: DEFAULT_TERMS_AND_CONDITIONS,
+      termsVersion: "v1",
       updatedAt: new Date(0).toISOString(),
     };
   }
@@ -69,6 +74,8 @@ function toDTO(doc: SettingDoc | null): OperationalSettings {
     cancellationPolicyVersion: doc.cancellationPolicyVersion ?? "v1",
     consentMode: doc.consentMode ?? "ADVISORY",
     consentMessage: doc.consentMessage ?? DEFAULT_CONSENT_MESSAGE,
+    termsAndConditions: doc.termsAndConditions ?? DEFAULT_TERMS_AND_CONDITIONS,
+    termsVersion: doc.termsVersion ?? "v1",
     updatedAt: doc.updatedAt.toISOString(),
   };
 }
@@ -134,6 +141,7 @@ export async function updateSettings(
     "cancellationPolicy",
     "consentMode",
     "consentMessage",
+    "termsAndConditions",
   ];
   for (const field of fields) {
     if (!(field in input)) continue;
@@ -158,6 +166,16 @@ export async function updateSettings(
     set.cancellationPolicyVersion = bumped;
     changes.cancellationPolicyVersion = {
       from: existing.cancellationPolicyVersion ?? "v1",
+      to: bumped,
+    };
+  }
+
+  // Same auto-bump for the T&C version when its text changes.
+  if ("termsAndConditions" in changes) {
+    const bumped = nextPolicyVersion(existing.termsVersion ?? "v1");
+    set.termsVersion = bumped;
+    changes.termsVersion = {
+      from: existing.termsVersion ?? "v1",
       to: bumped,
     };
   }

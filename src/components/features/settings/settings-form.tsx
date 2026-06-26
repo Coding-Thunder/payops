@@ -332,6 +332,35 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
               )}
             />
           </Section>
+
+          <Section
+            title="Terms & Conditions"
+            description="Shown in the confirmation email with an 'I Agree' acknowledgement action, and snapshotted onto each order at creation. Saving a change auto-bumps the terms version; existing orders keep the version they were created under."
+          >
+            <FormField
+              control={form.control}
+              name="termsAndConditions"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Terms text</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      rows={10}
+                      placeholder="One clause per line — paragraphs render with subtle spacing in the email."
+                      disabled={!canEdit || isSubmitting}
+                      {...field}
+                      value={field.value ?? ""}
+                    />
+                  </FormControl>
+                  <p className="text-[11.5px] text-muted-foreground">
+                    20–8,000 characters. Use one clause per line. Paste the
+                    customer-provided Terms & Conditions here.
+                  </p>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </Section>
         </SectionStack>
 
         <div className="mt-6 flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-1 px-4 py-3">

@@ -8,6 +8,7 @@ import {
 import { BookingTypeLabel } from "@/lib/constants/labels";
 import { resolveProvider } from "@/lib/constants/providers";
 import { OrderStatus } from "@/lib/constants/enums";
+import { summarizeCharges } from "@/lib/charges";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { logger } from "@/lib/logger";
 
@@ -76,6 +77,10 @@ export default async function PaymentSuccessPage({
   const paidOn = order?.payment.paidAt
     ? formatDateTime(order.payment.paidAt)
     : null;
+  const breakdown = order
+    ? summarizeCharges(order.charges, order.pricing.amount)
+    : null;
+  const hasCounterDue = (breakdown?.dueAtCounter ?? 0) > 0;
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -161,6 +166,40 @@ export default async function PaymentSuccessPage({
             </div>
           </div>
 
+          {/* ─── Charge breakdown (only when a counter balance remains) ─── */}
+          {hasCounterDue && breakdown ? (
+            <div className="border-t border-slate-100 px-8 py-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.10em] text-slate-500">
+                Charge breakdown
+              </p>
+              <dl className="mt-3 space-y-1.5 text-sm">
+                <div className="flex items-center justify-between">
+                  <dt className="text-slate-500">Paid online today</dt>
+                  <dd className="tabular-nums text-slate-900">
+                    {formatCurrency(breakdown.prepaid, order.pricing.currency)}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between">
+                  <dt className="text-slate-500">
+                    Remaining balance due at rental counter
+                  </dt>
+                  <dd className="tabular-nums text-slate-900">
+                    {formatCurrency(
+                      breakdown.dueAtCounter,
+                      order.pricing.currency,
+                    )}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between border-t border-slate-100 pt-1.5 font-medium">
+                  <dt className="text-slate-700">Total rental cost</dt>
+                  <dd className="tabular-nums text-slate-900">
+                    {formatCurrency(breakdown.total, order.pricing.currency)}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          ) : null}
+
           {/* ─── Provider strip ─── */}
           <div className="flex items-center gap-3 border-t border-slate-100 bg-slate-50/60 px-8 py-4">
             <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-white p-1.5">
@@ -207,12 +246,26 @@ export default async function PaymentSuccessPage({
               />
               <DetailRow
                 label="Pick-up"
-                value={formatDateTime(order.trip.pickupDate)}
+                value={
+                  order.trip.pickupLocation
+                    ? `${formatDateTime(order.trip.pickupDate)} · ${order.trip.pickupLocation}`
+                    : formatDateTime(order.trip.pickupDate)
+                }
               />
               <DetailRow
                 label="Drop-off"
-                value={formatDateTime(order.trip.dropoffDate)}
+                value={
+                  order.trip.dropoffLocation
+                    ? `${formatDateTime(order.trip.dropoffDate)} · ${order.trip.dropoffLocation}`
+                    : formatDateTime(order.trip.dropoffDate)
+                }
               />
+              {order.confirmationNumber ? (
+                <DetailRow
+                  label="Confirmation #"
+                  value={order.confirmationNumber}
+                />
+              ) : null}
               {order.payment.receiptUrl ? (
                 <DetailRow
                   label="Stripe receipt"

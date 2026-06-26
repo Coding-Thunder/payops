@@ -22,6 +22,7 @@ import type { OrderDTO } from "@/types";
 
 import { getMailer } from "@/server/email/smtp";
 import { inlinePublicImage } from "@/server/email/inline-image";
+import type { EmailChargeBreakdown } from "@/server/email/components";
 import {
   PaymentRequestEmail,
   type PaymentRequestEmailProps,
@@ -32,6 +33,7 @@ import {
 } from "@/server/email/templates/payment-confirmation";
 import { formatEmailDate, formatEmailDay, formatMoney } from "@/server/email/format";
 import { buildConsentMailto } from "@/server/email/consent-mailto";
+import { summarizeCharges } from "@/lib/charges";
 
 import { recordAudit } from "./audit.service";
 import { captureEvidenceSafe } from "./evidence.service";
@@ -42,7 +44,26 @@ import {
   buildConsentUrl,
   generateConsentToken,
 } from "./consent-token";
+import { buildAckUrl, generateAckToken } from "./ack-token";
 import { getSettings } from "./settings.service";
+
+/** Build a presentation-ready (currency-formatted) charge breakdown for an
+ *  order, used by both customer emails. Legacy orders (no `charges[]`) get a
+ *  single synthesised prepaid line via `summarizeCharges`. */
+function buildEmailChargeBreakdown(order: OrderDTO): EmailChargeBreakdown {
+  const s = summarizeCharges(order.charges, order.pricing.amount);
+  const currency = order.pricing.currency;
+  return {
+    lines: s.charges.map((c) => ({
+      name: c.name,
+      amount: formatMoney(c.amount, currency),
+      timing: c.timing,
+    })),
+    prepaid: formatMoney(s.prepaid, currency),
+    dueAtCounter: s.dueAtCounter > 0 ? formatMoney(s.dueAtCounter, currency) : null,
+    total: formatMoney(s.total, currency),
+  };
+}
 
 interface SendArgs {
   to: string;
@@ -90,6 +111,20 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
   }
 
   try {
+    // Deliverability headers. A List-Unsubscribe header (mailto form) is a
+    // strong signal for strict receivers (notably Yahoo / AOL, which apply
+    // bulk-sender rules aggressively). We point it at the reply-to / support
+    // mailbox since there is no one-click unsubscribe endpoint for these
+    // transactional sends. `Auto-Submitted` marks them as system-generated.
+    const unsubAddr = replyTo || null;
+    const headers: Record<string, string> = {
+      "X-Entity-Kind": args.kind,
+      "Auto-Submitted": "auto-generated",
+    };
+    if (unsubAddr) {
+      headers["List-Unsubscribe"] =
+        `<mailto:${unsubAddr}?subject=unsubscribe>`;
+    }
     const info = await mailer.sendMail({
       from: fromAddress,
       to: args.to,
@@ -97,7 +132,7 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
       subject: args.subject,
       html: args.html,
       text: args.text,
-      headers: { "X-Entity-Kind": args.kind },
+      headers,
     });
     await recordAudit({
       action: AuditAction.EMAIL_SENT,
@@ -178,7 +213,17 @@ export async function sendPaymentConfirmationEmail(
     trip: {
       pickupDate: formatEmailDay(order.trip.pickupDate),
       dropoffDate: formatEmailDay(order.trip.dropoffDate),
+      pickupLocation: order.trip.pickupLocation ?? null,
+      dropoffLocation: order.trip.dropoffLocation ?? null,
     },
+    confirmationNumber: order.confirmationNumber ?? null,
+    chargeBreakdown: buildEmailChargeBreakdown(order),
+    termsText: order.terms?.text || null,
+    termsVersion: order.terms?.version ?? null,
+    // Signed "I Agree" link — only when there are terms to acknowledge.
+    acknowledgeUrl: order.terms?.text
+      ? buildAckUrl(env.server.APP_URL, generateAckToken(order.id))
+      : null,
     receiptUrl: order.payment.receiptUrl ?? null,
     cancellationPolicy: order.policy?.text ?? "",
     cancellationPolicyVersion: order.policy?.version ?? undefined,
@@ -373,7 +418,10 @@ export async function composePaymentRequestProps(
     trip: {
       pickupDate: formatEmailDay(order.trip.pickupDate),
       dropoffDate: formatEmailDay(order.trip.dropoffDate),
+      pickupLocation: order.trip.pickupLocation ?? null,
+      dropoffLocation: order.trip.dropoffLocation ?? null,
     },
+    chargeBreakdown: buildEmailChargeBreakdown(order),
     paymentUrl: checkoutUrl,
     gatewayLabel: order.payment.gateway
       ? PAYMENT_GATEWAY_LABELS[order.payment.gateway as PaymentGatewayKey]
@@ -459,16 +507,24 @@ export async function sendPaymentRequestEmail(
           customerName: order.customer.name,
           consentMessage: settings.consentMessage,
           consentEmailSubject: subject,
-          snapshot: {
-            bookingType: order.bookingType,
-            provider: order.provider?.name ?? "",
-            vehicle: `${order.vehicle.company} • ${order.vehicle.type}`,
-            pickupDate: order.trip.pickupDate,
-            dropoffDate: order.trip.dropoffDate,
-            amount: order.pricing.amount,
-            currency: order.pricing.currency,
-            paymentLinkRef: order.payment.paymentUrl,
-          },
+          snapshot: (() => {
+            const s = summarizeCharges(order.charges, order.pricing.amount);
+            return {
+              bookingType: order.bookingType,
+              provider: order.provider?.name ?? "",
+              vehicle: `${order.vehicle.company} • ${order.vehicle.type}`,
+              pickupDate: order.trip.pickupDate,
+              dropoffDate: order.trip.dropoffDate,
+              pickupLocation: order.trip.pickupLocation ?? null,
+              dropoffLocation: order.trip.dropoffLocation ?? null,
+              amount: order.pricing.amount,
+              currency: order.pricing.currency,
+              charges: s.charges,
+              dueAtCounter: s.dueAtCounter,
+              total: s.total,
+              paymentLinkRef: order.payment.paymentUrl,
+            };
+          })(),
         },
         {
           actor: context.actor,

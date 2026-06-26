@@ -30,6 +30,7 @@ export default async function AdminSettingsPage() {
           cancellationPolicy: settings.cancellationPolicy,
           consentMode: settings.consentMode,
           consentMessage: settings.consentMessage,
+          termsAndConditions: settings.termsAndConditions,
         }}
         canEdit={canEdit}
       />

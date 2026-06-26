@@ -2,13 +2,19 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import { LoadingButton } from "@/components/ui/loading-button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { DateTimePicker } from "@/components/common/date-time-picker";
 import {
   Form,
@@ -33,16 +39,21 @@ import { toast } from "@/components/ui/sonner";
 import { api, ApiClientError } from "@/lib/api-client";
 import {
   BookingTypeLabel,
+  PaymentTimingLabel,
 } from "@/lib/constants/labels";
 import {
   BookingType,
   type BookingType as BookingTypeT,
   type Currency,
+  PAYMENT_TIMINGS,
+  PaymentTiming,
 } from "@/lib/constants/enums";
 import {
   createOrderSchema,
   type CreateOrderInput,
 } from "@/lib/validation";
+import { summarizeCharges } from "@/lib/charges";
+import { formatCurrency } from "@/lib/format";
 import type { OrderDTO, ProviderDTO } from "@/types";
 import { ProviderSelector } from "@/components/features/providers";
 import {
@@ -88,12 +99,32 @@ export function CreateOrderForm({
       provider: providers[0]?.key ?? "",
       customer: { name: "", email: "", phone: "" },
       vehicle: { company: "", type: "", imageUrl: "" },
-      trip: { pickupDate: "", dropoffDate: "" },
-      pricing: { amount: 0, currency: defaultCurrency },
+      trip: {
+        pickupDate: "",
+        dropoffDate: "",
+        pickupLocation: "",
+        dropoffLocation: "",
+      },
+      currency: defaultCurrency,
+      charges: [{ name: "Rental cost", amount: 0, timing: PaymentTiming.PREPAID }],
       notes: "",
     },
     mode: "onTouched",
   });
+
+  const chargeFields = useFieldArray({ control: form.control, name: "charges" });
+
+  // Live breakdown for the summary box — recomputed from the same helper the
+  // server uses, so what the agent sees here is exactly what gets charged.
+  const watchedCharges = form.watch("charges");
+  const watchedCurrency = form.watch("currency") ?? defaultCurrency;
+  const chargeSummary = summarizeCharges(
+    (watchedCharges ?? []).map((c) => ({
+      name: c?.name ?? "",
+      amount: typeof c?.amount === "number" ? c.amount : Number(c?.amount) || 0,
+      timing: (c?.timing as PaymentTiming) ?? PaymentTiming.PREPAID,
+    })),
+  );
 
   const isSubmitting = form.formState.isSubmitting;
 
@@ -208,6 +239,44 @@ export function CreateOrderForm({
                   </FormItem>
                 );
               }}
+            />
+
+            <FormField
+              control={form.control}
+              name="trip.pickupLocation"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Pick-up location</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="e.g. LAX Airport — Terminal 1"
+                      disabled={isSubmitting}
+                      {...field}
+                      value={field.value ?? ""}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="trip.dropoffLocation"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Drop-off location</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="e.g. San Diego Downtown"
+                      disabled={isSubmitting}
+                      {...field}
+                      value={field.value ?? ""}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
           </CardContent>
         </Card>
@@ -414,41 +483,18 @@ export function CreateOrderForm({
         <Card>
           <CardHeader>
             <CardTitle>Charge details</CardTitle>
+            <CardDescription>
+              Prepaid charges are collected online via the payment link.
+              Due-at-counter charges are shown to the customer for transparency
+              but are collected by the rental counter at pick-up.
+            </CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-3">
+          <CardContent className="space-y-4">
             <FormField
               control={form.control}
-              name="pricing.amount"
+              name="currency"
               render={({ field }) => (
-                <FormItem className="sm:col-span-2">
-                  <FormLabel>Amount (MCO)</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      min={1}
-                      step="0.01"
-                      inputMode="decimal"
-                      placeholder="0.00"
-                      disabled={isSubmitting}
-                      {...field}
-                      onChange={(e) =>
-                        field.onChange(e.target.value === "" ? "" : Number(e.target.value))
-                      }
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Major units (e.g. 199.50). Stripe sees this in minor units.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="pricing.currency"
-              render={({ field }) => (
-                <FormItem>
+                <FormItem className="max-w-[200px]">
                   <FormLabel>Currency</FormLabel>
                   <Select
                     value={field.value ?? defaultCurrency}
@@ -473,11 +519,154 @@ export function CreateOrderForm({
               )}
             />
 
+            <div className="space-y-3">
+              {chargeFields.fields.map((row, index) => (
+                <div
+                  key={row.id}
+                  className="grid gap-3 sm:grid-cols-[1fr_140px_170px_auto] sm:items-end"
+                >
+                  <FormField
+                    control={form.control}
+                    name={`charges.${index}.name`}
+                    render={({ field }) => (
+                      <FormItem>
+                        {index === 0 ? <FormLabel>Charge name</FormLabel> : null}
+                        <FormControl>
+                          <Input
+                            placeholder="e.g. Rental cost"
+                            disabled={isSubmitting}
+                            {...field}
+                            value={field.value ?? ""}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name={`charges.${index}.amount`}
+                    render={({ field }) => (
+                      <FormItem>
+                        {index === 0 ? <FormLabel>Amount</FormLabel> : null}
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            inputMode="decimal"
+                            placeholder="0.00"
+                            disabled={isSubmitting}
+                            {...field}
+                            value={field.value ?? ""}
+                            onChange={(e) =>
+                              field.onChange(
+                                e.target.value === ""
+                                  ? ""
+                                  : Number(e.target.value),
+                              )
+                            }
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name={`charges.${index}.timing`}
+                    render={({ field }) => (
+                      <FormItem>
+                        {index === 0 ? <FormLabel>Payment timing</FormLabel> : null}
+                        <Select
+                          value={field.value ?? PaymentTiming.PREPAID}
+                          onValueChange={field.onChange}
+                          disabled={isSubmitting}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Timing" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {PAYMENT_TIMINGS.map((t) => (
+                              <SelectItem key={t} value={t}>
+                                {PaymentTimingLabel[t]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => chargeFields.remove(index)}
+                    disabled={isSubmitting || chargeFields.fields.length <= 1}
+                    aria-label="Remove charge"
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  chargeFields.append({
+                    name: "",
+                    amount: 0,
+                    timing: PaymentTiming.PREPAID,
+                  })
+                }
+                disabled={isSubmitting}
+              >
+                + Add charge
+              </Button>
+            </div>
+
+            {/* Live breakdown — uses the same helper the server uses, so the
+                agent sees exactly what will be charged online. */}
+            <div className="space-y-1.5 rounded-md border bg-muted/30 p-4 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">
+                  Amount paid online (today)
+                </span>
+                <span className="font-medium tabular-nums">
+                  {formatCurrency(chargeSummary.prepaid, watchedCurrency)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Amount due at counter</span>
+                <span className="font-medium tabular-nums">
+                  {formatCurrency(chargeSummary.dueAtCounter, watchedCurrency)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between border-t pt-1.5">
+                <span className="font-medium">Total rental cost</span>
+                <span className="font-semibold tabular-nums">
+                  {formatCurrency(chargeSummary.total, watchedCurrency)}
+                </span>
+              </div>
+              <p className="pt-1 text-xs text-muted-foreground">
+                The payment link charges only the {" "}
+                <strong>{formatCurrency(chargeSummary.prepaid, watchedCurrency)}</strong>{" "}
+                prepaid amount.
+              </p>
+            </div>
+
             <FormField
               control={form.control}
               name="notes"
               render={({ field }) => (
-                <FormItem className="sm:col-span-3">
+                <FormItem>
                   <FormLabel>Internal notes (optional)</FormLabel>
                   <FormControl>
                     <Textarea

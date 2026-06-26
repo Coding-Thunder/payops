@@ -28,6 +28,7 @@ import {
 import { roleHasPermission, Permission } from "@/lib/constants/permissions";
 import { DomainEventType } from "@/lib/constants/events";
 import { resolveProvider } from "@/lib/constants/providers";
+import { summarizeCharges } from "@/lib/charges";
 import { logger } from "@/lib/logger";
 import { publishEvent } from "@/server/events/bus";
 import { Order, type OrderDoc } from "@/server/db/models";
@@ -125,8 +126,25 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
     trip: {
       pickupDate: doc.trip.pickupDate.toISOString(),
       dropoffDate: doc.trip.dropoffDate.toISOString(),
+      pickupLocation: doc.trip.pickupLocation ?? null,
+      dropoffLocation: doc.trip.dropoffLocation ?? null,
     },
     pricing: { amount: doc.pricing.amount, currency: doc.pricing.currency },
+    // Charges are the source of truth; legacy orders (no `charges[]`) get a
+    // single synthesised prepaid line from `pricing.amount`.
+    charges: summarizeCharges(doc.charges, doc.pricing.amount).charges,
+    confirmationNumber: doc.confirmationNumber ?? null,
+    terms: {
+      text: doc.terms?.text ?? "",
+      version: doc.terms?.version ?? "v1",
+    },
+    termsAcknowledgement: doc.termsAcknowledgement?.acknowledgedAt
+      ? {
+          acknowledgedAt: doc.termsAcknowledgement.acknowledgedAt.toISOString(),
+          ip: doc.termsAcknowledgement.ip ?? null,
+          userAgent: doc.termsAcknowledgement.userAgent ?? null,
+        }
+      : null,
     payment: {
       gateway: (doc.payment.gateway ?? null) as PaymentGatewayKey | null,
       // Schema fields keep their legacy names (Stripe-era); the DTO
@@ -261,10 +279,15 @@ export async function createOrder(
     );
   }
 
-  const currency = input.pricing.currency ?? settings.defaultCurrency;
+  const currency = input.currency ?? settings.defaultCurrency;
   const orderId = new Types.ObjectId();
   const orderNumber = generateOrderNumber(settings.orderPrefix);
   const providerSnapshot = await buildProviderSnapshotFromKey(input.provider);
+
+  // Charges are the source of truth. `pricing.amount` is the PREPAID total —
+  // the ONLY figure ever sent to the gateway. Due-at-counter never touches
+  // Stripe. Validation already guarantees prepaid >= Stripe's minimum.
+  const chargeSummary = summarizeCharges(input.charges);
 
   // Transactional: Order doc + audit row + genesis evidence row are
   // written together. A failure on evidence aborts the order create —
@@ -284,8 +307,15 @@ export async function createOrder(
           trip: {
             pickupDate: new Date(input.trip.pickupDate),
             dropoffDate: new Date(input.trip.dropoffDate),
+            pickupLocation: input.trip.pickupLocation,
+            dropoffLocation: input.trip.dropoffLocation,
           },
-          pricing: { amount: input.pricing.amount, currency },
+          pricing: { amount: chargeSummary.prepaid, currency },
+          charges: chargeSummary.charges,
+          terms: {
+            text: settings.termsAndConditions,
+            version: settings.termsVersion,
+          },
           payment: {
             status: OrderStatus.NOT_INITIATED,
             processedWebhookEventIds: [],
@@ -319,6 +349,9 @@ export async function createOrder(
         metadata: {
           orderNumber: orderDoc.orderNumber,
           amount: orderDoc.pricing.amount,
+          prepaid: chargeSummary.prepaid,
+          dueAtCounter: chargeSummary.dueAtCounter,
+          total: chargeSummary.total,
           currency: orderDoc.pricing.currency,
           bookingType: orderDoc.bookingType,
         },
@@ -365,10 +398,23 @@ export async function createOrder(
           trip: {
             pickupDate: orderDoc.trip.pickupDate.toISOString(),
             dropoffDate: orderDoc.trip.dropoffDate.toISOString(),
+            pickupLocation: orderDoc.trip.pickupLocation ?? null,
+            dropoffLocation: orderDoc.trip.dropoffLocation ?? null,
           },
           pricing: {
             amount: orderDoc.pricing.amount,
             currency: orderDoc.pricing.currency,
+          },
+          charges: chargeSummary.charges,
+          chargeBreakdown: {
+            prepaid: chargeSummary.prepaid,
+            dueAtCounter: chargeSummary.dueAtCounter,
+            total: chargeSummary.total,
+            currency: orderDoc.pricing.currency,
+          },
+          terms: {
+            text: orderDoc.terms?.text ?? "",
+            version: orderDoc.terms?.version ?? "v1",
           },
           policy: {
             acceptedAt: orderDoc.policy.acceptedAt.toISOString(),
@@ -525,6 +571,8 @@ export async function initiatePayment(
     trip: {
       pickupDate: doc.trip.pickupDate.toISOString(),
       dropoffDate: doc.trip.dropoffDate.toISOString(),
+      pickupLocation: doc.trip.pickupLocation ?? null,
+      dropoffLocation: doc.trip.dropoffLocation ?? null,
     },
   });
 
@@ -714,8 +762,19 @@ export async function initiatePayment(
 interface BuildSessionInput {
   orderId: string;
   orderNumber: string;
-  input: CreateOrderInput;
+  /** PREPAID total in MAJOR units — the ONLY figure the gateway charges. */
+  amount: number;
   currency: string;
+  bookingType: BookingType;
+  provider: string;
+  customerEmail: string;
+  vehicle: { company: string; type: string; imageUrl?: string | null };
+  trip: {
+    pickupDate: string;
+    dropoffDate: string;
+    pickupLocation?: string | null;
+    dropoffLocation?: string | null;
+  };
   successUrl: string;
   cancelUrl: string;
   expiresAt: Date;
@@ -724,13 +783,17 @@ interface BuildSessionInput {
 
 async function buildCheckoutSession(args: BuildSessionInput) {
   const stripe = getStripe();
-  const amountMinor = toMinorUnits(args.input.pricing.amount, args.currency);
+  const amountMinor = toMinorUnits(args.amount, args.currency);
   if (amountMinor < 50) {
     throw new ValidationError("Amount is below Stripe's minimum charge");
   }
 
-  const productName = describeProductName(args.input);
-  const description = describeProductDescription(args.input);
+  const productName = describeProductName({
+    bookingType: args.bookingType,
+    provider: args.provider,
+    vehicle: args.vehicle,
+  });
+  const description = describeProductDescription({ trip: args.trip });
   // Stripe metadata strings show up on the Stripe dashboard and on the
   // PaymentIntent description — admins can rebrand the workspace and the
   // next checkout session reflects it without a redeploy.
@@ -740,7 +803,7 @@ async function buildCheckoutSession(args: BuildSessionInput) {
     {
       mode: "payment",
       payment_method_types: ["card"],
-      customer_email: args.input.customer.email,
+      customer_email: args.customerEmail,
       client_reference_id: args.orderId,
       success_url: `${args.successUrl}?order=${encodeURIComponent(args.orderNumber)}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${args.cancelUrl}?order=${encodeURIComponent(args.orderNumber)}`,
@@ -758,9 +821,9 @@ async function buildCheckoutSession(args: BuildSessionInput) {
               // the price. Only forward when the operator captured a
               // valid http(s) URL — anything else (data URI, localhost,
               // empty) Stripe will reject.
-              ...(args.input.vehicle.imageUrl &&
-              /^https?:\/\//i.test(args.input.vehicle.imageUrl)
-                ? { images: [args.input.vehicle.imageUrl] }
+              ...(args.vehicle.imageUrl &&
+              /^https?:\/\//i.test(args.vehicle.imageUrl)
+                ? { images: [args.vehicle.imageUrl] }
                 : {}),
             },
           },
@@ -769,7 +832,7 @@ async function buildCheckoutSession(args: BuildSessionInput) {
       metadata: {
         orderId: args.orderId,
         orderNumber: args.orderNumber,
-        bookingType: args.input.bookingType,
+        bookingType: args.bookingType,
         actorId: args.actor.id,
         actorEmail: args.actor.email,
         appName: branding.brandName,
@@ -823,13 +886,22 @@ function describeProductName(input: ProductNameInput): string {
 }
 
 interface ProductDescriptionInput {
-  trip: { pickupDate: string; dropoffDate: string };
+  trip: {
+    pickupDate: string;
+    dropoffDate: string;
+    pickupLocation?: string | null;
+    dropoffLocation?: string | null;
+  };
 }
 
 function describeProductDescription(input: ProductDescriptionInput): string {
   const pickup = new Date(input.trip.pickupDate).toISOString().slice(0, 10);
   const drop = new Date(input.trip.dropoffDate).toISOString().slice(0, 10);
-  return `Pick-up: ${pickup} • Drop-off: ${drop}`;
+  const pickupLoc = input.trip.pickupLocation?.trim();
+  const dropLoc = input.trip.dropoffLocation?.trim();
+  const pickupPart = pickupLoc ? `${pickup} (${pickupLoc})` : pickup;
+  const dropPart = dropLoc ? `${drop} (${dropLoc})` : drop;
+  return `Pick-up: ${pickupPart} • Drop-off: ${dropPart}`;
 }
 
 // ---------- Listing / fetching ----------
@@ -1009,29 +1081,27 @@ export async function regeneratePaymentLink(
     session = await buildCheckoutSession({
       orderId: String(doc._id),
       orderNumber: doc.orderNumber,
-      input: {
-        bookingType: doc.bookingType,
-        // Regeneration reuses the snapshot already attached to the order —
-        // never re-validates against the live catalog so disabled providers
-        // can still have outstanding payment links refreshed.
-        provider: doc.provider?.id ?? resolveProvider(undefined).id,
-        customer: doc.customer,
-        vehicle: {
-          company: doc.vehicle.company,
-          type: doc.vehicle.type,
-          imageUrl: doc.vehicle.imageUrl ?? null,
-        },
-        trip: {
-          pickupDate: doc.trip.pickupDate.toISOString(),
-          dropoffDate: doc.trip.dropoffDate.toISOString(),
-        },
-        pricing: {
-          amount: doc.pricing.amount,
-          currency: doc.pricing.currency,
-        },
-        notes: doc.notes ?? undefined,
-      },
+      // Regeneration reuses the snapshot already attached to the order —
+      // never re-validates against the live catalog so disabled providers
+      // can still have outstanding payment links refreshed. `pricing.amount`
+      // is already the PREPAID total, so the refreshed link charges only the
+      // prepaid amount, identical to the initial link.
+      amount: doc.pricing.amount,
       currency: doc.pricing.currency,
+      bookingType: doc.bookingType,
+      provider: doc.provider?.id ?? resolveProvider(undefined).id,
+      customerEmail: doc.customer.email,
+      vehicle: {
+        company: doc.vehicle.company,
+        type: doc.vehicle.type,
+        imageUrl: doc.vehicle.imageUrl ?? null,
+      },
+      trip: {
+        pickupDate: doc.trip.pickupDate.toISOString(),
+        dropoffDate: doc.trip.dropoffDate.toISOString(),
+        pickupLocation: doc.trip.pickupLocation ?? null,
+        dropoffLocation: doc.trip.dropoffLocation ?? null,
+      },
       successUrl: settings.successRedirectUrl,
       cancelUrl: settings.cancelRedirectUrl,
       expiresAt,
@@ -1314,6 +1384,52 @@ export async function updateOrderCustomer(
     order: orderToDTO(doc.toObject() as OrderDoc & { _id: Types.ObjectId }),
     applied,
   };
+}
+
+/**
+ * Set / clear the supplier confirmation number on an order. Staff can edit
+ * their own orders; admins can edit any (same ownership rule as the customer
+ * patch). Pasting the supplier's confirmation number is the manual step
+ * after the supplier confirms the booking — it surfaces at the top of the
+ * confirmation email. Passing an empty string clears it.
+ */
+export async function setConfirmationNumber(
+  id: string,
+  confirmationNumber: string,
+  ctx: OrderContext,
+): Promise<OrderDTO> {
+  await connectMongo();
+  if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
+  const doc = await Order.findById(id);
+  if (!doc) throw new NotFoundError("Order not found");
+
+  const canSeeAll = roleHasPermission(ctx.actor.role, Permission.ORDER_VIEW_ALL);
+  if (!canSeeAll && String(doc.createdBy.userId) !== ctx.actor.id) {
+    throw new ForbiddenError("You can only edit orders you created");
+  }
+
+  const next = confirmationNumber.trim() || null;
+  const previous = doc.confirmationNumber ?? null;
+  if (next === previous) {
+    return orderToDTO(doc.toObject() as OrderDoc & { _id: Types.ObjectId });
+  }
+  doc.confirmationNumber = next;
+  await doc.save();
+
+  await recordAudit({
+    action: AuditAction.ORDER_UPDATED,
+    entityType: AuditEntity.ORDER,
+    entityId: String(doc._id),
+    actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+    request: ctx.request ?? null,
+    metadata: {
+      action: "confirmation_number_set",
+      from: previous,
+      to: next,
+    },
+  });
+
+  return orderToDTO(doc.toObject() as OrderDoc & { _id: Types.ObjectId });
 }
 
 /**

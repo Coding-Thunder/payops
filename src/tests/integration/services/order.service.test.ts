@@ -90,7 +90,9 @@ describe("createOrder", () => {
     // refuses to save.
     await expect(
       createOrder(
-        validCreateOrderInput({ pricing: { amount: 0.4, currency: "USD" } }),
+        validCreateOrderInput({
+          charges: [{ name: "Rental cost", amount: 0.4, timing: "PREPAID" }],
+        }),
         { actor: actorFor(UserRole.ADMIN) },
       ),
     ).rejects.toThrow();

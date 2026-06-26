@@ -34,6 +34,12 @@ export const updateSettingsSchema = z.object({
     .min(20, "Acknowledgement must be at least 20 characters")
     .max(1000, "Acknowledgement must be 1000 characters or fewer")
     .optional(),
+  termsAndConditions: z
+    .string()
+    .trim()
+    .min(20, "Terms must be at least 20 characters")
+    .max(8000, "Terms must be 8000 characters or fewer")
+    .optional(),
 });
 
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;

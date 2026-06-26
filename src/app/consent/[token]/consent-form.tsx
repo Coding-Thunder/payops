@@ -238,31 +238,75 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
 }
 
 function SummaryBlock({ view }: { view: PublicConsentView }) {
+  const { snapshot } = view;
+  const currency = snapshot.currency;
+  const dueAtCounter = snapshot.dueAtCounter ?? 0;
+  const total = snapshot.total ?? snapshot.amount;
+  const hasCounterDue = dueAtCounter > 0;
   return (
     <div className="border-t border-slate-100 px-6 py-5 sm:px-8">
       <p className="text-[11px] font-semibold uppercase tracking-[0.10em] text-slate-500">
         Booking summary
       </p>
       <div className="mt-3 flex items-baseline justify-between gap-3">
-        <span className="text-2xl font-semibold tracking-tight tabular-nums text-slate-900">
-          {formatCurrency(view.snapshot.amount, view.snapshot.currency)}
-        </span>
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+            You are paying today
+          </p>
+          <span className="text-2xl font-semibold tracking-tight tabular-nums text-slate-900">
+            {formatCurrency(snapshot.amount, currency)}
+          </span>
+        </div>
         <span className="text-xs text-slate-500">
-          {BookingTypeLabel[view.snapshot.bookingType]}
+          {BookingTypeLabel[snapshot.bookingType]}
         </span>
       </div>
+
+      {hasCounterDue ? (
+        <div className="mt-3 space-y-1 rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-3 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-slate-500">Paid online today</span>
+            <span className="tabular-nums text-slate-900">
+              {formatCurrency(snapshot.amount, currency)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-slate-500">
+              Remaining balance due at rental counter
+            </span>
+            <span className="tabular-nums text-slate-900">
+              {formatCurrency(dueAtCounter, currency)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between border-t border-slate-200 pt-1.5 font-medium">
+            <span className="text-slate-700">Total rental cost</span>
+            <span className="tabular-nums text-slate-900">
+              {formatCurrency(total, currency)}
+            </span>
+          </div>
+        </div>
+      ) : null}
+
       <dl className="mt-4 divide-y divide-slate-100 text-sm">
         <DetailRow label="Customer" value={view.customerName} />
         <DetailRow label="Email" value={view.customerEmail} mono />
-        <DetailRow label="Provider" value={view.snapshot.provider || "—"} />
-        <DetailRow label="Vehicle" value={view.snapshot.vehicle} />
+        <DetailRow label="Provider" value={snapshot.provider || "—"} />
+        <DetailRow label="Vehicle" value={snapshot.vehicle} />
         <DetailRow
           label="Pick-up"
-          value={formatDateTime(view.snapshot.pickupDate)}
+          value={
+            snapshot.pickupLocation
+              ? `${formatDateTime(snapshot.pickupDate)} · ${snapshot.pickupLocation}`
+              : formatDateTime(snapshot.pickupDate)
+          }
         />
         <DetailRow
           label="Drop-off"
-          value={formatDateTime(view.snapshot.dropoffDate)}
+          value={
+            snapshot.dropoffLocation
+              ? `${formatDateTime(snapshot.dropoffDate)} · ${snapshot.dropoffLocation}`
+              : formatDateTime(snapshot.dropoffDate)
+          }
         />
       </dl>
     </div>

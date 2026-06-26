@@ -1,7 +1,8 @@
 import "server-only";
 
-import { BookingType } from "@/lib/constants/enums";
+import { BookingType, PaymentTiming } from "@/lib/constants/enums";
 import type { ProviderSnapshot } from "@/lib/constants/providers";
+import type { EmailChargeBreakdown } from "@/server/email/components";
 
 import type { PaymentConfirmationEmailProps } from "@/server/email/templates/payment-confirmation";
 import type { PaymentRequestEmailProps } from "@/server/email/templates/payment-request";
@@ -14,8 +15,33 @@ interface BuildPaymentPreviewArgs {
   provider: ProviderSnapshot;
   cancellationPolicy?: string;
   cancellationPolicyVersion?: string;
+  termsAndConditions?: string;
+  termsVersion?: string;
   bookingType?: BookingType;
 }
+
+/** Sample split breakdown so previews exercise the prepaid / due-at-counter
+ *  rows. Prepaid $150, due-at-counter $350, total $500. */
+const SAMPLE_BREAKDOWN: EmailChargeBreakdown = {
+  lines: [
+    { name: "Rental cost", amount: "$150.00", timing: PaymentTiming.PREPAID },
+    {
+      name: "Counter balance",
+      amount: "$350.00",
+      timing: PaymentTiming.DUE_AT_COUNTER,
+    },
+  ],
+  prepaid: "$150.00",
+  dueAtCounter: "$350.00",
+  total: "$500.00",
+};
+
+const SAMPLE_TRIP = {
+  pickupDate: "Sun, May 17 · 10:00 AM",
+  dropoffDate: "Wed, May 20 · 6:00 PM",
+  pickupLocation: "LAX Airport — Terminal 1",
+  dropoffLocation: "San Diego Downtown",
+};
 
 /**
  * Deterministic sample data for the payment-confirmation template. Used
@@ -34,14 +60,18 @@ export function buildPaymentPreviewProps(
     customerName: "Jane Smith",
     orderNumber: "ORD-260517-PREVW1",
     bookingType,
-    amount: "$245.00",
+    amount: "$150.00",
     paidOn: "May 17, 2026 · 3:42 PM",
     provider: args.provider,
     vehicle: { company: "Toyota", type: "Camry SE", imageUrl: null },
-    trip: {
-      pickupDate: "Sun, May 17 · 10:00 AM",
-      dropoffDate: "Wed, May 20 · 6:00 PM",
-    },
+    trip: SAMPLE_TRIP,
+    confirmationNumber: "SUPP-9F3K2218",
+    chargeBreakdown: SAMPLE_BREAKDOWN,
+    termsText:
+      args.termsAndConditions ??
+      "The prepaid amount is charged today to secure your reservation. The balance shown as due at counter is collected at pick-up.\nA valid driver's licence and the payment card used must be presented at pick-up.",
+    termsVersion: args.termsVersion ?? "v1",
+    acknowledgeUrl: `${args.appUrl.replace(/\/$/, "")}/acknowledge/preview-token`,
     receiptUrl: "https://pay.stripe.com/receipts/preview",
     cancellationPolicy: args.cancellationPolicy,
     cancellationPolicyVersion: args.cancellationPolicyVersion,
@@ -65,14 +95,12 @@ export function buildPaymentRequestPreviewProps(
     customerName: "Jane Smith",
     orderNumber: "ORD-260517-PREVW1",
     bookingType,
-    amount: "$245.00",
+    amount: "$150.00",
     dueBy: "May 19, 2026 · 6:00 PM",
     provider: args.provider,
     vehicle: { company: "Toyota", type: "Camry SE", imageUrl: null },
-    trip: {
-      pickupDate: "Sun, May 17 · 10:00 AM",
-      dropoffDate: "Wed, May 20 · 6:00 PM",
-    },
+    trip: SAMPLE_TRIP,
+    chargeBreakdown: SAMPLE_BREAKDOWN,
     paymentUrl:
       "https://checkout.stripe.com/c/pay/cs_test_preview_link_only",
     greeting: null,

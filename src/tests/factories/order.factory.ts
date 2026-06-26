@@ -5,6 +5,7 @@ import {
   ConsentStatus,
   Currency,
   OrderStatus,
+  PaymentTiming,
   RecordState,
 } from "@/lib/constants/enums";
 import {
@@ -63,11 +64,23 @@ export function buildOrder(seed: OrderSeed = {}): OrderDoc & { _id: Types.Object
     trip: {
       pickupDate: seed.trip?.pickupDate ?? pickup,
       dropoffDate: seed.trip?.dropoffDate ?? dropoff,
+      pickupLocation: seed.trip?.pickupLocation ?? "LAX Airport — Terminal 1",
+      dropoffLocation: seed.trip?.dropoffLocation ?? "San Diego Downtown",
     },
     pricing: {
       amount: seed.pricing?.amount ?? 199.5,
       currency: (seed.pricing?.currency ?? Currency.USD) as Currency,
     },
+    charges: seed.charges ?? [
+      {
+        name: "Rental cost",
+        amount: seed.pricing?.amount ?? 199.5,
+        timing: PaymentTiming.PREPAID,
+      },
+    ],
+    confirmationNumber: seed.confirmationNumber ?? null,
+    terms: seed.terms ?? { text: "Standard test terms.", version: "v1" },
+    termsAcknowledgement: seed.termsAcknowledgement ?? null,
     payment: {
       stripeSessionId: seed.payment?.stripeSessionId ?? null,
       paymentIntentId: seed.payment?.paymentIntentId ?? null,
@@ -137,6 +150,10 @@ export async function createOrder(seed: OrderSeed = {}): Promise<OrderDocument> 
     vehicle: data.vehicle,
     trip: data.trip,
     pricing: data.pricing,
+    charges: data.charges,
+    confirmationNumber: data.confirmationNumber,
+    terms: data.terms,
+    termsAcknowledgement: data.termsAcknowledgement,
     payment: data.payment,
     createdBy: data.createdBy,
     policy: data.policy,

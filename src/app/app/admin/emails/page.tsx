@@ -102,6 +102,8 @@ export default async function AdminEmailsPage({
     },
     cancellationPolicy: settings.cancellationPolicy,
     cancellationPolicyVersion: settings.cancellationPolicyVersion,
+    termsAndConditions: settings.termsAndConditions,
+    termsVersion: settings.termsVersion,
     bookingType: activeBookingType,
   };
 

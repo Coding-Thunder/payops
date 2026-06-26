@@ -20,6 +20,8 @@ import {
   OrderStatus,
   PAYMENT_GATEWAY_KEYS,
   PaymentGatewayKey,
+  PAYMENT_TIMINGS,
+  PaymentTiming,
   RECORD_STATES,
   RecordState,
 } from "@/lib/constants/enums";
@@ -58,12 +60,42 @@ export interface OrderDoc {
   trip: {
     pickupDate: Date;
     dropoffDate: Date;
+    /** Free-text rental pick-up / drop-off locations. Optional so orders
+     *  created before this field keep validating. */
+    pickupLocation?: string | null;
+    dropoffLocation?: string | null;
   };
   pricing: {
-    /** Stored in MAJOR units (e.g. dollars), 2-decimal precision. */
+    /** Stored in MAJOR units (e.g. dollars), 2-decimal precision.
+     *  Equals the sum of PREPAID `charges` — i.e. the amount the gateway is
+     *  asked to charge and the figure reconciliation/analytics read. */
     amount: number;
     currency: Currency;
   };
+  /** Rental charge breakdown — source of truth for prepaid / due-at-counter
+   *  / total. Empty on orders created before the charges model; those treat
+   *  `pricing.amount` as a single implicit prepaid line. */
+  charges: Array<{
+    name: string;
+    amount: number;
+    timing: PaymentTiming;
+  }>;
+  /** Supplier confirmation number, pasted by staff after the supplier
+   *  confirms. Null until entered. */
+  confirmationNumber?: string | null;
+  /** Snapshot of the Terms & Conditions the customer is asked to accept,
+   *  frozen at creation (mirrors `policy`). */
+  terms?: {
+    text: string;
+    version: string;
+  };
+  /** Customer's post-payment "I Agree" acknowledgement, captured from the
+   *  confirmation email's hosted acknowledgement page. */
+  termsAcknowledgement?: {
+    acknowledgedAt: Date;
+    ip?: string | null;
+    userAgent?: string | null;
+  } | null;
   payment: {
     /** Which gateway routes this payment. Null while NOT_INITIATED —
      *  no gateway has been contacted yet. Stamped at LINK_GENERATED
@@ -201,6 +233,8 @@ const tripSchema = new Schema(
   {
     pickupDate: { type: Date, required: true },
     dropoffDate: { type: Date, required: true },
+    pickupLocation: { type: String, default: null, trim: true, maxlength: 200 },
+    dropoffLocation: { type: String, default: null, trim: true, maxlength: 200 },
   },
   { _id: false },
 );
@@ -217,6 +251,45 @@ const pricingSchema = new Schema(
       },
     },
     currency: { type: String, enum: CURRENCIES, required: true },
+  },
+  { _id: false },
+);
+
+const chargeSchema = new Schema(
+  {
+    name: { type: String, required: true, trim: true, maxlength: 120 },
+    amount: {
+      type: Number,
+      required: true,
+      min: 0,
+      validate: {
+        validator: (v: number) => Number.isFinite(v) && v >= 0,
+        message: "Charge amount must be a non-negative number",
+      },
+    },
+    timing: {
+      type: String,
+      enum: PAYMENT_TIMINGS,
+      required: true,
+      default: PaymentTiming.PREPAID,
+    },
+  },
+  { _id: false },
+);
+
+const termsSchema = new Schema(
+  {
+    text: { type: String, required: true, maxlength: 8000, default: "" },
+    version: { type: String, required: true, maxlength: 16, default: "v1" },
+  },
+  { _id: false },
+);
+
+const termsAcknowledgementSchema = new Schema(
+  {
+    acknowledgedAt: { type: Date, required: true },
+    ip: { type: String, default: null, maxlength: 64 },
+    userAgent: { type: String, default: null, maxlength: 512 },
   },
   { _id: false },
 );
@@ -364,6 +437,15 @@ const orderSchema = new Schema<OrderDoc>(
     vehicle: { type: vehicleSchema, required: true },
     trip: { type: tripSchema, required: true },
     pricing: { type: pricingSchema, required: true },
+    charges: { type: [chargeSchema], default: [] },
+    confirmationNumber: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 64,
+    },
+    terms: { type: termsSchema, default: null },
+    termsAcknowledgement: { type: termsAcknowledgementSchema, default: null },
     payment: { type: paymentSchema, required: true },
     createdBy: { type: creatorSchema, required: true },
     policy: {
