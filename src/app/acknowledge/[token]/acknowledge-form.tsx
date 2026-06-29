@@ -93,7 +93,7 @@ export function AcknowledgeForm({ token, initialView }: AcknowledgeFormProps) {
         {acknowledged ? (
           <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
             <p className="text-sm font-semibold text-emerald-900">
-              Thank you — your acknowledgement is recorded.
+              Thank you. Your acknowledgement has been successfully recorded.
             </p>
             <p className="mt-1 text-xs text-emerald-800">
               You agreed to the terms on{" "}

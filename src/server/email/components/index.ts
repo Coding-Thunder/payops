@@ -16,5 +16,6 @@ export {
   type EmailChargeLine,
 } from "./charge-breakdown";
 export { EmailTermsSection } from "./terms-section";
+export { EmailAgreeButton } from "./agree-button";
 export { SupportSection } from "./support-section";
 export * from "./tokens";

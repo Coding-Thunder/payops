@@ -17,6 +17,7 @@ import {
   ChargeBreakdown,
   COLOR,
   type EmailChargeBreakdown,
+  EmailAgreeButton,
   EmailFooter,
   EmailHeader,
   EmailLayout,
@@ -160,36 +161,13 @@ export function PaymentConfirmationEmail({
         </Section>
       ) : null}
 
-      <PaymentSummary
-        amount={amount}
-        orderNumber={orderNumber}
-        paidOn={paidOn}
-      />
-
+      {/* Booking summary first — the customer sees WHAT they're confirming
+          before the action. */}
       <ProviderBadge
         provider={provider}
         appUrl={appUrl}
         caption={BookingTypeLabel[bookingType]}
       />
-
-      {vehicle.imageUrl ? (
-        <Section style={{ padding: 0 }}>
-          <Img
-            src={vehicle.imageUrl}
-            alt={`${vehicle.company} ${vehicle.type}`}
-            width="600"
-            height="220"
-            style={{
-              display: "block",
-              width: "100%",
-              height: "220px",
-              objectFit: "cover",
-              backgroundColor: COLOR.surfaceMuted,
-              borderBottom: `1px solid ${COLOR.borderSoft}`,
-            }}
-          />
-        </Section>
-      ) : null}
 
       <SummaryCard
         title="Booking details"
@@ -228,12 +206,46 @@ export function PaymentConfirmationEmail({
         ) : null}
       </SummaryCard>
 
+      {/* "I Agree" moved HIGH — immediately visible right after the booking
+          summary. The full readable T&C stays at the bottom of the email. */}
+      {acknowledgeUrl ? (
+        <EmailAgreeButton
+          acknowledgeUrl={acknowledgeUrl}
+          termsVersion={termsVersion}
+        />
+      ) : null}
+
+      <PaymentSummary
+        amount={amount}
+        orderNumber={orderNumber}
+        paidOn={paidOn}
+      />
+
       {chargeBreakdown ? (
         <ChargeBreakdown
           breakdown={chargeBreakdown}
           title="Charge breakdown"
           topPadding={SPACE.md}
         />
+      ) : null}
+
+      {vehicle.imageUrl ? (
+        <Section style={{ padding: 0 }}>
+          <Img
+            src={vehicle.imageUrl}
+            alt={`${vehicle.company} ${vehicle.type}`}
+            width="600"
+            height="220"
+            style={{
+              display: "block",
+              width: "100%",
+              height: "220px",
+              objectFit: "cover",
+              backgroundColor: COLOR.surfaceMuted,
+              borderBottom: `1px solid ${COLOR.borderSoft}`,
+            }}
+          />
+        </Section>
       ) : null}
 
       <Section
@@ -303,14 +315,10 @@ export function PaymentConfirmationEmail({
         </>
       ) : null}
 
-      {/* Shared Terms & Conditions section — same component the payment
-          request email uses, so the T&C never drifts between templates. The
-          confirmation variant also carries the "I Agree" acknowledgement. */}
-      <EmailTermsSection
-        termsText={termsText}
-        termsVersion={termsVersion}
-        acknowledgeUrl={acknowledgeUrl}
-      />
+      {/* Full readable Terms & Conditions at the bottom (shared with the
+          payment-request email). The "I Agree" action lives higher up via
+          EmailAgreeButton so the customer sees it without scrolling. */}
+      <EmailTermsSection termsText={termsText} termsVersion={termsVersion} />
 
       <SupportSection
         orderNumber={orderNumber}
