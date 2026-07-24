@@ -51,7 +51,15 @@ export function EmailComposePageContent({
   orderId,
 }: EmailComposePageContentProps) {
   const router = useRouter();
-  const { data: order, error, isLoading } = useOrderQuery(orderId);
+  // Compose against a frozen order snapshot: no backstop polling. Polling
+  // here handed the composer a fresh `order` object every 6s, which its
+  // live-preview effect treated as a change and answered with a
+  // `/payment-request-preview` request — a background request storm on an
+  // idle screen. The page navigates away the moment the send completes,
+  // so status changes never need to stream in here.
+  const { data: order, error, isLoading } = useOrderQuery(orderId, {
+    poll: false,
+  });
 
   const [sentAt, setSentAt] = React.useState<string | null>(null);
 

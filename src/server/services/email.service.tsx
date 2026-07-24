@@ -16,6 +16,7 @@ import {
 import { PaymentGatewayLabel as PAYMENT_GATEWAY_LABELS } from "@/lib/constants/labels";
 import { env } from "@/lib/env";
 import { DomainEventType } from "@/lib/constants/events";
+import { ExternalServiceError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { publishEvent } from "@/server/events/bus";
 import type { OrderDTO } from "@/types";
@@ -182,7 +183,18 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
         error: err instanceof Error ? err.message : String(err),
       },
     });
-    throw err;
+    // A relay/transport failure is an *upstream* failure, not a bug in
+    // our request handling. Surface it as a typed EXTERNAL_SERVICE_ERROR
+    // (502) so `withApi` returns an actionable message the operator can
+    // act on ("try again") instead of an opaque 500 "Something went
+    // wrong". The raw SMTP reason stays server-side via `cause` (logged
+    // above + attached here) and is never sent to the client. Callers
+    // that treat sends as best-effort (e.g. the confirmation outbox)
+    // still catch this the same way — it remains an Error subclass.
+    throw new ExternalServiceError(
+      "We couldn't deliver the email right now. Please try again in a moment.",
+      err,
+    );
   }
 }
 

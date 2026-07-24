@@ -21,17 +21,33 @@ const NON_TERMINAL_POLL_MS = 6_000;
  *  "Sending receipt" past the moment the email actually went out. */
 const CONFIRMATION_POLL_MS = 4_000;
 
+export interface UseOrderQueryOptions {
+  /** Backstop polling for non-terminal orders. On by default (the order
+   *  detail page relies on it to reflect webhook-driven status changes).
+   *  Screens that only *compose* against a frozen order — e.g. the email
+   *  composer — pass `false`: they navigate away on send and don't need a
+   *  6s poll, and leaving it on made the composer's live-preview effect
+   *  re-fire a `/payment-request-preview` on every tick (a request
+   *  storm). */
+  poll?: boolean;
+}
+
 /**
  * Client-side fetch for a single order by id. The order detail route is
  * the canonical caller, the page mounts it, the iframe-preview path on
  * the email composer reads from it too. React Query dedupes the
  * underlying network request via the shared key.
  */
-export function useOrderQuery(orderId: string): UseQueryResult<OrderDTO> {
+export function useOrderQuery(
+  orderId: string,
+  options: UseOrderQueryOptions = {},
+): UseQueryResult<OrderDTO> {
+  const { poll = true } = options;
   return useQuery({
     queryKey: orderQueryKey(orderId),
     queryFn: () => api.get<OrderDTO>(`/api/orders/${orderId}`),
     refetchInterval: (query) => {
+      if (!poll) return false;
       const order = query.state.data;
       if (!order) return false;
       const status = order.status;
