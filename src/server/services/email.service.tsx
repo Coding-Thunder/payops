@@ -21,7 +21,7 @@ import { logger } from "@/lib/logger";
 import { publishEvent } from "@/server/events/bus";
 import type { OrderDTO } from "@/types";
 
-import { getMailer } from "@/server/email/smtp";
+import { classifyMailError, getMailer } from "@/server/email/smtp";
 import { inlinePublicImage } from "@/server/email/inline-image";
 import {
   UniversalOrderEmail,
@@ -168,9 +168,15 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
     });
     return { id: info.messageId ?? null };
   } catch (err) {
+    // Classify the transport failure (auth / connection / throttled /
+    // recipient / message) so the operator gets an actionable message
+    // instead of a generic bounce. `category` is logged for triage; the
+    // human `message` is what reaches the client.
+    const { category, message } = classifyMailError(err);
     logger.error("email.send_failed", {
       kind: args.kind,
       toMasked: maskEmail(args.to),
+      category,
       err: err instanceof Error ? err.message : String(err),
     });
     await recordAudit({
@@ -180,21 +186,19 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
       metadata: {
         kind: args.kind,
         to: args.to,
+        category,
         error: err instanceof Error ? err.message : String(err),
       },
     });
     // A relay/transport failure is an *upstream* failure, not a bug in
     // our request handling. Surface it as a typed EXTERNAL_SERVICE_ERROR
-    // (502) so `withApi` returns an actionable message the operator can
-    // act on ("try again") instead of an opaque 500 "Something went
-    // wrong". The raw SMTP reason stays server-side via `cause` (logged
-    // above + attached here) and is never sent to the client. Callers
-    // that treat sends as best-effort (e.g. the confirmation outbox)
-    // still catch this the same way — it remains an Error subclass.
-    throw new ExternalServiceError(
-      "We couldn't deliver the email right now. Please try again in a moment.",
-      err,
-    );
+    // (502) so `withApi` returns the actionable message the operator can
+    // act on instead of an opaque 500 "Something went wrong". The raw
+    // SMTP reason stays server-side via `cause` (logged above + attached
+    // here) and is never sent to the client. Callers that treat sends as
+    // best-effort (e.g. the confirmation outbox) still catch this the
+    // same way — it remains an Error subclass.
+    throw new ExternalServiceError(message, err);
   }
 }
 

@@ -10,10 +10,12 @@ import { getMailer } from "@/server/email/smtp";
 import type { OrderDTO } from "@/types";
 import { ensureMongo, resetDatabase } from "@/tests/utils/db";
 
-vi.mock("@/server/email/smtp", () => ({
-  getMailer: vi.fn(),
-  verifyMailer: vi.fn(),
-}));
+vi.mock("@/server/email/smtp", async (importActual) => {
+  // Keep the real classifyMailError (the send path calls it); stub only
+  // the transport accessors so we can drive the failure.
+  const actual = await importActual<typeof import("@/server/email/smtp")>();
+  return { ...actual, getMailer: vi.fn(), verifyMailer: vi.fn() };
+});
 
 const mockGetMailer = vi.mocked(getMailer);
 
@@ -99,13 +101,19 @@ async function seedOrgEmailDeps(orgId: string) {
 }
 
 describe("sendPaymentRequestEmail — SMTP failure error contract", () => {
-  it("wraps a transport failure as ExternalServiceError (502), not a raw 500", async () => {
+  it("wraps a transport failure as an actionable ExternalServiceError (502), not a raw 500", async () => {
     const orgId = new Types.ObjectId().toString();
     await seedOrgEmailDeps(orgId);
 
-    // Configured relay whose send rejects — the real-world crash trigger.
+    // Realistic Nodemailer auth rejection — the real-world crash trigger.
+    const smtpErr = Object.assign(new Error("Invalid login"), {
+      code: "EAUTH",
+      responseCode: 535,
+      response: "535-5.7.8 Username and Password not accepted",
+      command: "AUTH PLAIN",
+    });
     mockGetMailer.mockReturnValue({
-      sendMail: vi.fn().mockRejectedValue(new Error("EAUTH: invalid credentials")),
+      sendMail: vi.fn().mockRejectedValue(smtpErr),
     } as unknown as ReturnType<typeof getMailer>);
 
     const promise = sendPaymentRequestEmail(
@@ -118,8 +126,10 @@ describe("sendPaymentRequestEmail — SMTP failure error contract", () => {
       code: "EXTERNAL_SERVICE_ERROR",
       statusCode: 502,
     });
-    // The raw SMTP reason must NOT leak into the client-facing message.
-    await expect(promise).rejects.not.toThrow(/EAUTH/);
+    // Auth failures get a credentials-specific, actionable message...
+    await expect(promise).rejects.toThrow(/app password/i);
+    // ...and the raw SMTP response never leaks to the client.
+    await expect(promise).rejects.not.toThrow(/5\.7\.8/);
   });
 
   it("returns a null message id (no throw) when SMTP is unconfigured", async () => {
