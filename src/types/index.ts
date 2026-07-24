@@ -156,6 +156,10 @@ export interface OrderDTO {
    *  see the legacy enum values unchanged. */
   status: string;
   state: RecordState;
+  /** Stable FK to the order's Client Profile. Null on legacy rows the
+   *  backfill hasn't linked yet (or a rare post-commit link miss); the
+   *  embedded `customer` snapshot is always present regardless. */
+  customerId: string | null;
   customer: OrderCustomer;
   pricing: OrderPricing;
   payment: OrderPayment;

@@ -33,8 +33,13 @@ export interface CustomerDTO {
   name: string;
   email: string;
   phone: string;
+  company: string | null;
+  notes: string | null;
+  tags: string[];
   ordersCount: number;
+  firstOrderAt: string | null;
   lastOrderAt: string | null;
+  customerSince: string | null;
 }
 
 function toDTO(doc: CustomerDoc & { _id: Types.ObjectId }): CustomerDTO {
@@ -43,8 +48,13 @@ function toDTO(doc: CustomerDoc & { _id: Types.ObjectId }): CustomerDTO {
     name: doc.name,
     email: doc.email,
     phone: doc.phone,
+    company: doc.company ?? null,
+    notes: doc.notes ?? null,
+    tags: Array.isArray(doc.tags) ? doc.tags : [],
     ordersCount: doc.ordersCount,
+    firstOrderAt: doc.firstOrderAt ? doc.firstOrderAt.toISOString() : null,
     lastOrderAt: doc.lastOrderAt ? doc.lastOrderAt.toISOString() : null,
+    customerSince: doc.createdAt ? doc.createdAt.toISOString() : null,
   };
 }
 
@@ -70,21 +80,135 @@ export async function upsertCustomerFromOrder(
   const email = input.email.toLowerCase().trim();
   if (!email) return;
   const now = new Date();
+  const setOnInsert: Record<string, unknown> = {
+    email,
+    orgId: orgIdFilter(scopedOrgId),
+  };
   const update: Record<string, unknown> = {
     $set: {
       name: input.name.trim(),
       phone: input.phone.trim(),
     },
-    $setOnInsert: { email, orgId: orgIdFilter(scopedOrgId) },
+    $setOnInsert: setOnInsert,
   };
   if (options.countAsOrder) {
     (update.$inc as Record<string, number>) = { ordersCount: 1 };
     (update.$set as Record<string, unknown>).lastOrderAt = now;
+    // First contact stamp — only lands on insert, so it captures the
+    // earliest order and never moves.
+    setOnInsert.firstOrderAt = now;
   }
   await Customer.updateOne(
     { orgId: orgIdFilter(scopedOrgId), email },
     update,
     { upsert: true },
+  );
+}
+
+/**
+ * Resolve the Client Profile an order belongs to, creating one if this
+ * is a net-new client. Linking precedence mirrors the product spec:
+ *
+ *   1. exact email match  → attach to that profile
+ *   2. exact phone match  → attach (email is new, but we've seen the
+ *                            phone before — same human, new address)
+ *   3. otherwise          → create a fresh profile
+ *
+ * Concurrency-safe: two orders racing to create the same email collide
+ * on the `(orgId, email)` unique index; the loser re-reads the winner's
+ * row. Returns the customer id, or `null` when there's nothing to key on
+ * (neither email nor phone) so the caller can leave the order unlinked.
+ *
+ * Does NOT touch counters — call {@link bumpCustomerOrderAggregates}
+ * after the order commits for that. Kept separate so the id can be
+ * resolved *before* the order transaction and stamped onto the order.
+ */
+export async function resolveOrCreateCustomer(
+  orgId: string | null | undefined,
+  input: UpsertCustomerInput,
+): Promise<string | null> {
+  const scopedOrgId = requireOrgId(orgId);
+  await connectMongo();
+  const email = input.email.toLowerCase().trim();
+  const phone = input.phone.trim();
+  const name = input.name.trim();
+  const filterOrg = orgIdFilter(scopedOrgId);
+
+  if (email) {
+    const byEmail = await Customer.findOne({ orgId: filterOrg, email })
+      .select({ _id: 1 })
+      .lean<{ _id: Types.ObjectId } | null>();
+    if (byEmail) return String(byEmail._id);
+  }
+
+  if (phone) {
+    const byPhone = await Customer.findOne({ orgId: filterOrg, phone })
+      .sort({ createdAt: 1 })
+      .select({ _id: 1 })
+      .lean<{ _id: Types.ObjectId } | null>();
+    if (byPhone) return String(byPhone._id);
+  }
+
+  if (!email && !phone) return null;
+
+  try {
+    const created = await Customer.create({
+      orgId: filterOrg,
+      name,
+      email,
+      phone,
+      tags: [],
+    });
+    return String(created._id);
+  } catch (err) {
+    // Lost a create race on the unique (orgId, email) index — the
+    // winner's row now exists, so re-read it.
+    if (isDuplicateKeyError(err) && email) {
+      const again = await Customer.findOne({ orgId: filterOrg, email })
+        .select({ _id: 1 })
+        .lean<{ _id: Types.ObjectId } | null>();
+      if (again) return String(again._id);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Roll a freshly-created order into its Client Profile's cheap counters
+ * (orders count, first/last activity) and refresh the latest-typed
+ * name/phone. Financial totals are never denormalised here — the
+ * profile recomputes those from the linked orders on read.
+ *
+ * Best-effort by contract: the caller wraps this so a counter write can
+ * never fail an order. Idempotency isn't guaranteed (the `$inc`), but the
+ * backfill migration rebuilds every counter authoritatively, so drift is
+ * self-healing.
+ */
+export async function bumpCustomerOrderAggregates(
+  orgId: string | null | undefined,
+  customerId: string,
+  input: { name: string; phone: string; orderCreatedAt: Date },
+): Promise<void> {
+  const scopedOrgId = requireOrgId(orgId);
+  if (!Types.ObjectId.isValid(customerId)) return;
+  await connectMongo();
+  await Customer.updateOne(
+    { _id: new Types.ObjectId(customerId), orgId: orgIdFilter(scopedOrgId) },
+    {
+      $set: { name: input.name.trim(), phone: input.phone.trim() },
+      $inc: { ordersCount: 1 },
+      $min: { firstOrderAt: input.orderCreatedAt },
+      $max: { lastOrderAt: input.orderCreatedAt },
+    },
+  );
+}
+
+/** Narrow a thrown Mongo error to the duplicate-key case (E11000). */
+function isDuplicateKeyError(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    (err as { code?: number }).code === 11000
   );
 }
 

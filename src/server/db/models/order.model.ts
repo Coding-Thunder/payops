@@ -39,6 +39,20 @@ export interface OrderDoc {
   status: string;
   state: RecordState;
 
+  /**
+   * Stable FK to the Client Profile (Customer) this order belongs to.
+   * Resolved at create time (email → phone → create) and frozen. The
+   * embedded `customer` block below stays as the point-in-time snapshot
+   * (evidence); this pointer is what powers the customer's cross-order
+   * timeline + lifetime aggregation without a fragile email join.
+   *
+   * Nullable during the backfill window: legacy rows are linked by
+   * `migrate-orders-to-customers` and any post-commit link failure
+   * leaves it null until the repair pass. Readers union it with the
+   * `customer.email` join so nothing disappears mid-migration.
+   */
+  customerId?: Types.ObjectId | null;
+
   customer: {
     name: string;
     email: string;
@@ -451,6 +465,13 @@ const orderSchema = new Schema<OrderDoc>(
       default: "ACTIVE",
       index: true,
     },
+    // Client Profile FK. Nullable through the backfill window; stamped
+    // at create time going forward. See the interface doc above.
+    customerId: {
+      type: Schema.Types.ObjectId,
+      ref: "Customer",
+      default: null,
+    },
     customer: { type: customerSchema, required: true },
     pricing: { type: pricingSchema, required: true },
     payment: { type: paymentSchema, required: true },
@@ -514,6 +535,12 @@ orderSchema.index(
 orderSchema.index(
   { orgId: 1, status: 1, createdAt: -1 },
   { partialFilterExpression: { orgId: { $exists: true, $ne: null } } },
+);
+// Client Profile read path: every order for one client, newest first.
+// Partial so unlinked (null customerId) rows stay out of the index.
+orderSchema.index(
+  { orgId: 1, customerId: 1, createdAt: -1 },
+  { partialFilterExpression: { customerId: { $type: "objectId" } } },
 );
 // Compound uniqueness for `orderNumber` per-tenant. The legacy global
 // unique index on `orderNumber` (above) stays in place during migration

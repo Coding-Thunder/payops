@@ -1,95 +1,66 @@
 import type { Metadata } from "next";
 
-import { BrandCtaStrip } from "@/components/marketing/brand-cta-strip";
-import { BrandFooter } from "@/components/marketing/brand-footer";
-import { BrandHero } from "@/components/marketing/brand-hero";
-import { BrandNav } from "@/components/marketing/brand-nav";
-import { DocumentRail } from "@/components/marketing/page-chrome";
-import { AudienceRegion } from "@/components/marketing/regions/audience-region";
-import { ClosingRegion } from "@/components/marketing/regions/closing-region";
-import { ComparisonRegion } from "@/components/marketing/regions/comparison-region";
-import { EvidenceRegion } from "@/components/marketing/regions/evidence-region";
-import { FeaturesRegion } from "@/components/marketing/regions/features-region";
-import { GatewaysRegion } from "@/components/marketing/regions/gateways-region";
-import { IntegrityRegion } from "@/components/marketing/regions/integrity-region";
-import { LifecycleRegion } from "@/components/marketing/regions/lifecycle-region";
-import { SetupRegion } from "@/components/marketing/regions/setup-region";
+import { BrokenWorkflow } from "@/components/marketing/home/broken-workflow";
+import { Comparison } from "@/components/marketing/home/comparison";
+import { Faq } from "@/components/marketing/home/faq";
+import { Features } from "@/components/marketing/home/features";
+import { FinalCta } from "@/components/marketing/home/final-cta";
+import { Hero } from "@/components/marketing/home/hero";
+import { Problem } from "@/components/marketing/home/problem";
+import { ProductDemo } from "@/components/marketing/home/product-demo";
+import { SiteFooter } from "@/components/marketing/home/site-footer";
+import { SiteHeader } from "@/components/marketing/home/site-header";
+import { Solution } from "@/components/marketing/home/solution";
+import { UseCases } from "@/components/marketing/home/use-cases";
 import { StructuredData } from "@/components/marketing/seo/structured-data";
-import { env } from "@/lib/env";
 
 export const metadata: Metadata = {
   title:
-    "Payment Operations Platform · Chargeback Evidence · Multi-Gateway Orchestration",
+    "TraceTxn — One permanent record for every client",
   description:
-    "Every transaction traced, every dollar defended. TraceTxn connects order data, customer invoices, and explicit consent to your payment processor, with a hashed evidence chain, dispute-ready exports, and gateway-agnostic orchestration. Built for Shopify, e-commerce, SaaS, agencies, and B2B commerce. Stripe live · Razorpay + Authorize.net next.",
+    "TraceTxn gives agencies and freelancers one permanent, searchable record per client: invoices, payments, approvals, files, and the full timeline of the relationship. Stop reconstructing what happened across Gmail, Drive, Slack, and Stripe.",
   alternates: { canonical: "/" },
 };
 
 /**
- * TraceTxn landing page, brand-v1 visual system.
+ * Homepage — story-first redesign.
  *
- *   1. BrandNav     , sticky top, switches to blurred-white chrome
- *                       on scroll
- *   2. BrandHero     , dark hero, "Every transaction traced. Every
- *                       dollar defended." + dual CTA + checklist
- *   3. Rich regions , narrative-ordered product content wrapped by the
- *                       DocumentRail "table of contents":
- *                         How it works  → LifecycleRegion (timeline)
- *                         Who it's for  → AudienceRegion (verticals)
- *                         Features      → FeaturesRegion (capability map)
- *                         Comparison    → ComparisonRegion (vs. baseline)
- *                         Evidence      → EvidenceRegion (case file)
- *                         Security      → IntegrityRegion (compliance)
- *                         Gateways      → GatewaysRegion (payment infra)
- *                         Setup         → SetupRegion (onboarding)
- *   4. ClosingRegion, quotation / sales contact form
- *   5. BrandCtaStrip, Deep Navy conversion panel before the footer
- *   6. BrandFooter   , brand wordmark + 3 link columns + status pill
+ * The whole page commits to one wedge: agencies lose context, and lost
+ * context is expensive. The narrative walks a visitor from their own
+ * pain to the fix, showing rather than listing:
  *
- * Narrative arc: problem (fragmentation) → solution (one continuous
- * line) → proof (timeline + features + comparison) → trust (evidence +
- * security) → conversion (CTA).
+ *   Hero            → search a client, get their whole history (live preview)
+ *   Problem         → the "6 months later" message every agency has had
+ *   BrokenWorkflow  → why 8 tools can't answer one question
+ *   Solution        → one permanent, searchable record
+ *   ProductDemo     → open the record, see every angle (interactive)
+ *   Features        → outcomes, not a spec sheet
+ *   UseCases        → recognise your exact situation
+ *   Comparison      → same question, two very different afternoons
+ *   Faq             → the honest objections
+ *   FinalCta        → join the beta
+ *
+ * Dark, black-and-white with a single emerald accent. All motion is
+ * reveal-on-scroll or self-driving preview loops — nothing decorative.
  */
 export default function LandingPage() {
   return (
-    <div className="bg-background text-foreground">
+    <div className="min-h-screen bg-[#08090b] text-white antialiased">
       <StructuredData />
-      <BrandNav />
-      <BrandHero />
-
-      {/* Document body, quiet ledger-grid backing behind the
-          narrative-ordered rich regions. */}
-      <main
-        className="relative"
-        style={{
-          backgroundImage: "var(--doc-grid)",
-          backgroundSize: "var(--doc-grid-size)",
-        }}
-      >
-        <div className="mx-auto max-w-[1280px] px-6 lg:px-10">
-          <div className="grid grid-cols-1 gap-x-12 lg:grid-cols-[10rem_minmax(0,1fr)] lg:items-start">
-            <DocumentRail />
-            <div className="min-w-0">
-              <LifecycleRegion />
-              <AudienceRegion />
-              <FeaturesRegion />
-              <ComparisonRegion />
-              <EvidenceRegion />
-              <IntegrityRegion />
-              <GatewaysRegion />
-              <SetupRegion />
-              <ClosingRegion
-                turnstileSiteKey={
-                  env.public.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null
-                }
-              />
-            </div>
-          </div>
-        </div>
+      <SiteHeader />
+      <main>
+        <Hero />
+        <Problem />
+        <BrokenWorkflow />
+        <Solution />
+        <ProductDemo />
+        <Features />
+        <UseCases />
+        <Comparison />
+        <Faq />
+        <FinalCta />
       </main>
-
-      <BrandCtaStrip />
-      <BrandFooter />
+      <SiteFooter />
     </div>
   );
 }

@@ -35,6 +35,7 @@ function buildPreviewOrder(args: BuildPaymentPreviewArgs): OrderDTO {
     orderNumber: "ORD-260517-PREVW1",
     status: OrderStatus.PAID,
     state: RecordState.ACTIVE,
+    customerId: null,
     customer: {
       name: "Jane Smith",
       email: "jane@example.com",

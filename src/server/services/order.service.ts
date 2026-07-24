@@ -58,7 +58,11 @@ import { generateOrderNumber } from "./order-number";
 import { getBranding } from "./branding.service";
 import { applyCheckoutPaid } from "./webhook.service";
 import { validateLineAttributes } from "./attribute-validator.service";
-import { upsertCustomerFromOrder } from "./customer.service";
+import {
+  bumpCustomerOrderAggregates,
+  resolveOrCreateCustomer,
+  upsertCustomerFromOrder,
+} from "./customer.service";
 
 const ZERO_DECIMAL_CURRENCIES = new Set([
   "BIF",
@@ -130,6 +134,7 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
     orderNumber: doc.orderNumber,
     status: doc.status as OrderStatus,
     state: doc.state as RecordState,
+    customerId: doc.customerId ? String(doc.customerId) : null,
     customer: { ...doc.customer },
     pricing: { amount: doc.pricing.amount, currency: doc.pricing.currency },
     payment: {
@@ -375,6 +380,28 @@ export async function createOrder(
       }
     : null;
 
+  // Resolve the Client Profile this order belongs to (email → phone →
+  // create) BEFORE the transaction so the FK can be stamped onto the
+  // order doc. Best-effort: a lookup failure leaves the order unlinked
+  // (customerId null) rather than blocking the create — the backfill /
+  // repair pass links it later, and readers union the email join.
+  let resolvedCustomerId: Types.ObjectId | null = null;
+  if (ctx.orgId) {
+    try {
+      const id = await resolveOrCreateCustomer(ctx.orgId, {
+        name: input.customer.name,
+        email: input.customer.email,
+        phone: input.customer.phone,
+      });
+      resolvedCustomerId = id ? new Types.ObjectId(id) : null;
+    } catch (err) {
+      logger.warn("customer.resolve_failed", {
+        email: input.customer.email,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   // Transactional: Order doc + audit row + genesis evidence row are
   // written together. A failure on evidence aborts the order create -
   // disputes never face a chain with a missing sequence 1.
@@ -387,6 +414,7 @@ export async function createOrder(
           orderNumber,
           status: initialStatusKey,
           state: RecordState.ACTIVE,
+          customerId: resolvedCustomerId,
           customer: input.customer,
           lineItems: validatedLines,
           scheduling: schedulingToPersist,
@@ -514,19 +542,29 @@ export async function createOrder(
     },
   });
 
-  // Saved customer record (Pass 6d). Best-effort, never blocks the
-  // order. A failed upsert just means the operator re-types next time.
+  // Client Profile counters. Best-effort, never blocks the order. When
+  // the FK resolved we bump the linked profile directly; otherwise we
+  // fall back to the email upsert so an unlinked order still lands a
+  // contact row (the backfill pass will attach + recount it).
   if (ctx.orgId) {
     try {
-      await upsertCustomerFromOrder(
-        ctx.orgId,
-        {
+      if (resolvedCustomerId) {
+        await bumpCustomerOrderAggregates(ctx.orgId, String(resolvedCustomerId), {
           name: created.customer.name,
-          email: created.customer.email,
           phone: created.customer.phone,
-        },
-        { countAsOrder: true },
-      );
+          orderCreatedAt: created.createdAt,
+        });
+      } else {
+        await upsertCustomerFromOrder(
+          ctx.orgId,
+          {
+            name: created.customer.name,
+            email: created.customer.email,
+            phone: created.customer.phone,
+          },
+          { countAsOrder: true },
+        );
+      }
     } catch (err) {
       logger.warn("customer.upsert_failed", {
         orderId: String(created._id),
@@ -1407,8 +1445,9 @@ export async function updateOrderCustomer(
     metadata: { action: "customer_patch", changed: applied },
   });
 
-  // Refresh the saved customer record so next time the operator types
-  // this email, the corrected name/phone show up. Best-effort.
+  // Refresh the Client Profile so the corrected name/phone show up, and
+  // re-point the FK: if the operator changed the email/phone this order
+  // may now belong to a different (or new) profile. Best-effort.
   if (ctx.orgId) {
     try {
       await upsertCustomerFromOrder(ctx.orgId, {
@@ -1416,6 +1455,19 @@ export async function updateOrderCustomer(
         email: doc.customer.email,
         phone: doc.customer.phone,
       });
+      const cid = await resolveOrCreateCustomer(ctx.orgId, {
+        name: doc.customer.name,
+        email: doc.customer.email,
+        phone: doc.customer.phone,
+      });
+      if (cid && String(doc.customerId ?? "") !== cid) {
+        const nextId = new Types.ObjectId(cid);
+        await Order.updateOne(
+          { _id: doc._id, orgId: new Types.ObjectId(ctx.orgId) },
+          { $set: { customerId: nextId } },
+        );
+        doc.customerId = nextId;
+      }
     } catch (err) {
       logger.warn("customer.upsert_failed", {
         orderId: String(doc._id),
