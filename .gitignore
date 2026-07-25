@@ -70,3 +70,9 @@ next-env.d.ts
 # DigitalOcean App Platform spec — real values stay local.
 # Commit .do/app.example.yaml instead.
 .do/app.yaml
+# The rule above has a slash, so git anchors it to the repo root and it
+# matches ONLY /.do/app.yaml — NOT the second app's nested spec. Without
+# this line a filled-in admin/.do/app.yaml (live Mongo URI, the JWT_SECRET
+# shared with the main site, ADMIN_SESSION_SECRET, Resend key) is fully
+# committable. Keep both apps' real specs out of git.
+admin/.do/app.yaml

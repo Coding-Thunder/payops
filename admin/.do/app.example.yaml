@@ -40,6 +40,20 @@ services:
     routes:
       - path: /
 
+    # Liveness probe → /api/health (src/app/api/health/route.ts). The
+    # route is dependency-free (no DB, no env, no auth) so an unreachable
+    # Mongo can never flap it and force a rollback. Prefer this over
+    # copying the MAIN app's health_check verbatim — that one is fine too,
+    # but only because this endpoint now exists. To use a plain TCP check
+    # instead, delete this whole block.
+    health_check:
+      http_path: /api/health
+      initial_delay_seconds: 10
+      period_seconds: 30
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
+
     envs:
       # ---- Database (SAME cluster + DB as the main app) ----
       - key: MONGODB_URI
