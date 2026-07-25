@@ -74,11 +74,23 @@ export function TelemetryStrip({
   const mode = env ?? detectEnv();
 
   // UTC clock, ticks every 15s. Operators glance at it constantly
-  // when correlating webhook timestamps. Tight format `12:34Z`.
-  const [now, setNow] = React.useState<string>(() => formatUtc(new Date()));
+  // when correlating webhook timestamps. Tight format `12:34 UTC`.
+  //
+  // Seeded with a STABLE placeholder rather than `formatUtc(new Date())`:
+  // the initializer runs on the server (SSR) and again on the client at
+  // hydration, and those two moments differ — so the rendered clock text
+  // didn't match, tripping React hydration error #418 across every authed
+  // page. The real time is filled in right after mount (deferred so no
+  // state is set synchronously in the effect), then ticks.
+  const [now, setNow] = React.useState<string>("--:-- UTC");
   React.useEffect(() => {
-    const id = window.setInterval(() => setNow(formatUtc(new Date())), 15_000);
-    return () => window.clearInterval(id);
+    const tick = () => setNow(formatUtc(new Date()));
+    const first = window.setTimeout(tick, 0);
+    const id = window.setInterval(tick, 15_000);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(id);
+    };
   }, []);
 
   return (

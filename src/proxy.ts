@@ -86,6 +86,17 @@ function isPublic(pathname: string): boolean {
   if (pathname.startsWith("/favicon")) return true;
   if (pathname.startsWith("/static")) return true;
   if (pathname.startsWith("/assets")) return true;
+  // PWA + SEO + metadata assets. Browsers fetch the manifest WITHOUT
+  // credentials, and crawlers hit robots/sitemap with no session — so
+  // gating these bounced them to /login and the browser tried to parse
+  // an HTML login page as JSON ("manifest syntax error"), while search
+  // engines got a redirect instead of the sitemap. All are public by
+  // definition (they're referenced from the <head> of public pages).
+  if (pathname === "/manifest.webmanifest") return true;
+  if (pathname === "/robots.txt" || pathname === "/sitemap.xml") return true;
+  if (pathname.startsWith("/icon")) return true;
+  if (pathname.startsWith("/apple-icon")) return true;
+  if (pathname.startsWith("/opengraph-image")) return true;
   // Marketing screenshots + any landing imagery served from
   // public/marketing/. Without this they'd 307 through proxy → /login
   // and the landing page would render broken images.
@@ -191,6 +202,6 @@ export const config = {
      *      renders as a broken image.)
      *   - stripe webhook (must keep raw body)
      */
-    "/((?!_next/static|_next/image|favicon.ico|assets|providers|branding|marketing|static|api/webhooks).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icon|apple-icon|opengraph-image|manifest.webmanifest|robots.txt|sitemap.xml|assets|providers|branding|marketing|static|api/webhooks).*)",
   ],
 };
