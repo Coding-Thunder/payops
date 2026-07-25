@@ -3,6 +3,14 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // Pin Turbopack's root to this app. The repo now contains a second
+  // Next app (`admin/`) with its own package-lock.json; without an
+  // explicit root, Turbopack's multi-lockfile heuristic can mis-detect
+  // the workspace root. Pinning it keeps this app's build scoped to
+  // itself and silences the "inferred workspace root" warning.
+  turbopack: {
+    root: __dirname,
+  },
   // Skip the in-build TS pass — type-checking happens via `npm run
   // typecheck` (run locally + in CI). next build's bundled checker
   // exhausts the App Platform builder's 10GB heap on this codebase,

@@ -11,14 +11,24 @@ import type { NextConfig } from "next";
  *   restrictions, so the Firebase Google sign-in popup works without the
  *   long allow-list the main app needs for its strict CSP.
  *
- * The local "multiple lockfiles" warning is cosmetic — the DO build sets
- * Source Directory to /admin, so only this app's lockfile is present.
+ * Turbopack root MUST be pinned to this directory. DigitalOcean clones
+ * the WHOLE monorepo to /workspace and only sets the working dir to
+ * /workspace/admin — so BOTH the repo-root and admin package-lock.json
+ * exist at build time. Without an explicit root, Turbopack's
+ * multi-lockfile heuristic picks /workspace (the repo root), tries to
+ * build the MAIN app's files, and can't resolve deps that were only
+ * installed under /workspace/admin — surfacing as the build error
+ * "Can't resolve 'jose'" from the main app's src/proxy.ts. Pinning the
+ * root scopes module resolution + the build to THIS app.
  */
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   typescript: { ignoreBuildErrors: true },
   serverExternalPackages: ["mongoose", "bcryptjs"],
+  turbopack: {
+    root: __dirname,
+  },
 };
 
 export default nextConfig;
