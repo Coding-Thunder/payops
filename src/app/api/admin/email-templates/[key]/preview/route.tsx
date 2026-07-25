@@ -47,11 +47,10 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
 
   // CRITICAL: pass actor.orgId so the preview reads THIS tenant's
   // branding + settings, not the legacy {key:"default"} singleton
-  // which is seeded from env defaults ("Rental Confirmation",
-  // "+1-555-0100", etc). Forgetting the orgId here was the exact
-  // bug that made the preview pane flicker from the tenant brand
-  // (SSR'd correctly with orgId in the page) to the env defaults
-  // (this endpoint, called without orgId).
+  // which is seeded from the platform env defaults. Forgetting the
+  // orgId here was the exact bug that made the preview pane flicker
+  // from the tenant brand (SSR'd correctly with orgId in the page)
+  // to the env defaults (this endpoint, called without orgId).
   const [branding, settings] = await Promise.all([
     getBranding(actor.orgId),
     ensureSettingsDocument(actor.orgId),

@@ -106,10 +106,8 @@ export async function getOnboardingState(
       OrgMember.countDocuments({ ...filter, status: "ACTIVE" }),
     ]);
 
-  // Branding is "set" when the doc exists AND has non-empty brandName
-  // distinct from the env default. We're permissive here, the
-  // CUSTOMER_BRAND_NAME env default is "Rental Confirmation" for
-  // tenant #1; non-legacy tenants land with their orgName as the
+  // Branding is "set" when the doc exists AND has a non-empty brandName.
+  // We're permissive here: tenants land with their orgName as the
   // initial brandName, which counts as "set" once they've reviewed it.
   const brandingSet = Boolean(
     branding?.brandName && branding.brandName.trim().length > 0,
