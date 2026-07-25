@@ -1,0 +1,113 @@
+# =========================================================================
+# TraceTxn Admin — DigitalOcean App Platform spec · TEMPLATE
+#
+# This is a SEPARATE DO app from the main site. In the DO dashboard:
+#   Create App → same GitHub repo → set "Source Directory" to /admin.
+# DO then builds only /admin. It gets its own URL/domain and serves at "/".
+#
+# Copy to .do/app.yaml (gitignored) and fill in the secrets, or paste the
+# envs through the dashboard.
+#
+# Notes:
+#   - MONGODB_URI + JWT_SECRET MUST match the main app's values (same DB,
+#     and shared JWT_SECRET so the emailed set-password links validate on
+#     the main app's /reset-password route).
+#   - FIREBASE_* must be the same project as the main app for Google
+#     sign-in. Leave FIREBASE_SERVICE_ACCOUNT + NEXT_PUBLIC_FIREBASE_*
+#     empty to disable Google and use email + OTP only.
+#   - Keep instance_count = 1: the OTP rate-limiter is in-process.
+# =========================================================================
+
+name: tracetxn-admin
+region: nyc
+
+services:
+  - name: admin
+    github:
+      repo: Coding-Thunder/payops
+      branch: feat/general
+      deploy_on_push: true
+
+    source_dir: /admin
+    build_command: npm ci && npm run build
+    run_command: npm start
+    environment_slug: node-js
+
+    instance_size_slug: basic-xxs
+    instance_count: 1
+    http_port: 8080
+
+    routes:
+      - path: /
+
+    envs:
+      # ---- Database (SAME cluster + DB as the main app) ----
+      - key: MONGODB_URI
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+        value: "mongodb+srv://USER:PASS@CLUSTER.mongodb.net/tracetxn?retryWrites=true&w=majority"
+      - key: MONGODB_DB
+        scope: RUN_AND_BUILD_TIME
+        value: tracetxn
+
+      # ---- Shared secret with the main app (set-password links) ----
+      - key: JWT_SECRET
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+        value: "MUST_EQUAL_MAIN_APP_JWT_SECRET"
+      - key: ADMIN_SESSION_SECRET
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+        value: "openssl rand -base64 48 (dedicated admin-session key)"
+
+      # ---- Access control ----
+      - key: ADMIN_ALLOWLIST
+        scope: RUN_AND_BUILD_TIME
+        value: "vinayheshwari35@gmail.com"
+
+      - key: MAIN_APP_URL
+        scope: RUN_AND_BUILD_TIME
+        value: "https://tracetxn.com"
+
+      # ---- SMTP (Resend) — sender domain must be verified in Resend ----
+      - key: SMTP_HOST
+        scope: RUN_AND_BUILD_TIME
+        value: smtp.resend.com
+      - key: SMTP_PORT
+        scope: RUN_AND_BUILD_TIME
+        value: "465"
+      - key: SMTP_SECURE
+        scope: RUN_AND_BUILD_TIME
+        value: "true"
+      - key: SMTP_USER
+        scope: RUN_AND_BUILD_TIME
+        value: resend
+      - key: SMTP_PASS
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+        value: "re_your_resend_api_key"
+      - key: EMAIL_FROM_ACCOUNTS
+        scope: RUN_AND_BUILD_TIME
+        value: "TraceTxn <accounts@tracetxn.com>"
+
+      - key: COOKIE_SECURE
+        scope: RUN_AND_BUILD_TIME
+        value: "true"
+
+      # ---- Firebase (Google sign-in) — same project as the main app ----
+      - key: FIREBASE_SERVICE_ACCOUNT
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+        value: "'{\"type\":\"service_account\",\"project_id\":\"…\",…}'"
+      - key: NEXT_PUBLIC_FIREBASE_API_KEY
+        scope: RUN_AND_BUILD_TIME
+        value: ""
+      - key: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+        scope: RUN_AND_BUILD_TIME
+        value: ""
+      - key: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+        scope: RUN_AND_BUILD_TIME
+        value: ""
+      - key: NEXT_PUBLIC_FIREBASE_APP_ID
+        scope: RUN_AND_BUILD_TIME
+        value: ""

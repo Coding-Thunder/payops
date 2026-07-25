@@ -1,0 +1,95 @@
+import "server-only";
+
+import nodemailer, { type Transporter } from "nodemailer";
+
+import { env } from "@/server/env";
+
+/**
+ * SMTP transport for the two mails this console sends: the sign-in OTP
+ * and the "your access is ready" set-password link. Mirrors the main
+ * app's `src/server/email/smtp.ts`; returns null when SMTP is unset (dev)
+ * so the caller can log the code/link to the console instead.
+ */
+let cached: Transporter | null = null;
+
+export function getMailer(): Transporter | null {
+  const { SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS } = env.server;
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) return null;
+  if (cached) return cached;
+  cached = nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_SECURE,
+    auth: { user: SMTP_USER, pass: SMTP_PASS.replace(/\s+/g, "") },
+    connectionTimeout: 10_000,
+    socketTimeout: 20_000,
+  });
+  return cached;
+}
+
+function escapeHtml(v: string): string {
+  return v
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+export async function sendOtpEmail(to: string, code: string): Promise<void> {
+  const mailer = getMailer();
+  const minutes = env.server.OTP_TTL_MINUTES;
+  if (!mailer) {
+    // Dev fallback: no SMTP — surface the code in the server log.
+    console.warn(`[admin] OTP for ${to}: ${code} (SMTP not configured)`);
+    return;
+  }
+  const html = `
+    <p>Your ${escapeHtml(env.server.APP_NAME)} sign-in code is:</p>
+    <p style="font-size:28px;font-weight:700;letter-spacing:4px;margin:12px 0">${code}</p>
+    <p>It expires in ${minutes} minutes. If you didn't request it, ignore this email.</p>`;
+  const text = `Your ${env.server.APP_NAME} sign-in code is: ${code}\nIt expires in ${minutes} minutes.`;
+  await mailer.sendMail({
+    from: env.server.EMAIL_FROM_ACCOUNTS,
+    to,
+    replyTo: env.server.EMAIL_REPLY_TO || undefined,
+    subject: `${env.server.APP_NAME} sign-in code: ${code}`,
+    html,
+    text,
+    headers: { "X-Entity-Kind": "ADMIN_OTP" },
+  });
+}
+
+export async function sendAccessLinkEmail(args: {
+  to: string;
+  name: string;
+  url: string;
+}): Promise<void> {
+  const mailer = getMailer();
+  if (!mailer) {
+    console.warn(`[admin] Access link for ${args.to}: ${args.url} (SMTP not configured)`);
+    return;
+  }
+  const html = `
+    <p>Hi ${escapeHtml(args.name)},</p>
+    <p>Your TraceTxn access is ready. Set your password to sign in:</p>
+    <p><a href="${args.url}">Set your password</a></p>
+    <p>This link expires in 30 minutes.</p>`;
+  const text = [
+    `Hi ${args.name},`,
+    "",
+    "Your TraceTxn access is ready. Set your password to sign in:",
+    args.url,
+    "",
+    "This link expires in 30 minutes.",
+  ].join("\n");
+  await mailer.sendMail({
+    from: env.server.EMAIL_FROM_ACCOUNTS,
+    to: args.to,
+    replyTo: env.server.EMAIL_REPLY_TO || undefined,
+    subject: "Your TraceTxn access is ready",
+    html,
+    text,
+    headers: { "X-Entity-Kind": "ADMIN_ACCESS_GRANT" },
+  });
+}
