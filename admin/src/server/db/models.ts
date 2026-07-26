@@ -226,6 +226,67 @@ const auditLogSchema = new Schema<AuditLogDoc>(
 );
 export const AuditLog = model<AuditLogDoc>("AuditLog", auditLogSchema);
 
+// Orders (the main app's financial spine). Read-only here. Nested blocks
+// (customer/pricing/payment/…) are read as Mixed to avoid re-declaring the
+// main app's sub-schemas; dot-path queries (payment.paidAt, customer.email)
+// still work against Mixed.
+export interface OrderDoc {
+  _id: Types.ObjectId;
+  orgId?: Types.ObjectId | null;
+  orderNumber?: string;
+  status?: string;
+  state?: string;
+  customerId?: Types.ObjectId | null;
+  customer?: { name?: string; email?: string; phone?: string } | null;
+  pricing?: { amount?: number; currency?: string } | null;
+  payment?: {
+    gateway?: string | null;
+    stripeSessionId?: string | null;
+    paymentIntentId?: string | null;
+    checkoutUrl?: string | null;
+    status?: string | null;
+    paidAt?: Date | null;
+    expiresAt?: Date | null;
+    initiatedAt?: Date | null;
+    amountReceived?: number | null;
+    receiptUrl?: string | null;
+    failureReason?: string | null;
+  } | null;
+  createdBy?: { name?: string; email?: string } | null;
+  lineItems?: Array<Record<string, unknown>>;
+  consent?: { status?: string } | null;
+  dispute?: { status?: string | null } | null;
+  refundedAmount?: number;
+  notes?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+const orderSchema = new Schema<OrderDoc>(
+  {
+    orgId: { type: Schema.Types.ObjectId, ref: "Organization", default: null },
+    orderNumber: { type: String },
+    status: { type: String },
+    state: { type: String },
+    customerId: { type: Schema.Types.ObjectId, ref: "Customer", default: null },
+    customer: { type: Schema.Types.Mixed, default: null },
+    pricing: { type: Schema.Types.Mixed, default: null },
+    payment: { type: Schema.Types.Mixed, default: null },
+    createdBy: { type: Schema.Types.Mixed, default: null },
+    lineItems: { type: Schema.Types.Mixed, default: [] },
+    consent: { type: Schema.Types.Mixed, default: null },
+    dispute: { type: Schema.Types.Mixed, default: null },
+    refundedAmount: { type: Number, default: 0 },
+    notes: { type: String, default: null },
+  },
+  {
+    timestamps: true,
+    versionKey: false,
+    collection: "orders",
+    strict: false,
+  },
+);
+export const Order = model<OrderDoc>("Order", orderSchema);
+
 // ─── Admin-owned collections ─────────────────────────────────────────────
 
 export interface AdminOtpDoc {

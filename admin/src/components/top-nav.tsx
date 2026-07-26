@@ -17,6 +17,7 @@ export function TopNav({ email }: { email: string }) {
     { href: "/dashboard", label: "Dashboard" },
     { href: "/users", label: "Users" },
     { href: "/waitlist", label: "Waitlist" },
+    { href: "/orders", label: "Orders" },
     { href: "/emails", label: "Email Ops" },
     { href: "/audit", label: "Audit" },
   ];
