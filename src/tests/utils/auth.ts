@@ -45,6 +45,7 @@ export function actorFor(
     role,
     orgId,
     orgIds: [orgId],
+    impersonation: null,
   };
 }
 

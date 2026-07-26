@@ -52,6 +52,10 @@ const PUBLIC_PATHS = [
   "/api/webhooks/stripe",
   "/api/health",
   "/api/quotations",
+  // Founder-console impersonation handoff. The operator has NO session on
+  // this app; the single-use, short-lived token (verified + burned inside
+  // the route) is the credential. The route mints the actual session.
+  "/api/impersonate/start",
 ];
 
 /** Public path prefixes for marketing + customer-facing flows. */
@@ -126,6 +130,8 @@ async function verifyToken(token: string, secret: Uint8Array) {
       email: string;
       name: string;
       role: "SUPER_ADMIN" | "ADMIN" | "STAFF";
+      /** Present only on a founder-console impersonation session. */
+      imp?: { by?: string; obs?: boolean };
     };
   } catch {
     return null;
@@ -153,6 +159,52 @@ export async function proxy(req: NextRequest) {
 
   const payload = await verifyToken(token, secret);
   if (!payload) return redirectToLogin(req, pathname + search);
+
+  // Observe-only impersonation: hard-block every state-changing request at
+  // the edge — API routes AND page server actions — so an operator viewing
+  // a user's account can never mutate it. GET/HEAD pass through. The only
+  // exceptions are the escape hatches that end the impersonation session.
+  if (payload.imp?.obs === true) {
+    const method = (req.method || "GET").toUpperCase();
+    const mutating =
+      method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
+    const escapeHatch =
+      pathname === "/api/impersonate/exit" || pathname === "/api/auth/logout";
+    if (mutating && !escapeHatch) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: {
+            code: "IMPERSONATION_READONLY",
+            message: "Blocked — this session is read-only (impersonation).",
+          },
+        },
+        { status: 403 },
+      );
+    }
+  }
+
+  // Impersonation NEVER grants the platform/admin console — not even when
+  // impersonating an admin or org owner, whose real role would otherwise
+  // pass the admin gate below. Support means "see their app", not "read
+  // their admin surface" (the founder console covers cross-tenant admin
+  // data). Applies in observe-only AND full-action; every /app/admin +
+  // /api/admin request during an impersonation session is refused.
+  if (payload.imp && isAdmin(pathname)) {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: {
+            code: "IMPERSONATION_NO_ADMIN",
+            message: "The admin console is unavailable while impersonating.",
+          },
+        },
+        { status: 403 },
+      );
+    }
+    return NextResponse.redirect(new URL("/app/dashboard", req.url));
+  }
 
   if (isAdmin(pathname) && payload.role === "STAFF") {
     if (pathname.startsWith("/api/")) {

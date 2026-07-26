@@ -21,6 +21,11 @@ const serverSchema = z.object({
   JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 chars"),
   // Dedicated admin-session signing key; falls back to JWT_SECRET.
   ADMIN_SESSION_SECRET: z.string().optional(),
+  // Shared secret for the user-impersonation handoff. Signs the short-lived
+  // single-use token the main app verifies. Optional: unset = impersonation
+  // disabled. MUST be distinct from JWT_SECRET and identical to the main
+  // app's IMPERSONATION_SECRET.
+  IMPERSONATION_SECRET: z.string().min(32).optional(),
 
   ADMIN_ALLOWLIST: z.string().default("vinaymaheshwari35@gmail.com"),
 

@@ -81,6 +81,10 @@ export const AuditAction = {
   USER_DISABLED: "USER_DISABLED",
   USER_ARCHIVED: "USER_ARCHIVED",
   USER_REACTIVATED: "USER_REACTIVATED",
+  /** Founder-console impersonation lifecycle. actor = the platform admin
+   *  who started/ended it; entity = the impersonated user. */
+  USER_IMPERSONATED: "USER_IMPERSONATED",
+  USER_IMPERSONATION_ENDED: "USER_IMPERSONATION_ENDED",
 
   ORDER_CREATED: "ORDER_CREATED",
   ORDER_UPDATED: "ORDER_UPDATED",

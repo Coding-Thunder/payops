@@ -31,6 +31,12 @@ const serverSchema = z.object({
    *  keep working, but encouraged to rotate to a dedicated secret so a
    *  leak of session material doesn't also forge consent tokens. */
   CONSENT_TOKEN_SECRET: z.string().min(32).optional(),
+  /** Shared secret for the founder console's user-impersonation handoff.
+   *  The console signs a short-lived single-use token with it; this app
+   *  verifies + consumes it. Optional: when unset, impersonation is
+   *  disabled (the /api/impersonate/start route refuses). MUST be distinct
+   *  from JWT_SECRET and identical to the console's IMPERSONATION_SECRET. */
+  IMPERSONATION_SECRET: z.string().min(32).optional(),
   COOKIE_NAME: z.string().default("tracetxn_session"),
   COOKIE_DOMAIN: z.string().optional(),
   COOKIE_SECURE: z

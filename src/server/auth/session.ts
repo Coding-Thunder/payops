@@ -30,6 +30,11 @@ export interface AuthenticatedUser {
   /** All org memberships the user has (any status). Populated lazily -
    *  callers that don't need the full list can ignore. */
   orgIds: string[];
+  /** Non-null ONLY when this session was minted by the founder console's
+   *  impersonation flow. `by` = the platform admin's email; `observeOnly`
+   *  means the proxy blocks every state-changing request. The app shell
+   *  renders a persistent banner while this is set. */
+  impersonation: { by: string; observeOnly: boolean } | null;
 }
 
 /**
@@ -72,6 +77,9 @@ async function validatedUserFromPayload(
     role: user.role,
     orgId,
     orgIds: payload.orgIds ?? (orgId ? [orgId] : []),
+    impersonation: payload.imp
+      ? { by: payload.imp.by, observeOnly: payload.imp.obs }
+      : null,
   };
 }
 

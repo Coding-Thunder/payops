@@ -21,6 +21,11 @@ export interface SessionPayload {
    *  query on every page. Stays small (typically 1 today, single-digit
    *  later). Optional for back-compat. */
   orgIds?: string[];
+  /** Present ONLY on a founder-console impersonation session. `by` is the
+   *  platform admin's email; `obs` = observe-only (state-changing requests
+   *  are blocked at the proxy while this is set). A normal login never
+   *  carries this claim. */
+  imp?: { by: string; obs: boolean };
 }
 
 let cachedKey: Uint8Array | null = null;
@@ -67,8 +72,16 @@ export function getSessionTtlSeconds(): number {
   return parseTtlSeconds(env.server.JWT_EXPIRES_IN);
 }
 
-export async function signSession(payload: SessionPayload): Promise<string> {
-  const ttl = getSessionTtlSeconds();
+export async function signSession(
+  payload: SessionPayload,
+  /** Override the session lifetime (seconds). Impersonation sessions pass a
+   *  short value (e.g. 30m); clamped to [60s, 7d] like the env-derived TTL. */
+  ttlSecondsOverride?: number,
+): Promise<string> {
+  const ttl =
+    ttlSecondsOverride != null
+      ? Math.max(60, Math.min(ttlSecondsOverride, MAX_SESSION_TTL_SECONDS))
+      : getSessionTtlSeconds();
   const claims: Record<string, unknown> = {
     email: payload.email,
     name: payload.name,
@@ -81,6 +94,9 @@ export async function signSession(payload: SessionPayload): Promise<string> {
   if (payload.orgId) claims.orgId = payload.orgId;
   if (payload.orgIds && payload.orgIds.length > 0) {
     claims.orgIds = payload.orgIds;
+  }
+  if (payload.imp) {
+    claims.imp = { by: payload.imp.by, obs: payload.imp.obs };
   }
   return new SignJWT(claims)
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
@@ -118,6 +134,11 @@ export async function verifySession(
     const orgIds = orgIdsRaw
       ? orgIdsRaw.filter((id): id is string => typeof id === "string" && id.length > 0)
       : undefined;
+    const impRaw = payload.imp as { by?: unknown; obs?: unknown } | undefined;
+    const imp =
+      impRaw && typeof impRaw.by === "string" && impRaw.by.length > 0
+        ? { by: impRaw.by, obs: impRaw.obs === true }
+        : undefined;
     return {
       sub: payload.sub,
       email: payload.email as string,
@@ -125,6 +146,7 @@ export async function verifySession(
       role: payload.role as UserRole,
       orgId,
       orgIds,
+      imp,
     };
   } catch {
     return null;

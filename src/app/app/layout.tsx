@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { Suspense } from "react";
 
+import { ImpersonationBanner } from "@/components/app-shell/impersonation-banner";
 import { Sidebar } from "@/components/app-shell/sidebar";
 import { TelemetryStrip } from "@/components/app-shell/telemetry-strip";
 import { Topbar } from "@/components/app-shell/topbar";
@@ -26,6 +27,14 @@ export default async function AuthenticatedLayout({
 
   return (
     <RealtimeProvider>
+      {user.impersonation ? (
+        <ImpersonationBanner
+          name={user.name}
+          email={user.email}
+          by={user.impersonation.by}
+          observeOnly={user.impersonation.observeOnly}
+        />
+      ) : null}
       <Suspense fallback={null}>
         <RouteTransitionLoader />
       </Suspense>
