@@ -12,6 +12,19 @@ export function jsonError(
   return NextResponse.json({ ok: false, error: { code, message } }, { status });
 }
 
+/**
+ * A single CSV cell, hardened against spreadsheet formula injection. Cross-
+ * tenant customer/order data is untrusted: a value like `=cmd|...` opened in
+ * Excel/Sheets would execute. We prefix any cell starting with a formula
+ * trigger (`= + - @` / tab / CR) with a `'` so it's treated as text, then
+ * apply standard quote-escaping. Arrays are joined with `|`.
+ */
+export function csvCell(v: unknown): string {
+  let s = Array.isArray(v) ? v.join("|") : v == null ? "" : String(v);
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
 export function clientIp(req: Request): string | null {
   const h = req.headers;
   return (

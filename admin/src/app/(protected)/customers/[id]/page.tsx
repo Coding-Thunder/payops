@@ -61,7 +61,11 @@ export default async function CustomerProfilePage({
           label="Revenue"
           value={formatMoney(c.revenue, c.currency)}
           tone="good"
-          hint={`${c.paidOrders} paid`}
+          hint={
+            c.multiCurrency
+              ? `${c.paidOrders} paid · ${c.currency} (multi-currency)`
+              : `${c.paidOrders} paid`
+          }
         />
         <StatTile
           label="Avg order"

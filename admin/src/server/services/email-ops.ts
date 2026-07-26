@@ -191,19 +191,35 @@ export interface ActionResult {
   newId?: string;
 }
 
-/** Re-queue a FAILED / stuck email: due immediately, error cleared. */
+/**
+ * Re-queue a FAILED (or genuinely-stuck) email: due immediately, error
+ * cleared. A PROCESSING row means the main-app drainer currently OWNS it
+ * and is mid-send — re-queuing it would defeat the single-owner lock and
+ * cause a DUPLICATE delivery (the send is not idempotent). So we only
+ * re-queue FAILED/PENDING, or a PROCESSING row that has been stuck far
+ * longer than any real send could take (i.e. a crashed drainer).
+ */
+const STUCK_PROCESSING_MS = 10 * 60_000;
+
 export async function retryEmail(id: string): Promise<ActionResult> {
   if (!Types.ObjectId.isValid(id)) return { ok: false, message: "Invalid id" };
   await connectMongo();
+  const staleBefore = new Date(Date.now() - STUCK_PROCESSING_MS);
   const res = await PendingEmail.updateOne(
     {
       _id: new Types.ObjectId(id),
-      status: { $in: ["FAILED", "PROCESSING", "PENDING"] },
+      $or: [
+        { status: { $in: ["FAILED", "PENDING"] } },
+        { status: "PROCESSING", updatedAt: { $lt: staleBefore } },
+      ],
     },
     { $set: { status: "PENDING", nextAttemptAt: new Date(), lastError: null } },
   );
   if (res.matchedCount === 0) {
-    return { ok: false, message: "Email not found, or already sent" };
+    return {
+      ok: false,
+      message: "Not retryable — already sent, or currently being sent",
+    };
   }
   return { ok: true };
 }
@@ -231,6 +247,26 @@ export async function resendEmail(id: string): Promise<ActionResult> {
   await connectMongo();
   const src = await PendingEmail.findById(id).lean<LeanEmail | null>();
   if (!src) return { ok: false, message: "Email not found" };
+  // Only a settled email can be resent — resending a PENDING/PROCESSING row
+  // would stack a duplicate on top of a delivery that's still in flight.
+  if (src.status !== "SENT" && src.status !== "FAILED") {
+    return { ok: false, message: "Only sent or failed emails can be resent" };
+  }
+  // Idempotency: swallow rapid double-clicks / repeated enqueues by refusing
+  // when an identical fresh copy is already queued.
+  const recentBefore = new Date(Date.now() - 5 * 60_000);
+  const dup = await PendingEmail.findOne({
+    orderId: src.orderId ?? null,
+    kind: src.kind,
+    recipient: src.recipient,
+    status: "PENDING",
+    createdAt: { $gt: recentBefore },
+  })
+    .select({ _id: 1 })
+    .lean();
+  if (dup) {
+    return { ok: false, message: "A resend for this email is already queued" };
+  }
   const created = await PendingEmail.create({
     orderId: src.orderId ?? null,
     orgId: src.orgId ?? null,

@@ -47,8 +47,10 @@ export function EmailActions({
     }
   }
 
-  const canRetry =
-    status === "FAILED" || status === "PROCESSING" || status === "PENDING";
+  // Only FAILED shows Retry: re-queuing a PROCESSING (in-flight) row would
+  // duplicate the send, and PENDING is already queued. Stuck-PROCESSING
+  // recovery is handled server-side behind a staleness window.
+  const canRetry = status === "FAILED";
   const canResend = status === "SENT" || status === "FAILED";
   const canCancel = status === "PENDING" || status === "FAILED";
 

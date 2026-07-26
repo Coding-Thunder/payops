@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { getAdminEmail } from "@/server/auth/session";
 import { listEmailsForExport, type EmailRow } from "@/server/services/email-ops";
-import { jsonError } from "@/server/http";
+import { csvCell, jsonError } from "@/server/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,11 +19,6 @@ const HEADERS = [
   "nextAttemptAt",
   "sentAt",
 ] as const;
-
-function csvCell(v: unknown): string {
-  const s = v == null ? "" : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
 
 export async function GET(req: NextRequest) {
   const admin = await getAdminEmail();

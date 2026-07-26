@@ -6,7 +6,7 @@ import {
   normalizeSource,
   type AuditRow,
 } from "@/server/services/audit-center";
-import { jsonError } from "@/server/http";
+import { csvCell, jsonError } from "@/server/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,11 +21,6 @@ const HEADERS = [
   "ip",
   "createdAt",
 ] as const;
-
-function csvCell(v: unknown): string {
-  const s = v == null ? "" : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
 
 export async function GET(req: NextRequest) {
   const admin = await getAdminEmail();

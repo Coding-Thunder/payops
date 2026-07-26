@@ -119,6 +119,8 @@ function buildFilter(f: OrderFilters): Record<string, unknown> {
       { "customer.email": r },
     ];
   }
+  // `new Date("YYYY-MM-DD")` parses as UTC midnight; keep the inclusive `to`
+  // boundary in UTC too so the window frame doesn't shift with process TZ.
   const range: Record<string, Date> = {};
   if (f.from) {
     const d = new Date(f.from);
@@ -127,7 +129,7 @@ function buildFilter(f: OrderFilters): Record<string, unknown> {
   if (f.to) {
     const d = new Date(f.to);
     if (!Number.isNaN(d.getTime())) {
-      d.setHours(23, 59, 59, 999);
+      d.setUTCHours(23, 59, 59, 999);
       range.$lte = d;
     }
   }
@@ -171,13 +173,18 @@ export async function listOrders(
   const filter = buildFilter(f);
   const sort =
     (f.sort && ORDER_SORTS[f.sort as OrderSort]) || ORDER_SORTS.created;
+  // On the unfiltered default view, an exact count is a full scan — use the
+  // O(1) metadata estimate instead. Filtered views get an exact count.
+  const emptyFilter = Object.keys(filter).length === 0;
   const [docs, total] = await Promise.all([
     Order.find(filter)
       .sort(sort)
       .skip(p.skip)
       .limit(p.limit)
       .lean<LeanOrder[]>(),
-    Order.countDocuments(filter),
+    emptyFilter
+      ? Order.estimatedDocumentCount()
+      : Order.countDocuments(filter),
   ]);
   return buildPageResult(docs.map(toRow), total, p);
 }
@@ -193,17 +200,41 @@ export interface OrderStats {
 export async function getOrderStats(f: OrderFilters = {}): Promise<OrderStats> {
   await connectMongo();
   const base = buildFilter(f);
-  const [total, paid, pending, failed, refunded] = await Promise.all([
-    Order.countDocuments(base),
-    Order.countDocuments({ ...base, "payment.paidAt": { $ne: null } }),
-    Order.countDocuments({
-      ...base,
-      status: { $in: ["LINK_GENERATED", "PAYMENT_PENDING"] },
-    }),
-    Order.countDocuments({ ...base, status: { $in: ["FAILED", "EXPIRED"] } }),
-    Order.countDocuments({ ...base, refundedAmount: { $gt: 0 } }),
+  // One $facet pass instead of five separate countDocuments — the console
+  // reads the same production cluster as the webhook path, so we keep the
+  // number of full passes to a minimum.
+  const [res] = await Order.aggregate<{
+    total: [{ n: number }?];
+    paid: [{ n: number }?];
+    pending: [{ n: number }?];
+    failed: [{ n: number }?];
+    refunded: [{ n: number }?];
+  }>([
+    { $match: base },
+    {
+      $facet: {
+        total: [{ $count: "n" }],
+        paid: [{ $match: { "payment.paidAt": { $ne: null } } }, { $count: "n" }],
+        pending: [
+          { $match: { status: { $in: ["LINK_GENERATED", "PAYMENT_PENDING"] } } },
+          { $count: "n" },
+        ],
+        failed: [
+          { $match: { status: { $in: ["FAILED", "EXPIRED"] } } },
+          { $count: "n" },
+        ],
+        refunded: [{ $match: { refundedAmount: { $gt: 0 } } }, { $count: "n" }],
+      },
+    },
   ]);
-  return { total, paid, pending, failed, refunded };
+  const n = (a?: [{ n: number }?]) => a?.[0]?.n ?? 0;
+  return {
+    total: n(res?.total),
+    paid: n(res?.paid),
+    pending: n(res?.pending),
+    failed: n(res?.failed),
+    refunded: n(res?.refunded),
+  };
 }
 
 export interface OrderLine {

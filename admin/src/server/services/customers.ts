@@ -106,13 +106,16 @@ export async function listCustomers(
   const sort =
     (f.sort && CUSTOMER_SORTS[f.sort as CustomerSort]) ||
     CUSTOMER_SORTS.activity;
+  const emptyFilter = Object.keys(filter).length === 0;
   const [docs, total] = await Promise.all([
     Customer.find(filter)
       .sort(sort)
       .skip(p.skip)
       .limit(p.limit)
       .lean<LeanCustomer[]>(),
-    Customer.countDocuments(filter),
+    emptyFilter
+      ? Customer.estimatedDocumentCount()
+      : Customer.countDocuments(filter),
   ]);
   return buildPageResult(docs.map(toRow), total, p);
 }
@@ -128,12 +131,27 @@ export async function getCustomerStats(
 ): Promise<CustomerStats> {
   await connectMongo();
   const base = buildFilter(f);
-  const [total, withOrders, repeat] = await Promise.all([
-    Customer.countDocuments(base),
-    Customer.countDocuments({ ...base, ordersCount: { $gt: 0 } }),
-    Customer.countDocuments({ ...base, ordersCount: { $gt: 1 } }),
+  // Single $facet pass instead of three separate counts (shared prod cluster).
+  const [res] = await Customer.aggregate<{
+    total: [{ n: number }?];
+    withOrders: [{ n: number }?];
+    repeat: [{ n: number }?];
+  }>([
+    { $match: base },
+    {
+      $facet: {
+        total: [{ $count: "n" }],
+        withOrders: [{ $match: { ordersCount: { $gt: 0 } } }, { $count: "n" }],
+        repeat: [{ $match: { ordersCount: { $gt: 1 } } }, { $count: "n" }],
+      },
+    },
   ]);
-  return { total, withOrders, repeat };
+  const n = (a?: [{ n: number }?]) => a?.[0]?.n ?? 0;
+  return {
+    total: n(res?.total),
+    withOrders: n(res?.withOrders),
+    repeat: n(res?.repeat),
+  };
 }
 
 export interface CustomerOrderRow {
@@ -164,6 +182,7 @@ export interface CustomerProfile extends CustomerRow {
   refunded: number;
   aov: number;
   currency: string | null;
+  multiCurrency: boolean;
   orders: CustomerOrderRow[];
   emails: CustomerEmailRow[];
 }
@@ -178,13 +197,24 @@ export async function getCustomerById(
   if (!c) return null;
 
   const email = (c.email ?? "").toLowerCase();
+  // The customerId branch is precise (the FK). The email fallback (for
+  // orders the backfill hasn't linked) MUST be scoped to this client's
+  // tenant — otherwise a different tenant's order sharing the same email
+  // would be over-attributed to this client. Emails are stored lower-cased
+  // on both sides, so the match is already case-consistent.
+  const emailBranch: Record<string, unknown> = { "customer.email": email };
+  if (c.orgId) emailBranch.orgId = c.orgId;
   const orderMatch: Record<string, unknown> = {
-    $or: [{ customerId: oid }, ...(email ? [{ "customer.email": email }] : [])],
+    $or: [{ customerId: oid }, ...(email ? [emailBranch] : [])],
   };
 
   const [aggrRows, orderDocs, emailDocs] = await Promise.all([
+    // Group BY currency: summing amounts across mixed currencies would be
+    // meaningless. We surface the primary currency's totals + a flag when a
+    // client spans more than one.
     Order.aggregate<{
-      totalOrders: number;
+      _id: string | null;
+      orders: number;
       paidOrders: number;
       revenue: number;
       refunded: number;
@@ -192,8 +222,8 @@ export async function getCustomerById(
       { $match: orderMatch },
       {
         $group: {
-          _id: null,
-          totalOrders: { $sum: 1 },
+          _id: "$pricing.currency",
+          orders: { $sum: 1 },
           paidOrders: {
             $sum: { $cond: [{ $ne: ["$payment.paidAt", null] }, 1, 0] },
           },
@@ -238,25 +268,32 @@ export async function getCustomerById(
       : Promise.resolve([]),
   ]);
 
-  const aggr = aggrRows[0] ?? {
-    totalOrders: 0,
-    paidOrders: 0,
-    revenue: 0,
-    refunded: 0,
-  };
-  const currency = orderDocs[0]?.pricing?.currency ?? null;
+  const totalOrders = aggrRows.reduce((s, r) => s + r.orders, 0);
+  const paidOrders = aggrRows.reduce((s, r) => s + r.paidOrders, 0);
+  const currencies = aggrRows.filter((r) => r._id);
+  // Primary = the currency this client has transacted the most revenue in
+  // (order count breaks ties). The money tiles reflect ONLY this currency;
+  // `multiCurrency` lets the UI flag clients that span several.
+  const primary = [...aggrRows].sort(
+    (a, b) => b.revenue - a.revenue || b.orders - a.orders,
+  )[0];
+  const currency = primary?._id ?? orderDocs[0]?.pricing?.currency ?? null;
 
   return {
     ...toRow(c),
     notes: c.notes ?? null,
     firstOrderAt: iso(c.firstOrderAt),
     updatedAt: iso(c.updatedAt),
-    totalOrders: aggr.totalOrders,
-    paidOrders: aggr.paidOrders,
-    revenue: aggr.revenue,
-    refunded: aggr.refunded,
-    aov: aggr.paidOrders > 0 ? aggr.revenue / aggr.paidOrders : 0,
+    totalOrders,
+    paidOrders,
+    revenue: primary?.revenue ?? 0,
+    refunded: primary?.refunded ?? 0,
+    aov:
+      primary && primary.paidOrders > 0
+        ? primary.revenue / primary.paidOrders
+        : 0,
     currency,
+    multiCurrency: currencies.length > 1,
     orders: orderDocs.map((o) => ({
       id: String(o._id),
       orderNumber: o.orderNumber ?? "—",

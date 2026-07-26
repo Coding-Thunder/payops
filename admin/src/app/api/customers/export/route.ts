@@ -5,7 +5,7 @@ import {
   listCustomersForExport,
   type CustomerRow,
 } from "@/server/services/customers";
-import { jsonError } from "@/server/http";
+import { csvCell, jsonError } from "@/server/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,11 +22,6 @@ const HEADERS = [
   "lastOrderAt",
   "createdAt",
 ] as const;
-
-function csvCell(v: unknown): string {
-  const s = Array.isArray(v) ? v.join("|") : v == null ? "" : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
 
 export async function GET(req: NextRequest) {
   const admin = await getAdminEmail();

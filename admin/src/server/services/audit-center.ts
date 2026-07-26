@@ -72,7 +72,8 @@ function dateRange(f: AuditFilters): Record<string, Date> | null {
   if (f.to) {
     const d = new Date(f.to);
     if (!Number.isNaN(d.getTime())) {
-      d.setHours(23, 59, 59, 999);
+      // UTC end-of-day so the inclusive boundary is TZ-stable.
+      d.setUTCHours(23, 59, 59, 999);
       range.$lte = d;
     }
   }

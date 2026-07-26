@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { getAdminEmail } from "@/server/auth/session";
 import { listOrdersForExport, type OrderRow } from "@/server/services/orders";
-import { jsonError } from "@/server/http";
+import { csvCell, jsonError } from "@/server/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,11 +22,6 @@ const HEADERS = [
   "createdAt",
   "paidAt",
 ] as const;
-
-function csvCell(v: unknown): string {
-  const s = v == null ? "" : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
 
 export async function GET(req: NextRequest) {
   const admin = await getAdminEmail();
