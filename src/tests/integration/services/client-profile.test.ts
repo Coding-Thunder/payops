@@ -1,7 +1,12 @@
 import { Types } from "mongoose";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { AuditAction, AuditEntity, RecordState } from "@/lib/constants/enums";
+import {
+  AuditAction,
+  AuditEntity,
+  type Currency,
+  RecordState,
+} from "@/lib/constants/enums";
 import { NotFoundError } from "@/lib/errors";
 import { AuditLog, Customer, Order } from "@/server/db/models";
 import {
@@ -45,7 +50,7 @@ async function makeOrder(args: {
   customerId: Types.ObjectId;
   email?: string;
   amount: number;
-  currency?: string;
+  currency?: Currency;
   paid?: boolean;
   status?: string;
   refunded?: number;

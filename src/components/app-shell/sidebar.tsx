@@ -16,6 +16,7 @@ import {
   SettingsIcon,
   ShieldAlertIcon,
   UsersIcon,
+  UsersRoundIcon,
 } from "lucide-react";
 
 import { LogoLockup } from "@/components/brand/logo";
@@ -59,6 +60,12 @@ const SECTIONS: NavSection[] = [
         label: "Orders",
         icon: CreditCardIcon,
         permissions: [Permission.ORDER_VIEW_OWN, Permission.ORDER_VIEW_ALL],
+      },
+      {
+        href: "/app/customers",
+        label: "Clients",
+        icon: UsersRoundIcon,
+        permissions: [Permission.CUSTOMER_VIEW],
       },
       {
         href: "/app/admin/disputes",

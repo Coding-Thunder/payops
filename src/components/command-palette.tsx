@@ -12,6 +12,7 @@ import {
   SettingsIcon,
   UserPlusIcon,
   UsersIcon,
+  UsersRoundIcon,
 } from "lucide-react";
 
 import {
@@ -76,6 +77,14 @@ const NAV_ACTIONS: CommandAction[] = [
     permissions: [Permission.ORDER_CREATE],
     shortcut: "C",
     perform: (r) => r.push("/app/orders/create"),
+  },
+  {
+    id: "go:clients",
+    label: "View all clients",
+    keywords: "customers contacts people records",
+    icon: UsersRoundIcon,
+    permissions: [Permission.CUSTOMER_VIEW],
+    perform: (r) => r.push("/app/customers"),
   },
   {
     id: "go:analytics",
