@@ -42,10 +42,21 @@ export async function POST(req: NextRequest) {
       try {
         const code = await issueOtp(email);
         await sendOtpEmail(email, code);
-      } catch {
-        // best-effort; never surfaced
+      } catch (err) {
+        // Server-side log ONLY — never surfaced to the client, so the
+        // endpoint stays enumeration-safe and the response/timing below is
+        // unchanged. Without this, the real cause of a missing OTP (Mongo
+        // unreachable, SMTP creds, an unverified From address) is
+        // completely invisible in the deploy logs.
+        console.error(
+          `[admin] OTP issue/send failed for ${email}:`,
+          err instanceof Error ? (err.stack ?? err.message) : err,
+        );
       }
     })();
+  } else {
+    // Also server-side only; the response is identical either way.
+    console.warn(`[admin] OTP requested for non-allow-listed email: ${email}`);
   }
   return jsonOk({ sent: true });
 }
