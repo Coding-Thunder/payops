@@ -4,7 +4,7 @@ import { z } from "zod";
 import { isAllowedEmail, normalizeEmail } from "@/server/auth/allowlist";
 import { issueOtp } from "@/server/auth/otp";
 import { sendOtpEmail } from "@/server/email/mailer";
-import { jsonError, jsonOk, clientIp } from "@/server/http";
+import { assertSameOrigin, jsonError, jsonOk, clientIp } from "@/server/http";
 import { rateLimit } from "@/server/rate-limit";
 
 export const runtime = "nodejs";
@@ -18,6 +18,9 @@ const schema = z.object({ email: z.string().email() });
  * addresses actually receive a code.
  */
 export async function POST(req: NextRequest) {
+  const csrf = assertSameOrigin(req);
+  if (csrf) return csrf;
+
   const ip = clientIp(req) ?? "unknown";
   const body = await req.json().catch(() => ({}));
   const parsed = schema.safeParse(body);

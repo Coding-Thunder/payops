@@ -1,10 +1,13 @@
 import { clearAdminCookie } from "@/server/auth/session";
-import { jsonOk } from "@/server/http";
+import { assertSameOrigin, jsonOk } from "@/server/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST() {
+export async function POST(req: Request) {
+  const csrf = assertSameOrigin(req);
+  if (csrf) return csrf;
+
   await clearAdminCookie();
   return jsonOk({ ok: true });
 }

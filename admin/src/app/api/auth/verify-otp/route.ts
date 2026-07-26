@@ -5,7 +5,7 @@ import { isAllowedEmail, normalizeEmail } from "@/server/auth/allowlist";
 import { verifyOtp } from "@/server/auth/otp";
 import { setAdminCookie, signAdminSession } from "@/server/auth/session";
 import { recordAdminAction } from "@/server/audit";
-import { jsonError, jsonOk, clientIp } from "@/server/http";
+import { assertSameOrigin, jsonError, jsonOk, clientIp } from "@/server/http";
 import { rateLimit } from "@/server/rate-limit";
 
 export const runtime = "nodejs";
@@ -22,6 +22,9 @@ const schema = z.object({
  * be issued for a non-allow-listed email even if an OTP row somehow existed.
  */
 export async function POST(req: NextRequest) {
+  const csrf = assertSameOrigin(req);
+  if (csrf) return csrf;
+
   const ip = clientIp(req) ?? "unknown";
   const body = await req.json().catch(() => ({}));
   const parsed = schema.safeParse(body);

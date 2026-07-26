@@ -94,3 +94,22 @@ export async function setUserStatus(
   if (res.matchedCount === 0) return null;
   return status;
 }
+
+/**
+ * Guard info for destructive actions on a user. Returns the target's
+ * email and whether they own any Organization (disabling an org owner
+ * would lock every member out of that tenant), or null if not found.
+ */
+export async function getUserGuardInfo(
+  userId: string,
+): Promise<{ email: string; isOrgOwner: boolean } | null> {
+  if (!Types.ObjectId.isValid(userId)) return null;
+  await connectMongo();
+  const oid = new Types.ObjectId(userId);
+  const [user, ownsOrg] = await Promise.all([
+    User.findById(oid).select({ email: 1 }).lean<{ email: string } | null>(),
+    Organization.exists({ ownerUserId: oid }),
+  ]);
+  if (!user) return null;
+  return { email: user.email, isOrgOwner: Boolean(ownsOrg) };
+}

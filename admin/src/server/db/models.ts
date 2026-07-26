@@ -192,6 +192,34 @@ const adminAuditSchema = new Schema<AdminAuditDoc>(
   { versionKey: false, collection: "admin_audit" },
 );
 adminAuditSchema.index({ createdAt: -1 });
+adminAuditSchema.index({ actorEmail: 1, createdAt: -1 });
+adminAuditSchema.index({ targetType: 1, targetId: 1, createdAt: -1 });
+
+// Append-only. The admin audit trail must be tamper-evident: once a row
+// is written it can never be updated or deleted through the app layer.
+// Every mutating query/document op is rejected; only fresh inserts pass.
+const ADMIN_AUDIT_IMMUTABLE = "admin_audit is append-only and cannot be modified";
+const blockAdminAuditWrite = function (): never {
+  throw new Error(ADMIN_AUDIT_IMMUTABLE);
+};
+for (const op of [
+  "updateOne",
+  "updateMany",
+  "replaceOne",
+  "findOneAndUpdate",
+  "findOneAndReplace",
+  "deleteOne",
+  "deleteMany",
+  "findOneAndDelete",
+] as const) {
+  adminAuditSchema.pre(op, blockAdminAuditWrite);
+}
+adminAuditSchema.pre("save", function () {
+  // Throwing aborts the save. Only brand-new inserts are permitted; any
+  // attempt to re-save (mutate) an existing audit row is rejected.
+  if (!this.isNew) throw new Error(ADMIN_AUDIT_IMMUTABLE);
+});
+
 export const AdminAudit = model<AdminAuditDoc>("AdminAudit", adminAuditSchema);
 
 export { Types };

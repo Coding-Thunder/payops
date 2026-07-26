@@ -5,7 +5,7 @@ import { isAllowedEmail } from "@/server/auth/allowlist";
 import { verifyGoogleIdToken } from "@/server/auth/firebase-admin";
 import { issueOtp } from "@/server/auth/otp";
 import { sendOtpEmail } from "@/server/email/mailer";
-import { jsonError, jsonOk, clientIp } from "@/server/http";
+import { assertSameOrigin, jsonError, jsonOk, clientIp } from "@/server/http";
 import { rateLimit } from "@/server/rate-limit";
 
 export const runtime = "nodejs";
@@ -19,6 +19,9 @@ const schema = z.object({ idToken: z.string().min(20) });
  * must verify the OTP before a session is granted.
  */
 export async function POST(req: NextRequest) {
+  const csrf = assertSameOrigin(req);
+  if (csrf) return csrf;
+
   const ip = clientIp(req) ?? "unknown";
   if (!rateLimit(`google:${ip}`, 10, 10 * 60_000)) {
     return jsonError(429, "Too many requests. Try again shortly.");
