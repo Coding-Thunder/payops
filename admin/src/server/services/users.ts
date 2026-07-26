@@ -113,3 +113,73 @@ export async function getUserGuardInfo(
   if (!user) return null;
   return { email: user.email, isOrgOwner: Boolean(ownsOrg) };
 }
+
+export interface UserDetail {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  status: string;
+  orgName: string | null;
+  orgId: string | null;
+  isOrgOwner: boolean;
+  lastLoginAt: string | null;
+  createdAt: string | null;
+  hasPassword: boolean;
+  firebaseLinked: boolean;
+}
+
+export async function getUserDetail(id: string): Promise<UserDetail | null> {
+  if (!Types.ObjectId.isValid(id)) return null;
+  await connectMongo();
+  const oid = new Types.ObjectId(id);
+  const u = await User.findById(oid)
+    .select({
+      name: 1,
+      email: 1,
+      role: 1,
+      status: 1,
+      primaryOrgId: 1,
+      lastLoginAt: 1,
+      createdAt: 1,
+      passwordHash: 1,
+      externalAuth: 1,
+    })
+    .lean<{
+      _id: Types.ObjectId;
+      name?: string;
+      email?: string;
+      role?: string;
+      status?: string;
+      primaryOrgId?: Types.ObjectId | null;
+      lastLoginAt?: Date | null;
+      createdAt?: Date | null;
+      passwordHash?: string | null;
+      externalAuth?: { firebaseUid?: string | null } | null;
+    } | null>();
+  if (!u) return null;
+
+  let orgName: string | null = null;
+  if (u.primaryOrgId) {
+    const o = await Organization.findById(u.primaryOrgId)
+      .select({ name: 1 })
+      .lean<{ name?: string } | null>();
+    orgName = o?.name ?? null;
+  }
+  const ownsOrg = await Organization.exists({ ownerUserId: oid });
+
+  return {
+    id: String(u._id),
+    name: u.name ?? "—",
+    email: u.email ?? "—",
+    role: u.role ?? "—",
+    status: u.status ?? "—",
+    orgName,
+    orgId: u.primaryOrgId ? String(u.primaryOrgId) : null,
+    isOrgOwner: Boolean(ownsOrg),
+    lastLoginAt: u.lastLoginAt ? new Date(u.lastLoginAt).toISOString() : null,
+    createdAt: u.createdAt ? new Date(u.createdAt).toISOString() : null,
+    hasPassword: Boolean(u.passwordHash),
+    firebaseLinked: Boolean(u.externalAuth?.firebaseUid),
+  };
+}

@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { listUsers } from "@/server/services/users";
 import { parsePagination } from "@/server/pagination";
 import { Badge, Pagination, Td, Th, fmtDate } from "@/components/ui";
@@ -70,7 +72,14 @@ export default async function UsersPage({
             ) : (
               result.items.map((u) => (
                 <tr key={u.id}>
-                  <Td>{u.name}</Td>
+                  <Td>
+                    <Link
+                      href={`/users/${u.id}`}
+                      className="text-sky-300 hover:underline"
+                    >
+                      {u.name}
+                    </Link>
+                  </Td>
                   <Td>{u.email}</Td>
                   <Td>
                     <span className="text-[12px] text-[var(--muted)]">{u.role}</span>
