@@ -378,6 +378,31 @@ adminAuditSchema.index({ createdAt: -1 });
 adminAuditSchema.index({ actorEmail: 1, createdAt: -1 });
 adminAuditSchema.index({ targetType: 1, targetId: 1, createdAt: -1 });
 
+// Internal ops notes — free-form notes an operator attaches to any entity
+// (user / customer / order / org). Admin-owned; distinct from a Customer's
+// own CRM `notes` field. Editing is not allowed (append + delete only) so
+// the record of what was noted stays honest.
+export interface AdminNoteDoc {
+  _id: Types.ObjectId;
+  subjectType: string;
+  subjectId: string;
+  body: string;
+  authorEmail: string;
+  createdAt: Date;
+}
+const adminNoteSchema = new Schema<AdminNoteDoc>(
+  {
+    subjectType: { type: String, required: true, maxlength: 32 },
+    subjectId: { type: String, required: true, maxlength: 64 },
+    body: { type: String, required: true, maxlength: 5000 },
+    authorEmail: { type: String, required: true },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { versionKey: false, collection: "admin_notes" },
+);
+adminNoteSchema.index({ subjectType: 1, subjectId: 1, createdAt: -1 });
+export const AdminNote = model<AdminNoteDoc>("AdminNote", adminNoteSchema);
+
 // Append-only. The admin audit trail must be tamper-evident: once a row
 // is written it can never be updated or deleted through the app layer.
 // Every mutating query/document op is rejected; only fresh inserts pass.

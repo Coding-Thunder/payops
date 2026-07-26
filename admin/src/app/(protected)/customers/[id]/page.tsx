@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { getCustomerById } from "@/server/services/customers";
+import { listNotes } from "@/server/services/notes";
 import {
   Badge,
   Card,
@@ -10,6 +11,7 @@ import {
   fmtDate,
   fmtDateTime,
 } from "@/components/ui";
+import { NotesPanel } from "@/components/notes-panel";
 import { formatMoney } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +31,7 @@ export default async function CustomerProfilePage({
   const { id } = await params;
   const c = await getCustomerById(id);
   if (!c) notFound();
+  const notes = await listNotes("customer", c.id);
 
   return (
     <div className="space-y-4">
@@ -160,6 +163,8 @@ export default async function CustomerProfilePage({
           )}
         </Card>
       </div>
+
+      <NotesPanel subjectType="customer" subjectId={c.id} initialNotes={notes} />
     </div>
   );
 }
