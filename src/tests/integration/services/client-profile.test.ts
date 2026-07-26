@@ -204,6 +204,30 @@ describe("updateClient", () => {
       }),
     ).rejects.toBeInstanceOf(NotFoundError);
   });
+
+  it("does not write a false audit row on a no-op tags PATCH", async () => {
+    const orgId = new Types.ObjectId();
+    const customerId = await makeCustomer(orgId);
+    const actor = { id: new Types.ObjectId().toString(), name: "Admin", role: "ADMIN" };
+
+    // First save actually changes the tags → one audit row.
+    await updateClient(String(orgId), String(customerId), { tags: ["vip"] }, {
+      actor,
+      request: null,
+    });
+    // Re-submitting the identical tags must be a no-op — no second row.
+    await updateClient(String(orgId), String(customerId), { tags: ["vip"] }, {
+      actor,
+      request: null,
+    });
+
+    const count = await AuditLog.countDocuments({
+      action: AuditAction.CUSTOMER_UPDATED,
+      entityType: AuditEntity.CUSTOMER,
+      entityId: String(customerId),
+    });
+    expect(count).toBe(1);
+  });
 });
 
 describe("getClientTimeline", () => {

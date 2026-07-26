@@ -93,15 +93,32 @@ export function EditClientDialog({ client }: EditClientDialogProps) {
       ? Array.from(new Set([...tags, tagDraft.trim()])).slice(0, 50)
       : tags;
 
+    // Send ONLY the fields the operator actually changed, diffed against the
+    // snapshot the dialog opened with. A full-object PATCH would clobber a
+    // field a teammate changed concurrently (lost update); a field-scoped
+    // PATCH only overwrites what this operator touched. Empty diff => no
+    // request at all (and therefore no spurious audit row).
+    const patch: Record<string, unknown> = {};
+    if (trimmedName !== client.name) patch.name = trimmedName;
+    if (phone.trim() !== client.phone) patch.phone = phone.trim();
+    const nextCompany = company.trim() || null;
+    if (nextCompany !== (client.company ?? null)) patch.company = nextCompany;
+    const nextNotes = notes.trim() || null;
+    if (nextNotes !== (client.notes ?? null)) patch.notes = nextNotes;
+    const tagsEqual =
+      finalTags.length === client.tags.length &&
+      finalTags.every((t, i) => t === client.tags[i]);
+    if (!tagsEqual) patch.tags = finalTags;
+
+    if (Object.keys(patch).length === 0) {
+      toast("No changes to save");
+      setOpen(false);
+      return;
+    }
+
     setSubmitting(true);
     try {
-      await api.patch(`/api/customers/${client.id}`, {
-        name: trimmedName,
-        phone: phone.trim(),
-        company: company.trim() || null,
-        notes: notes.trim() || null,
-        tags: finalTags,
-      });
+      await api.patch(`/api/customers/${client.id}`, patch);
       toast.success("Client updated");
       setOpen(false);
       router.refresh();

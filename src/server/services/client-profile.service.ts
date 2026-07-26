@@ -49,7 +49,12 @@ export interface ClientOrderRowDTO {
 
 export interface ClientTotalsDTO {
   totalOrders: number;
+  /** Paid orders across ALL currencies (for the total-orders breakdown). */
   paidOrders: number;
+  /** Paid orders in the PRIMARY currency only — the denominator behind
+   *  `revenue`/`averageOrderValue`, so any caption pairing the money
+   *  figures with a count must use THIS, never the cross-currency total. */
+  primaryPaidOrders: number;
   /** Revenue in the PRIMARY currency only (see `currency`/`multiCurrency`). */
   revenue: number;
   refunded: number;
@@ -183,15 +188,23 @@ export async function getClientProfile(
   const totalOrders = groups.reduce((s, g) => s + g.orders, 0);
   const paidOrders = groups.reduce((s, g) => s + g.paidOrders, 0);
   const currencies = groups.filter((g) => g._id);
-  // Primary = the currency the client has the most revenue in (orders break
-  // ties). Money fields reflect ONLY this currency.
+  // Primary = the currency this client transacts in MOST. Ranked by paid
+  // order count, then total orders, then revenue — deliberately NOT by raw
+  // revenue amount, because comparing money across currencies without an FX
+  // rate is meaningless (¥500k would outrank $10k). All money fields below
+  // then reflect ONLY this one currency, and `primaryPaidOrders` is the
+  // matching denominator so revenue / AOV / any caption stay self-consistent.
   const primary = [...groups].sort(
-    (a, b) => b.revenue - a.revenue || b.orders - a.orders,
+    (a, b) =>
+      b.paidOrders - a.paidOrders ||
+      b.orders - a.orders ||
+      b.revenue - a.revenue,
   )[0];
 
   const totals: ClientTotalsDTO = {
     totalOrders,
     paidOrders,
+    primaryPaidOrders: primary?.paidOrders ?? 0,
     revenue: primary?.revenue ?? 0,
     refunded: primary?.refunded ?? 0,
     outstanding: primary?.outstanding ?? 0,
@@ -379,8 +392,16 @@ export async function updateClient(
     const tags = Array.from(
       new Set(input.tags.map((t) => t.trim()).filter((t) => t.length > 0)),
     ).slice(0, 50);
-    doc.tags = tags;
-    changed.tags = tags;
+    // Only a genuine change should save + audit — an idempotent re-submit
+    // of the same tags must not forge a CUSTOMER_UPDATED row in the ledger.
+    const current = Array.isArray(doc.tags) ? doc.tags : [];
+    const same =
+      tags.length === current.length &&
+      tags.every((t, i) => t === current[i]);
+    if (!same) {
+      doc.tags = tags;
+      changed.tags = tags;
+    }
   }
 
   if (Object.keys(changed).length > 0) {

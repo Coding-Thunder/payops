@@ -116,8 +116,16 @@ customerSchema.index(
   },
 );
 
-// Clients list default sort: most-recently-active first, tenant-scoped.
-customerSchema.index({ orgId: 1, lastOrderAt: -1 });
+// Clients list sorts, all tenant-scoped. Prod runs autoIndex:false, so
+// each user-selectable sort (see CLIENT_SORTS) needs its own compound
+// index whose trailing key matches the sort field — otherwise the list
+// query falls back to a blocking in-memory sort over the whole tenant
+// (32MB cap → error 96 on large tenants). The backfill migration's
+// syncIndexes() builds these in production.
+customerSchema.index({ orgId: 1, lastOrderAt: -1 }); // sort: activity (default)
+customerSchema.index({ orgId: 1, ordersCount: -1 }); // sort: orders
+customerSchema.index({ orgId: 1, createdAt: -1 }); // sort: created
+customerSchema.index({ orgId: 1, name: 1 }); // sort: name
 
 export const Customer: Model<CustomerDoc> = registerModel<CustomerDoc>(
   "Customer",

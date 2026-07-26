@@ -60,6 +60,7 @@ import { applyCheckoutPaid } from "./webhook.service";
 import { validateLineAttributes } from "./attribute-validator.service";
 import {
   bumpCustomerOrderAggregates,
+  decrementCustomerOrderCount,
   resolveOrCreateCustomer,
   upsertCustomerFromOrder,
 } from "./customer.service";
@@ -1055,6 +1056,23 @@ export async function archiveOrder(
     doc.payment.status = OrderStatus.EXPIRED;
   }
   await doc.save();
+
+  // Roll the archived order out of its client's cached ordersCount so the
+  // roster count matches the profile's live (archived-excluded) total.
+  // Best-effort: a cache-count write must never fail the archive.
+  if (ctx.orgId) {
+    try {
+      await decrementCustomerOrderCount(ctx.orgId, {
+        customerId: doc.customerId ?? null,
+        email: doc.customer.email,
+      });
+    } catch (err) {
+      logger.warn("customer.decrement_failed", {
+        orderId: String(doc._id),
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   await recordAudit({
     action: AuditAction.ORDER_ARCHIVED,

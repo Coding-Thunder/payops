@@ -192,15 +192,71 @@ export async function bumpCustomerOrderAggregates(
   const scopedOrgId = requireOrgId(orgId);
   if (!Types.ObjectId.isValid(customerId)) return;
   await connectMongo();
+  // Pipeline update (not $min/$max operators): a fresh profile from
+  // resolveOrCreateCustomer has firstOrderAt=null, and BSON orders
+  // null < Date, so a plain `$min` would keep null forever — the FK
+  // path would never stamp a first-order date. Coalescing the null seed
+  // to this order's date before comparing fixes that while preserving
+  // the "earliest wins / latest wins" semantics. `$literal` guards names
+  // that could start with `$` from being read as field paths.
   await Customer.updateOne(
     { _id: new Types.ObjectId(customerId), orgId: orgIdFilter(scopedOrgId) },
-    {
-      $set: { name: input.name.trim(), phone: input.phone.trim() },
-      $inc: { ordersCount: 1 },
-      $min: { firstOrderAt: input.orderCreatedAt },
-      $max: { lastOrderAt: input.orderCreatedAt },
-    },
+    [
+      {
+        $set: {
+          name: { $literal: input.name.trim() },
+          phone: { $literal: input.phone.trim() },
+          ordersCount: { $add: [{ $ifNull: ["$ordersCount", 0] }, 1] },
+          firstOrderAt: {
+            $min: [
+              { $ifNull: ["$firstOrderAt", input.orderCreatedAt] },
+              input.orderCreatedAt,
+            ],
+          },
+          lastOrderAt: {
+            $max: [
+              { $ifNull: ["$lastOrderAt", input.orderCreatedAt] },
+              input.orderCreatedAt,
+            ],
+          },
+        },
+      },
+    ],
+    // Mongoose 9 requires opting in explicitly to aggregation-pipeline updates.
+    { updatePipeline: true },
   );
+}
+
+/**
+ * Roll an order back OUT of its Client Profile's `ordersCount` cache when
+ * it leaves the active set (archive). Symmetric with the create-time
+ * increment so the roster count stays honest instead of drifting upward
+ * until the next backfill. Best-effort; floored at 0 by the `ordersCount>0`
+ * guard so a double-fire can never push the cache negative.
+ *
+ * `firstOrderAt`/`lastOrderAt` are intentionally left alone — recomputing
+ * them would need a full re-aggregation, and the migration owns that; the
+ * count is the only figure the roster surfaces.
+ */
+export async function decrementCustomerOrderCount(
+  orgId: string | null | undefined,
+  ref: { customerId?: Types.ObjectId | string | null; email?: string },
+): Promise<void> {
+  const scopedOrgId = requireOrgId(orgId);
+  await connectMongo();
+  const filter: Record<string, unknown> = {
+    orgId: orgIdFilter(scopedOrgId),
+    ordersCount: { $gt: 0 },
+  };
+  const cid = ref.customerId ? String(ref.customerId) : "";
+  if (cid && Types.ObjectId.isValid(cid)) {
+    filter._id = new Types.ObjectId(cid);
+  } else {
+    const email = (ref.email ?? "").toLowerCase().trim();
+    if (!email) return;
+    filter.email = email;
+  }
+  await Customer.updateOne(filter, { $inc: { ordersCount: -1 } });
 }
 
 /** Narrow a thrown Mongo error to the duplicate-key case (E11000). */

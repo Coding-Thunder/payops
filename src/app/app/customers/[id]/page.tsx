@@ -115,8 +115,8 @@ export default async function ClientProfilePage({ params }: ClientPageProps) {
             value={formatCurrency(totals.revenue, currency)}
             caption={
               totals.multiCurrency
-                ? `${totals.paidOrders} paid · ${currency} shown, other currencies present`
-                : `${totals.paidOrders} paid ${plural(totals.paidOrders, "order")}`
+                ? `${totals.primaryPaidOrders} paid in ${currency} · other currencies present`
+                : `${totals.primaryPaidOrders} paid ${plural(totals.primaryPaidOrders, "order")}`
             }
             variant="success"
           />

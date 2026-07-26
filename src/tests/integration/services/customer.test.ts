@@ -13,7 +13,10 @@ import {
   updateOrderCustomer,
 } from "@/server/services/order.service";
 import {
+  bumpCustomerOrderAggregates,
+  decrementCustomerOrderCount,
   findCustomerByEmail,
+  resolveOrCreateCustomer,
   upsertCustomerFromOrder,
 } from "@/server/services/customer.service";
 import { ensureMongo, resetDatabase } from "@/tests/utils/db";
@@ -256,5 +259,70 @@ describe("findCustomerByEmail", () => {
     });
     const orgBLookup = await findCustomerByEmail(orgB, "shared@example.com");
     expect(orgBLookup).toBeNull();
+  });
+});
+
+describe("bumpCustomerOrderAggregates (FK counter path)", () => {
+  it("stamps firstOrderAt from a null seed and keeps earliest/ latest", async () => {
+    const orgId = new Types.ObjectId().toString();
+    // resolveOrCreateCustomer makes a profile with firstOrderAt=null.
+    const customerId = await resolveOrCreateCustomer(orgId, {
+      name: "Vela",
+      email: "vela@example.com",
+      phone: "+15555550100",
+    });
+    expect(customerId).not.toBeNull();
+    const seeded = await Customer.findById(customerId!).lean();
+    expect(seeded!.firstOrderAt).toBeNull();
+
+    const t2 = new Date("2026-02-01T00:00:00.000Z");
+    await bumpCustomerOrderAggregates(orgId, customerId!, {
+      name: "Vela",
+      phone: "+15555550100",
+      orderCreatedAt: t2,
+    });
+    let doc = await Customer.findById(customerId!).lean();
+    // Regression: a plain $min against null keeps null (BSON null < Date).
+    expect(doc!.firstOrderAt?.toISOString()).toBe(t2.toISOString());
+    expect(doc!.lastOrderAt?.toISOString()).toBe(t2.toISOString());
+    expect(doc!.ordersCount).toBe(1);
+
+    // An EARLIER order moves firstOrderAt back but not lastOrderAt.
+    const t1 = new Date("2026-01-01T00:00:00.000Z");
+    await bumpCustomerOrderAggregates(orgId, customerId!, {
+      name: "Vela",
+      phone: "+15555550100",
+      orderCreatedAt: t1,
+    });
+    doc = await Customer.findById(customerId!).lean();
+    expect(doc!.firstOrderAt?.toISOString()).toBe(t1.toISOString());
+    expect(doc!.lastOrderAt?.toISOString()).toBe(t2.toISOString());
+    expect(doc!.ordersCount).toBe(2);
+  });
+
+  it("decrementCustomerOrderCount floors at zero and is tenant-pinned", async () => {
+    const orgId = new Types.ObjectId().toString();
+    const other = new Types.ObjectId().toString();
+    const customerId = await resolveOrCreateCustomer(orgId, {
+      name: "Vela",
+      email: "vela@example.com",
+      phone: "+15555550100",
+    });
+    await bumpCustomerOrderAggregates(orgId, customerId!, {
+      name: "Vela",
+      phone: "+15555550100",
+      orderCreatedAt: new Date("2026-02-01T00:00:00.000Z"),
+    });
+
+    // Wrong tenant can't touch the counter.
+    await decrementCustomerOrderCount(other, { customerId });
+    expect((await Customer.findById(customerId!).lean())!.ordersCount).toBe(1);
+
+    await decrementCustomerOrderCount(orgId, { customerId });
+    expect((await Customer.findById(customerId!).lean())!.ordersCount).toBe(0);
+
+    // Already at zero — the ordersCount>0 guard prevents going negative.
+    await decrementCustomerOrderCount(orgId, { customerId });
+    expect((await Customer.findById(customerId!).lean())!.ordersCount).toBe(0);
   });
 });
