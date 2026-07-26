@@ -17,6 +17,8 @@
     "migrate:tenant-spine:prod": "tsx scripts/migrate-tenant-spine.ts",
     "migrate:line-items": "tsx --env-file=.env.local scripts/migrate-orders-to-line-items.ts",
     "migrate:line-items:prod": "tsx scripts/migrate-orders-to-line-items.ts",
+    "migrate:client-profiles": "tsx --env-file=.env.local scripts/migrate-orders-to-customers.ts",
+    "migrate:client-profiles:prod": "tsx scripts/migrate-orders-to-customers.ts",
     "seed:aurora": "tsx --env-file=.env.prod scripts/seed-aurora.ts",
     "cleanup:aurora": "tsx --env-file=.env.prod scripts/cleanup-aurora.ts",
     "capture:marketing": "tsx --env-file=.env.local scripts/capture-marketing-screenshots.ts",

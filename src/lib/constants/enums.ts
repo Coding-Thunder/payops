@@ -86,6 +86,11 @@ export const AuditAction = {
   USER_IMPERSONATED: "USER_IMPERSONATED",
   USER_IMPERSONATION_ENDED: "USER_IMPERSONATION_ENDED",
 
+  /** Client Profile lifecycle. Created implicitly from the order pipeline;
+   *  updated when an operator edits company/notes/tags/identity. */
+  CUSTOMER_CREATED: "CUSTOMER_CREATED",
+  CUSTOMER_UPDATED: "CUSTOMER_UPDATED",
+
   ORDER_CREATED: "ORDER_CREATED",
   ORDER_UPDATED: "ORDER_UPDATED",
   ORDER_ARCHIVED: "ORDER_ARCHIVED",
@@ -155,6 +160,7 @@ export const AuditEntity = {
   CONSENT: "CONSENT",
   ORDER_EVIDENCE: "ORDER_EVIDENCE",
   DISPUTE: "DISPUTE",
+  CUSTOMER: "CUSTOMER",
 } as const;
 export type AuditEntity = (typeof AuditEntity)[keyof typeof AuditEntity];
 

@@ -75,6 +75,13 @@ export const Permission = {
    *  that can't be retracted. */
   DOCUMENT_VIEW: "document:view",
   DOCUMENT_ISSUE: "document:issue",
+
+  /** Client Profiles (the permanent per-customer record). Viewing is open
+   *  to anyone who works orders (staff need the customer's history to do
+   *  their job); managing (editing company/notes/tags) is admin-only since
+   *  the profile is the tenant's system of record for that relationship. */
+  CUSTOMER_VIEW: "customer:view",
+  CUSTOMER_MANAGE: "customer:manage",
 } as const;
 export type Permission = (typeof Permission)[keyof typeof Permission];
 
@@ -102,6 +109,9 @@ const STAFF_PERMISSIONS: readonly Permission[] = [
   // Agents need to see whether the customer they're chasing has already
   // acknowledged the request, gates the "ready to charge" call.
   Permission.CONSENT_VIEW,
+  // Staff work orders against clients, so they can open a Client Profile
+  // to see that customer's history. Editing the profile is admin-only.
+  Permission.CUSTOMER_VIEW,
 ];
 
 const ADMIN_ONLY_PERMISSIONS: readonly Permission[] = [
@@ -126,6 +136,9 @@ const ADMIN_ONLY_PERMISSIONS: readonly Permission[] = [
   Permission.DOCUMENT_ISSUE,
   Permission.EMAIL_TEMPLATE_VIEW,
   Permission.EMAIL_TEMPLATE_MANAGE,
+  // Editing a Client Profile (company / notes / tags). Admin-only because
+  // the profile is the tenant's canonical record of the relationship.
+  Permission.CUSTOMER_MANAGE,
   Permission.AUDIT_VIEW,
   // AUDIT_DELETE intentionally NOT granted to ADMIN, the audit table
   // is the dispute-defense system of record. Only SUPER_ADMIN can issue
