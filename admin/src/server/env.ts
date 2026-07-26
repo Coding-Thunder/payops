@@ -22,7 +22,7 @@ const serverSchema = z.object({
   // Dedicated admin-session signing key; falls back to JWT_SECRET.
   ADMIN_SESSION_SECRET: z.string().optional(),
 
-  ADMIN_ALLOWLIST: z.string().default("vinayheshwari35@gmail.com"),
+  ADMIN_ALLOWLIST: z.string().default("vinaymaheshwari35@gmail.com"),
 
   ADMIN_SESSION_TTL_HOURS: z.coerce.number().int().positive().max(72).default(8),
   OTP_TTL_MINUTES: z.coerce.number().int().positive().max(60).default(10),

@@ -77,7 +77,7 @@ services:
       # ---- Access control ----
       - key: ADMIN_ALLOWLIST
         scope: RUN_AND_BUILD_TIME
-        value: "vinayheshwari35@gmail.com"
+        value: "vinaymaheshwari35@gmail.com"
 
       - key: MAIN_APP_URL
         scope: RUN_AND_BUILD_TIME
