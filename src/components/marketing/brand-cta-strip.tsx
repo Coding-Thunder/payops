@@ -33,16 +33,14 @@ export function BrandCtaStrip() {
                 className="font-display text-[10.5px] font-semibold uppercase tracking-[0.18em]"
                 style={{ color: "var(--brand-emerald)" }}
               >
-                Open a workspace in 3 minutes
+                Built for agencies &amp; freelancers
               </p>
               <h2 className="mt-3 font-display text-[clamp(1.6rem,3.2vw,2.4rem)] font-medium leading-[1.15] tracking-[-0.015em] text-white">
-                Build bulletproof{" "}
-                <span className="font-semibold">payment operations.</span>
+                Stop reconstructing{" "}
+                <span className="font-semibold">client history.</span>
               </h2>
               <p className="mt-4 max-w-xl text-[14px] leading-relaxed text-white/72">
-                Connect your core stack, eliminate fragmented tracking gaps,
-                and protect your merchant processing pipeline. No call
-                required. No engineer required.
+                Give every client one permanent, searchable record.
               </p>
             </div>
 
@@ -52,22 +50,19 @@ export function BrandCtaStrip() {
                 size="lg"
                 className="gap-1.5 bg-white text-foreground hover:bg-white/90"
               >
-                <Link href="/signup">
-                  Start your workspace
+                <Link href="/waitlist">
+                  Join the beta
                   <ArrowRightIcon className="size-4" />
                 </Link>
               </Button>
+              <p className="text-[12.5px] text-white/60">
+                Free during beta. No credit card required.
+              </p>
               <Link
                 href="/login"
-                className="text-[12.5px] text-white/70 underline-offset-4 hover:text-white hover:underline"
-              >
-                Already have an account? Sign in →
-              </Link>
-              <Link
-                href="/waitlist"
                 className="text-[12px] text-white/55 underline-offset-4 hover:text-white/85 hover:underline"
               >
-                Not ready yet? Join the waitlist →
+                Already have an account? Sign in →
               </Link>
             </div>
           </div>

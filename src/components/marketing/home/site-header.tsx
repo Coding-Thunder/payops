@@ -6,11 +6,13 @@ import { ArrowRightIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
+// Absolute homepage anchors so the header works as shared chrome from any
+// route (e.g. /pricing) — on the homepage these still scroll in-page.
 const NAV = [
-  { href: "#problem", label: "The problem" },
-  { href: "#demo", label: "How it works" },
-  { href: "#use-cases", label: "Use cases" },
-  { href: "#faq", label: "FAQ" },
+  { href: "/#problem", label: "The problem" },
+  { href: "/#demo", label: "How it works" },
+  { href: "/#use-cases", label: "Use cases" },
+  { href: "/#faq", label: "FAQ" },
 ] as const;
 
 /** Compact brand mark — a three-node "trace" that reads as connected history. */

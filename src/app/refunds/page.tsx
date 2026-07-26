@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 
 import {
-  H3,
   LegalDoc,
   Mail,
   Note,
@@ -14,205 +13,118 @@ import {
 export const metadata: Metadata = {
   title: "Refund Policy",
   description:
-    "14-day no-questions money-back guarantee on new TraceTxn subscriptions. Plain conditions, what's covered, what's not, and how to request.",
+    "TraceTxn is currently a free private beta with no subscription charges, so there are no subscription refunds today. This policy will be updated when paid plans launch.",
   alternates: { canonical: "/refunds" },
 };
 
+/**
+ * Beta-stage Refund Policy. TraceTxn is a free private beta today:
+ * no subscription charges, no SaaS billing wired up (see
+ * billing.service.ts), so there is nothing to refund. This page
+ * describes today's product only and defers all paid-plan refund
+ * terms to a later revision. Do NOT add refund rules, prices, plan
+ * names, or cancellation periods here until paid subscriptions
+ * actually ship.
+ */
+
 const SECTIONS: LegalSection[] = [
   {
-    id: "summary",
-    title: "The short version",
+    id: "beta",
+    title: "Private beta",
     children: (
       <>
         <P>
-          We offer a <strong>14-day no-questions money-back
-          guarantee</strong> on new paid TraceTxn subscriptions. If
-          TraceTxn isn&apos;t a fit for you in the first 14 days, email{" "}
-          <Mail address="support@tracetxn.com" /> from your workspace
-          email address and we&apos;ll refund the subscription fee in
-          full. No survey, no save-attempt phone call, no friction.
+          TraceTxn is currently available as a free private beta. There
+          is no charge to join and no charge to use it during the beta,
+          and no credit card is required.
+        </P>
+        <P>
+          Because the beta is free and there are currently no
+          subscription charges, there are currently no subscription
+          refunds. There is nothing to refund while there is nothing to
+          pay for.
+        </P>
+      </>
+    ),
+  },
+  {
+    id: "future-subscriptions",
+    title: "Future subscriptions",
+    children: (
+      <>
+        <P>
+          We plan to introduce paid subscriptions in the future. They
+          are not available today.
+        </P>
+        <P>
+          When paid subscriptions become available, we will update this
+          Refund Policy to explain how they work, including:
+        </P>
+        <UL>
+          <li>billing,</li>
+          <li>cancellations,</li>
+          <li>refunds,</li>
+          <li>eligibility,</li>
+          <li>payment terms.</li>
+        </UL>
+        <P>
+          Until paid subscriptions launch, this policy does not set any
+          prices, plans, or refund terms. Any refund rules for paid
+          plans will be published here when those plans exist.
+        </P>
+      </>
+    ),
+  },
+  {
+    id: "billing",
+    title: "Billing",
+    children: (
+      <>
+        <P>
+          During the private beta, TraceTxn does not collect any payment
+          or card details from you in order to use the product. There is
+          no subscription to pay for, so there is nothing to bill.
         </P>
         <Note>
-          The 14-day window starts the moment your first paid charge
-          succeeds, not the moment you sign up. Trial usage before that
-          charge doesn&apos;t count.
+          This policy covers amounts TraceTxn would charge you for the
+          product. It does not cover money you collect from your own
+          customers. If you connect your own payment processor to take
+          payments from your customers, those funds move between you,
+          your customers, and that processor, TraceTxn never holds them.
+          Refunds to your customers are handled through your own
+          processor, not through TraceTxn. See our{" "}
+          <PageLink href="/terms">Terms of Service</PageLink> for how
+          connected payment processors work.
         </Note>
       </>
     ),
   },
   {
-    id: "guarantee",
-    title: "The 14-day guarantee",
+    id: "cancellation",
+    title: "Cancellation",
     children: (
       <>
-        <P>If, within 14 days of your first paid charge, you decide:</P>
-        <UL>
-          <li>TraceTxn doesn&apos;t fit how your team works,</li>
-          <li>you found a better tool,</li>
-          <li>you simply changed your mind,</li>
-        </UL>
         <P>
-          we&apos;ll refund 100% of the subscription fee you paid for
-          that charge. You don&apos;t have to explain why. You don&apos;t
-          have to schedule a call. You just have to ask within the
-          window.
+          You can stop using the private beta at any time. Because the
+          beta is free, there is nothing to cancel and no charges to
+          stop.
+        </P>
+        <P>
+          If you would like the personal information we hold about you
+          deleted, or a copy of it, you can request that as described in
+          our <PageLink href="/privacy">Privacy Policy</PageLink>.
         </P>
       </>
     ),
   },
   {
-    id: "how-to-request",
-    title: "How to request a refund",
+    id: "contact",
+    title: "Contact",
     children: (
       <>
         <P>
-          Email <Mail address="support@tracetxn.com" /> from the email
-          associated with your workspace. Include:
-        </P>
-        <UL>
-          <li>your workspace name (or slug),</li>
-          <li>the date of the charge you&apos;d like refunded,</li>
-          <li>
-            optionally, a one-line reason, only if you want to. It
-            helps us improve the product. It&apos;s not required.
-          </li>
-        </UL>
-        <P>
-          We acknowledge refund requests within one business day and
-          issue the refund the same business day in most cases.
-        </P>
-      </>
-    ),
-  },
-  {
-    id: "what-covered",
-    title: "What's covered",
-    children: (
-      <>
-        <P>The 14-day guarantee covers:</P>
-        <UL>
-          <li>
-            the most recent subscription charge from TraceTxn to you on
-            a new paid subscription,
-          </li>
-          <li>
-            full refund of that charge to the original payment method,
-          </li>
-          <li>
-            taxes we collected on that charge (refunded to the same
-            method, subject to processor limitations).
-          </li>
-        </UL>
-      </>
-    ),
-  },
-  {
-    id: "what-not-covered",
-    title: "What's NOT covered",
-    children: (
-      <>
-        <P>The 14-day guarantee does not cover:</P>
-        <UL>
-          <li>
-            <strong>Stripe processing fees</strong> on payments your
-            customers made <em>to you</em> through your connected Stripe
-            account. We never received that money, it went directly
-            from your customer to your Stripe to your bank. Refunding it
-            is between you and Stripe, not us.
-          </li>
-          <li>
-            <strong>Renewal charges after day 14.</strong> If you cancel
-            after the window closes, the cancellation takes effect at
-            the end of the paid period, no pro-rata refund of the
-            current period.
-          </li>
-          <li>
-            <strong>Reactivated subscriptions.</strong> The guarantee
-            applies to your <em>first</em> paid charge on a workspace.
-            Reactivating an old workspace doesn&apos;t reset it.
-          </li>
-          <li>
-            <strong>Add-ons.</strong> One-off charges (e.g. paid
-            migration help, custom-branded evidence templates) are
-            described separately and follow the terms of their own
-            order.
-          </li>
-        </UL>
-      </>
-    ),
-  },
-  {
-    id: "after-window",
-    title: "After the 14-day window",
-    children: (
-      <>
-        <P>
-          You can cancel any subscription at any time through your
-          billing settings. Cancellation:
-        </P>
-        <UL>
-          <li>
-            takes effect at the end of the period you&apos;ve already
-            paid for;
-          </li>
-          <li>
-            stops auto-renewal, you won&apos;t be charged again;
-          </li>
-          <li>
-            preserves read-only access to your workspace data for at
-            least 30 days after the period ends, so you can export.
-          </li>
-        </UL>
-        <H3>Annual plans</H3>
-        <P>
-          The 14-day guarantee applies to annual plans the same way it
-          applies to monthly plans, full refund within 14 days of the
-          first charge. After day 14, annual plans run to the end of the
-          paid year; we don&apos;t pro-rate annual refunds outside the
-          guarantee window.
-        </P>
-        <H3>Tier changes</H3>
-        <P>
-          Upgrades take effect immediately; we charge the prorated
-          difference. Downgrades take effect at the start of your next
-          billing cycle, you keep the higher tier&apos;s features until
-          then.
-        </P>
-      </>
-    ),
-  },
-  {
-    id: "exceptional",
-    title: "Exceptional circumstances",
-    children: (
-      <>
-        <P>
-          If TraceTxn experiences a major outage or a billing error on
-          our side, we may issue credits or refunds outside the
-          guarantee window, case-by-case, in your favour. Email{" "}
-          <Mail address="support@tracetxn.com" /> with the details and
-          we&apos;ll work it out quickly.
-        </P>
-        <P>
-          If you suspect fraudulent charges (e.g. someone else used your
-          card to sign up), email{" "}
-          <Mail address="support@tracetxn.com" /> immediately. We work
-          with your card issuer to resolve and refund.
-        </P>
-      </>
-    ),
-  },
-  {
-    id: "context",
-    title: "How this fits with our other policies",
-    children: (
-      <>
-        <P>
-          This Refund Policy is part of, and read together with, our{" "}
-          <PageLink href="/terms">Terms of Service</PageLink> and{" "}
-          <PageLink href="/privacy">Privacy Policy</PageLink>. Where
-          this Policy and the Terms appear to conflict on the subject of
-          refunds, this Policy prevails.
+          Questions about this Refund Policy? Email{" "}
+          <Mail address="legal@tracetxn.com" />.
         </P>
       </>
     ),
@@ -224,9 +136,9 @@ export default function RefundsPage() {
     <LegalDoc
       badge="Refunds"
       title="Refund Policy"
-      intro="A 14-day no-questions money-back guarantee on new paid subscriptions. The plain version, plus the boring fine print so there are no surprises."
-      lastUpdated="2026-05-31"
-      effectiveDate="2026-05-31"
+      intro="Information about refunds, billing, and future paid subscriptions."
+      lastUpdated="2026-07-25"
+      effectiveDate="2026-07-25"
       sections={SECTIONS}
     />
   );

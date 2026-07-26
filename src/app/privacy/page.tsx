@@ -18,6 +18,93 @@ export const metadata: Metadata = {
   alternates: { canonical: "/privacy" },
 };
 
+/* ════════════════════════════════════════════════════════════════════════
+ * ⚠️  MANUAL LEGAL-REVIEW FLAGS — resolve before publishing.
+ *
+ * This policy was rewritten to match the client-record product. The
+ * statements below are grounded in the current codebase, but the
+ * following facts could not be verified from code alone and MUST be
+ * confirmed (or corrected) by the operator/legal reviewer. These are
+ * developer comments only — they do NOT render on the public page.
+ *
+ *  1. LEGAL ENTITY — Overview still names "Vinay Maheshwari, the
+ *     sole-proprietor operating TraceTxn". Left UNCHANGED per brief.
+ *     Confirm this is the correct current legal operator.
+ *  2. ACCOUNT FIELDS — Verified from user/organization models: name,
+ *     email, hashed password / Firebase UID, workspace name, optional
+ *     legal business name. The old policy's "country" and "currency
+ *     preferences" were dropped (no such fields on signup; currency is a
+ *     per-workspace setting). Confirm nothing else is collected at signup.
+ *  3. CONSENT METADATA — Confirmed collected today: acknowledgement text,
+ *     client name + email, order snapshot (amount/currency), timestamp,
+ *     typed signed name, IP address, browser user-agent
+ *     (payment-consent.model.ts + consent-form.tsx). Consent is currently
+ *     tied to an order/booking → Stripe checkout. Confirm this scope.
+ *  4. FILE STORAGE — There is NO arbitrary file/document upload in the
+ *     product. The ONLY user upload is a workspace logo image (≤512 KB),
+ *     stored as bytes inside MongoDB (no S3/Spaces/R2/GCS/Firebase
+ *     Storage/GridFS). "Documents" = system-GENERATED invoices/receipts
+ *     (HTML). The policy therefore does NOT claim clients can attach
+ *     contracts/agreements/deliverables. If file attachments ship later,
+ *     add a file-storage subprocessor and expand §02/§06/§08.
+ *  5. SUBPROCESSORS — Verified in use: DigitalOcean (hosting), MongoDB
+ *     Atlas (DB + logo bytes), Google Firebase (AUTH ONLY — not storage),
+ *     Cloudflare (Turnstile/DNS/CDN), Stripe (OPTIONAL per-tenant gateway
+ *     only). EMAIL PROVIDER IS AMBIGUOUS: .env.example documents Resend
+ *     (outbound) + Zoho (inbound mailbox); .env.prod still contains a
+ *     legacy Google Workspace / smtp.gmail.com block alongside a
+ *     smtp.resend.com block. The table lists "Resend" — CONFIRM the live
+ *     outbound provider and whether Zoho (inbound) should be listed.
+ *  6. DATA LOCATIONS — The prior "United States / EU" over-claim was
+ *     removed; the table now reads "United States" for DigitalOcean and
+ *     MongoDB Atlas. Code supports a SINGLE US region (.do/app.yaml pins
+ *     region: nyc; security page = single-region + daily Atlas
+ *     snapshots). Still CONFIRM the exact DigitalOcean region, the Atlas
+ *     cluster region(s), and each other provider's region before
+ *     publishing.
+ *  7. INTERNATIONAL TRANSFERS — "SCCs where applicable" is hedged, not
+ *     asserted. Confirm which transfer mechanisms actually apply.
+ *  8. RETENTION PERIODS — Code-backed: email delivery metadata = 90 days
+ *     (enforced); security signals = up to 12 months (mostly not
+ *     persisted); account/workspace/client/audit data = lifetime of
+ *     workspace, no automated purge. Confirm these are the intended
+ *     policy periods. NOTE: audit logs have no auto-purge but CAN be
+ *     hard-deleted by an admin holding the AUDIT_DELETE permission (each
+ *     deletion itself logged) — the §08 wording was corrected to drop any
+ *     immutability implication; the append-only SHA-256 chain belongs to
+ *     the separate order-evidence collection, not the audit log.
+ *  9. DELETION / ERASURE WINDOW — Workspaces are ARCHIVED (soft delete);
+ *     "hard-delete is not supported" in code. No wired flow currently
+ *     transitions an org into ARCHIVED, there is no self-serve
+ *     account-deletion UI, and no timed purge job. The old policy's "up to
+ *     30 days then delete" claim was REMOVED as unverified, and §08 now
+ *     frames workspace closure as request-based. Define and confirm the
+ *     actual erasure process + window (e.g. on request).
+ * 10. BACKUP DELETION WINDOW — Daily Atlas snapshots exist; the retention
+ *     window of those snapshots (how long deleted data lingers in
+ *     backups) is unknown. Confirm and insert if a specific window is
+ *     promised.
+ * 11. STRIPE / SUBSCRIPTION BILLING — Confirmed: TraceTxn's OWN
+ *     subscription billing is NOT live ("Stripe Billing is not wired
+ *     up"); 15-day free evaluation, no card required. The per-tenant
+ *     Stripe gateway (BYOS) IS live. §02 describes TraceTxn as a "free
+ *     private beta" — the sanctioned positioning used on the home/hero
+ *     and footers. KNOWN INCONSISTENCY (flag for reconciliation, not a
+ *     policy error): /pricing and /waitlist still advertise paid tiers
+ *     ($39/$99/$249) even though billing is not wired up. Do not assert
+ *     live paid plans anywhere until that is reconciled.
+ * 12. AI / ANALYTICS — Confirmed: NO AI/LLM integration; NO third-party
+ *     analytics/advertising/trackers; only a first-party session cookie.
+ *     Re-confirm if any analytics/AI is added.
+ * 13. CHANGE NOTICE PERIOD — The prior "at least 14 days" commitment was
+ *     softened (see §12). Restore a specific period only if TraceTxn
+ *     intends to honour it.
+ * 14. EFFECTIVE DATE — Set to 2026-07-25. Adjust per your material-change
+ *     notice process before publishing.
+ * 15. CONTACT — Confirm legal@tracetxn.com is the correct, monitored
+ *     legal/privacy inbox.
+ * ════════════════════════════════════════════════════════════════════════ */
+
 const SECTIONS: LegalSection[] = [
   {
     id: "overview",
@@ -30,16 +117,29 @@ const SECTIONS: LegalSection[] = [
           &quot;we&quot;, &quot;us&quot;), collects, uses, shares, and
           protects personal information when you (1) visit our website,
           (2) sign up for a workspace, or (3) use the TraceTxn platform
-          (collectively, the &quot;Service&quot;).
+          (collectively, the &quot;Service&quot;). TraceTxn is a
+          client-record management tool used by agencies and freelancers
+          to keep records about the clients they work with.
+        </P>
+        <P>
+          <strong>Who&apos;s who.</strong> In this Policy, &quot;you&quot;,
+          the &quot;User&quot;, &quot;Customer&quot;, or &quot;Workspace
+          Owner&quot; means the person or business that creates and uses a
+          TraceTxn account. A &quot;Client&quot; or &quot;Client
+          Contact&quot; means one of your own customers or contacts whose
+          information you choose to store in TraceTxn. We say
+          &quot;Client&quot; for your customers so the two roles never
+          blur.
         </P>
         <Note>
           <strong>Controller vs. processor.</strong> We act as a{" "}
-          <em>data controller</em> for information about you, the
-          operator who signed up for TraceTxn. We act as a{" "}
-          <em>data processor</em> for information you handle through
-          TraceTxn about your customers and end users. Your obligations
-          to those people sit with you; ours sit with you under our{" "}
-          <PageLink href="/dpa">Data Processing Addendum</PageLink>.
+          <em>data controller</em> for information about you, the User /
+          Workspace Owner who signs up for and uses TraceTxn. We act as a{" "}
+          <em>data processor</em> for the personal information you add to
+          TraceTxn about your Clients and Client Contacts, there, you are
+          the controller and we process it on your instructions under our{" "}
+          <PageLink href="/dpa">Data Processing Addendum</PageLink>. Your
+          obligations to your Clients sit with you.
         </Note>
       </>
     ),
@@ -51,48 +151,127 @@ const SECTIONS: LegalSection[] = [
       <>
         <H3>Account information</H3>
         <P>
-          When you sign up, we collect your name, email address, and
-          workspace details (business name, country, currency
-          preferences). We also store an authentication record from your
-          chosen sign-in method (Google sign-in or email + password).
+          When you sign up, we collect your name and email address, and we
+          store an authentication record for your chosen sign-in method
+          (Google sign-in, or email + password, where passwords are stored
+          only as a salted hash). We also collect your workspace details,
+          your workspace / business name and, optionally, a legal business
+          name used on the invoices you issue. You may upload a workspace
+          logo image, which appears on your invoices and hosted pages, it
+          is the only file TraceTxn currently lets you upload.
         </P>
+
+        <H3>Client record data</H3>
+        <P>
+          The core of the Service is a record for each of your Clients.
+          Depending on what you choose to add, a client record may include:
+        </P>
+        <UL>
+          <li>client / contact name;</li>
+          <li>email address;</li>
+          <li>phone number;</li>
+          <li>business or company name;</li>
+          <li>free-form notes;</li>
+          <li>labels or tags you apply;</li>
+          <li>invoices and receipts you issue to that Client;</li>
+          <li>
+            payment records (amounts, currency, status, and timestamps of
+            the orders you track for that Client);
+          </li>
+          <li>consent records (described below);</li>
+          <li>a timeline of activity recorded on the record.</li>
+        </UL>
+        <P>
+          TraceTxn does not require most of this information, what we
+          actually process about a Client depends entirely on what you
+          choose to add. You are responsible for having a lawful basis to
+          store information about your Clients in TraceTxn.
+        </P>
+
+        <H3>Consent records</H3>
+        <P>
+          TraceTxn can capture a Client&apos;s acknowledgement of an order
+          or booking before payment (a &quot;consent record&quot;).
+          Depending on the flow, a consent record may include the
+          acknowledgement text the Client was shown, the Client&apos;s name
+          and email, the related order details (such as amount and
+          currency), and a timestamp. When a Client confirms on the hosted
+          consent page, we also record their typed signature (their full
+          name), IP address, and browser user-agent as evidence of the
+          acknowledgement.
+        </P>
+        <Note>
+          <strong>Product consent is not privacy-law consent.</strong> A
+          consent record is something <em>you</em> keep about your Client
+          for your own purposes. It is not the Client&apos;s agreement to
+          this Privacy Policy, and it does not, on its own, establish a
+          lawful basis under data-protection law for you or for us. The two
+          are separate concepts.
+        </Note>
+
+        <H3>Documents (invoices and receipts)</H3>
+        <P>
+          When you issue an invoice or receipt, TraceTxn generates it from
+          the order and Client details you entered and stores a rendered
+          copy so the exact document you issued can be reproduced later.
+          These documents may contain personal information about your
+          Client, such as their name, email, phone number, and the line
+          items on the order. TraceTxn does not currently support uploading
+          or attaching arbitrary files (for example contracts, proposals,
+          or deliverables) to a client record.
+        </P>
+
         <H3>Workspace usage</H3>
         <P>
           As you use TraceTxn, we record activity needed to run the
-          Service, orders you create, evidence events, audit-log
-          entries, sub-processor jobs (e.g. emails queued for delivery),
-          and feature interactions. This usage data is scoped to your
+          Service, client records and documents you create, consent
+          activity, timeline entries, audit-log events, and queued
+          transactional emails. This usage data is scoped to your
           workspace.
         </P>
-        <H3>Payment processor metadata</H3>
+
+        <H3>Third-party integrations</H3>
         <P>
-          When you connect Stripe, we store the credentials you provide
-          (encrypted at rest), the Stripe account identifier, and event
-          metadata returned by Stripe (session ids, charge ids, dispute
-          ids, status timestamps). We never receive or store card
-          numbers.
+          You can optionally connect your own Stripe account so you can
+          collect payments from your Clients. When you connect Stripe, we
+          store the API credentials you provide (the secret key and
+          webhook-signing secret are encrypted at rest; the publishable key
+          and Stripe account identifier are stored as provided), and we
+          receive and store metadata Stripe returns about payments, such as
+          checkout-session, charge, and dispute identifiers and status
+          timestamps. We never receive or store card numbers, Stripe
+          handles card data directly.
         </P>
+
         <H3>Billing information</H3>
         <P>
-          When subscription billing is active, the payment instrument
-          itself is handled by our subscription processor; we store only
-          the billing email, last 4 digits, brand, country, and the
-          processor&apos;s opaque customer identifier, never full card
-          data.
+          TraceTxn is currently a free private beta. We are not charging
+          subscription fees today, and we do not collect payment-card
+          details for TraceTxn itself, new workspaces get a time-limited
+          evaluation with no credit card required. If we begin charging
+          subscription fees in the future, we will update this Policy
+          first.
         </P>
+
         <H3>Technical data</H3>
         <P>
-          We collect device, browser, IP address, request timestamps,
-          and rough geo-location (country/region) for security,
-          fraud-prevention, and observability, including failed login
-          attempts and bot-protection challenge results.
+          We collect device and browser information, IP address, and
+          request timestamps for security, fraud-prevention, and
+          reliability, including records of security-relevant events such
+          as failed sign-in attempts. Public forms are protected by a
+          bot-protection check (Cloudflare Turnstile); we do not keep a
+          record of each challenge result.
         </P>
+
         <H3>Cookies</H3>
         <P>
-          We use a small number of essential cookies (session cookies,
-          CSRF tokens, bot-protection tokens) needed to operate the
-          Service. We do not use third-party advertising cookies or
-          cross-site trackers.
+          We use a single essential first-party cookie to keep you signed
+          in (a session cookie that holds your authentication token). We
+          rely on strict same-site and origin checks rather than a separate
+          anti-CSRF cookie. Our bot-protection provider (Cloudflare) may
+          set its own cookies when its challenge widget loads. We do not
+          use advertising cookies, cross-site trackers, or third-party
+          analytics.
         </P>
       </>
     ),
@@ -106,31 +285,42 @@ const SECTIONS: LegalSection[] = [
         <UL>
           <li>provide, secure, and operate the Service;</li>
           <li>
-            authenticate sign-in, maintain workspace membership, and
-            apply role-based permissions;
+            create and maintain your workspace, and store, search, and
+            display your client records;
+          </li>
+          <li>generate and store the invoices and receipts you issue;</li>
+          <li>
+            record and display the client acknowledgements (consent
+            records) you request;
           </li>
           <li>
-            process subscription payments, send invoices, and meet
-            tax/accounting obligations;
+            maintain a timeline and audit log of workspace activity;
           </li>
           <li>
-            send transactional email (sign-up confirmation, password
-            reset, billing notices, security alerts), these are
-            necessary for the Service and cannot be opted out of while
-            your account is active;
+            authenticate sign-in, maintain workspace membership, and apply
+            role-based permissions;
+          </li>
+          <li>
+            where you connect Stripe, let you collect payments from your
+            Clients;
+          </li>
+          <li>
+            send transactional email (sign-up confirmation, password reset,
+            security alerts, and workspace notifications), these are
+            necessary for the Service and cannot be opted out of while your
+            account is active;
           </li>
           <li>
             detect, investigate, and prevent fraud, abuse, and security
             incidents;
           </li>
           <li>
-            comply with legal obligations and enforce our Terms of
-            Service;
+            comply with legal obligations and enforce our Terms of Service;
           </li>
           <li>
-            improve the Service, primarily through aggregated metrics
-            (latency, error rates, feature adoption) rather than
-            individual profiling.
+            improve the reliability and functionality of the Service,
+            primarily through aggregated, workspace-scoped metrics rather
+            than individual profiling.
           </li>
         </UL>
       </>
@@ -142,29 +332,41 @@ const SECTIONS: LegalSection[] = [
     children: (
       <>
         <P>
-          Where the EU/UK GDPR applies, we rely on these lawful bases:
+          Where the EU/UK GDPR applies, we rely on these lawful bases for
+          the personal information we hold as a controller (about you, the
+          User):
         </P>
         <UL>
           <li>
-            <strong>Contract.</strong> To create your account, provide
-            the Service, and process payments, without this, we cannot
-            deliver what you signed up for.
+            <strong>Contract.</strong> To create your account, provide the
+            Service, and maintain your workspace and records, without this,
+            we cannot deliver what you signed up for.
           </li>
           <li>
             <strong>Legitimate interests.</strong> To secure the Service
-            against abuse, run analytics for product improvement, and
-            send transactional messages, balanced against your rights.
+            against abuse, keep it reliable, and send transactional
+            messages, balanced against your rights.
           </li>
           <li>
-            <strong>Legal obligation.</strong> To meet tax, accounting,
+            <strong>Legal obligation.</strong> To meet legal, tax,
             anti-fraud, and law-enforcement requirements.
           </li>
           <li>
             <strong>Consent.</strong> Where we ask separately (e.g.
-            optional product update emails). You can withdraw consent at
+            optional product-update emails). You can withdraw consent at
             any time without affecting prior processing.
           </li>
         </UL>
+        <Note>
+          <strong>Client data.</strong> For the personal information you
+          store about your Clients, <em>you</em> are the controller and
+          decide the purposes and the lawful basis, we process it on your
+          behalf under our{" "}
+          <PageLink href="/dpa">Data Processing Addendum</PageLink>. Keeping
+          a consent record about a Client does not, by itself, give you or
+          us a lawful basis for processing, that remains your
+          responsibility.
+        </Note>
       </>
     ),
   },
@@ -180,18 +382,17 @@ const SECTIONS: LegalSection[] = [
         <UL>
           <li>
             <strong>Sub-processors</strong> (listed below), hosting,
-            database, authentication, email delivery, payment
-            processing, bot protection.
+            database, authentication, email delivery, payment integration,
+            and bot protection.
           </li>
           <li>
             <strong>Within your workspace</strong>, members of your
-            workspace see data your role permits them to see. Workspace
+            workspace see data their role permits them to see. Workspace
             owners see all workspace data.
           </li>
           <li>
-            <strong>Legal compliance</strong>, when required by law,
-            valid legal process, or to protect rights, property, or
-            safety.
+            <strong>Legal compliance</strong>, when required by law, valid
+            legal process, or to protect rights, property, or safety.
           </li>
           <li>
             <strong>Business transfers</strong>, in connection with a
@@ -200,9 +401,10 @@ const SECTIONS: LegalSection[] = [
           </li>
         </UL>
         <P>
-          We do <strong>not</strong> sell personal information. We do
-          not share personal information with advertising networks. We
-          do not use personal information to train AI models.
+          We do <strong>not</strong> sell personal information. We do not
+          share personal information with advertising networks. We do not
+          send your data to any AI provider, and we do not use personal
+          information to train AI or machine-learning models.
         </P>
       </>
     ),
@@ -214,8 +416,8 @@ const SECTIONS: LegalSection[] = [
       <>
         <P>
           We rely on the following service providers (sub-processors) to
-          run the Service. They process personal information only under
-          our instructions and equivalent confidentiality and security
+          run the Service. They process personal information only under our
+          instructions and equivalent confidentiality and security
           obligations.
         </P>
         <div className="mb-4 overflow-x-auto rounded-xl border border-border">
@@ -233,14 +435,16 @@ const SECTIONS: LegalSection[] = [
                 <td className="px-4 py-3 text-muted-foreground">
                   Application hosting + compute
                 </td>
-                <td className="px-4 py-3 text-muted-foreground">United States / EU</td>
+                <td className="px-4 py-3 text-muted-foreground">United States</td>
               </tr>
               <tr>
                 <td className="px-4 py-3 font-medium">MongoDB Atlas</td>
                 <td className="px-4 py-3 text-muted-foreground">
-                  Primary database (workspace data, audit logs, evidence chain)
+                  Primary database (account, client records, invoices and
+                  receipts, consent records, audit logs, uploaded logo
+                  images)
                 </td>
-                <td className="px-4 py-3 text-muted-foreground">United States / EU</td>
+                <td className="px-4 py-3 text-muted-foreground">United States</td>
               </tr>
               <tr>
                 <td className="px-4 py-3 font-medium">Google Firebase</td>
@@ -252,13 +456,14 @@ const SECTIONS: LegalSection[] = [
               <tr>
                 <td className="px-4 py-3 font-medium">Stripe</td>
                 <td className="px-4 py-3 text-muted-foreground">
-                  Subscription billing (TraceTxn fees), tenant payment
-                  processing uses your own Stripe account
+                  Optional payment integration, when you connect your own
+                  Stripe account, it processes payments from your Clients
+                  (not used for TraceTxn subscription billing)
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">United States / Ireland</td>
               </tr>
               <tr>
-                <td className="px-4 py-3 font-medium">Google Workspace (SMTP)</td>
+                <td className="px-4 py-3 font-medium">Resend</td>
                 <td className="px-4 py-3 text-muted-foreground">
                   Transactional email delivery
                 </td>
@@ -276,8 +481,8 @@ const SECTIONS: LegalSection[] = [
         </div>
         <P>
           We notify customers of material sub-processor changes through
-          this page and, where you have a signed DPA, via the
-          notification channel set out in it.
+          this page and, where you have a signed DPA, via the notification
+          channel set out in it.
         </P>
       </>
     ),
@@ -288,12 +493,12 @@ const SECTIONS: LegalSection[] = [
     children: (
       <>
         <P>
-          The sub-processors above operate primarily in the United
-          States, Ireland, and the European Union. When personal
-          information is transferred from your region to another, we
-          rely on appropriate safeguards (such as the EU Standard
-          Contractual Clauses, where applicable) and require equivalent
-          confidentiality and security obligations.
+          The sub-processors above operate primarily in the United States
+          (Stripe also operates in Ireland, and Cloudflare operates
+          globally). When personal information is transferred from your
+          region to another, we rely on appropriate safeguards (such as the
+          EU Standard Contractual Clauses, where applicable) and require
+          equivalent confidentiality and security obligations.
         </P>
       </>
     ),
@@ -305,36 +510,50 @@ const SECTIONS: LegalSection[] = [
       <>
         <UL>
           <li>
-            <strong>Account &amp; workspace data:</strong> retained
-            while your account is active. After deletion, we may keep
-            data for up to 30 days to allow recovery, then remove or
-            irreversibly anonymise it (subject to legal retention).
+            <strong>Account &amp; workspace data:</strong> retained while
+            your workspace is active. If you ask us to close your
+            workspace, we archive it rather than erasing it immediately, so
+            records and history remain recoverable and any legal or tax
+            obligations can be met.
           </li>
           <li>
-            <strong>Audit logs &amp; evidence chain:</strong> retained
-            for the lifetime of your workspace because tampering with
-            this data would defeat its purpose. On deletion, we keep
-            cryptographic chain anchors only.
+            <strong>Client records, invoices &amp; receipts, and consent
+            records:</strong> kept for as long as your workspace keeps
+            them or until you delete them. Deleting a client record removes
+            it from your workspace. Issued invoices and receipts are kept
+            for as long as needed for accounting and tax purposes.
           </li>
           <li>
-            <strong>Billing records:</strong> retained for the period
-            required by tax and accounting law in our operating
-            jurisdiction.
+            <strong>Audit &amp; activity logs:</strong> retained for the
+            lifetime of your workspace and not automatically purged.
           </li>
           <li>
-            <strong>Security &amp; abuse-prevention signals:</strong>{" "}
-            most live in our auth provider&apos;s logs (Firebase) or
-            in-process counters that aren&apos;t separately stored.
-            When we do persist a security signal on our side, it&apos;s
+            <strong>Email delivery metadata:</strong> kept up to 90 days
+            for deliverability diagnostics, then deleted.
+          </li>
+          <li>
+            <strong>Security &amp; abuse-prevention signals:</strong> most
+            are not stored separately by us, failed sign-ins live in our
+            authentication provider&apos;s logs, and rate-limit counters
+            are transient. Where we do persist a security signal, it is
             kept up to 12 months and then deleted or rolled up to
             aggregates.
           </li>
           <li>
-            <strong>Marketing / transactional email logs:</strong>{" "}
-            delivery metadata kept up to 90 days for deliverability
-            diagnostics.
+            <strong>Backups:</strong> our database provider takes routine
+            snapshots for disaster recovery. Information you delete may
+            persist in those backups for a limited period until they roll
+            over.
           </li>
         </UL>
+        <Note>
+          <strong>&quot;One permanent record&quot; does not mean
+          forever.</strong> Keeping a permanent, searchable record for
+          every Client means your Client history stays in one place while
+          you use TraceTxn, it does not mean we keep personal data
+          indefinitely. Your and your Clients&apos; deletion rights,
+          workspace closure, and applicable privacy laws all still apply.
+        </Note>
       </>
     ),
   },
@@ -345,21 +564,23 @@ const SECTIONS: LegalSection[] = [
       <>
         <P>
           Depending on where you live, you may have the right to access,
-          correct, export, restrict processing of, or delete your
-          personal information; to object to certain processing; and to
-          lodge a complaint with your local data-protection authority.
+          correct, export, restrict processing of, or delete your personal
+          information; to object to certain processing; and to lodge a
+          complaint with your local data-protection authority.
         </P>
         <P>
           To exercise these rights for personal information we hold{" "}
-          <em>about you as a TraceTxn operator</em>, email{" "}
+          <em>about you as a TraceTxn User</em>, email{" "}
           <Mail address="legal@tracetxn.com" /> from the email address
           associated with your workspace. We respond within 30 days.
         </P>
         <P>
-          For requests about <em>your customers&apos;</em> personal
-          information that we process on your behalf, please direct
-          those requests to your workspace owner, they are the
-          controller of that data.
+          For requests about a <em>Client&apos;s</em> personal information
+          that we process on a User&apos;s behalf, we act as a processor on
+          the instructions of the relevant Workspace Owner, who is the
+          controller of that data. We will refer such requests to that
+          Workspace Owner, Clients should contact the agency or freelancer
+          that holds their record.
         </P>
       </>
     ),
@@ -371,15 +592,16 @@ const SECTIONS: LegalSection[] = [
       <>
         <P>
           We use technical and organisational safeguards to protect
-          personal information, encryption in transit, encryption at
-          rest for credentials, scoped access controls, audit logging,
-          tenant isolation at the data layer, and bot protection on
-          public forms.
+          personal information, including encryption in transit, encryption
+          at rest for connected payment-gateway credentials (AES-256
+          envelope encryption), authentication and role-based access
+          controls, audit logging, tenant / workspace isolation at the data
+          layer, and bot protection on public forms.
         </P>
         <P>
-          No system is impenetrable. We commit to investigating and,
-          where appropriate, notifying you of personal-data breaches
-          without undue delay, in line with applicable law.
+          No system is impenetrable. We commit to investigating and, where
+          appropriate, notifying you of personal-data breaches without
+          undue delay, in line with applicable law.
         </P>
         <P>
           More detail is on our{" "}
@@ -409,11 +631,11 @@ const SECTIONS: LegalSection[] = [
     children: (
       <>
         <P>
-          We may update this Privacy Policy. The &quot;Last
-          updated&quot; date above reflects the current version.
-          Material changes are announced by email at least 14 days
-          before they take effect; continued use of the Service after
-          the effective date constitutes acceptance.
+          We may update this Privacy Policy. The &quot;Last updated&quot;
+          date above reflects the current version. We announce material
+          changes by email and/or in-product notice before they take
+          effect; continued use of the Service after the effective date
+          constitutes acceptance.
         </P>
       </>
     ),
@@ -438,8 +660,8 @@ export default function PrivacyPage() {
       badge="Privacy"
       title="Privacy Policy"
       intro="What information we collect, how we use it, who we share it with, where it lives, how long we keep it, and the rights you have over it."
-      lastUpdated="2026-05-31"
-      effectiveDate="2026-05-31"
+      lastUpdated="2026-07-25"
+      effectiveDate="2026-07-25"
       sections={SECTIONS}
     />
   );

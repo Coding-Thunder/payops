@@ -1,8 +1,10 @@
+import { ArrowRightIcon } from "lucide-react";
 import Link from "next/link";
 import * as React from "react";
 
 import { BrandFooter } from "@/components/marketing/brand-footer";
 import { BrandNav } from "@/components/marketing/brand-nav";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /**
@@ -30,6 +32,9 @@ interface LegalDocProps {
   lastUpdated: string;
   effectiveDate?: string;
   sections: LegalSection[];
+  /** Optional primary call-to-action rendered in the hero (e.g. the DPA
+   *  page's "Request a DPA"). Omitted on pages that don't need one. */
+  heroCta?: { label: string; href: string };
 }
 
 export function LegalDoc({
@@ -39,6 +44,7 @@ export function LegalDoc({
   lastUpdated,
   effectiveDate,
   sections,
+  heroCta,
 }: LegalDocProps) {
   return (
     <div className="bg-background text-foreground">
@@ -69,6 +75,16 @@ export function LegalDoc({
           <p className="mt-5 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
             {intro}
           </p>
+          {heroCta ? (
+            <div className="mt-7">
+              <Button asChild size="sm" className="gap-1.5 text-[12.5px]">
+                <Link href={heroCta.href}>
+                  {heroCta.label}
+                  <ArrowRightIcon className="size-3.5" />
+                </Link>
+              </Button>
+            </div>
+          ) : null}
           <div className="mt-6 flex flex-wrap items-center gap-2 font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted-foreground">
             <span>Last updated · {lastUpdated}</span>
             {effectiveDate ? (

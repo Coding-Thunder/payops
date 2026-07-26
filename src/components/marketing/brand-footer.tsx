@@ -3,15 +3,19 @@ import Link from "next/link";
 import { LogoLockup } from "@/components/brand/logo";
 
 /**
- * Brand-v1 footer, calm, operational, no marketing fluff.
+ * Brand-v1 footer, calm, understated, no marketing fluff.
  *
- * Three-column structure: brand + tagline on the left, two link
- * columns (Product / Resources) on the right. Hairline dividers,
- * generous whitespace. Single emerald dot on the system-status pill
- *, the only accent in the entire footer.
+ * Brand + tagline on the left, then four short link columns (Product /
+ * Get started / Company / Legal). Hairline dividers, generous
+ * whitespace. Single emerald dot on the system-status pill, the only
+ * accent in the entire footer.
  *
  * Avoids the "11 columns of footer links" pattern most B2B SaaS sites
- * fall into. We're an ops tool, not a corporate portal.
+ * fall into. We keep it to the few links that matter.
+ *
+ * NOTE: /refunds is intentionally not linked here while TraceTxn is a
+ * free private beta (see the Terms manual-review flags). Re-add it to
+ * the Legal column if paid plans / paying customers exist.
  */
 export function BrandFooter() {
   const year = new Date().getUTCFullYear();
@@ -22,9 +26,8 @@ export function BrandFooter() {
           <div className="max-w-sm">
             <LogoLockup size="md" />
             <p className="mt-4 text-[13px] leading-relaxed text-muted-foreground">
-              The operating system for payment operations. Lifecycle
-              visibility, hashed evidence, hosted consent, built so your
-              team can resolve disputes faster.
+              One permanent, searchable record for every client. Built
+              for agencies and freelancers.
             </p>
             <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-border bg-white px-3 py-1 text-[11px] text-muted-foreground">
               <span
@@ -43,14 +46,12 @@ export function BrandFooter() {
             links={[
               { label: "Features", href: "/features" },
               { label: "Pricing", href: "/pricing" },
-              { label: "Evidence chain", href: "/#evidence" },
-              { label: "Integrations", href: "/#integrations" },
             ]}
           />
           <FooterColumn
             title="Get started"
             links={[
-              { label: "Open a workspace", href: "/signup" },
+              { label: "Join the beta", href: "/waitlist" },
               { label: "Sign in", href: "/login" },
             ]}
           />
@@ -66,7 +67,6 @@ export function BrandFooter() {
             links={[
               { label: "Terms", href: "/terms" },
               { label: "Privacy", href: "/privacy" },
-              { label: "Refunds", href: "/refunds" },
               { label: "DPA", href: "/dpa" },
             ]}
           />
@@ -77,8 +77,8 @@ export function BrandFooter() {
             © {year} TraceTxn · All rights reserved
           </p>
           <p className="text-[11px] text-muted-foreground">
-            Built for retail, services, agencies, hospitality, and B2B
-            commerce that takes money seriously.
+            Built for agencies, freelancers, and studios that keep every
+            client in one place.
           </p>
         </div>
       </div>

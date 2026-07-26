@@ -71,8 +71,8 @@ export function BrandNav() {
             <Link href="/login">Sign in</Link>
           </Button>
           <Button asChild size="sm" className="gap-1.5 text-[12.5px]">
-            <Link href="/signup">
-              Get started
+            <Link href="/waitlist">
+              Join the beta
               <ArrowRightIcon className="size-3.5" />
             </Link>
           </Button>
