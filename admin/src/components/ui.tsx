@@ -139,3 +139,15 @@ export function fmtDate(iso: string | null): string {
     day: "numeric",
   });
 }
+
+export function fmtDateTime(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}

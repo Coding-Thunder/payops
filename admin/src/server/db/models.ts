@@ -144,6 +144,50 @@ const quotationSchema = new Schema<QuotationDoc>(
 );
 export const Quotation = model<QuotationDoc>("Quotation", quotationSchema);
 
+// Email outbox (owned by the main app; the drainer there does the actual
+// sending). The console reads it for Email Ops and writes limited status
+// transitions (retry re-queues, cancel removes, resend re-enqueues a copy)
+// — the main-app drainer then picks the change up on its next tick.
+export interface PendingEmailDoc {
+  _id: Types.ObjectId;
+  orderId?: Types.ObjectId | null;
+  orgId?: Types.ObjectId | null;
+  kind: string;
+  recipient: string;
+  status: string; // PENDING | PROCESSING | SENT | FAILED
+  attempts: number;
+  nextAttemptAt?: Date | null;
+  lastError?: string | null;
+  sentAt?: Date | null;
+  metadata?: Record<string, unknown> | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+const pendingEmailSchema = new Schema<PendingEmailDoc>(
+  {
+    orderId: { type: Schema.Types.ObjectId, ref: "Order", default: null },
+    orgId: { type: Schema.Types.ObjectId, ref: "Organization", default: null },
+    kind: { type: String },
+    recipient: { type: String },
+    status: { type: String },
+    attempts: { type: Number, default: 0 },
+    nextAttemptAt: { type: Date, default: null },
+    lastError: { type: String, default: null },
+    sentAt: { type: Date, default: null },
+    metadata: { type: Schema.Types.Mixed, default: null },
+  },
+  {
+    timestamps: true,
+    versionKey: false,
+    collection: "pending_emails",
+    strict: false,
+  },
+);
+export const PendingEmail = model<PendingEmailDoc>(
+  "PendingEmail",
+  pendingEmailSchema,
+);
+
 // ─── Admin-owned collections ─────────────────────────────────────────────
 
 export interface AdminOtpDoc {
