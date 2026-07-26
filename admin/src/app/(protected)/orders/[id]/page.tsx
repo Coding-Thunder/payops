@@ -2,7 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { getOrderById } from "@/server/services/orders";
+import { listNotes } from "@/server/services/notes";
 import { Badge, Card, Field, Td, Th, fmtDateTime } from "@/components/ui";
+import { NotesPanel } from "@/components/notes-panel";
 import { formatMoney } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +24,7 @@ export default async function OrderDetailPage({
   const { id } = await params;
   const o = await getOrderById(id);
   if (!o) notFound();
+  const notes = await listNotes("order", o.id);
 
   return (
     <div className="space-y-4">
@@ -221,6 +224,8 @@ export default async function OrderDetailPage({
           )}
         </Card>
       </div>
+
+      <NotesPanel subjectType="order" subjectId={o.id} initialNotes={notes} />
     </div>
   );
 }
