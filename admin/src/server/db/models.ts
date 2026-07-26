@@ -287,6 +287,46 @@ const orderSchema = new Schema<OrderDoc>(
 );
 export const Order = model<OrderDoc>("Order", orderSchema);
 
+// Client Profiles (the main app's Customer spine). Read-only here. Lifetime
+// financials are computed on-read from orders, not stored — the denormalised
+// ordersCount/first/last are cheap list-view caches.
+export interface CustomerDoc {
+  _id: Types.ObjectId;
+  orgId?: Types.ObjectId | null;
+  name?: string;
+  email?: string;
+  phone?: string;
+  company?: string | null;
+  notes?: string | null;
+  tags?: string[];
+  ordersCount?: number;
+  firstOrderAt?: Date | null;
+  lastOrderAt?: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+const customerSchema = new Schema<CustomerDoc>(
+  {
+    orgId: { type: Schema.Types.ObjectId, ref: "Organization", default: null },
+    name: { type: String },
+    email: { type: String },
+    phone: { type: String, default: "" },
+    company: { type: String, default: null },
+    notes: { type: String, default: null },
+    tags: { type: [String], default: [] },
+    ordersCount: { type: Number, default: 0 },
+    firstOrderAt: { type: Date, default: null },
+    lastOrderAt: { type: Date, default: null },
+  },
+  {
+    timestamps: true,
+    versionKey: false,
+    collection: "customers",
+    strict: false,
+  },
+);
+export const Customer = model<CustomerDoc>("Customer", customerSchema);
+
 // ─── Admin-owned collections ─────────────────────────────────────────────
 
 export interface AdminOtpDoc {
