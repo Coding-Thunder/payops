@@ -18,6 +18,7 @@ export function TopNav({ email }: { email: string }) {
     { href: "/users", label: "Users" },
     { href: "/waitlist", label: "Waitlist" },
     { href: "/emails", label: "Email Ops" },
+    { href: "/audit", label: "Audit" },
   ];
 
   return (

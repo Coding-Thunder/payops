@@ -114,6 +114,23 @@ export function Pagination({
   );
 }
 
+export function Field({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="text-[11px] uppercase tracking-wider text-[var(--muted)]">
+        {label}
+      </div>
+      <div className="mt-0.5 text-sm text-slate-200">{value}</div>
+    </div>
+  );
+}
+
 export function Th({ children }: { children: React.ReactNode }) {
   return (
     <th className="border-b border-[var(--border)] px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-[var(--muted)]">

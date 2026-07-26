@@ -188,6 +188,44 @@ export const PendingEmail = model<PendingEmailDoc>(
   pendingEmailSchema,
 );
 
+// Main app's product audit trail (cross-tenant, append-only). Read-only
+// here — the console never writes it. actor/request are read as Mixed to
+// avoid re-declaring the main app's sub-schemas.
+export interface AuditLogDoc {
+  _id: Types.ObjectId;
+  orgId?: Types.ObjectId | null;
+  action: string;
+  entityType: string;
+  entityId?: string | null;
+  actor?: {
+    userId?: Types.ObjectId | null;
+    name?: string | null;
+    email?: string | null;
+    role?: string | null;
+  } | null;
+  request?: {
+    ip?: string | null;
+    userAgent?: string | null;
+    requestId?: string | null;
+  } | null;
+  metadata?: Record<string, unknown> | null;
+  createdAt: Date;
+}
+const auditLogSchema = new Schema<AuditLogDoc>(
+  {
+    orgId: { type: Schema.Types.ObjectId, ref: "Organization", default: null },
+    action: { type: String },
+    entityType: { type: String },
+    entityId: { type: String, default: null },
+    actor: { type: Schema.Types.Mixed, default: null },
+    request: { type: Schema.Types.Mixed, default: null },
+    metadata: { type: Schema.Types.Mixed, default: null },
+    createdAt: { type: Date },
+  },
+  { versionKey: false, collection: "audit_logs", strict: false },
+);
+export const AuditLog = model<AuditLogDoc>("AuditLog", auditLogSchema);
+
 // ─── Admin-owned collections ─────────────────────────────────────────────
 
 export interface AdminOtpDoc {

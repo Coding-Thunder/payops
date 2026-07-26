@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { getEmailById } from "@/server/services/email-ops";
-import { Badge, Card, fmtDateTime } from "@/components/ui";
+import { Badge, Card, Field, fmtDateTime } from "@/components/ui";
 import { EmailActions } from "@/components/email-actions";
 
 export const dynamic = "force-dynamic";
@@ -12,17 +12,6 @@ function statusTone(s: string): "good" | "warn" | "bad" | "default" {
   if (s === "FAILED") return "bad";
   if (s === "PENDING") return "warn";
   return "default";
-}
-
-function Field({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div>
-      <div className="text-[11px] uppercase tracking-wider text-[var(--muted)]">
-        {label}
-      </div>
-      <div className="mt-0.5 text-sm text-slate-200">{value}</div>
-    </div>
-  );
 }
 
 interface TimelineItem {
