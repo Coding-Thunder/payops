@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   AuditAction,
@@ -11,7 +11,7 @@ import {
   NotFoundError,
   ValidationError,
 } from "@/lib/errors";
-import { AuditLog, User } from "@/server/db/models";
+import { AuditLog, OrgMember, User } from "@/server/db/models";
 import {
   createUser,
   getUserById,
@@ -24,29 +24,50 @@ import { actorFor } from "@/tests/utils/auth";
 import { ensureMongo } from "@/tests/utils/db";
 import { createOrgUser } from "@/tests/factories/user.factory";
 
+// createUser now sends a REQUIRED invite email; stub the dispatch so these
+// tests don't need a live SMTP transport. Minting + status derivation stay
+// real (imported via ...actual).
+vi.mock("@/server/services/team-invite.service", async (importActual) => {
+  const actual =
+    await importActual<typeof import("@/server/services/team-invite.service")>();
+  return {
+    ...actual,
+    dispatchTeamInvite: vi.fn().mockResolvedValue(undefined),
+  };
+});
+
 beforeEach(async () => {
   await ensureMongo();
 });
 
 describe("createUser", () => {
-  it("hashes the password and creates an active user", async () => {
+  it("provisions an invited (disabled) member with a pending single-use invite", async () => {
     const actor = actorFor(UserRole.SUPER_ADMIN);
     const out = await createUser(
       {
         name: "Grace Hopper",
         email: "grace@tracetxn.test",
         role: UserRole.ADMIN,
-        password: "Hunter2Hunter2",
       },
       { actor, orgId: actor.orgId },
     );
 
     expect(out.email).toBe("grace@tracetxn.test");
-    expect(out.status).toBe(RecordState.ACTIVE);
+    // Invited members are DISABLED (un-loginable) until they accept /join.
+    expect(out.status).toBe(RecordState.DISABLED);
+    expect(out.inviteStatus).toBe("invited");
 
     const doc = await User.findById(out.id).select("+passwordHash");
+    // A real bcrypt hash of an unguessable random placeholder — the owner
+    // never sets (or knows) the member's password.
     expect(doc?.passwordHash).toMatch(/^\$2[aby]\$\d{2}\$/);
-    expect(doc?.passwordHash).not.toContain("Hunter2");
+    expect(doc?.status).toBe(RecordState.DISABLED);
+
+    // The OrgMember carries a single-use, unused invite that was sent.
+    const member = await OrgMember.findOne({ userId: doc?._id });
+    expect(member?.invite?.tokenHash).toBeTruthy();
+    expect(member?.invite?.usedAt ?? null).toBeNull();
+    expect(member?.invite?.sentAt ?? null).not.toBeNull();
 
     const audit = await AuditLog.findOne({
       action: AuditAction.USER_CREATED,
@@ -62,7 +83,6 @@ describe("createUser", () => {
         name: "G",
         email: "dup@tracetxn.test",
         role: UserRole.STAFF,
-        password: "Hunter2Hunter2",
       },
       { actor, orgId: actor.orgId },
     );
@@ -72,7 +92,6 @@ describe("createUser", () => {
           name: "G2",
           email: "dup@tracetxn.test",
           role: UserRole.STAFF,
-          password: "Hunter2Hunter2",
         },
         { actor, orgId: actor.orgId },
       ),
@@ -86,7 +105,6 @@ describe("createUser", () => {
           name: "Sneak",
           email: "sneak@tracetxn.test",
           role: UserRole.SUPER_ADMIN,
-          password: "Hunter2Hunter2",
         },
         { actor: actorFor(UserRole.ADMIN) },
       ),

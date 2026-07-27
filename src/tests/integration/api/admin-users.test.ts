@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { UserRole, RecordState } from "@/lib/constants/enums";
 import { GET as listRoute, POST as createUserRoute } from "@/app/api/admin/users/route";
@@ -8,6 +8,17 @@ import { buildRequest, expectErr, expectOk, jsonBody } from "@/tests/utils/api";
 import { mockNextHeaders } from "@/tests/utils/next-headers";
 import { ensureMongo } from "@/tests/utils/db";
 import { createOrgUser } from "@/tests/factories/user.factory";
+
+// POST /api/admin/users now sends a REQUIRED team-invite email; stub the
+// dispatch so the RBAC route tests don't need a live SMTP transport.
+vi.mock("@/server/services/team-invite.service", async (importActual) => {
+  const actual =
+    await importActual<typeof import("@/server/services/team-invite.service")>();
+  return {
+    ...actual,
+    dispatchTeamInvite: vi.fn().mockResolvedValue(undefined),
+  };
+});
 
 let headers: Awaited<ReturnType<typeof mockNextHeaders>>;
 let session: Awaited<ReturnType<typeof mockSession>> | null = null;

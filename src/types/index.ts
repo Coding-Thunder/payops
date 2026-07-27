@@ -41,6 +41,20 @@ export interface PublicUser {
   workspaceRole?: WorkspaceRole;
   permissionMode?: MemberPermissionMode;
   permissions?: string[];
+  /**
+   * Team-invite status for the workspace, populated alongside the
+   * membership merge. "invited" = provisioned but hasn't accepted the /join
+   * link yet (User.status is DISABLED); "active" = accepted / never invited
+   * via this flow. `inviteExpiresAt` is set only while an invite is
+   * outstanding; `invitedAt` is when the last invite email was sent.
+   */
+  inviteStatus?: "invited" | "active";
+  inviteExpiresAt?: string | null;
+  /** Server-derived at fetch time: an outstanding invite whose window has
+   *  lapsed. Computed here (not in client render) so the team list can label
+   *  it without an impure Date call. */
+  inviteExpired?: boolean;
+  invitedAt?: string | null;
 }
 
 export interface SessionUser {

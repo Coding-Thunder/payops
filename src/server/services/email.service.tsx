@@ -33,6 +33,7 @@ import {
 } from "@/server/email/templates/custom-template-email";
 import { WelcomeEmail } from "@/server/email/templates/welcome-email";
 import { TrialEndingSoonEmail } from "@/server/email/templates/trial-ending-soon-email";
+import { TeamInviteEmail } from "@/server/email/templates/team-invite-email";
 import {
   isSystemTemplateKey,
   SYSTEM_TEMPLATE_LABELS,
@@ -953,6 +954,64 @@ export async function sendWelcomeEmail(args: {
     fromName: accountsName,
     senderEmail: accountsMailbox,
     replyTo: supportEmail,
+  });
+}
+
+// ─── Team invitation email ──────────────────────────────────────────────
+
+/**
+ * Send a team invitation with the single-use /join link. Platform mail
+ * (from EMAIL_FROM_ACCOUNTS), like the welcome email. `required: true` — an
+ * invitation whose link never arrives is worthless, so a non-delivery (no
+ * SMTP) or transport failure THROWS so the caller can roll back the
+ * provisioned rows and show the owner a hard error instead of a false
+ * success. Because it's required, there is no dev "log the link" fallback,
+ * so the raw token is never written to logs.
+ */
+export async function sendTeamInviteEmail(args: {
+  to: string;
+  inviteeName?: string;
+  orgName: string;
+  inviterName: string;
+  role: string;
+  /** Absolute /join URL carrying the raw token — built by the caller. */
+  joinUrl: string;
+  expiresLabel: string;
+}): Promise<{ id: string | null }> {
+  const supportEmail = env.server.SUPPORT_EMAIL || "support@tracetxn.com";
+
+  const props = {
+    inviteeName: args.inviteeName,
+    orgName: args.orgName,
+    inviterName: args.inviterName,
+    role: args.role,
+    joinUrl: args.joinUrl,
+    expiresLabel: args.expiresLabel,
+    supportEmail,
+  };
+  const html = await render(<TeamInviteEmail {...props} />);
+  const text = await render(<TeamInviteEmail {...props} />, {
+    plainText: true,
+  });
+
+  // From accounts@tracetxn.com regardless of tenant branding (platform mail).
+  const fromHeader = env.server.EMAIL_FROM_ACCOUNTS;
+  const angle = fromHeader.match(/<([^>]+)>/);
+  const accountsMailbox = (angle?.[1] ?? fromHeader).trim();
+  const accountsName =
+    fromHeader.match(/^"?([^"<]+?)"?\s*</)?.[1].trim() || "TraceTxn Accounts";
+
+  return sendEmail({
+    to: args.to,
+    subject: `${args.inviterName} invited you to ${args.orgName} on TraceTxn`,
+    html,
+    text,
+    kind: EmailKind.TEAM_INVITE,
+    orderId: null,
+    fromName: accountsName,
+    senderEmail: accountsMailbox,
+    replyTo: supportEmail,
+    required: true,
   });
 }
 

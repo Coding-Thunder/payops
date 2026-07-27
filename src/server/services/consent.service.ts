@@ -659,7 +659,7 @@ export async function listConsentsForOrder(
 
 export async function getConsentById(
   consentId: string,
-  ctx: { actor: ConsentActor },
+  ctx: { actor: ConsentActor; orgId?: string | null },
 ): Promise<PaymentConsentDTO> {
   if (!roleHasPermission(ctx.actor.role, Permission.CONSENT_VIEW)) {
     throw new ForbiddenError("You do not have permission to view consent records");
@@ -668,7 +668,14 @@ export async function getConsentById(
   if (!Types.ObjectId.isValid(consentId)) {
     throw new ValidationError("Invalid consent id");
   }
-  const doc = await PaymentConsent.findById(consentId);
+  // Tenant scope (defensive): when an orgId is supplied, pin the lookup so a
+  // consent record from another workspace can never be read. Consistent with
+  // the orgId scoping used elsewhere in this service.
+  const filter: Record<string, unknown> = {
+    _id: new Types.ObjectId(consentId),
+  };
+  if (ctx.orgId) filter.orgId = new Types.ObjectId(ctx.orgId);
+  const doc = await PaymentConsent.findOne(filter);
   if (!doc) throw new NotFoundError("Consent record not found");
   return consentToDTO(doc as unknown as PaymentConsentDoc & { _id: Types.ObjectId });
 }

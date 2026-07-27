@@ -85,6 +85,9 @@ export const AuditAction = {
    *  the set of custom grants). Metadata carries {from,to} permissionMode +
    *  the persisted grant list. */
   USER_PERMISSIONS_CHANGED: "USER_PERMISSIONS_CHANGED",
+  /** An invited member accepted their team invitation and set their own
+   *  password via the /join link (entity = the activated user). */
+  USER_INVITE_ACCEPTED: "USER_INVITE_ACCEPTED",
   /** Founder-console impersonation lifecycle. actor = the platform admin
    *  who started/ended it; entity = the impersonated user. */
   USER_IMPERSONATED: "USER_IMPERSONATED",
@@ -225,6 +228,9 @@ export const EmailKind = {
   /** Platform-side heads-up sent once when a tenant's trial enters
    *  the 3-day warn window. Sent from EMAIL_FROM_ACCOUNTS. */
   TRIAL_ENDING_SOON: "TRIAL_ENDING_SOON",
+  /** Team invitation with a single-use /join link, fired when an owner
+   *  adds a member. Sent from EMAIL_FROM_ACCOUNTS. */
+  TEAM_INVITE: "TEAM_INVITE",
 } as const;
 export type EmailKind = (typeof EmailKind)[keyof typeof EmailKind];
 

@@ -20,7 +20,11 @@ export type {
 } from "./organization.model";
 
 export { OrgMember } from "./org-member.model";
-export type { OrgMemberDoc, OrgMemberDocument } from "./org-member.model";
+export type {
+  OrgMemberDoc,
+  OrgMemberDocument,
+  TeamInvite,
+} from "./org-member.model";
 
 export { Workflow } from "./workflow.model";
 export type {

@@ -1,6 +1,7 @@
 "use client";
 
 import { MoreHorizontalIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import {
@@ -21,11 +22,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "@/components/ui/sonner";
 import { EmptyState } from "@/components/common/empty-state";
 import {
   RecordStateBadge,
   UserRoleBadge,
 } from "@/components/common/status-badges";
+import { api, ApiClientError } from "@/lib/api-client";
 import {
   RecordState,
   UserRole,
@@ -33,6 +36,20 @@ import {
 } from "@/lib/constants/enums";
 import { formatDate, formatRelative } from "@/lib/format";
 import type { PublicUser } from "@/types";
+
+/** Membership/invite status badge shown in the team list. An invited member
+ *  carries User.status=DISABLED, so we override that label with the invite
+ *  state; everyone else shows their record state. */
+function StatusBadge({ user }: { user: PublicUser }) {
+  if (user.inviteStatus === "invited") {
+    return user.inviteExpired ? (
+      <Badge variant="destructive">Invite expired</Badge>
+    ) : (
+      <Badge variant="warning">Invited</Badge>
+    );
+  }
+  return <RecordStateBadge state={user.status} />;
+}
 
 import { EditUserDialog } from "./edit-user-dialog";
 import { ManagePermissionsDialog } from "./manage-permissions-dialog";
@@ -60,9 +77,28 @@ export function UserTable({
   currentUserId,
   currentUserRole,
 }: UserTableProps) {
+  const router = useRouter();
   const [editing, setEditing] = useState<PublicUser | null>(null);
   const [resetting, setResetting] = useState<PublicUser | null>(null);
   const [managingPerms, setManagingPerms] = useState<PublicUser | null>(null);
+  const [resendingId, setResendingId] = useState<string | null>(null);
+
+  async function resendInvite(user: PublicUser) {
+    setResendingId(user.id);
+    try {
+      await api.post(`/api/admin/users/${user.id}/resend-invite`);
+      toast.success(`Invitation resent to ${user.email}`);
+      router.refresh();
+    } catch (err) {
+      toast.error(
+        err instanceof ApiClientError
+          ? err.message
+          : "Could not resend invitation",
+      );
+    } finally {
+      setResendingId(null);
+    }
+  }
 
   if (items.length === 0) {
     return (
@@ -99,6 +135,7 @@ export function UserTable({
               // only editable for members, and never for yourself.
               const isOwnerRow = u.workspaceRole === "OWNER";
               const canEditPerms = !isOwnerRow && !isSelf;
+              const isInvited = u.inviteStatus === "invited";
               return (
                 <TableRow key={u.id}>
                   <TableCell>
@@ -117,7 +154,7 @@ export function UserTable({
                     <PermissionsBadge user={u} />
                   </TableCell>
                   <TableCell>
-                    <RecordStateBadge state={u.status} />
+                    <StatusBadge user={u} />
                   </TableCell>
                   <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
                     {u.lastLoginAt ? formatRelative(u.lastLoginAt) : "Never"}
@@ -134,6 +171,16 @@ export function UserTable({
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                        {isInvited ? (
+                          <DropdownMenuItem
+                            disabled={!canManageThis || resendingId === u.id}
+                            onClick={() => resendInvite(u)}
+                          >
+                            {resendingId === u.id
+                              ? "Resending…"
+                              : "Resend invitation"}
+                          </DropdownMenuItem>
+                        ) : null}
                         <DropdownMenuItem
                           disabled={!canManageThis}
                           onClick={() => setEditing(u)}

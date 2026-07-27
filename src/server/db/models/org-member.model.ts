@@ -31,11 +31,28 @@ import { registerModel } from "./register";
  * remove `User.role`, it stays as a fallback so existing RBAC code
  * continues working unmodified.
  */
+/**
+ * Single-use team-invitation token, mirroring the beta-application invite
+ * shape. The raw 32-byte token lives ONLY in the emailed /join link; we
+ * store just its sha256 hash. Single-use (`usedAt`), expiring (`expiresAt`),
+ * and bound to the pre-created User's email. Present only while an invite is
+ * outstanding; null (and absent on legacy rows) once accepted or for members
+ * who were never invited via this flow.
+ */
+export interface TeamInvite {
+  tokenHash: string;
+  expiresAt: Date;
+  sentAt: Date | null;
+  usedAt: Date | null;
+}
+
 export interface OrgMemberDoc {
   orgId: Types.ObjectId;
   userId: Types.ObjectId;
   role: UserRole;
   status: RecordState;
+  /** Outstanding team invitation (null once accepted / never invited). */
+  invite?: TeamInvite | null;
   /** Per-member permission model (MEMBERs only; OWNERs always have full
    *  control). "full" grants the whole member operational set; "custom"
    *  grants only the permission keys in `permissions`. Resolved into an
@@ -53,6 +70,16 @@ export interface OrgMemberDoc {
 }
 
 export type OrgMemberDocument = HydratedDocument<OrgMemberDoc>;
+
+const teamInviteSchema = new Schema<TeamInvite>(
+  {
+    tokenHash: { type: String, required: true },
+    expiresAt: { type: Date, required: true },
+    sentAt: { type: Date, default: null },
+    usedAt: { type: Date, default: null },
+  },
+  { _id: false },
+);
 
 const orgMemberSchema = new Schema<OrgMemberDoc>(
   {
@@ -88,6 +115,7 @@ const orgMemberSchema = new Schema<OrgMemberDoc>(
       default: "full",
     },
     permissions: { type: [String], default: () => [] },
+    invite: { type: teamInviteSchema, default: null },
     invitedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     joinedAt: { type: Date, required: true, default: Date.now },
   },
@@ -110,6 +138,11 @@ const orgMemberSchema = new Schema<OrgMemberDoc>(
 // ACTIVE rather than creating duplicates.
 orgMemberSchema.index({ orgId: 1, userId: 1 }, { unique: true });
 orgMemberSchema.index({ userId: 1, status: 1 });
+// Team-invite activation looks a member up by the hashed token. Sparse so
+// only outstanding invites carry an entry. Prod runs autoIndex:false — this
+// index must be created manually; the app is correct without it (low-volume
+// collection scan) but the lookup is O(scan) until it exists.
+orgMemberSchema.index({ "invite.tokenHash": 1 }, { sparse: true });
 
 export const OrgMember: Model<OrgMemberDoc> = registerModel<OrgMemberDoc>(
   "OrgMember",

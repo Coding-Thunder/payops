@@ -1,5 +1,7 @@
 import "server-only";
 
+import crypto from "node:crypto";
+
 import { Types } from "mongoose";
 
 import {
@@ -28,20 +30,33 @@ import type {
   UpdateMemberPermissionsInput,
   UpdateUserInput,
 } from "@/lib/validation";
-import { OrgMember, User, type UserDoc } from "@/server/db/models";
+import {
+  OrgMember,
+  Organization,
+  User,
+  type TeamInvite,
+  type UserDoc,
+} from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 import type { PublicUser } from "@/types";
 
 import type { RequestContext } from "@/server/api/request-context";
 import { hashPassword } from "@/server/auth/password";
 import { recordAudit } from "./audit.service";
+import {
+  deriveInviteStatus,
+  dispatchTeamInvite,
+  mintTeamInvite,
+} from "./team-invite.service";
 
 /** The OrgMember fields the team surfaces need to render a member's
- *  workspace role + permission state. */
+ *  workspace role, permission state, and invite status. The `invite`
+ *  projection deliberately NEVER includes tokenHash. */
 interface MembershipView {
   role: UserRole;
   permissionMode?: MemberPermissionMode;
   permissions?: string[];
+  invite?: Partial<TeamInvite> | null;
 }
 
 function toPublic(
@@ -66,6 +81,18 @@ function toPublic(
     base.workspaceRole = toWorkspaceRole(membership.role);
     base.permissionMode = membership.permissionMode ?? "full";
     base.permissions = membership.permissions ?? [];
+    const inv = membership.invite;
+    base.inviteStatus = deriveInviteStatus(inv);
+    const outstanding = Boolean(inv && !inv.usedAt && inv.expiresAt);
+    base.inviteExpiresAt =
+      outstanding && inv?.expiresAt
+        ? new Date(inv.expiresAt).toISOString()
+        : null;
+    base.inviteExpired =
+      outstanding && inv?.expiresAt
+        ? new Date(inv.expiresAt).getTime() < Date.now()
+        : false;
+    base.invitedAt = inv?.sentAt ? new Date(inv.sentAt).toISOString() : null;
   }
   return base;
 }
@@ -106,7 +133,16 @@ async function membershipsForOrg(
     orgId: new Types.ObjectId(orgId),
     status: { $ne: RecordState.ARCHIVED },
   })
-    .select({ userId: 1, role: 1, permissionMode: 1, permissions: 1, _id: 0 })
+    .select({
+      userId: 1,
+      role: 1,
+      permissionMode: 1,
+      permissions: 1,
+      "invite.usedAt": 1,
+      "invite.expiresAt": 1,
+      "invite.sentAt": 1,
+      _id: 0,
+    })
     .lean<Array<{ userId: Types.ObjectId } & MembershipView>>();
 }
 
@@ -193,7 +229,15 @@ export async function getUserById(
     userId: new Types.ObjectId(id),
     status: { $ne: RecordState.ARCHIVED },
   })
-    .select({ role: 1, permissionMode: 1, permissions: 1, _id: 0 })
+    .select({
+      role: 1,
+      permissionMode: 1,
+      permissions: 1,
+      "invite.usedAt": 1,
+      "invite.expiresAt": 1,
+      "invite.sentAt": 1,
+      _id: 0,
+    })
     .lean<MembershipView | null>();
   return toPublic(doc, membership);
 }
@@ -217,28 +261,71 @@ export async function createUser(
     throw new ConflictError("A user with that email already exists");
   }
 
-  const passwordHash = await hashPassword(input.password);
   const orgObjectId = new Types.ObjectId(ctx.orgId);
+
+  // Invite flow: the member sets their OWN password via the emailed /join
+  // link, so we seed an UNGUESSABLE random placeholder hash (bcrypt.compare
+  // can never match it) and lock the account DISABLED until they accept —
+  // which blocks both the legacy password login and the Firebase email
+  // fallback (both require an ACTIVE user). The OrgMember lists immediately
+  // (status ACTIVE) carrying the single-use invite token.
+  const placeholderHash = await hashPassword(
+    crypto.randomBytes(32).toString("hex"),
+  );
+  const { rawToken, invite } = mintTeamInvite();
+
   const doc = await User.create({
     name: input.name,
     email: input.email.toLowerCase(),
-    passwordHash,
+    passwordHash: placeholderHash,
     role: input.role,
-    status: RecordState.ACTIVE,
+    status: RecordState.DISABLED,
     createdBy: new Types.ObjectId(ctx.actor.id),
     primaryOrgId: orgObjectId,
   });
 
-  // Pin the new user into the inviting org so the team listing (now
-  // scoped via OrgMember) actually shows them.
-  await OrgMember.create({
+  // If pinning the membership fails, delete the just-created User so a
+  // failed provision never orphans an un-loginable, un-reinvitable account
+  // (its unique email would 409 every retry).
+  const member = await OrgMember.create({
     orgId: orgObjectId,
     userId: doc._id,
     role: input.role,
     status: RecordState.ACTIVE,
     invitedBy: new Types.ObjectId(ctx.actor.id),
     joinedAt: new Date(),
+    invite,
+  }).catch(async (err) => {
+    await User.deleteOne({ _id: doc._id }).catch(() => {});
+    throw err;
   });
+
+  // Send the invitation. `required` inside dispatchTeamInvite → this THROWS
+  // on a non-delivery; roll the just-provisioned rows back so a failed
+  // invite never orphans an un-loginable account, and surface a hard error
+  // so the owner knows the invite didn't go out (they can retry).
+  try {
+    const org = await Organization.findById(orgObjectId)
+      .select("name")
+      .lean<{ name: string } | null>();
+    await dispatchTeamInvite({
+      to: doc.email,
+      inviteeName: doc.name,
+      role: input.role,
+      orgName: org?.name ?? "the team",
+      inviterName: ctx.actor.name,
+      rawToken,
+    });
+  } catch (err) {
+    await OrgMember.deleteOne({ _id: member._id }).catch(() => {});
+    await User.deleteOne({ _id: doc._id }).catch(() => {});
+    throw err;
+  }
+  const sentAt = new Date();
+  await OrgMember.updateOne(
+    { _id: member._id },
+    { $set: { "invite.sentAt": sentAt } },
+  );
 
   await recordAudit({
     action: AuditAction.USER_CREATED,
@@ -246,7 +333,7 @@ export async function createUser(
     entityId: String(doc._id),
     actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
     request: ctx.request ?? null,
-    metadata: { email: doc.email, role: doc.role },
+    metadata: { email: doc.email, role: doc.role, invited: true },
   });
 
   publishEvent({
@@ -264,7 +351,12 @@ export async function createUser(
     },
   });
 
-  return toPublic(doc.toObject() as UserDoc & { _id: Types.ObjectId });
+  return toPublic(doc.toObject() as UserDoc & { _id: Types.ObjectId }, {
+    role: input.role,
+    permissionMode: "full",
+    permissions: [],
+    invite: { ...invite, sentAt },
+  });
 }
 
 export async function updateUser(

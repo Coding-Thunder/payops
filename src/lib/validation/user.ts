@@ -9,11 +9,13 @@ const passwordSchema = z
   .regex(/[a-z]/, "Include a lowercase letter")
   .regex(/[0-9]/, "Include a number");
 
+// Team members are provisioned by INVITE — the owner never sets a password.
+// The member sets their own via the emailed /join link (see
+// team-invite.service). Hence no `password` here.
 export const createUserSchema = z.object({
   name: z.string().trim().min(2, "Name must be at least 2 characters").max(120),
   email: z.string().email("Enter a valid email").toLowerCase(),
   role: z.enum(USER_ROLES),
-  password: passwordSchema,
 });
 
 export type CreateUserInput = z.infer<typeof createUserSchema>;

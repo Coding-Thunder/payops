@@ -10,14 +10,12 @@ import { Button } from "@/components/ui/button";
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { PasswordInput } from "@/components/ui/password-input";
 import {
   Select,
   SelectContent,
@@ -47,7 +45,6 @@ export function CreateUserDialog({ actorRole }: CreateUserDialogProps) {
       name: "",
       email: "",
       role: UserRole.STAFF,
-      password: "",
     },
     mode: "onTouched",
   });
@@ -57,7 +54,7 @@ export function CreateUserDialog({ actorRole }: CreateUserDialogProps) {
   async function onSubmit(values: CreateUserInput) {
     try {
       await api.post<PublicUser>("/api/admin/users", values);
-      toast.success("Team member added");
+      toast.success("Invitation sent");
       setOpen(false);
       form.reset();
       router.refresh();
@@ -82,9 +79,9 @@ export function CreateUserDialog({ actorRole }: CreateUserDialogProps) {
           if (!o) form.reset();
         }}
         title="Add team member"
-        description="Create an account that can log in to the operations console. Share the initial password through a secure channel."
+        description="We'll email them a secure link to set their own password and join your workspace."
         icon={<UserPlusIcon />}
-        submitLabel="Create user"
+        submitLabel="Send invitation"
         size="md"
         onSubmit={async (e) => {
           await form.handleSubmit(onSubmit)(e);
@@ -156,24 +153,6 @@ export function CreateUserDialog({ actorRole }: CreateUserDialogProps) {
                       ) : null}
                     </SelectContent>
                   </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Temporary password</FormLabel>
-                  <FormControl>
-                    <PasswordInput autoComplete="off" {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    At least 10 characters, including upper, lower, and a
-                    number. The user can change it after first login.
-                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

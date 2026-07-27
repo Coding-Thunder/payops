@@ -59,6 +59,9 @@ const PUBLIC_PATHS = [
   // Public beta application + token-gated activation.
   "/api/beta/apply",
   "/api/beta/activate",
+  // Team-invite activation endpoint. Public + unauthenticated but token-gated
+  // (single-use hashed token); the invited member has no session yet.
+  "/api/team/activate",
   // Founder-console impersonation handoff. The operator has NO session on
   // this app; the single-use, short-lived token (verified + burned inside
   // the route) is the credential. The route mints the actual session.
@@ -72,6 +75,10 @@ const PUBLIC_PREFIXES = [
   // `/reset-password/<base64url-token>`. The server-side route
   // verifies the HMAC; an invalid token surfaces a generic error.
   "/reset-password/",
+  // Team-invite join URLs of the form `/join/<single-use-token>`. The
+  // invited member has no session; the token in the URL is the credential
+  // and the page verifies it before rendering the set-password form.
+  "/join/",
   // Hosted consent flow is the customer's first stop after they click
   // the email's primary CTA. They have no session, the HMAC token in
   // the URL is the credential. Both the page and the JSON endpoint are
