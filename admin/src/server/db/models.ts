@@ -370,13 +370,9 @@ export interface AdminUserDoc {
 }
 const adminUserSchema = new Schema<AdminUserDoc>(
   {
-    email: {
-      type: String,
-      required: true,
-      lowercase: true,
-      trim: true,
-      unique: true,
-    },
+    // Unique index declared once below via schema.index() (avoids the
+    // duplicate-index warning from also setting unique:true here).
+    email: { type: String, required: true, lowercase: true, trim: true },
     name: { type: String, required: true, trim: true, maxlength: 120 },
     role: { type: String, enum: ["OWNER", "ADMIN"], default: "ADMIN" },
     status: { type: String, enum: ["ACTIVE", "DISABLED"], default: "ACTIVE" },
