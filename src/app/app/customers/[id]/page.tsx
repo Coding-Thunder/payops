@@ -6,6 +6,7 @@ import {
   ClockIcon,
   MailIcon,
   PhoneIcon,
+  PlusIcon,
   ReceiptIcon,
   StickyNoteIcon,
   TagIcon,
@@ -21,6 +22,7 @@ import { EditClientDialog } from "@/components/features/clients/edit-client-dial
 import { SendTemplateButton } from "@/components/features/email-templates/send-template-button";
 import { FadeIn } from "@/components/motion/fade-in";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -82,7 +84,9 @@ export default async function ClientProfilePage({ params }: ClientPageProps) {
 
   const { totals } = profile;
   const canManage = roleHasPermission(user.role, Permission.CUSTOMER_MANAGE);
+  const canCreateOrder = roleHasPermission(user.role, Permission.ORDER_CREATE);
   const currency = totals.currency ?? "USD";
+  const createOrderHref = `/app/orders/create?customerId=${profile.id}`;
 
   return (
     <div className="space-y-6">
@@ -99,7 +103,7 @@ export default async function ClientProfilePage({ params }: ClientPageProps) {
             <SendTemplateButton
               defaultRecipient={profile.email}
               source={{ kind: "customer", customerId: profile.id }}
-              label="Send template"
+              label="Send Email"
             />
           </div>
         }
@@ -166,7 +170,17 @@ export default async function ClientProfilePage({ params }: ClientPageProps) {
               <ClientTimeline events={timeline} />
             </TabsContent>
 
-            <TabsContent value="orders">
+            <TabsContent value="orders" className="space-y-3">
+              {canCreateOrder ? (
+                <div className="flex justify-end">
+                  <Button asChild size="sm" className="gap-1.5">
+                    <Link href={createOrderHref}>
+                      <PlusIcon className="size-3.5" />
+                      Create order
+                    </Link>
+                  </Button>
+                </div>
+              ) : null}
               {profile.orders.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-border bg-card/40 p-10 text-center">
                   <p className="text-sm font-medium text-foreground">
@@ -175,6 +189,14 @@ export default async function ClientProfilePage({ params }: ClientPageProps) {
                   <p className="mt-1 text-[13px] text-muted-foreground">
                     Orders created for this client will appear here.
                   </p>
+                  {canCreateOrder ? (
+                    <Button asChild size="sm" className="mt-4 gap-1.5">
+                      <Link href={createOrderHref}>
+                        <PlusIcon className="size-3.5" />
+                        Create order
+                      </Link>
+                    </Button>
+                  ) : null}
                 </div>
               ) : (
                 <Card className="overflow-hidden p-0">

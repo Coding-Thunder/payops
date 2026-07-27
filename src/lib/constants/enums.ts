@@ -269,16 +269,42 @@ export const ConsentMode = {
 export type ConsentMode = (typeof ConsentMode)[keyof typeof ConsentMode];
 export const CONSENT_MODES = Object.values(ConsentMode) as ConsentMode[];
 
-/** ISO-4217 currency codes the platform accepts. Extend cautiously - Stripe + ops must support them. */
+/** ISO-4217 currency codes the platform accepts. All two-decimal (minor
+ *  unit = 1/100) so they share the existing amount handling — deliberately
+ *  NOT adding zero-decimal currencies (JPY/KRW) which would need special
+ *  Stripe amount conversion. Extend cautiously — Stripe + ops must support them. */
 export const Currency = {
   USD: "USD",
   EUR: "EUR",
   GBP: "GBP",
-  AED: "AED",
+  INR: "INR",
   CAD: "CAD",
+  AUD: "AUD",
+  AED: "AED",
+  SGD: "SGD",
+  NZD: "NZD",
 } as const;
 export type Currency = (typeof Currency)[keyof typeof Currency];
 export const CURRENCIES = Object.values(Currency) as Currency[];
+
+/** Display metadata for the currency selector: full name + symbol. */
+export const CurrencyMeta: Record<Currency, { name: string; symbol: string }> = {
+  USD: { name: "US Dollar", symbol: "$" },
+  EUR: { name: "Euro", symbol: "€" },
+  GBP: { name: "British Pound", symbol: "£" },
+  INR: { name: "Indian Rupee", symbol: "₹" },
+  CAD: { name: "Canadian Dollar", symbol: "C$" },
+  AUD: { name: "Australian Dollar", symbol: "A$" },
+  AED: { name: "UAE Dirham", symbol: "AED" },
+  SGD: { name: "Singapore Dollar", symbol: "S$" },
+  NZD: { name: "New Zealand Dollar", symbol: "NZ$" },
+};
+
+/** "USD — US Dollar ($)" — the option label used in currency pickers. */
+export function currencyOptionLabel(code: Currency): string {
+  const m = CurrencyMeta[code];
+  return `${code} — ${m.name} (${m.symbol})`;
+}
 
 /**
  * Lifecycle of a chargeback / payment dispute. Mapped 1:1 from Stripe's

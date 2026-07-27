@@ -20,7 +20,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
 import { api, ApiClientError } from "@/lib/api-client";
-import type { Currency } from "@/lib/constants/enums";
+import { currencyOptionLabel, type Currency } from "@/lib/constants/enums";
 import { SchedulingType } from "@/lib/constants/items";
 import type {
   ItemTypeAttributeDTO,
@@ -37,6 +37,9 @@ interface DynamicOrderFormProps {
   catalogItems?: ItemDTO[];
   defaultCurrency: Currency;
   allowedCurrencies: readonly Currency[];
+  /** Prefills the customer block (e.g. when creating an order from a Client
+   *  Profile) so the order auto-associates with that client. */
+  initialCustomer?: { name: string; email: string; phone: string };
 }
 
 interface LineDraft {
@@ -105,6 +108,7 @@ export function DynamicOrderForm({
   catalogItems = [],
   defaultCurrency,
   allowedCurrencies,
+  initialCustomer,
 }: DynamicOrderFormProps) {
   const router = useRouter();
   const byKey = useMemo(() => {
@@ -127,9 +131,9 @@ export function DynamicOrderForm({
   }, [catalogItems]);
 
   const [customer, setCustomer] = useState({
-    name: "",
-    email: "",
-    phone: "",
+    name: initialCustomer?.name ?? "",
+    email: initialCustomer?.email ?? "",
+    phone: initialCustomer?.phone ?? "",
   });
   // Pass 6d, remember the last email we ran the saved-customer lookup
   // for, so tabbing in/out of the email field doesn't re-fire the API
@@ -625,7 +629,7 @@ export function DynamicOrderForm({
             <SelectContent>
               {allowedCurrencies.map((c) => (
                 <SelectItem key={c} value={c}>
-                  {c}
+                  {currencyOptionLabel(c)}
                 </SelectItem>
               ))}
             </SelectContent>

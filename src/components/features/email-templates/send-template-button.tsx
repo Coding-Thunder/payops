@@ -45,7 +45,7 @@ interface SendTemplateButtonProps {
   source: Source;
   variant?: "default" | "outline" | "ghost";
   size?: "default" | "sm";
-  /** Label override; defaults to "Send template". */
+  /** Label override; defaults to "Send Email". */
   label?: string;
 }
 
@@ -63,7 +63,7 @@ export function SendTemplateButton({
   source,
   variant = "outline",
   size = "sm",
-  label = "Send template",
+  label = "Send Email",
 }: SendTemplateButtonProps) {
   const [open, setOpen] = React.useState(false);
   const [templates, setTemplates] = React.useState<EmailTemplateSummaryDTO[] | null>(null);
@@ -175,7 +175,7 @@ export function SendTemplateButton({
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Send a template</DialogTitle>
+          <DialogTitle>Send email</DialogTitle>
           <DialogDescription>
             Pick a template, tweak the copy if you need to, and send. Sends
             attributed to{" "}

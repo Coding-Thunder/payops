@@ -17,6 +17,7 @@ import {
   getOrderQuotaSnapshot,
   getTrialState,
 } from "@/server/services/billing.service";
+import { getCustomerById } from "@/server/services/customer.service";
 import { listActiveItemTypes } from "@/server/services/item-type.service";
 import { listActiveItems } from "@/server/services/item.service";
 import { getSettings } from "@/server/services/settings.service";
@@ -24,16 +25,38 @@ import { getSettings } from "@/server/services/settings.service";
 export const metadata = { title: "Create order" };
 export const dynamic = "force-dynamic";
 
-export default async function CreateOrderPage() {
+interface CreateOrderPageProps {
+  searchParams: Promise<{ customerId?: string }>;
+}
+
+export default async function CreateOrderPage({
+  searchParams,
+}: CreateOrderPageProps) {
   const actor = await requirePermission(Permission.ORDER_CREATE);
-  const [settings, itemTypes, catalogItems, quota, trial] = await Promise.all([
-    getSettings(actor.orgId),
-    listActiveItemTypes(actor.orgId ?? null),
-    actor.orgId ? listActiveItems(actor.orgId) : Promise.resolve([]),
-    getOrderQuotaSnapshot(actor.orgId ?? null),
-    getTrialState(actor.orgId ?? null),
-  ]);
+  const { customerId } = await searchParams;
+  const [settings, itemTypes, catalogItems, quota, trial, prefillClient] =
+    await Promise.all([
+      getSettings(actor.orgId),
+      listActiveItemTypes(actor.orgId ?? null),
+      actor.orgId ? listActiveItems(actor.orgId) : Promise.resolve([]),
+      getOrderQuotaSnapshot(actor.orgId ?? null),
+      getTrialState(actor.orgId ?? null),
+      // Prefill the customer block when arriving from a Client Profile, so
+      // the created order auto-associates with that client (the order
+      // pipeline links by customer email). Tenant-scoped lookup; a bad id
+      // just yields no prefill.
+      customerId && actor.orgId
+        ? getCustomerById(actor.orgId, customerId).catch(() => null)
+        : Promise.resolve(null),
+    ]);
   const trialExpired = trial?.expired === true;
+  const initialCustomer = prefillClient
+    ? {
+        name: prefillClient.name,
+        email: prefillClient.email,
+        phone: prefillClient.phone,
+      }
+    : undefined;
 
   const headerExtra = Number.isFinite(quota.limit) ? (
     <span
@@ -146,6 +169,7 @@ export default async function CreateOrderPage() {
           catalogItems={catalogItems}
           defaultCurrency={settings.defaultCurrency}
           allowedCurrencies={CURRENCIES}
+          initialCustomer={initialCustomer}
         />
       )}
     </div>

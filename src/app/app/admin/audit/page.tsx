@@ -27,7 +27,15 @@ export default async function AdminAuditPage({ searchParams }: AuditPageProps) {
   const pageParam = Array.isArray(sp.page) ? sp.page[0] : sp.page;
   const parsed = Number.parseInt(pageParam ?? "1", 10);
   const page = Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
-  const data = await listAuditLogs({ page, pageSize: PAGE_SIZE });
+  // Strict per-tenant scope: a workspace admin only ever sees their own
+  // workspace's audit trail (never other tenants'). The service leaves
+  // orgId optional for platform-side cross-tenant views; this page must
+  // always pin it.
+  const data = await listAuditLogs({
+    page,
+    pageSize: PAGE_SIZE,
+    orgId: actor.orgId,
+  });
 
   return (
     <div className="space-y-6">
