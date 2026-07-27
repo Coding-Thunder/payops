@@ -180,7 +180,13 @@ export async function approveBetaApplication(
       url: activationUrl(raw),
     });
     app.status = "INVITED";
-    if (app.invite) app.invite.sentAt = new Date();
+    // `invite` is a Mixed field — a nested mutation (`app.invite.sentAt = …`)
+    // isn't detected by Mongoose, so reassign the whole object + markModified
+    // or the sentAt timestamp silently never persists.
+    if (app.invite) {
+      app.invite = { ...app.invite, sentAt: new Date() };
+      app.markModified("invite");
+    }
     app.lastInviteError = null;
     await app.save();
     await recordAdminAction({
