@@ -7,7 +7,7 @@ import { actorFor, mockSession } from "@/tests/utils/auth";
 import { buildRequest, expectErr, expectOk, jsonBody } from "@/tests/utils/api";
 import { mockNextHeaders } from "@/tests/utils/next-headers";
 import { ensureMongo } from "@/tests/utils/db";
-import { createUser } from "@/tests/factories/user.factory";
+import { createOrgUser } from "@/tests/factories/user.factory";
 
 let headers: Awaited<ReturnType<typeof mockNextHeaders>>;
 let session: Awaited<ReturnType<typeof mockSession>> | null = null;
@@ -26,8 +26,9 @@ afterEach(async () => {
 });
 
 describe("POST /api/admin/users (RBAC)", () => {
-  it("ADMIN can create a STAFF user", async () => {
-    session = await mockSession(actorFor(UserRole.ADMIN));
+  it("OWNER can create a MEMBER user", async () => {
+    // User provisioning is owner-only under the two-role model.
+    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     const res = await createUserRoute(
       buildRequest("/api/admin/users", {
         method: "POST",
@@ -44,7 +45,9 @@ describe("POST /api/admin/users (RBAC)", () => {
     expectOk(body as never);
   });
 
-  it("ADMIN cannot create a SUPER_ADMIN, returns 403", async () => {
+  it("a MEMBER cannot create users at all (owner-only), returns 403", async () => {
+    // ADMIN is a MEMBER now — user provisioning is permanently owner-only,
+    // so a member can't create ANY role, not even a peer.
     session = await mockSession(actorFor(UserRole.ADMIN));
     const res = await createUserRoute(
       buildRequest("/api/admin/users", {
@@ -99,10 +102,18 @@ describe("POST /api/admin/users (RBAC)", () => {
 
 describe("GET /api/admin/users", () => {
   it("returns a list, no password fields exposed", async () => {
-    await createUser({ email: "alice@tracetxn.test", role: UserRole.STAFF });
-    await createUser({ email: "bob@tracetxn.test", role: UserRole.STAFF });
+    // The list is org-scoped — seed the users INTO the owner's workspace.
+    const owner = actorFor(UserRole.SUPER_ADMIN);
+    await createOrgUser(owner.orgId, {
+      email: "alice@tracetxn.test",
+      role: UserRole.STAFF,
+    });
+    await createOrgUser(owner.orgId, {
+      email: "bob@tracetxn.test",
+      role: UserRole.STAFF,
+    });
 
-    session = await mockSession(actorFor(UserRole.ADMIN));
+    session = await mockSession(owner);
     const res = await listRoute(buildRequest("/api/admin/users"));
     const { status, body } = await jsonBody(res);
     expect(status).toBe(200);
@@ -118,10 +129,17 @@ describe("GET /api/admin/users", () => {
   });
 
   it("filters by role", async () => {
-    await createUser({ email: "s1@tracetxn.test", role: UserRole.STAFF });
-    await createUser({ email: "a1@tracetxn.test", role: UserRole.ADMIN });
+    const owner = actorFor(UserRole.SUPER_ADMIN);
+    await createOrgUser(owner.orgId, {
+      email: "s1@tracetxn.test",
+      role: UserRole.STAFF,
+    });
+    await createOrgUser(owner.orgId, {
+      email: "a1@tracetxn.test",
+      role: UserRole.ADMIN,
+    });
 
-    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
+    session = await mockSession(owner);
     const res = await listRoute(
       buildRequest("/api/admin/users", {
         searchParams: { role: UserRole.STAFF },
@@ -130,6 +148,7 @@ describe("GET /api/admin/users", () => {
     const { body } = await jsonBody(res);
     const items = (body as { data: { items: Array<{ role: string }> } }).data
       .items;
+    expect(items.length).toBeGreaterThan(0);
     expect(items.every((u) => u.role === UserRole.STAFF)).toBe(true);
   });
 });

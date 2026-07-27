@@ -80,7 +80,7 @@ const validBody = {
 
 describe("POST /api/admin/item-types, create", () => {
   it("ADMIN can create a new item type for their org", async () => {
-    session = await mockSession(actorFor(UserRole.ADMIN));
+    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     const res = await createAdmin(
       buildRequest("/api/admin/item-types", {
         method: "POST",
@@ -107,7 +107,7 @@ describe("POST /api/admin/item-types, create", () => {
   });
 
   it("REFUSES duplicate (orgId, key), returns 409", async () => {
-    session = await mockSession(actorFor(UserRole.ADMIN));
+    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     const first = await createAdmin(
       buildRequest("/api/admin/item-types", {
         method: "POST",
@@ -126,7 +126,7 @@ describe("POST /api/admin/item-types, create", () => {
   });
 
   it("REFUSES SELECT attribute with no options", async () => {
-    session = await mockSession(actorFor(UserRole.ADMIN));
+    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     const res = await createAdmin(
       buildRequest("/api/admin/item-types", {
         method: "POST",
@@ -148,7 +148,7 @@ describe("POST /api/admin/item-types, create", () => {
   });
 
   it("REFUSES duplicate attribute keys", async () => {
-    session = await mockSession(actorFor(UserRole.ADMIN));
+    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     const res = await createAdmin(
       buildRequest("/api/admin/item-types", {
         method: "POST",
@@ -202,7 +202,7 @@ describe("GET /api/item-types, caller-org active list", () => {
       confirmationEmailBlocks: [],
     });
 
-    session = await mockSession(actorFor(UserRole.ADMIN));
+    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     Object.assign(session.user, { orgId: orgA.toString() });
 
     const res = await listActive(
@@ -216,7 +216,7 @@ describe("GET /api/item-types, caller-org active list", () => {
   });
 
   it("hides ARCHIVED rows from the active list", async () => {
-    session = await mockSession(actorFor(UserRole.ADMIN));
+    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     const created = await createAdmin(
       buildRequest("/api/admin/item-types", {
         method: "POST",
@@ -252,7 +252,7 @@ describe("GET /api/item-types, caller-org active list", () => {
 
 describe("PATCH /api/admin/item-types/[id]", () => {
   it("updates name + attributeSchema in place", async () => {
-    session = await mockSession(actorFor(UserRole.ADMIN));
+    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     const created = await createAdmin(
       buildRequest("/api/admin/item-types", {
         method: "POST",
@@ -290,7 +290,7 @@ describe("PATCH /api/admin/item-types/[id]", () => {
   });
 
   it("REFUSES cross-tenant edit (id-guess returns 404)", async () => {
-    session = await mockSession(actorFor(UserRole.ADMIN));
+    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     const created = await createAdmin(
       buildRequest("/api/admin/item-types", {
         method: "POST",
@@ -302,7 +302,7 @@ describe("PATCH /api/admin/item-types/[id]", () => {
     session.restore();
 
     // Org B admin tries to patch it.
-    session = await mockSession(actorFor(UserRole.ADMIN));
+    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     const res = await updateOne(
       buildRequest(`/api/admin/item-types/${id}`, {
         method: "PATCH",
@@ -314,7 +314,7 @@ describe("PATCH /api/admin/item-types/[id]", () => {
   });
 
   it("status-only PATCH archives + restores", async () => {
-    session = await mockSession(actorFor(UserRole.ADMIN));
+    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     const created = await createAdmin(
       buildRequest("/api/admin/item-types", {
         method: "POST",
@@ -348,7 +348,7 @@ describe("PATCH /api/admin/item-types/[id]", () => {
 
 describe("GET /api/admin/item-types/[id], read one", () => {
   it("returns the row when the actor owns it", async () => {
-    session = await mockSession(actorFor(UserRole.ADMIN));
+    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     const created = await createAdmin(
       buildRequest("/api/admin/item-types", {
         method: "POST",

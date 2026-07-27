@@ -19,7 +19,7 @@ import {
 } from "@/server/services/user.service";
 import { actorFor } from "@/tests/utils/auth";
 import { ensureMongo } from "@/tests/utils/db";
-import { createAdmin, createSuperAdmin } from "@/tests/factories/user.factory";
+import { createOrgUser } from "@/tests/factories/user.factory";
 
 beforeEach(async () => {
   await ensureMongo();
@@ -35,7 +35,7 @@ describe("createUser", () => {
         role: UserRole.ADMIN,
         password: "Hunter2Hunter2",
       },
-      { actor },
+      { actor, orgId: actor.orgId },
     );
 
     expect(out.email).toBe("grace@tracetxn.test");
@@ -61,7 +61,7 @@ describe("createUser", () => {
         role: UserRole.STAFF,
         password: "Hunter2Hunter2",
       },
-      { actor },
+      { actor, orgId: actor.orgId },
     );
     await expect(
       createUser(
@@ -71,7 +71,7 @@ describe("createUser", () => {
           role: UserRole.STAFF,
           password: "Hunter2Hunter2",
         },
-        { actor },
+        { actor, orgId: actor.orgId },
       ),
     ).rejects.toBeInstanceOf(ConflictError);
   });
@@ -94,12 +94,12 @@ describe("createUser", () => {
 describe("updateUser", () => {
   it("changes the role and emits a USER_ROLE_CHANGED audit", async () => {
     const actor = actorFor(UserRole.SUPER_ADMIN);
-    const target = await createAdmin();
+    const target = await createOrgUser(actor.orgId, { role: UserRole.ADMIN });
 
     const out = await updateUser(
       String(target._id),
       { role: UserRole.STAFF },
-      { actor },
+      { actor, orgId: actor.orgId },
     );
     expect(out.role).toBe(UserRole.STAFF);
 
@@ -112,44 +112,42 @@ describe("updateUser", () => {
 
   it("ADMIN cannot demote a SUPER_ADMIN", async () => {
     const actor = actorFor(UserRole.ADMIN);
-    const target = await createSuperAdmin();
+    const target = await createOrgUser(actor.orgId, {
+      role: UserRole.SUPER_ADMIN,
+    });
     await expect(
       updateUser(
         String(target._id),
         { role: UserRole.STAFF },
-        { actor },
+        { actor, orgId: actor.orgId },
       ),
     ).rejects.toBeInstanceOf(ForbiddenError);
   });
 
   it("a user cannot disable their own account", async () => {
-    const target = await createAdmin();
-    const selfActor = actorFor(UserRole.ADMIN, {
-      id: String(target._id),
-      email: target.email,
-      name: target.name,
-    });
+    const base = actorFor(UserRole.ADMIN);
+    const target = await createOrgUser(base.orgId, { role: UserRole.ADMIN });
+    // Actor IS the target (same id), acting inside their own org — so the
+    // self-guard, not the org/membership check, is what must reject this.
+    const selfActor = { ...base, id: String(target._id) };
     await expect(
       updateUser(
         String(target._id),
         { status: RecordState.DISABLED },
-        { actor: selfActor },
+        { actor: selfActor, orgId: selfActor.orgId },
       ),
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
   it("a user cannot change their own role", async () => {
-    const target = await createAdmin();
-    const selfActor = actorFor(UserRole.ADMIN, {
-      id: String(target._id),
-      email: target.email,
-      name: target.name,
-    });
+    const base = actorFor(UserRole.ADMIN);
+    const target = await createOrgUser(base.orgId, { role: UserRole.ADMIN });
+    const selfActor = { ...base, id: String(target._id) };
     await expect(
       updateUser(
         String(target._id),
         { role: UserRole.STAFF },
-        { actor: selfActor },
+        { actor: selfActor, orgId: selfActor.orgId },
       ),
     ).rejects.toBeInstanceOf(ValidationError);
   });
@@ -168,13 +166,13 @@ describe("updateUser", () => {
 describe("resetUserPassword", () => {
   it("re-hashes the password and emits an audit row", async () => {
     const actor = actorFor(UserRole.SUPER_ADMIN);
-    const target = await createAdmin();
+    const target = await createOrgUser(actor.orgId, { role: UserRole.ADMIN });
     const before = await User.findById(target._id).select("+passwordHash");
 
     await resetUserPassword(
       String(target._id),
       { newPassword: "Hunter9Hunter9" },
-      { actor },
+      { actor, orgId: actor.orgId },
     );
 
     const after = await User.findById(target._id).select("+passwordHash");
@@ -189,12 +187,14 @@ describe("resetUserPassword", () => {
 
   it("ADMIN cannot reset a SUPER_ADMIN's password", async () => {
     const actor = actorFor(UserRole.ADMIN);
-    const target = await createSuperAdmin();
+    const target = await createOrgUser(actor.orgId, {
+      role: UserRole.SUPER_ADMIN,
+    });
     await expect(
       resetUserPassword(
         String(target._id),
         { newPassword: "Hunter9Hunter9" },
-        { actor },
+        { actor, orgId: actor.orgId },
       ),
     ).rejects.toBeInstanceOf(ForbiddenError);
   });

@@ -63,8 +63,8 @@ const retailBody = {
 };
 
 describe("POST /api/onboarding/business-setup", () => {
-  it("ADMIN can seed a retail template", async () => {
-    session = await mockSession(actorFor(UserRole.ADMIN));
+  it("OWNER can seed a retail template", async () => {
+    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     const res = await setupRoute(
       buildRequest("/api/onboarding/business-setup", {
         method: "POST",
@@ -96,7 +96,7 @@ describe("POST /api/onboarding/business-setup", () => {
   });
 
   it("returns 409 on duplicate (orgId, key) so the wizard can prompt rename", async () => {
-    session = await mockSession(actorFor(UserRole.ADMIN));
+    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     // First seed succeeds.
     const first = await setupRoute(
       buildRequest("/api/onboarding/business-setup", {
@@ -118,7 +118,7 @@ describe("POST /api/onboarding/business-setup", () => {
   });
 
   it("422 on a SELECT field with no options", async () => {
-    session = await mockSession(actorFor(UserRole.ADMIN));
+    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     const res = await setupRoute(
       buildRequest("/api/onboarding/business-setup", {
         method: "POST",

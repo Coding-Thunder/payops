@@ -132,15 +132,21 @@ describe("sendPaymentRequestEmail — SMTP failure error contract", () => {
     await expect(promise).rejects.not.toThrow(/5\.7\.8/);
   });
 
-  it("returns a null message id (no throw) when SMTP is unconfigured", async () => {
+  it("THROWS when SMTP is unconfigured — a payment request must never be marked sent without delivery (#11)", async () => {
     const orgId = new Types.ObjectId().toString();
     await seedOrgEmailDeps(orgId);
     mockGetMailer.mockReturnValue(null);
 
-    const result = await sendPaymentRequestEmail(
-      requestOrder(orgId),
-      { subject: "Complete your payment", greeting: null, intro: null, note: null },
-    );
-    expect(result.id).toBeNull();
+    // The payment-request send is `required`, so a non-delivery is a hard
+    // failure the caller must see — not a silent skip that would let the
+    // order flip to PAYMENT_PENDING + record a "sent" timeline event.
+    await expect(
+      sendPaymentRequestEmail(requestOrder(orgId), {
+        subject: "Complete your payment",
+        greeting: null,
+        intro: null,
+        note: null,
+      }),
+    ).rejects.toBeInstanceOf(ExternalServiceError);
   });
 });

@@ -90,7 +90,7 @@ const validBody = {
 
 describe("POST /api/admin/items, create", () => {
   it("ADMIN can create a catalog item", async () => {
-    session = await mockSession(actorFor(UserRole.ADMIN));
+    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     await seedProductType(session.user.orgId!);
 
     const res = await createAdmin(
@@ -110,7 +110,7 @@ describe("POST /api/admin/items, create", () => {
   });
 
   it("REFUSES duplicate SKU in same org (409)", async () => {
-    session = await mockSession(actorFor(UserRole.ADMIN));
+    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     await seedProductType(session.user.orgId!);
     const first = await createAdmin(
       buildRequest("/api/admin/items", { method: "POST", body: validBody }),
@@ -126,7 +126,7 @@ describe("POST /api/admin/items, create", () => {
 
 describe("GET /api/items, staff/operator read", () => {
   it("returns only ACTIVE rows for the actor's org", async () => {
-    session = await mockSession(actorFor(UserRole.ADMIN));
+    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     await seedProductType(session.user.orgId!);
     const created = await createAdmin(
       buildRequest("/api/admin/items", { method: "POST", body: validBody }),
@@ -159,7 +159,7 @@ describe("GET /api/items, staff/operator read", () => {
   });
 
   it("filters by itemTypeKey query param", async () => {
-    session = await mockSession(actorFor(UserRole.ADMIN));
+    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     await seedProductType(session.user.orgId!);
     await ItemType.create({
       orgId: new Types.ObjectId(session.user.orgId!),
@@ -196,7 +196,7 @@ describe("GET /api/items, staff/operator read", () => {
 describe("PATCH /api/admin/items/[id]", () => {
   it("REFUSES cross-tenant edit (id-guess returns 404)", async () => {
     // Org A creates the item.
-    session = await mockSession(actorFor(UserRole.ADMIN));
+    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     await seedProductType(session.user.orgId!);
     const created = await createAdmin(
       buildRequest("/api/admin/items", { method: "POST", body: validBody }),
@@ -206,7 +206,7 @@ describe("PATCH /api/admin/items/[id]", () => {
     session.restore();
 
     // Org B admin attempts to PATCH.
-    session = await mockSession(actorFor(UserRole.ADMIN));
+    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     const res = await updateOne(
       buildRequest(`/api/admin/items/${id}`, {
         method: "PATCH",
@@ -218,7 +218,7 @@ describe("PATCH /api/admin/items/[id]", () => {
   });
 
   it("status-only PATCH archives + restores", async () => {
-    session = await mockSession(actorFor(UserRole.ADMIN));
+    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     await seedProductType(session.user.orgId!);
     const created = await createAdmin(
       buildRequest("/api/admin/items", { method: "POST", body: validBody }),
@@ -250,7 +250,7 @@ describe("PATCH /api/admin/items/[id]", () => {
 
 describe("GET /api/admin/items/[id], read one", () => {
   it("returns the row when the actor owns it", async () => {
-    session = await mockSession(actorFor(UserRole.ADMIN));
+    session = await mockSession(actorFor(UserRole.SUPER_ADMIN));
     await seedProductType(session.user.orgId!);
     const created = await createAdmin(
       buildRequest("/api/admin/items", { method: "POST", body: validBody }),

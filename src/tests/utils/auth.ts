@@ -4,9 +4,9 @@ import { vi } from "vitest";
 import { RecordState, UserRole } from "@/lib/constants/enums";
 import { ForbiddenError, UnauthorizedError } from "@/lib/errors";
 import {
+  resolveEffectivePermissions,
+  toWorkspaceRole,
   type Permission,
-  roleHasAnyPermission,
-  roleHasPermission,
 } from "@/lib/constants/permissions";
 import { Organization, User } from "@/server/db/models";
 import type { AuthenticatedUser } from "@/server/auth/session";
@@ -30,7 +30,10 @@ interface ActorOptions {
 }
 
 export function actorFor(
-  role: UserRole = UserRole.ADMIN,
+  // Default to the workspace OWNER (SUPER_ADMIN): most tests just need "an
+  // authorized user who can do the thing". Tests exercising MEMBER limits or
+  // role boundaries pass an explicit role.
+  role: UserRole = UserRole.SUPER_ADMIN,
   opts: ActorOptions = {},
 ): AuthenticatedUser {
   const id = opts.id ?? new Types.ObjectId().toString();
@@ -43,6 +46,10 @@ export function actorFor(
     name: opts.name ?? `${role} User`,
     email: opts.email ?? `${role.toLowerCase()}@tracetxn.test`,
     role,
+    workspaceRole: toWorkspaceRole(role),
+    // Mirrors the production session guard: members get the operational set,
+    // owners get everything.
+    permissions: resolveEffectivePermissions({ role, permissionMode: "full" }),
     orgId,
     orgIds: [orgId],
     impersonation: null,
@@ -115,7 +122,9 @@ export async function mockSession(
     .spyOn(sessionModule, "requirePermission")
     .mockImplementation(async (p: Permission) => {
       if (!user) throw new UnauthorizedError();
-      if (!roleHasPermission(user.role, p)) throw new ForbiddenError();
+      // Faithful to production: check the actor's EFFECTIVE permission set,
+      // not the raw role matrix.
+      if (!user.permissions.has(p)) throw new ForbiddenError();
       return user;
     });
 
@@ -123,7 +132,7 @@ export async function mockSession(
     .spyOn(sessionModule, "requireAnyPermission")
     .mockImplementation(async (perms: readonly Permission[]) => {
       if (!user) throw new UnauthorizedError();
-      if (!roleHasAnyPermission(user.role, perms)) throw new ForbiddenError();
+      if (!perms.some((p) => user.permissions.has(p))) throw new ForbiddenError();
       return user;
     });
 

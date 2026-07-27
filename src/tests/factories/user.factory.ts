@@ -2,7 +2,12 @@ import { Types } from "mongoose";
 
 import { RecordState, UserRole } from "@/lib/constants/enums";
 import { hashPassword } from "@/server/auth/password";
-import { User, type UserDoc, type UserDocument } from "@/server/db/models";
+import {
+  OrgMember,
+  User,
+  type UserDoc,
+  type UserDocument,
+} from "@/server/db/models";
 
 /**
  * User factory.
@@ -81,4 +86,29 @@ export async function createStaff(
   opts: CreateUserOptions = {},
 ): Promise<UserDocument & { plainPassword: string }> {
   return createUser({ role: UserRole.STAFF, ...opts });
+}
+
+/**
+ * Create a user AND pin them into `orgId` with an active OrgMember row.
+ *
+ * Use this (not the bare createUser/createAdmin/…) whenever a test drives
+ * an org-scoped service — updateUser, resetUserPassword, listUsers — that
+ * only sees users who are members of the acting org. Without the OrgMember
+ * row the target is invisible to the tenant boundary and the service
+ * (correctly) treats it as "not found".
+ */
+export async function createOrgUser(
+  orgId: string | null,
+  opts: CreateUserOptions = {},
+): Promise<UserDocument & { plainPassword: string }> {
+  if (!orgId) throw new Error("createOrgUser requires a non-null orgId");
+  const user = await createUser(opts);
+  await OrgMember.create({
+    orgId: new Types.ObjectId(orgId),
+    userId: user._id,
+    role: user.role,
+    status: RecordState.ACTIVE,
+    joinedAt: new Date(),
+  });
+  return user;
 }
