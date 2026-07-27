@@ -27,6 +27,7 @@ import { initialsFromName } from "@/lib/format";
 import { UserRoleLabel } from "@/lib/constants/labels";
 import { toast } from "@/components/ui/sonner";
 import { api } from "@/lib/api-client";
+import type { Permission } from "@/lib/constants/permissions";
 import type { SessionUser } from "@/types";
 
 import { Sidebar } from "./sidebar";
@@ -34,9 +35,12 @@ import { Sidebar } from "./sidebar";
 interface TopbarProps {
   user: SessionUser;
   brand: string;
+  /** Effective permission keys, forwarded to the embedded mobile Sidebar so
+   *  its nav is gated identically to the desktop rail. */
+  permissions: readonly Permission[];
 }
 
-export function Topbar({ user, brand }: TopbarProps) {
+export function Topbar({ user, brand, permissions }: TopbarProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
@@ -68,7 +72,11 @@ export function Topbar({ user, brand }: TopbarProps) {
               <LogoLockup brand={brand} subtitle="Ops console" size="sm" />
             </SheetTitle>
           </SheetHeader>
-          <Sidebar role={user.role} brand={brand} variant="embedded" />
+          <Sidebar
+            permissions={permissions}
+            brand={brand}
+            variant="embedded"
+          />
         </SheetContent>
       </Sheet>
 

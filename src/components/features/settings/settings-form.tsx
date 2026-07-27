@@ -1,9 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { ChevronRightIcon } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LoadingButton } from "@/components/ui/loading-button";
 import {
@@ -39,12 +42,52 @@ import {
 
 type SettingsFormValues = UpdateSettingsInput;
 
+/** Which owner-only config pages the viewer may reach, so each cross-link
+ *  is gated by that page's own permission (not a blanket owner check). */
+export interface SettingsCrossLinks {
+  emailTemplates?: boolean;
+  emailPreviews?: boolean;
+  workflow?: boolean;
+  gateways?: boolean;
+}
+
 interface SettingsFormProps {
   initial: SettingsFormValues;
   canEdit: boolean;
+  /** Current policy version (read-only; auto-bumped on save). */
+  policyVersion: string;
+  crossLinks?: SettingsCrossLinks;
 }
 
-export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
+function CrossLink({
+  href,
+  label,
+  hint,
+}: {
+  href: string;
+  label: string;
+  hint: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="flex items-center justify-between gap-3 rounded-md border border-border bg-surface-1 px-3 py-2 text-[13px] transition-colors hover:bg-surface-2"
+    >
+      <span className="min-w-0">
+        <span className="font-medium text-foreground">{label}</span>{" "}
+        <span className="text-muted-foreground">— {hint}</span>
+      </span>
+      <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />
+    </Link>
+  );
+}
+
+export function SettingsForm({
+  initial,
+  canEdit,
+  policyVersion,
+  crossLinks = {},
+}: SettingsFormProps) {
   const router = useRouter();
   const form = useForm<SettingsFormValues>({
     resolver: zodResolver(updateSettingsSchema),
@@ -73,8 +116,8 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
       <form onSubmit={form.handleSubmit(onSubmit)}>
         <SectionStack>
           <Section
-            title="Order generation"
-            description="Controls how new orders are created and how long their payment links remain valid."
+            title="Invoices"
+            description="How order and invoice numbers and currency are generated."
           >
             <div className="grid gap-4 sm:grid-cols-2">
               <FormField
@@ -91,29 +134,6 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
                       />
                     </FormControl>
                     <FormDescription>2–6 uppercase letters.</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="paymentExpiryHours"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Payment link expiry (hours)</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        min={1}
-                        max={720}
-                        disabled={!canEdit || isSubmitting}
-                        {...field}
-                        onChange={(e) => field.onChange(Number(e.target.value))}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      Stripe clamps to 23.5h max.
-                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -148,13 +168,63 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
               />
             </div>
 
+            {(crossLinks.emailTemplates ||
+              crossLinks.emailPreviews ||
+              crossLinks.workflow) && (
+              <div className="mt-4 space-y-2">
+                {crossLinks.emailTemplates ? (
+                  <CrossLink
+                    href="/app/admin/email-templates"
+                    label="Email templates"
+                    hint="Edit the invoice, receipt & payment-request emails"
+                  />
+                ) : null}
+                {crossLinks.emailPreviews ? (
+                  <CrossLink
+                    href="/app/admin/emails"
+                    label="Email previews"
+                    hint="See exactly what customers receive"
+                  />
+                ) : null}
+                {crossLinks.workflow ? (
+                  <CrossLink
+                    href="/app/admin/workflow"
+                    label="Order workflow"
+                    hint="The statuses an order moves through"
+                  />
+                ) : null}
+              </div>
+            )}
           </Section>
 
           <Section
-            title="Checkout redirects"
-            description="Where Stripe sends the customer after they complete or abandon checkout. Both URLs are computed from the APP_URL deploy variable."
+            title="Payments"
+            description="Payment-link lifetime and the Stripe checkout redirects."
           >
             <div className="grid gap-4 sm:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="paymentExpiryHours"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Payment link expiry (hours)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={720}
+                        disabled={!canEdit || isSubmitting}
+                        {...field}
+                        onChange={(e) => field.onChange(Number(e.target.value))}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Stripe clamps to 23.5h max.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <FormField
                 control={form.control}
                 name="successRedirectUrl"
@@ -204,11 +274,21 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
                 )}
               />
             </div>
+
+            {crossLinks.gateways ? (
+              <div className="mt-4">
+                <CrossLink
+                  href="/app/admin/gateways"
+                  label="Payment gateway"
+                  hint="Connect Stripe & manage the webhook"
+                />
+              </div>
+            ) : null}
           </Section>
 
           <Section
-            title="Customer consent"
-            description="Lightweight pre-payment acknowledgement layer. Mode controls whether the email surfaces the consent block as advisory, recommended, or required. The acknowledgement copy is shown verbatim in the email and on the hosted consent page."
+            title="Consent"
+            description="Pre-payment acknowledgement shown in emails and on the hosted consent page. Mode controls whether the block is advisory, recommended, or required."
           >
             <div className="grid gap-4 sm:grid-cols-2">
               <FormField
@@ -272,8 +352,13 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
           </Section>
 
           <Section
-            title="Cancellation & refund policy"
-            description="Shown in every confirmation email. Snapshotted onto each order at creation so disputes can attach the exact terms the customer paid against. Saving a change auto-bumps the policy version; existing orders keep pointing at the older version they were created under."
+            title="Policy"
+            description="Cancellation & refund terms shown in every confirmation email and snapshotted onto each order at creation for dispute evidence. Saving a change auto-bumps the version; existing orders keep the version they were created under."
+            action={
+              <Badge variant="muted" className="font-mono">
+                {policyVersion}
+              </Badge>
+            }
           >
             <FormField
               control={form.control}
@@ -301,9 +386,7 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
 
         <div className="mt-6 flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-1 px-4 py-3">
           <p className="text-[12.5px] text-muted-foreground">
-            {isDirty
-              ? "Unsaved changes"
-              : "No pending changes"}
+            {isDirty ? "Unsaved changes" : "No pending changes"}
           </p>
           <div className="flex gap-2">
             <Button

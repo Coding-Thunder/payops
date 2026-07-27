@@ -6,7 +6,7 @@ import { listUsersQuerySchema } from "@/lib/validation";
 import { requirePermission } from "@/server/auth/session";
 import { listUsers } from "@/server/services/user.service";
 
-export const metadata = { title: "Team" };
+export const metadata = { title: "Team & Permissions" };
 export const dynamic = "force-dynamic";
 
 interface UsersPageProps {
@@ -25,8 +25,8 @@ export default async function AdminUsersPage({ searchParams }: UsersPageProps) {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Team"
-        description="Manage who has access to the operations console."
+        title="Team & Permissions"
+        description="Manage who's in the workspace and exactly what each member can do."
         actions={<CreateUserDialog actorRole={actor.role} />}
       />
       <UserTable

@@ -21,11 +21,7 @@ import {
 
 import { LogoLockup } from "@/components/brand/logo";
 import { cn } from "@/lib/utils";
-import {
-  Permission,
-  roleHasAnyPermission,
-} from "@/lib/constants/permissions";
-import type { UserRole } from "@/lib/constants/enums";
+import { Permission } from "@/lib/constants/permissions";
 
 interface NavItem {
   href: string;
@@ -103,7 +99,7 @@ const SECTIONS: NavSection[] = [
     items: [
       {
         href: "/app/admin/users",
-        label: "Team",
+        label: "Team & Permissions",
         icon: UsersIcon,
         permissions: [Permission.USER_VIEW],
       },
@@ -145,7 +141,7 @@ const SECTIONS: NavSection[] = [
       },
       {
         href: "/app/admin/settings",
-        label: "Settings",
+        label: "Workspace settings",
         icon: SettingsIcon,
         permissions: [Permission.SETTINGS_VIEW],
       },
@@ -154,18 +150,22 @@ const SECTIONS: NavSection[] = [
 ];
 
 interface SidebarProps {
-  role: UserRole;
+  /** The viewer's EFFECTIVE permission keys (already restricted-subtracted
+   *  server-side). Gating on this — not the raw role matrix — is why a
+   *  MEMBER never sees an owner-only link they'd 403 on. */
+  permissions: readonly Permission[];
   brand: string;
   variant?: "full" | "embedded";
 }
 
-export function Sidebar({ role, brand, variant = "full" }: SidebarProps) {
+export function Sidebar({ permissions, brand, variant = "full" }: SidebarProps) {
   const pathname = usePathname();
 
+  const granted = new Set(permissions);
   const visibleSections = SECTIONS.map((s) => ({
     ...s,
     items: s.items.filter(
-      (i) => !i.permissions || roleHasAnyPermission(role, i.permissions),
+      (i) => !i.permissions || i.permissions.some((p) => granted.has(p)),
     ),
   })).filter((s) => s.items.length > 0);
 

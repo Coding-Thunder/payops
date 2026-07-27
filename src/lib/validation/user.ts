@@ -41,6 +41,21 @@ export const resetUserPasswordSchema = z.object({
 
 export type ResetUserPasswordInput = z.infer<typeof resetUserPasswordSchema>;
 
+/**
+ * Owner-only Team & Permissions writer. `permissions` are raw strings — the
+ * service re-validates them against the member-eligible allow-list (and the
+ * session resolver re-filters on read), so an over-broad or bogus key can
+ * never escalate. When mode is "full" the grant list is ignored/empty.
+ */
+export const updateMemberPermissionsSchema = z.object({
+  permissionMode: z.enum(["full", "custom"]),
+  permissions: z.array(z.string().max(64)).max(50).default([]),
+});
+
+export type UpdateMemberPermissionsInput = z.infer<
+  typeof updateMemberPermissionsSchema
+>;
+
 export const listUsersQuerySchema = z.object({
   q: z.string().trim().max(120).optional(),
   role: z.enum(USER_ROLES).optional(),

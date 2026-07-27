@@ -14,6 +14,10 @@ import type {
   RecordState,
   UserRole,
 } from "@/lib/constants/enums";
+import type {
+  MemberPermissionMode,
+  WorkspaceRole,
+} from "@/lib/constants/permissions";
 
 /** Public user shape used by the UI and API responses (never includes passwordHash). */
 export interface PublicUser {
@@ -26,6 +30,17 @@ export interface PublicUser {
   lastLoginAt?: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Workspace membership view, populated when the caller resolved the
+   * OrgMember row for the active org (team listings, member detail). Optional
+   * so every other PublicUser consumer keeps compiling unchanged.
+   *   - workspaceRole: OWNER (never editable) vs MEMBER.
+   *   - permissionMode: MEMBERs only — "full" or "custom".
+   *   - permissions: the persisted custom grant keys (empty when "full").
+   */
+  workspaceRole?: WorkspaceRole;
+  permissionMode?: MemberPermissionMode;
+  permissions?: string[];
 }
 
 export interface SessionUser {

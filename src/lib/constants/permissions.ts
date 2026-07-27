@@ -253,7 +253,20 @@ export const MEMBER_FULL_PERMISSIONS: readonly Permission[] = [
   Permission.EMAIL_TEMPLATE_VIEW, // pick a template to send
 ];
 
-const MEMBER_FULL_SET: ReadonlySet<Permission> = new Set(MEMBER_FULL_PERMISSIONS);
+/** The member-eligible allow-list as a Set. Exported so backend writers
+ *  (e.g. the Team & Permissions editor) can intersect incoming custom
+ *  grants against it before persisting — the same allow-list
+ *  `resolveEffectivePermissions` applies on read. */
+export const MEMBER_FULL_SET: ReadonlySet<Permission> = new Set(
+  MEMBER_FULL_PERMISSIONS,
+);
+
+/** True when `p` is a permission an OWNER may grant a MEMBER via custom
+ *  mode. Restricted permissions are disjoint from this set by design, so
+ *  this doubles as the "never grantable to a member" guard. */
+export function isMemberEligiblePermission(p: string): p is Permission {
+  return MEMBER_FULL_SET.has(p as Permission);
+}
 
 export type MemberPermissionMode = "full" | "custom";
 

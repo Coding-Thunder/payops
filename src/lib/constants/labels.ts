@@ -9,6 +9,7 @@ import {
   RecordState,
   UserRole,
 } from "./enums";
+import { Permission, type WorkspaceRole } from "./permissions";
 
 // Pass 5h: `BookingTypeLabel` removed alongside the BookingType enum.
 
@@ -31,6 +32,46 @@ export const UserRoleLabel: Record<UserRole, string> = {
   SUPER_ADMIN: "Super admin",
   ADMIN: "Admin",
   STAFF: "Staff",
+};
+
+/**
+ * Two-role product view: OWNER controls the workspace, MEMBER operates it.
+ * Used by the Team & Permissions and My Account surfaces (never surface the
+ * underlying UserRole to workspace operators).
+ */
+export const WorkspaceRoleLabel: Record<WorkspaceRole, string> = {
+  OWNER: "Owner",
+  MEMBER: "Member",
+};
+
+/**
+ * Human labels for the permissions an OWNER may grant a MEMBER (the
+ * member-eligible set only — restricted/owner permissions are never shown
+ * as grantable). Member-facing copy, not the raw enum key. Keep in sync
+ * with MEMBER_FULL_PERMISSIONS.
+ */
+export const PermissionLabel: Partial<Record<Permission, string>> = {
+  [Permission.CUSTOMER_VIEW]: "View client profiles",
+  [Permission.CUSTOMER_MANAGE]: "Create & edit clients",
+  [Permission.ORDER_VIEW_OWN]: "View own orders",
+  [Permission.ORDER_VIEW_ALL]: "View all orders, invoices & payments",
+  [Permission.ORDER_CREATE]: "Create orders",
+  [Permission.ORDER_UPDATE]: "Edit draft orders & invoices",
+  [Permission.ORDER_REGENERATE_LINK]: "Regenerate payment links",
+  [Permission.CONSENT_VIEW]: "View consent records & send requests",
+  [Permission.DOCUMENT_VIEW]: "View invoices & receipts",
+  [Permission.DOCUMENT_ISSUE]: "Issue invoices & receipts",
+  [Permission.ITEM_TYPE_VIEW]: "View item types",
+  [Permission.ITEM_VIEW]: "View product catalog",
+  [Permission.EMAIL_TEMPLATE_VIEW]: "View & pick email templates",
+};
+
+/** One-line clarifier under each grantable permission in the editor. */
+export const PermissionDescription: Partial<Record<Permission, string>> = {
+  [Permission.CUSTOMER_MANAGE]: "Company, notes and tags on a client record",
+  [Permission.ORDER_VIEW_ALL]: "Not just the ones they created",
+  [Permission.ORDER_UPDATE]: "Before a payment link is generated",
+  [Permission.DOCUMENT_ISSUE]: "Carries the workspace's identity + a permanent number",
 };
 
 export const OrderStatusBadgeVariant: Record<

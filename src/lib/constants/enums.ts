@@ -81,6 +81,10 @@ export const AuditAction = {
   USER_DISABLED: "USER_DISABLED",
   USER_ARCHIVED: "USER_ARCHIVED",
   USER_REACTIVATED: "USER_REACTIVATED",
+  /** An OWNER changed a MEMBER's workspace permissions (Full ↔ Custom, or
+   *  the set of custom grants). Metadata carries {from,to} permissionMode +
+   *  the persisted grant list. */
+  USER_PERMISSIONS_CHANGED: "USER_PERMISSIONS_CHANGED",
   /** Founder-console impersonation lifecycle. actor = the platform admin
    *  who started/ended it; entity = the impersonated user. */
   USER_IMPERSONATED: "USER_IMPERSONATED",

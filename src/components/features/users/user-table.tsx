@@ -20,6 +20,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/common/empty-state";
 import {
   RecordStateBadge,
@@ -34,7 +35,19 @@ import { formatDate, formatRelative } from "@/lib/format";
 import type { PublicUser } from "@/types";
 
 import { EditUserDialog } from "./edit-user-dialog";
+import { ManagePermissionsDialog } from "./manage-permissions-dialog";
 import { ResetPasswordDialog } from "./reset-password-dialog";
+
+/** Access summary badge: Owner (immutable), Full access, or Custom · N. */
+function PermissionsBadge({ user }: { user: PublicUser }) {
+  if (user.workspaceRole === "OWNER") {
+    return <Badge variant="muted">Owner</Badge>;
+  }
+  if (user.permissionMode === "custom") {
+    return <Badge variant="info">Custom · {user.permissions?.length ?? 0}</Badge>;
+  }
+  return <Badge variant="secondary">Full access</Badge>;
+}
 
 interface UserTableProps {
   items: PublicUser[];
@@ -49,6 +62,7 @@ export function UserTable({
 }: UserTableProps) {
   const [editing, setEditing] = useState<PublicUser | null>(null);
   const [resetting, setResetting] = useState<PublicUser | null>(null);
+  const [managingPerms, setManagingPerms] = useState<PublicUser | null>(null);
 
   if (items.length === 0) {
     return (
@@ -68,6 +82,7 @@ export function UserTable({
               <TableHead>Name</TableHead>
               <TableHead className="hidden md:table-cell">Email</TableHead>
               <TableHead>Role</TableHead>
+              <TableHead className="hidden sm:table-cell">Access</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="hidden lg:table-cell">Last login</TableHead>
               <TableHead className="hidden lg:table-cell">Created</TableHead>
@@ -80,6 +95,10 @@ export function UserTable({
               const canManageThis =
                 currentUserRole === UserRole.SUPER_ADMIN ||
                 u.role !== UserRole.SUPER_ADMIN;
+              // Owners always have full workspace control; permissions are
+              // only editable for members, and never for yourself.
+              const isOwnerRow = u.workspaceRole === "OWNER";
+              const canEditPerms = !isOwnerRow && !isSelf;
               return (
                 <TableRow key={u.id}>
                   <TableCell>
@@ -93,6 +112,9 @@ export function UserTable({
                   </TableCell>
                   <TableCell>
                     <UserRoleBadge role={u.role} />
+                  </TableCell>
+                  <TableCell className="hidden sm:table-cell">
+                    <PermissionsBadge user={u} />
                   </TableCell>
                   <TableCell>
                     <RecordStateBadge state={u.status} />
@@ -124,6 +146,18 @@ export function UserTable({
                         >
                           Reset password
                         </DropdownMenuItem>
+                        {isOwnerRow ? (
+                          <DropdownMenuItem disabled>
+                            Owner — full control
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem
+                            disabled={!canEditPerms}
+                            onClick={() => setManagingPerms(u)}
+                          >
+                            Manage permissions
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuSeparator />
                         {isSelf ? (
                           <DropdownMenuItem disabled>
@@ -164,6 +198,14 @@ export function UserTable({
           user={resetting}
           open={!!resetting}
           onOpenChange={(o) => !o && setResetting(null)}
+        />
+      ) : null}
+
+      {managingPerms ? (
+        <ManagePermissionsDialog
+          user={managingPerms}
+          open={!!managingPerms}
+          onOpenChange={(o) => !o && setManagingPerms(null)}
         />
       ) : null}
     </>

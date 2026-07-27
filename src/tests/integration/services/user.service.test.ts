@@ -14,7 +14,10 @@ import {
 import { AuditLog, User } from "@/server/db/models";
 import {
   createUser,
+  getUserById,
   resetUserPassword,
+  setMemberPermissions,
+  updateOwnName,
   updateUser,
 } from "@/server/services/user.service";
 import { actorFor } from "@/tests/utils/auth";
@@ -197,5 +200,117 @@ describe("resetUserPassword", () => {
         { actor, orgId: actor.orgId },
       ),
     ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+});
+
+describe("setMemberPermissions (Owner-only Team & Permissions writer)", () => {
+  it("full mode persists an empty grant list", async () => {
+    const owner = actorFor(UserRole.SUPER_ADMIN);
+    const member = await createOrgUser(owner.orgId, { role: UserRole.STAFF });
+
+    const out = await setMemberPermissions(
+      String(member._id),
+      { permissionMode: "full", permissions: ["customer:view"] },
+      { actor: owner, orgId: owner.orgId },
+    );
+    expect(out.permissionMode).toBe("full");
+    expect(out.permissions).toEqual([]);
+
+    const reread = await getUserById(String(member._id), {
+      orgId: owner.orgId!,
+    });
+    expect(reread.permissionMode).toBe("full");
+    expect(reread.permissions).toEqual([]);
+  });
+
+  it("custom mode persists ONLY member-eligible grants — restricted keys are dropped", async () => {
+    const owner = actorFor(UserRole.SUPER_ADMIN);
+    const member = await createOrgUser(owner.orgId, { role: UserRole.STAFF });
+
+    await setMemberPermissions(
+      String(member._id),
+      {
+        permissionMode: "custom",
+        permissions: [
+          "customer:view", // member-eligible → kept
+          "settings:update", // restricted → dropped
+          "gateway:manage", // restricted → dropped
+          "order:delete", // restricted → dropped
+        ],
+      },
+      { actor: owner, orgId: owner.orgId },
+    );
+
+    const reread = await getUserById(String(member._id), {
+      orgId: owner.orgId!,
+    });
+    expect(reread.permissionMode).toBe("custom");
+    expect(reread.permissions).toEqual(["customer:view"]);
+
+    const audit = await AuditLog.findOne({
+      action: AuditAction.USER_PERMISSIONS_CHANGED,
+      entityId: String(member._id),
+    });
+    expect(audit).not.toBeNull();
+  });
+
+  it("rejects editing your own permissions", async () => {
+    const owner = actorFor(UserRole.SUPER_ADMIN);
+    await expect(
+      setMemberPermissions(
+        owner.id,
+        { permissionMode: "custom", permissions: [] },
+        { actor: owner, orgId: owner.orgId },
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("rejects targeting an OWNER — owners always have full control", async () => {
+    const owner = actorFor(UserRole.SUPER_ADMIN);
+    const otherOwner = await createOrgUser(owner.orgId, {
+      role: UserRole.SUPER_ADMIN,
+    });
+    await expect(
+      setMemberPermissions(
+        String(otherOwner._id),
+        { permissionMode: "custom", permissions: ["customer:view"] },
+        { actor: owner, orgId: owner.orgId },
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("cannot touch a member of another org (cross-tenant 404)", async () => {
+    const owner = actorFor(UserRole.SUPER_ADMIN);
+    // A different actor → a different (random) orgId.
+    const otherOrg = actorFor(UserRole.SUPER_ADMIN);
+    const foreign = await createOrgUser(otherOrg.orgId, {
+      role: UserRole.STAFF,
+    });
+    await expect(
+      setMemberPermissions(
+        String(foreign._id),
+        { permissionMode: "custom", permissions: ["customer:view"] },
+        { actor: owner, orgId: owner.orgId },
+      ),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe("updateOwnName (self-serve)", () => {
+  it("updates ONLY the caller's own name and leaves role/status untouched", async () => {
+    const actor = actorFor(UserRole.STAFF);
+    const self = await createOrgUser(actor.orgId, {
+      role: UserRole.STAFF,
+      name: "Old Name",
+    });
+    const selfActor = { ...actor, id: String(self._id) };
+
+    const out = await updateOwnName({ name: "New Name" }, { actor: selfActor });
+    expect(out.name).toBe("New Name");
+
+    const persisted = await User.findById(self._id);
+    expect(persisted?.name).toBe("New Name");
+    expect(persisted?.role).toBe(UserRole.STAFF);
+    expect(persisted?.status).toBe(RecordState.ACTIVE);
   });
 });

@@ -31,16 +31,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/sonner";
-import {
-  Permission,
-  roleHasAnyPermission,
-} from "@/lib/constants/permissions";
+import { Permission } from "@/lib/constants/permissions";
 import { api } from "@/lib/api-client";
-import type { UserRole } from "@/lib/constants/enums";
 import { cn } from "@/lib/utils";
 
 interface CommandPaletteProps {
-  role: UserRole;
+  /** The viewer's EFFECTIVE permission keys — gates actions to what they can
+   *  actually do (mirrors the server enforcement). */
+  permissions: readonly Permission[];
 }
 
 interface CommandAction {
@@ -120,8 +118,8 @@ const NAV_ACTIONS: CommandAction[] = [
   },
   {
     id: "go:settings",
-    label: "Operational settings",
-    keywords: "configuration defaults",
+    label: "Workspace settings",
+    keywords: "configuration defaults owner",
     icon: SettingsIcon,
     permissions: [Permission.SETTINGS_VIEW],
     perform: (r) => r.push("/app/admin/settings"),
@@ -146,9 +144,10 @@ const ACCOUNT_ACTIONS: CommandAction[] = [
   },
 ];
 
-export function CommandPalette({ role }: CommandPaletteProps) {
+export function CommandPalette({ permissions }: CommandPaletteProps) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
+  const granted = React.useMemo(() => new Set(permissions), [permissions]);
 
   React.useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -164,9 +163,9 @@ export function CommandPalette({ role }: CommandPaletteProps) {
   const filteredNav = React.useMemo(
     () =>
       NAV_ACTIONS.filter(
-        (a) => !a.permissions || roleHasAnyPermission(role, a.permissions),
+        (a) => !a.permissions || a.permissions.some((p) => granted.has(p)),
       ),
-    [role],
+    [granted],
   );
 
   async function run(action: CommandAction) {

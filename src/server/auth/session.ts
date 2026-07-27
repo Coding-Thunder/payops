@@ -185,3 +185,24 @@ export async function requireOrgUser(): Promise<
   }
   return u as AuthenticatedUser & { orgId: string };
 }
+
+/**
+ * Workspace-OWNER gate. The hard actor check for owner-only operations
+ * (e.g. changing a member's permissions) that must be enforced
+ * independently of any single mutable permission — a MEMBER can never be an
+ * OWNER regardless of what their raw role or a stale token claims, because
+ * workspaceRole is derived server-side from the active OrgMember row on
+ * every request. Also guarantees a non-null orgId.
+ */
+export async function requireOwner(): Promise<
+  AuthenticatedUser & { orgId: string }
+> {
+  const u = await requireUser();
+  if (u.workspaceRole !== "OWNER") throw new ForbiddenError();
+  if (!u.orgId) {
+    throw new ForbiddenError(
+      "Your account is not attached to any organization. Contact support.",
+    );
+  }
+  return u as AuthenticatedUser & { orgId: string };
+}

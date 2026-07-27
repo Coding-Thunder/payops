@@ -40,7 +40,9 @@ export default async function AuthenticatedLayout({
       </Suspense>
       <div className="relative flex min-h-screen bg-background print:block print:min-h-0 print:bg-white">
         <div className="print:hidden md:flex md:bg-sidebar">
-          <Sidebar role={user.role} brand={brand} />
+          {/* Spread the effective-permission Set to a plain string[] — a
+              ReadonlySet is not RSC-serializable across the client boundary. */}
+          <Sidebar permissions={[...user.permissions]} brand={brand} />
         </div>
         <div className="flex flex-1 flex-col min-w-0 print:block">
           {/* Control-tower chrome: thin telemetry strip (28px) over
@@ -55,7 +57,11 @@ export default async function AuthenticatedLayout({
             />
           </div>
           <div className="print:hidden">
-            <Topbar user={user} brand={brand} />
+            <Topbar
+              user={user}
+              brand={brand}
+              permissions={[...user.permissions]}
+            />
           </div>
           <div className="print:hidden">
             <TrialBanner orgId={user.orgId ?? null} />
@@ -72,7 +78,7 @@ export default async function AuthenticatedLayout({
             {children}
           </main>
         </div>
-        <CommandPalette role={user.role} />
+        <CommandPalette permissions={[...user.permissions]} />
       </div>
     </RealtimeProvider>
   );
