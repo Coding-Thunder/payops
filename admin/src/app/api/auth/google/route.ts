@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     return jsonError(401, "Could not verify your Google sign-in.");
   }
 
-  if (!isAllowedEmail(email)) {
+  if (!(await isAllowedEmail(email))) {
     return jsonError(403, "This Google account is not authorized for admin access.");
   }
 

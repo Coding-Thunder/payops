@@ -21,6 +21,7 @@ export function TopNav({ email }: { email: string }) {
     { href: "/orders", label: "Orders" },
     { href: "/emails", label: "Email Ops" },
     { href: "/audit", label: "Audit" },
+    { href: "/admins", label: "Admins" },
   ];
 
   return (

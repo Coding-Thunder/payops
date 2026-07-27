@@ -92,7 +92,7 @@ export async function getAdminEmail(): Promise<string | null> {
   if (!token) return null;
   const email = await verifyToken(token);
   if (!email) return null;
-  if (!isAllowedEmail(email)) return null;
+  if (!(await isAllowedEmail(email))) return null;
   return email;
 }
 

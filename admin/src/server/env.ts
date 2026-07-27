@@ -27,7 +27,15 @@ const serverSchema = z.object({
   // app's IMPERSONATION_SECRET.
   IMPERSONATION_SECRET: z.string().min(32).optional(),
 
+  // Break-glass bootstrap admin(s). The authoritative allow-list is the
+  // `admin_users` collection (managed from the Admins page); these env
+  // addresses are always allowed so an empty/broken DB can't lock everyone
+  // out. Comma-separated.
   ADMIN_ALLOWLIST: z.string().default("vinaymaheshwari35@gmail.com"),
+
+  // Public URL of THIS console — used in the admin welcome email's sign-in
+  // link. (MAIN_APP_URL is the separate tenant-facing app.)
+  ADMIN_APP_URL: z.string().url().default("https://admin.tracetxn.com"),
 
   ADMIN_SESSION_TTL_HOURS: z.coerce.number().int().positive().max(72).default(8),
   OTP_TTL_MINUTES: z.coerce.number().int().positive().max(60).default(10),

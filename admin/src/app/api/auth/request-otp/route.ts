@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     return jsonError(429, "Too many requests. Try again in a few minutes.");
   }
 
-  if (isAllowedEmail(email)) {
+  if (await isAllowedEmail(email)) {
     // Fire-and-forget: the DB + SMTP work must NOT be on the response path,
     // otherwise an allow-listed email responds measurably slower than a
     // non-allow-listed one — a timing oracle that leaks the allow-list.

@@ -60,6 +60,51 @@ export async function sendOtpEmail(to: string, code: string): Promise<void> {
   });
 }
 
+export async function sendAdminWelcomeEmail(args: {
+  to: string;
+  name: string;
+  invitedByEmail?: string | null;
+}): Promise<void> {
+  const mailer = getMailer();
+  const url = env.server.ADMIN_APP_URL;
+  const app = env.server.APP_NAME;
+  if (!mailer) {
+    console.warn(
+      `[admin] Welcome email for ${args.to} skipped (SMTP not configured). Sign-in: ${url}`,
+    );
+    return;
+  }
+  const invitedBy = args.invitedByEmail
+    ? `<p>You were added by ${escapeHtml(args.invitedByEmail)}.</p>`
+    : "";
+  const html = `
+    <p>Hi ${escapeHtml(args.name)},</p>
+    <p>You've been given access to the ${escapeHtml(app)} console.</p>
+    <p>Sign in at <a href="${url}">${escapeHtml(url)}</a> using this email address — we'll email you a one-time sign-in code each time.</p>
+    ${invitedBy}
+    <p>If you weren't expecting this, you can ignore this email.</p>`;
+  const text = [
+    `Hi ${args.name},`,
+    "",
+    `You've been given access to the ${app} console.`,
+    `Sign in at ${url} using this email address — we'll email you a one-time sign-in code each time.`,
+    args.invitedByEmail ? `You were added by ${args.invitedByEmail}.` : "",
+    "",
+    "If you weren't expecting this, ignore this email.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  await mailer.sendMail({
+    from: env.server.EMAIL_FROM_ACCOUNTS,
+    to: args.to,
+    replyTo: env.server.EMAIL_REPLY_TO || undefined,
+    subject: `You've been added to the ${app} console`,
+    html,
+    text,
+    headers: { "X-Entity-Kind": "ADMIN_WELCOME" },
+  });
+}
+
 export async function sendAccessLinkEmail(args: {
   to: string;
   name: string;

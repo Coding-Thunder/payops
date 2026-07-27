@@ -5,6 +5,7 @@ import { isAllowedEmail, normalizeEmail } from "@/server/auth/allowlist";
 import { verifyOtp } from "@/server/auth/otp";
 import { setAdminCookie, signAdminSession } from "@/server/auth/session";
 import { recordAdminAction } from "@/server/audit";
+import { recordAdminLogin } from "@/server/services/admins";
 import { assertSameOrigin, jsonError, jsonOk, clientIp } from "@/server/http";
 import { rateLimit } from "@/server/rate-limit";
 
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
   ) {
     return jsonError(429, "Too many attempts. Request a new code.");
   }
-  if (!isAllowedEmail(email)) {
+  if (!(await isAllowedEmail(email))) {
     return jsonError(400, "Invalid or expired code.");
   }
 
@@ -57,6 +58,16 @@ export async function POST(req: NextRequest) {
 
   const token = await signAdminSession(email);
   await setAdminCookie(token);
+  // Stamp last-login + self-heal a bootstrap admin into admin_users so they
+  // appear in the Admins list. Best-effort: never block sign-in on it.
+  try {
+    await recordAdminLogin(email);
+  } catch (err) {
+    console.error(
+      `[admin] recordAdminLogin failed for ${email}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
   await recordAdminAction({
     action: "auth.login",
     actorEmail: email,

@@ -352,6 +352,42 @@ adminOtpSchema.index({ email: 1 }, { unique: true });
 adminOtpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 export const AdminOtp = model<AdminOtpDoc>("AdminOtp", adminOtpSchema);
 
+// Managed admin allow-list. The authoritative source of who can obtain an
+// admin session (see `isAllowedEmail`), replacing the env-only list. The env
+// `ADMIN_ALLOWLIST` remains a break-glass bootstrap so an empty/unreachable
+// collection can never lock every founder out. Admin-owned + strict.
+export interface AdminUserDoc {
+  _id: Types.ObjectId;
+  email: string;
+  name: string;
+  role: "OWNER" | "ADMIN";
+  status: "ACTIVE" | "DISABLED";
+  /** Email of the admin who invited this one; null for bootstrap/self-seed. */
+  invitedByEmail?: string | null;
+  lastLoginAt?: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+const adminUserSchema = new Schema<AdminUserDoc>(
+  {
+    email: {
+      type: String,
+      required: true,
+      lowercase: true,
+      trim: true,
+      unique: true,
+    },
+    name: { type: String, required: true, trim: true, maxlength: 120 },
+    role: { type: String, enum: ["OWNER", "ADMIN"], default: "ADMIN" },
+    status: { type: String, enum: ["ACTIVE", "DISABLED"], default: "ACTIVE" },
+    invitedByEmail: { type: String, default: null, lowercase: true, trim: true },
+    lastLoginAt: { type: Date, default: null },
+  },
+  { timestamps: true, versionKey: false, collection: "admin_users" },
+);
+adminUserSchema.index({ email: 1 }, { unique: true });
+export const AdminUser = model<AdminUserDoc>("AdminUser", adminUserSchema);
+
 export interface AdminAuditDoc {
   _id: Types.ObjectId;
   action: string;
