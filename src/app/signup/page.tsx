@@ -6,14 +6,27 @@ import { FirebaseAuthForm } from "@/components/auth/firebase-auth-form";
 import { LogoLockup, LogoMark } from "@/components/brand/logo";
 import { env } from "@/lib/env";
 import { getCurrentUser } from "@/server/auth/session";
+import { signupInviteAccepted } from "@/server/auth/signup-gate";
 import { turnstileSiteKey } from "@/server/auth/turnstile";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Create your TraceTxn account" };
 
-export default async function SignupPage() {
+interface SignupPageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function SignupPage({ searchParams }: SignupPageProps) {
   const user = await getCurrentUser();
   if (user) redirect("/app/dashboard");
+
+  // Private-beta gate: during the beta, self-serve signup is invite-only.
+  // A visitor without a valid invite is sent to the beta waitlist instead
+  // of being able to create an account. No-op when SIGNUP_INVITE_CODE is
+  // unset (gate off → open signup, unchanged).
+  const sp = await searchParams;
+  const invite = typeof sp.invite === "string" ? sp.invite : undefined;
+  if (!signupInviteAccepted(invite)) redirect("/waitlist");
 
   const brand = env.server.APP_NAME;
 
@@ -114,6 +127,7 @@ export default async function SignupPage() {
           </div>
           <FirebaseAuthForm
             mode="signup"
+            inviteCode={invite}
             turnstileSiteKey={turnstileSiteKey()}
           />
           <p className="text-center text-[11px] leading-relaxed text-muted-foreground/80">

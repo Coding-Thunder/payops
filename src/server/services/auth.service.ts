@@ -5,7 +5,7 @@ import {
   AuditEntity,
   RecordState,
 } from "@/lib/constants/enums";
-import { UnauthorizedError } from "@/lib/errors";
+import { ForbiddenError, UnauthorizedError } from "@/lib/errors";
 import { OrgMember, User, type UserDoc } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 import type { LoginInput } from "@/lib/validation";
@@ -193,6 +193,7 @@ export interface FirebaseExchangeResult extends AuthenticateResult {
 export async function firebaseExchange(
   input: FirebaseExchangeInput,
   ctx?: RequestContext | null,
+  opts?: { allowSignup?: boolean },
 ): Promise<FirebaseExchangeResult> {
   await connectMongo();
   const email = input.email.toLowerCase().trim();
@@ -222,6 +223,14 @@ export async function firebaseExchange(
   }
 
   if (!user) {
+    // Private-beta gate: this is the ONLY branch that creates a net-new
+    // account/org. Refuse it unless the caller confirmed an accepted
+    // invite. Existing users never reach here, so sign-in is unaffected.
+    if (opts?.allowSignup === false) {
+      throw new ForbiddenError(
+        "TraceTxn is in private beta — signups are invite-only. Join the beta to request access.",
+      );
+    }
     // First-time Firebase sign-in for this email → provision a User +
     // Organization. Delegates to the founder-signup path so we get the
     // same atomic tenant-creation guarantees.

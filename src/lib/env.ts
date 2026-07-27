@@ -37,6 +37,14 @@ const serverSchema = z.object({
    *  disabled (the /api/impersonate/start route refuses). MUST be distinct
    *  from JWT_SECRET and identical to the console's IMPERSONATION_SECRET. */
   IMPERSONATION_SECRET: z.string().min(32).optional(),
+  /** Private-beta signup gate. When set, self-serve account creation is
+   *  invite-only: only requests presenting this exact code (via the
+   *  `/signup?invite=…` link) may create a workspace; everyone else is
+   *  redirected to the beta waitlist. When UNSET, signup is open (current
+   *  behaviour) — so this is an explicit, reversible switch the founder
+   *  flips to turn the private beta on. Existing users always sign in
+   *  normally regardless. */
+  SIGNUP_INVITE_CODE: z.string().min(1).optional(),
   COOKIE_NAME: z.string().default("tracetxn_session"),
   COOKIE_DOMAIN: z.string().optional(),
   COOKIE_SECURE: z

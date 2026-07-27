@@ -1,10 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { ForbiddenError } from "@/lib/errors";
 import { signupSchema } from "@/lib/validation";
 import { getRequestContext } from "@/server/api/request-context";
 import { jsonOk, withApi } from "@/server/api/respond";
 import { setSessionCookie } from "@/server/auth/cookies";
 import { signSession } from "@/server/auth/jwt";
+import { signupInviteAccepted } from "@/server/auth/signup-gate";
 import { verifyTurnstile } from "@/server/auth/turnstile";
 import { signupFounder } from "@/server/services/signup.service";
 
@@ -30,6 +32,16 @@ export const dynamic = "force-dynamic";
 export const POST = withApi(
   async (req: NextRequest) => {
     const body = await req.json();
+    // Private-beta gate: no-op when SIGNUP_INVITE_CODE is unset, invite-only
+    // when it's set. Mirrors the /signup page + firebase-session gate so no
+    // signup path can create a workspace without an accepted invite.
+    const invite =
+      body && typeof body.invite === "string" ? body.invite : undefined;
+    if (!signupInviteAccepted(invite)) {
+      throw new ForbiddenError(
+        "TraceTxn is in private beta — signups are invite-only. Join the beta to request access.",
+      );
+    }
     const input = signupSchema.parse(body);
     const ctx = await getRequestContext();
     await verifyTurnstile({ token: input.cfToken, remoteIp: ctx.ip });

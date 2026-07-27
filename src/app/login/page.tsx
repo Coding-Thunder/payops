@@ -128,7 +128,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               href="/signup"
               className="text-foreground underline-offset-4 hover:underline"
             >
-              Create your workspace
+              Join the beta
             </Link>
             .
           </p>

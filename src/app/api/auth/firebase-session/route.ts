@@ -7,6 +7,7 @@ import { logger } from "@/lib/logger";
 import { getRequestContext } from "@/server/api/request-context";
 import { jsonOk, withApi } from "@/server/api/respond";
 import { setSessionCookie } from "@/server/auth/cookies";
+import { signupInviteAccepted } from "@/server/auth/signup-gate";
 import { verifyTurnstile } from "@/server/auth/turnstile";
 import { firebaseExchange } from "@/server/services/auth.service";
 
@@ -35,6 +36,9 @@ const bodySchema = z.object({
   // no-ops when TURNSTILE_SECRET_KEY is unset and throws when it IS
   // set but the token is missing or invalid.
   cfToken: z.string().optional(),
+  // Private-beta invite code. Only matters when a net-new user is being
+  // provisioned; existing-user sign-in ignores it.
+  inviteCode: z.string().optional(),
 });
 
 export const POST = withApi(
@@ -52,7 +56,7 @@ export const POST = withApi(
     }
 
     const body = await req.json();
-    const { idToken, cfToken } = bodySchema.parse(body);
+    const { idToken, cfToken, inviteCode } = bodySchema.parse(body);
 
     // Bot-check BEFORE the Firebase verify call so we don't burn
     // Identity Toolkit quota / latency on a request that's about to
@@ -87,6 +91,10 @@ export const POST = withApi(
         firebaseUid: decoded.uid,
       },
       ctx,
+      // Net-new provisioning is allowed only when the private-beta gate is
+      // off or the visitor presented a valid invite. Existing users are
+      // unaffected (their branch never provisions).
+      { allowSignup: signupInviteAccepted(inviteCode) },
     );
     await setSessionCookie(token);
 

@@ -33,6 +33,10 @@ import { getFirebaseAuth, isFirebaseConfigured } from "@/lib/firebase/client";
 interface FirebaseAuthFormProps {
   mode: "signin" | "signup";
   nextPath?: string;
+  /** Private-beta invite code, forwarded to the session exchange so the
+   *  server allows net-new account provisioning. Only meaningful in
+   *  "signup" mode; the gated /signup page supplies it. */
+  inviteCode?: string | null;
   /** Cloudflare Turnstile site key. When provided the widget renders
    *  and submit is gated on a verified token; when null/undefined the
    *  widget is omitted entirely (matches the legacy LoginForm contract).
@@ -50,6 +54,7 @@ interface FirebaseSessionResponse {
 export function FirebaseAuthForm({
   mode,
   nextPath,
+  inviteCode,
   turnstileSiteKey,
 }: FirebaseAuthFormProps) {
   const configured = isFirebaseConfigured();
@@ -81,7 +86,13 @@ export function FirebaseAuthForm({
         "/api/auth/firebase-session",
         // Turnstile token is single-use, so we always clear it after the
         // attempt regardless of outcome (see the catch/finally below).
-        { idToken, cfToken: cfToken ?? undefined },
+        // inviteCode lets the server permit net-new provisioning during
+        // the private beta; harmless (ignored) for existing-user sign-in.
+        {
+          idToken,
+          cfToken: cfToken ?? undefined,
+          inviteCode: inviteCode ?? undefined,
+        },
       );
       // Hard navigation (not router.replace) so the browser issues a
       // fresh request that carries the newly-set session cookie. A soft
