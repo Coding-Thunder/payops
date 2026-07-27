@@ -74,9 +74,12 @@ const serverSchema = z.object({
     .default(false),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
-  EMAIL_FROM: z
-    .string()
-    .default("TraceTxn <no-reply@tracetxn.example.com>"),
+  // Default is a VERIFIED tracetxn.com sender so mail works out of the box
+  // even when EMAIL_FROM is unset in prod. (The old `tracetxn.example.com`
+  // placeholder was an unverified domain — Resend rejected every send with
+  // "domain is not verified".) Override per-deploy if you send from another
+  // verified domain.
+  EMAIL_FROM: z.string().default("TraceTxn <no-reply@tracetxn.com>"),
   /**
    * Sender for platform-side account-lifecycle emails: password reset,
    * email verification, signup welcome, trial-started / trial-ending-
