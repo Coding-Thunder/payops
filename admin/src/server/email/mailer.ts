@@ -60,6 +60,47 @@ export async function sendOtpEmail(to: string, code: string): Promise<void> {
   });
 }
 
+export async function sendBetaInvitationEmail(args: {
+  to: string;
+  name: string;
+  /** Full activation URL incl. the raw single-use token. Never logged. */
+  url: string;
+}): Promise<void> {
+  const mailer = getMailer();
+  if (!mailer) {
+    // Deliberately does NOT log the URL/token. A missing SMTP config in dev
+    // surfaces the email address only; the raw invitation token never hits
+    // the logs. Throw so the caller records a send failure (status stays
+    // APPROVED, retryable) rather than a false INVITED.
+    console.warn(
+      `[admin] Beta invite for ${args.to} not sent (SMTP not configured).`,
+    );
+    throw new Error("Email is not configured (SMTP unset)");
+  }
+  const html = `
+    <p>Hi ${escapeHtml(args.name)},</p>
+    <p>You've been approved for the TraceTxn private beta. Use the private link below to activate your account and set your password:</p>
+    <p><a href="${args.url}">Activate your TraceTxn account</a></p>
+    <p>This link is single-use and expires in 7 days. If you didn't apply, you can ignore this email.</p>`;
+  const text = [
+    `Hi ${args.name},`,
+    "",
+    "You've been approved for the TraceTxn private beta. Use the private link below to activate your account and set your password:",
+    args.url,
+    "",
+    "This link is single-use and expires in 7 days. If you didn't apply, ignore this email.",
+  ].join("\n");
+  await mailer.sendMail({
+    from: env.server.EMAIL_FROM_ACCOUNTS,
+    to: args.to,
+    replyTo: env.server.EMAIL_REPLY_TO || undefined,
+    subject: "You're in — activate your TraceTxn beta account",
+    html,
+    text,
+    headers: { "X-Entity-Kind": "BETA_INVITE" },
+  });
+}
+
 export async function sendAdminWelcomeEmail(args: {
   to: string;
   name: string;

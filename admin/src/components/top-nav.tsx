@@ -3,7 +3,13 @@
 import * as React from "react";
 import { usePathname } from "next/navigation";
 
-export function TopNav({ email }: { email: string }) {
+export function TopNav({
+  email,
+  pendingBeta = 0,
+}: {
+  email: string;
+  pendingBeta?: number;
+}) {
   const pathname = usePathname();
   const [busy, setBusy] = React.useState(false);
 
@@ -14,14 +20,15 @@ export function TopNav({ email }: { email: string }) {
   }
 
   const links = [
-    { href: "/dashboard", label: "Dashboard" },
-    { href: "/users", label: "Users" },
-    { href: "/waitlist", label: "Waitlist" },
-    { href: "/customers", label: "Customers" },
-    { href: "/orders", label: "Orders" },
-    { href: "/emails", label: "Email Ops" },
-    { href: "/audit", label: "Audit" },
-    { href: "/admins", label: "Admins" },
+    { href: "/dashboard", label: "Dashboard", count: 0 },
+    { href: "/beta-applications", label: "Beta", count: pendingBeta },
+    { href: "/users", label: "Users", count: 0 },
+    { href: "/waitlist", label: "Waitlist", count: 0 },
+    { href: "/customers", label: "Customers", count: 0 },
+    { href: "/orders", label: "Orders", count: 0 },
+    { href: "/emails", label: "Email Ops", count: 0 },
+    { href: "/audit", label: "Audit", count: 0 },
+    { href: "/admins", label: "Admins", count: 0 },
   ];
 
   return (
@@ -39,13 +46,18 @@ export function TopNav({ email }: { email: string }) {
                 <a
                   key={l.href}
                   href={l.href}
-                  className={`rounded-md px-3 py-1.5 text-sm ${
+                  className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm ${
                     active
                       ? "bg-white/10 text-slate-100"
                       : "text-[var(--muted)] hover:text-slate-200"
                   }`}
                 >
                   {l.label}
+                  {l.count > 0 ? (
+                    <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-amber-500/20 px-1.5 text-[11px] font-semibold text-amber-300">
+                      {l.count}
+                    </span>
+                  ) : null}
                 </a>
               );
             })}

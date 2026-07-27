@@ -33,6 +33,10 @@ const PUBLIC_PATHS = [
   "/security",
   "/contact",
   "/waitlist",
+  // Beta account activation via a single-use invitation token. Must be
+  // reachable unauthenticated; the token (validated + consumed in the route)
+  // is the credential.
+  "/activate",
   // Legal pages — long-form documents referenced from signup
   // click-wrap, footer, and DPA workflows. Public by definition.
   "/terms",
@@ -52,6 +56,9 @@ const PUBLIC_PATHS = [
   "/api/webhooks/stripe",
   "/api/health",
   "/api/quotations",
+  // Public beta application + token-gated activation.
+  "/api/beta/apply",
+  "/api/beta/activate",
   // Founder-console impersonation handoff. The operator has NO session on
   // this app; the single-use, short-lived token (verified + burned inside
   // the route) is the credential. The route mints the actual session.

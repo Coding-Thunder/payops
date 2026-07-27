@@ -41,6 +41,7 @@ beforeEach(async () => {
   await ensureMongo();
   await resetDatabase();
   process.env.TRACETXN_MASTER_KEY = masterKey;
+  process.env.SIGNUP_INVITE_CODE = "test-signup-code";
   _resetMasterKeyForTesting();
   _resetLegacyOrgIdForTesting();
   headers = await mockNextHeaders();
@@ -49,6 +50,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await headers.restore();
   delete process.env.TRACETXN_MASTER_KEY;
+  delete process.env.SIGNUP_INVITE_CODE;
   _resetMasterKeyForTesting();
   _resetLegacyOrgIdForTesting();
 });
@@ -149,6 +151,7 @@ describe("Signup, reserved slug denylist", () => {
   const baseBody = {
     name: "Ada Lovelace",
     password: "Hunter2Hunter2",
+    invite: "test-signup-code",
   };
 
   async function signup(orgName: string, email: string) {

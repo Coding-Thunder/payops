@@ -9,28 +9,37 @@ import { Label } from "@/components/ui/label";
 import { LoadingButton } from "@/components/ui/loading-button";
 import { Textarea } from "@/components/ui/textarea";
 import { TurnstileWidget } from "@/components/common/turnstile-widget";
+import {
+  BETA_CHALLENGE_QUESTION,
+  BETA_CLIENTS_MANAGED_OPTIONS,
+  BetaUserType,
+  BetaUserTypeLabel,
+  type BetaUserType as BetaUserTypeT,
+} from "@/lib/constants/beta";
 import { api, ApiClientError } from "@/lib/api-client";
 
 /**
- * Waitlist form, minimal (name, email, what-you-build), posts to the
- * existing /api/quotations endpoint tagged source:"waitlist".
- *
- * The full quotation schema requires fields the waitlist UX
- * doesn't surface (companyName, country, expectedVolume). We
- * pad those with "-" placeholders client-side so the submit
- * validates without forcing a fictional company name out of
- * someone whose product is one engineer + an idea. Sales sees
- * the `source: "waitlist"` tag and treats the lead accordingly.
+ * Join the Beta application. Posts to /api/beta/apply, which stores a PENDING
+ * application reviewed inside the admin console. No account is created here —
+ * approved applicants are emailed a single-use invitation to activate.
  */
 
 interface WaitlistFormProps {
   turnstileSiteKey: string | null;
 }
 
+const selectCls =
+  "flex h-10 w-full rounded-lg border border-border bg-background px-3 text-[14px] text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10";
+
 export function WaitlistForm({ turnstileSiteKey }: WaitlistFormProps) {
-  const [name, setName] = useState("");
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
-  const [building, setBuilding] = useState("");
+  const [userType, setUserType] = useState<BetaUserTypeT>(
+    BetaUserType.FREELANCER,
+  );
+  const [businessName, setBusinessName] = useState("");
+  const [clientsManaged, setClientsManaged] = useState("");
+  const [challengeAnswer, setChallengeAnswer] = useState("");
   const [cfToken, setCfToken] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,33 +55,28 @@ export function WaitlistForm({ turnstileSiteKey }: WaitlistFormProps) {
       setError("Please complete the verification challenge first.");
       return;
     }
-    if (!name.trim() || !email.trim()) {
+    if (!fullName.trim() || !email.trim()) {
       setError("Name and email are required.");
       return;
     }
     setSubmitting(true);
     try {
-      await api.post("/api/quotations", {
-        fullName: name.trim(),
-        workEmail: email.trim(),
-        // Padding so the heavier landing-page schema validates. Sales
-        // sees `source: "waitlist"` + ignores the placeholder fields.
-        companyName: name.trim(), // best heuristic, use the name
-        country: "-",
-        expectedVolume: "-",
-        useCase:
-          building.trim() ||
-          "Joined the waitlist without specifying what they build.",
-        source: "waitlist",
+      await api.post("/api/beta/apply", {
+        fullName: fullName.trim(),
+        email: email.trim(),
+        userType,
+        businessName: businessName.trim() || undefined,
+        clientsManaged: clientsManaged || undefined,
+        challengeAnswer: challengeAnswer.trim() || undefined,
         cfToken: cfToken ?? undefined,
       });
       setDone(true);
     } catch (err) {
-      const msg =
+      setError(
         err instanceof ApiClientError
           ? err.message
-          : "Couldn't submit, please retry.";
-      setError(msg);
+          : "Couldn't submit, please retry.",
+      );
       setCfToken(null);
     } finally {
       setSubmitting(false);
@@ -85,21 +89,19 @@ export function WaitlistForm({ turnstileSiteKey }: WaitlistFormProps) {
         <span
           className="mx-auto inline-flex size-12 items-center justify-center rounded-full"
           style={{
-            background:
-              "color-mix(in oklch, var(--brand-emerald) 14%, white)",
+            background: "color-mix(in oklch, var(--brand-emerald) 14%, white)",
             color: "var(--brand-emerald-strong)",
           }}
         >
           <CheckCircle2Icon className="size-6" />
         </span>
         <h2 className="mt-5 font-display text-[20px] font-semibold tracking-tight">
-          You&apos;re on the list.
+          Application received.
         </h2>
         <p className="mt-3 text-[13.5px] leading-relaxed text-muted-foreground">
-          We&apos;ll email{" "}
-          <span className="font-medium text-foreground">{email}</span>{" "}
-          when your batch opens. Usually within two weeks. You can close
-          this tab.
+          We review every application. If you&apos;re approved, we&apos;ll email{" "}
+          <span className="font-medium text-foreground">{email}</span> a private
+          invitation to activate your account. You can close this tab.
         </p>
       </div>
     );
@@ -113,13 +115,13 @@ export function WaitlistForm({ turnstileSiteKey }: WaitlistFormProps) {
     >
       <div className="space-y-1.5">
         <Label htmlFor="wl-name" className="text-[12px]">
-          Your name
+          Full name
         </Label>
         <Input
           id="wl-name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          maxLength={120}
+          value={fullName}
+          onChange={(e) => setFullName(e.target.value)}
+          maxLength={160}
           required
           disabled={submitting}
           placeholder="Ada Lovelace"
@@ -145,18 +147,76 @@ export function WaitlistForm({ turnstileSiteKey }: WaitlistFormProps) {
         />
       </div>
 
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="wl-type" className="text-[12px]">
+            I&apos;m a…
+          </Label>
+          <select
+            id="wl-type"
+            value={userType}
+            onChange={(e) => setUserType(e.target.value as BetaUserTypeT)}
+            disabled={submitting}
+            className={selectCls}
+          >
+            {Object.values(BetaUserType).map((t) => (
+              <option key={t} value={t}>
+                {BetaUserTypeLabel[t]}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="wl-clients" className="text-[12px]">
+            Clients managed
+          </Label>
+          <select
+            id="wl-clients"
+            value={clientsManaged}
+            onChange={(e) => setClientsManaged(e.target.value)}
+            disabled={submitting}
+            className={selectCls}
+          >
+            <option value="">Select…</option>
+            {BETA_CLIENTS_MANAGED_OPTIONS.map((o) => (
+              <option key={o} value={o}>
+                {o}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       <div className="space-y-1.5">
-        <Label htmlFor="wl-building" className="text-[12px]">
-          What are you building? <span className="text-muted-foreground">(optional)</span>
+        <Label htmlFor="wl-business" className="text-[12px]">
+          Business / agency name{" "}
+          <span className="text-muted-foreground">(optional)</span>
+        </Label>
+        <Input
+          id="wl-business"
+          value={businessName}
+          onChange={(e) => setBusinessName(e.target.value)}
+          maxLength={200}
+          disabled={submitting}
+          placeholder="Bloom Studio"
+          autoComplete="organization"
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="wl-challenge" className="text-[12px]">
+          {BETA_CHALLENGE_QUESTION}{" "}
+          <span className="text-muted-foreground">(optional)</span>
         </Label>
         <Textarea
-          id="wl-building"
-          value={building}
-          onChange={(e) => setBuilding(e.target.value)}
-          maxLength={2000}
+          id="wl-challenge"
+          value={challengeAnswer}
+          onChange={(e) => setChallengeAnswer(e.target.value)}
+          maxLength={4000}
           rows={3}
           disabled={submitting}
-          placeholder="Rental SaaS for film cameras, SaaS for hotels, etc."
+          placeholder="Losing track of what was agreed, chasing approvals across email and Slack, etc."
         />
       </div>
 
@@ -183,12 +243,13 @@ export function WaitlistForm({ turnstileSiteKey }: WaitlistFormProps) {
         loadingText="Submitting"
         disabled={!captchaReady}
       >
-        Request invite
+        Apply for the beta
         <ArrowRightIcon className="size-3.5" />
       </LoadingButton>
 
       <p className="text-center text-[11px] text-muted-foreground">
-        We&apos;ll only email about your waitlist invite. No marketing.
+        Free during the private beta · No credit card · We only email about your
+        application.
       </p>
     </form>
   );

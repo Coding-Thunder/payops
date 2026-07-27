@@ -2,28 +2,29 @@ import "server-only";
 
 import { timingSafeEqual } from "node:crypto";
 
-import { env } from "@/lib/env";
-
 /**
- * Private-beta signup gate.
+ * Public self-serve signup gate — CLOSED BY DEFAULT.
  *
- * Self-serve account creation is invite-only WHENEVER `SIGNUP_INVITE_CODE`
- * is configured. A visitor must present the matching code (carried by the
- * `/signup?invite=…` link) to reach the signup form or provision a
- * workspace; everyone else is routed to the beta waitlist. When the env var
- * is unset the gate is inactive and signup behaves exactly as before — so
- * the founder turns the private beta on/off purely by setting/clearing one
- * value, with zero code change. Existing users always sign in normally
- * (the gate only guards NET-NEW account provisioning).
+ * During the private beta the only way to create an account is the beta
+ * activation flow (a single-use invitation token, see
+ * `beta-application.service`). This gate guards the legacy self-serve paths
+ * (`/signup`, `/api/auth/signup`, firebase-session net-new provisioning): a
+ * request is accepted ONLY when a break-glass `SIGNUP_INVITE_CODE` is
+ * configured AND the exact code is presented. With no code configured — the
+ * production default — every public signup is rejected and visitors are
+ * routed to the beta waitlist. Existing users always sign in normally (the
+ * gate only guards NET-NEW account provisioning).
+ *
+ * Reads `process.env` directly (not the cached `env` accessor) so the value
+ * is always live — no stale cache, and tests can toggle it per-case.
  */
 
-/** Constant-time equality that never short-circuits on length (still safe:
- *  a length mismatch simply returns false). */
+/** Constant-time equality; a length mismatch simply returns false. */
 export function codesMatch(
   presented: string | null | undefined,
   expected: string | null | undefined,
 ): boolean {
-  if (!expected) return true; // gate disabled → everything is accepted
+  if (!expected) return false; // no configured code → nothing is accepted
   if (typeof presented !== "string" || presented.length === 0) return false;
   const a = Buffer.from(presented);
   const b = Buffer.from(expected);
@@ -31,20 +32,20 @@ export function codesMatch(
   return timingSafeEqual(a, b);
 }
 
-/** The configured beta invite code, or null when the gate is off. */
+/** The configured break-glass code, or null when unset (gate fully closed). */
 export function signupInviteCode(): string | null {
-  return env.server.SIGNUP_INVITE_CODE ?? null;
+  const v = process.env.SIGNUP_INVITE_CODE;
+  return typeof v === "string" && v.length > 0 ? v : null;
 }
 
-/** True when signup is currently invite-gated (a code is configured). */
+/** Whether a break-glass code is configured at all. */
 export function signupsAreGated(): boolean {
   return signupInviteCode() !== null;
 }
 
 /**
- * Whether a presented invite code may create an account right now. Returns
- * true unconditionally when the gate is off, so callers can use this as the
- * single decision point without branching on `signupsAreGated()`.
+ * Whether a presented code may create an account right now. Closed by
+ * default: false unless a break-glass code is configured AND matches.
  */
 export function signupInviteAccepted(
   presented: string | null | undefined,

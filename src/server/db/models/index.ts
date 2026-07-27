@@ -1,6 +1,13 @@
 export { User } from "./user.model";
 export type { UserDoc, UserDocument } from "./user.model";
 
+export { BetaApplication } from "./beta-application.model";
+export type {
+  BetaApplicationDoc,
+  BetaApplicationDocument,
+  BetaInvite,
+} from "./beta-application.model";
+
 export {
   Organization,
   ORG_STATUSES,

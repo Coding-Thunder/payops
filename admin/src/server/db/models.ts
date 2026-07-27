@@ -388,6 +388,67 @@ const adminUserSchema = new Schema<AdminUserDoc>(
 adminUserSchema.index({ email: 1 }, { unique: true });
 export const AdminUser = model<AdminUserDoc>("AdminUser", adminUserSchema);
 
+// Beta program applications (owned by the main app; the console reviews +
+// approves them). The main app owns the authoritative schema; mirrored here
+// permissively over the SAME collection. `invite.tokenHash` is a sha256 hash
+// of a random token — the raw token only ever lives in the emailed link.
+export interface BetaApplicationDoc {
+  _id: Types.ObjectId;
+  fullName: string;
+  email: string;
+  userType: string;
+  businessName?: string | null;
+  clientsManaged?: string | null;
+  challengeAnswer?: string | null;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "INVITED" | "ACTIVATED";
+  adminNote?: string | null;
+  reviewedByEmail?: string | null;
+  reviewedAt?: Date | null;
+  invite?: {
+    tokenHash: string;
+    expiresAt: Date;
+    sentAt?: Date | null;
+    usedAt?: Date | null;
+  } | null;
+  lastInviteError?: string | null;
+  activatedAt?: Date | null;
+  activatedUserId?: Types.ObjectId | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+const betaApplicationSchema = new Schema<BetaApplicationDoc>(
+  {
+    fullName: { type: String },
+    email: { type: String, lowercase: true, trim: true },
+    userType: { type: String },
+    businessName: { type: String, default: null },
+    clientsManaged: { type: String, default: null },
+    challengeAnswer: { type: String, default: null },
+    status: { type: String },
+    adminNote: { type: String, default: null },
+    reviewedByEmail: { type: String, default: null },
+    reviewedAt: { type: Date, default: null },
+    invite: { type: Schema.Types.Mixed, default: null },
+    lastInviteError: { type: String, default: null },
+    activatedAt: { type: Date, default: null },
+    activatedUserId: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+  },
+  {
+    timestamps: true,
+    versionKey: false,
+    collection: "beta_applications",
+    strict: false,
+  },
+);
+export const BetaApplication = model<BetaApplicationDoc>(
+  "BetaApplication",
+  betaApplicationSchema,
+);
+
 export interface AdminAuditDoc {
   _id: Types.ObjectId;
   action: string;

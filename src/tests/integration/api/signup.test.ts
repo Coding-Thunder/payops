@@ -22,13 +22,19 @@ import { ensureMongo, resetDatabase } from "@/tests/utils/db";
 
 let headers: Awaited<ReturnType<typeof mockNextHeaders>>;
 
+// Public signup is closed by default; the break-glass SIGNUP_INVITE_CODE path
+// is what still exercises the account-creation logic here.
+const TEST_INVITE = "test-signup-code";
+
 beforeEach(async () => {
+  process.env.SIGNUP_INVITE_CODE = TEST_INVITE;
   await ensureMongo();
   await resetDatabase();
   headers = await mockNextHeaders();
 });
 
 afterEach(async () => {
+  delete process.env.SIGNUP_INVITE_CODE;
   await headers.restore();
 });
 
@@ -37,6 +43,7 @@ const validPayload = {
   email: "ada@acme.test",
   password: "Hunter2Hunter2",
   orgName: "Acme Rentals",
+  invite: TEST_INVITE,
 };
 
 describe("POST /api/auth/signup", () => {

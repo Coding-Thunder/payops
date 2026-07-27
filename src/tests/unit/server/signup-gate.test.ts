@@ -9,10 +9,10 @@ import { codesMatch } from "@/server/auth/signup-gate";
  * carries the gate's whole contract.
  */
 describe("codesMatch (signup gate)", () => {
-  it("treats an unset expected code as gate-off (accepts anything)", () => {
-    expect(codesMatch("whatever", null)).toBe(true);
-    expect(codesMatch(undefined, undefined)).toBe(true);
-    expect(codesMatch("", "")).toBe(true);
+  it("rejects everything when no code is configured (closed by default)", () => {
+    expect(codesMatch("whatever", null)).toBe(false);
+    expect(codesMatch(undefined, undefined)).toBe(false);
+    expect(codesMatch("", "")).toBe(false);
   });
 
   it("requires an exact match once a code is configured", () => {

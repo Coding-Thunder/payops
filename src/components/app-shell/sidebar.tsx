@@ -247,10 +247,11 @@ export function Sidebar({ role, brand, variant = "full" }: SidebarProps) {
       </nav>
 
       {variant === "full" ? (
-        <div className="border-t border-sidebar-border px-4 py-2.5">
-          <p className="text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground/65 tabular-nums">
-            v1.0
-          </p>
+        <div className="flex items-center gap-2 border-t border-sidebar-border px-4 py-2.5">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-success-soft px-2 py-0.5 text-[10.5px] font-medium text-success ring-1 ring-inset ring-success-border/60">
+            <span className="size-1.5 rounded-full bg-success" />
+            Private Beta
+          </span>
         </div>
       ) : null}
     </aside>
