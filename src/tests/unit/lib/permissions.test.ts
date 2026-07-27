@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import { UserRole } from "@/lib/constants/enums";
 import {
+  MEMBER_FULL_PERMISSIONS,
+  MEMBER_RESTRICTED_PERMISSIONS,
   Permission,
+  resolveEffectivePermissions,
   roleHasAnyPermission,
   roleHasPermission,
+  toWorkspaceRole,
 } from "@/lib/constants/permissions";
 
 /**
@@ -100,5 +104,91 @@ describe("permissions matrix", () => {
     expect(
       roleHasPermission("BOGUS" as UserRole, Permission.ORDER_CREATE),
     ).toBe(false);
+  });
+});
+
+/**
+ * OWNER/MEMBER effective-permission resolver — the private-beta authorization
+ * source of truth. A bug here is privilege escalation or a lockout.
+ */
+describe("workspace roles (OWNER/MEMBER)", () => {
+  it("maps SUPER_ADMIN → OWNER, everyone else → MEMBER", () => {
+    expect(toWorkspaceRole(UserRole.SUPER_ADMIN)).toBe("OWNER");
+    expect(toWorkspaceRole(UserRole.ADMIN)).toBe("MEMBER");
+    expect(toWorkspaceRole(UserRole.STAFF)).toBe("MEMBER");
+  });
+
+  it("MEMBER_FULL and MEMBER_RESTRICTED are disjoint", () => {
+    for (const p of MEMBER_FULL_PERMISSIONS) {
+      expect(MEMBER_RESTRICTED_PERMISSIONS.has(p)).toBe(false);
+    }
+  });
+
+  it("OWNER gets every permission", () => {
+    const eff = resolveEffectivePermissions({ role: UserRole.SUPER_ADMIN });
+    for (const p of Object.values(Permission)) expect(eff.has(p)).toBe(true);
+  });
+
+  it("MEMBER + full = operational set, none restricted", () => {
+    const eff = resolveEffectivePermissions({
+      role: UserRole.STAFF,
+      permissionMode: "full",
+    });
+    expect(eff.has(Permission.CUSTOMER_MANAGE)).toBe(true);
+    expect(eff.has(Permission.ORDER_CREATE)).toBe(true);
+    expect(eff.has(Permission.ORDER_VIEW_ALL)).toBe(true);
+    expect(eff.has(Permission.ORDER_DELETE)).toBe(false);
+    expect(eff.has(Permission.SETTINGS_UPDATE)).toBe(false);
+    expect(eff.has(Permission.GATEWAY_MANAGE)).toBe(false);
+    expect(eff.has(Permission.USER_CREATE)).toBe(false);
+    expect(eff.has(Permission.ANALYTICS_VIEW)).toBe(false);
+  });
+
+  it("MEMBER + custom grants only the selected allowed permissions", () => {
+    const eff = resolveEffectivePermissions({
+      role: UserRole.STAFF,
+      permissionMode: "custom",
+      customGrants: [Permission.CUSTOMER_VIEW, Permission.ORDER_VIEW_OWN],
+    });
+    expect(eff.has(Permission.CUSTOMER_VIEW)).toBe(true);
+    expect(eff.has(Permission.ORDER_VIEW_OWN)).toBe(true);
+    expect(eff.has(Permission.CUSTOMER_MANAGE)).toBe(false);
+    expect(eff.has(Permission.ORDER_CREATE)).toBe(false);
+  });
+
+  it("a custom grant can NEVER include a restricted permission", () => {
+    const eff = resolveEffectivePermissions({
+      role: UserRole.STAFF,
+      permissionMode: "custom",
+      customGrants: [
+        Permission.CUSTOMER_VIEW,
+        Permission.SETTINGS_UPDATE,
+        Permission.GATEWAY_MANAGE,
+        Permission.ORDER_DELETE,
+      ],
+    });
+    expect(eff.has(Permission.CUSTOMER_VIEW)).toBe(true);
+    expect(eff.has(Permission.SETTINGS_UPDATE)).toBe(false);
+    expect(eff.has(Permission.GATEWAY_MANAGE)).toBe(false);
+    expect(eff.has(Permission.ORDER_DELETE)).toBe(false);
+  });
+
+  it("a custom grant outside the member-allowed set is ignored", () => {
+    const eff = resolveEffectivePermissions({
+      role: UserRole.STAFF,
+      permissionMode: "custom",
+      customGrants: [Permission.ANALYTICS_VIEW, Permission.AUDIT_VIEW],
+    });
+    expect(eff.size).toBe(0);
+  });
+
+  it("an ADMIN member is bounded by the member set, not the old ADMIN role", () => {
+    const eff = resolveEffectivePermissions({
+      role: UserRole.ADMIN,
+      permissionMode: "full",
+    });
+    expect(eff.has(Permission.SETTINGS_UPDATE)).toBe(false);
+    expect(eff.has(Permission.USER_CREATE)).toBe(false);
+    expect(eff.has(Permission.CUSTOMER_MANAGE)).toBe(true);
   });
 });

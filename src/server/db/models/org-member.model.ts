@@ -36,6 +36,16 @@ export interface OrgMemberDoc {
   userId: Types.ObjectId;
   role: UserRole;
   status: RecordState;
+  /** Per-member permission model (MEMBERs only; OWNERs always have full
+   *  control). "full" grants the whole member operational set; "custom"
+   *  grants only the permission keys in `permissions`. Resolved into an
+   *  effective set (minus the permanently-restricted list) by
+   *  `resolveEffectivePermissions`. */
+  permissionMode: "full" | "custom";
+  /** Custom permission keys granted when `permissionMode === "custom"`.
+   *  Always intersected with the member-allowed set + restricted set on
+   *  read, so a stale/over-broad value can never escalate privileges. */
+  permissions: string[];
   invitedBy?: Types.ObjectId | null;
   joinedAt: Date;
   createdAt: Date;
@@ -71,6 +81,13 @@ const orgMemberSchema = new Schema<OrgMemberDoc>(
       default: RecordState.ACTIVE,
       index: true,
     },
+    permissionMode: {
+      type: String,
+      enum: ["full", "custom"],
+      required: true,
+      default: "full",
+    },
+    permissions: { type: [String], default: () => [] },
     invitedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     joinedAt: { type: Date, required: true, default: Date.now },
   },

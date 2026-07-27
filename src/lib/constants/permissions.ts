@@ -175,3 +175,117 @@ export function roleHasAnyPermission(
 ): boolean {
   return permissions.some((p) => roleHasPermission(role, p));
 }
+
+/* ─── Workspace roles: OWNER / MEMBER (private-beta model) ──────────────────
+ *
+ * Product-level roles: the workspace OWNER has complete control; everyone
+ * else is a MEMBER who operates client work. This maps onto the existing
+ * per-org `OrgMember.role` (SUPER_ADMIN = OWNER; ADMIN/STAFF = MEMBER) so we
+ * don't rewrite the whole RBAC layer during the beta.
+ *
+ *   "Members operate the workspace. Owners control the workspace."
+ */
+
+export type WorkspaceRole = "OWNER" | "MEMBER";
+
+export function toWorkspaceRole(role: UserRole): WorkspaceRole {
+  return role === UserRole.SUPER_ADMIN ? "OWNER" : "MEMBER";
+}
+
+/**
+ * Permissions a MEMBER may NEVER hold — even with "Full Permissions". These
+ * are destructive, financial-administration, integration, workspace-control,
+ * and security capabilities reserved for the Owner. Enforced as a hard
+ * subtraction at the end of `resolveEffectivePermissions`, so a bug in the
+ * allow-list can never accidentally grant one to a member.
+ */
+export const MEMBER_RESTRICTED_PERMISSIONS: ReadonlySet<Permission> = new Set([
+  // Destructive
+  Permission.ORDER_DELETE,
+  Permission.ORDER_ARCHIVE,
+  Permission.AUDIT_DELETE,
+  // Stripe / gateway integration + credentials
+  Permission.GATEWAY_VIEW,
+  Permission.GATEWAY_MANAGE,
+  // Workspace / global configuration
+  Permission.SETTINGS_VIEW,
+  Permission.SETTINGS_UPDATE,
+  Permission.BRANDING_VIEW,
+  Permission.BRANDING_MANAGE,
+  Permission.WORKFLOW_VIEW,
+  Permission.WORKFLOW_MANAGE,
+  Permission.ITEM_TYPE_MANAGE,
+  Permission.ITEM_MANAGE,
+  Permission.EMAIL_TEMPLATE_MANAGE,
+  // Team management
+  Permission.USER_VIEW,
+  Permission.USER_CREATE,
+  Permission.USER_UPDATE,
+  Permission.USER_DISABLE,
+  Permission.USER_RESET_PASSWORD,
+  // Workspace-wide financials + sensitive evidence
+  Permission.ANALYTICS_VIEW,
+  Permission.AUDIT_VIEW,
+  Permission.EVIDENCE_VIEW,
+  Permission.EVIDENCE_EXPORT,
+  // Locking a consent record for dispute evidence (owner-level)
+  Permission.CONSENT_VERIFY,
+]);
+
+/**
+ * The full operational permission set a MEMBER may hold ("Full Permissions"):
+ * everything needed to run day-to-day client work, disjoint from the
+ * restricted set above. Members with mode="custom" get a subset of THIS.
+ */
+export const MEMBER_FULL_PERMISSIONS: readonly Permission[] = [
+  Permission.CUSTOMER_VIEW,
+  Permission.CUSTOMER_MANAGE, // create/edit clients + notes
+  Permission.ORDER_VIEW_OWN,
+  Permission.ORDER_VIEW_ALL, // see all clients' invoices/payments
+  Permission.ORDER_CREATE,
+  Permission.ORDER_UPDATE, // edit draft invoices
+  Permission.ORDER_REGENERATE_LINK,
+  Permission.CONSENT_VIEW, // view consent records + send requests
+  Permission.DOCUMENT_VIEW,
+  Permission.DOCUMENT_ISSUE, // issue invoices/receipts
+  Permission.ITEM_TYPE_VIEW,
+  Permission.ITEM_VIEW,
+  Permission.EMAIL_TEMPLATE_VIEW, // pick a template to send
+];
+
+const MEMBER_FULL_SET: ReadonlySet<Permission> = new Set(MEMBER_FULL_PERMISSIONS);
+
+export type MemberPermissionMode = "full" | "custom";
+
+/**
+ * Resolve a member's EFFECTIVE permission set for a workspace.
+ *
+ *   OWNER              → every permission (full workspace control).
+ *   MEMBER + "full"    → MEMBER_FULL_PERMISSIONS.
+ *   MEMBER + "custom"  → the member's granted permissions ∩ MEMBER_FULL.
+ *
+ * In every member case the restricted set is subtracted last, so a member
+ * can never end up with a destructive/admin/integration/security capability
+ * no matter what was stored. This is the single source of truth the session
+ * guard consults for authorization.
+ */
+export function resolveEffectivePermissions(args: {
+  role: UserRole;
+  permissionMode?: MemberPermissionMode | null;
+  customGrants?: readonly string[] | null;
+}): ReadonlySet<Permission> {
+  if (toWorkspaceRole(args.role) === "OWNER") {
+    return RolePermissions.SUPER_ADMIN; // owner = complete control
+  }
+  const base: Iterable<Permission> =
+    args.permissionMode === "custom"
+      ? (args.customGrants ?? []).filter((p): p is Permission =>
+          MEMBER_FULL_SET.has(p as Permission),
+        )
+      : MEMBER_FULL_PERMISSIONS;
+  const effective = new Set<Permission>();
+  for (const p of base) {
+    if (!MEMBER_RESTRICTED_PERMISSIONS.has(p)) effective.add(p);
+  }
+  return effective;
+}
