@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { SiteWordmark } from "@/components/brand/site-wordmark";
+
 /**
  * Dark footer for the redesigned marketing surface. Reuses the existing
  * production routes (features/pricing/security/legal/auth) so nothing
@@ -42,25 +44,7 @@ export function SiteFooter() {
       <div className="mx-auto max-w-[1140px] px-6 py-16 lg:px-8">
         <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
           <div>
-            <div className="flex items-center gap-2.5">
-              <span className="grid size-7 place-items-center rounded-[7px] bg-emerald-400/10 ring-1 ring-inset ring-emerald-400/25">
-                <svg viewBox="0 0 24 24" className="size-4" aria-hidden>
-                  <path
-                    d="M5 17.5 10 9l4 5 5-8.5"
-                    fill="none"
-                    stroke="#34d399"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <circle cx="5" cy="17.5" r="1.6" fill="#34d399" />
-                  <circle cx="19" cy="5.5" r="1.6" fill="#34d399" />
-                </svg>
-              </span>
-              <span className="font-display text-[15px] font-semibold text-white">
-                TraceTxn
-              </span>
-            </div>
+            <SiteWordmark />
             <p className="mt-4 max-w-xs text-[13.5px] leading-relaxed text-white/45">
               One permanent, searchable record for every client. Built for
               agencies and freelancers who are done reconstructing what

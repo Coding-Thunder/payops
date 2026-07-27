@@ -3,8 +3,7 @@ import { redirect } from "next/navigation";
 import { CheckIcon } from "lucide-react";
 
 import { FirebaseAuthForm } from "@/components/auth/firebase-auth-form";
-import { LogoLockup, LogoMark } from "@/components/brand/logo";
-import { env } from "@/lib/env";
+import { SiteWordmark } from "@/components/brand/site-wordmark";
 import { getCurrentUser } from "@/server/auth/session";
 import { turnstileSiteKey } from "@/server/auth/turnstile";
 
@@ -18,7 +17,6 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const user = await getCurrentUser();
   if (user) redirect("/app/dashboard");
   const { next } = await searchParams;
-  const brand = env.server.APP_NAME;
 
   return (
     <div className="grid min-h-screen w-full grid-cols-1 lg:grid-cols-[1.05fr_1fr]">
@@ -61,29 +59,21 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           }}
         />
 
-        <LogoLockup
-          tone="inverted"
-          brand={brand}
-          subtitle="Operational payment infrastructure"
-          size="md"
-          className="relative"
-        />
+        <SiteWordmark className="relative" />
 
         <div className="relative max-w-md space-y-7">
-          <LogoMark className="size-9 text-white" monochrome />
           <h2 className="text-balance text-[28px] font-bold leading-[1.12] tracking-tight">
-            Reliable, auditable payment operations.
+            One searchable record for every client.
           </h2>
           <p className="max-w-sm text-[13.5px] leading-relaxed text-white/72">
-            Track the full payment lifecycle, capture dispute-grade
-            evidence, and orchestrate gateways, all from one console
-            built for operations, finance, and trust teams.
+            Keep every client&apos;s important information and history
+            connected in one place, so nothing gets lost between tools.
           </p>
           <ul className="space-y-2.5 pt-1 text-[12.5px] text-white/80">
             {[
-              "Hashed evidence chain on every order",
-              "Per-org Stripe routing, your keys stay encrypted",
-              "Realtime SSE lifecycle updates",
+              "Every invoice, payment, and approval on one client timeline",
+              "Notes and consent kept with the client, not lost across tools",
+              "Search any client and see their whole history in seconds",
             ].map((line) => (
               <li
                 key={line}
@@ -107,7 +97,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       <section className="flex items-center justify-center bg-background px-6 py-12 sm:px-12">
         <div className="w-full max-w-sm space-y-8">
           <div className="space-y-4">
-            <LogoLockup brand={brand} subtitle="Ops console" size="sm" />
+            <SiteWordmark textClassName="text-foreground" />
             <div className="space-y-1 pt-1">
               <h1 className="text-[20px] font-semibold tracking-tight">
                 Sign in to your account
@@ -123,7 +113,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             turnstileSiteKey={turnstileSiteKey()}
           />
           <p className="text-center text-[11px] leading-relaxed text-muted-foreground/80">
-            Don&apos;t have an account yet?{" "}
+            Don&apos;t have access yet?{" "}
             <Link
               href="/signup"
               className="text-foreground underline-offset-4 hover:underline"

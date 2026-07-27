@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowRightIcon } from "lucide-react";
 
+import { SiteWordmark } from "@/components/brand/site-wordmark";
 import { cn } from "@/lib/utils";
 
 // Absolute homepage anchors so the header works as shared chrome from any
@@ -14,31 +15,6 @@ const NAV = [
   { href: "/#use-cases", label: "Use cases" },
   { href: "/#faq", label: "FAQ" },
 ] as const;
-
-/** Compact brand mark — a three-node "trace" that reads as connected history. */
-function Wordmark() {
-  return (
-    <span className="flex items-center gap-2.5">
-      <span className="relative grid size-7 place-items-center rounded-[7px] bg-emerald-400/10 ring-1 ring-inset ring-emerald-400/25">
-        <svg viewBox="0 0 24 24" className="size-4" aria-hidden>
-          <path
-            d="M5 17.5 10 9l4 5 5-8.5"
-            fill="none"
-            stroke="#34d399"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <circle cx="5" cy="17.5" r="1.6" fill="#34d399" />
-          <circle cx="19" cy="5.5" r="1.6" fill="#34d399" />
-        </svg>
-      </span>
-      <span className="font-display text-[15px] font-semibold tracking-[-0.01em] text-white">
-        TraceTxn
-      </span>
-    </span>
-  );
-}
 
 export function SiteHeader() {
   const [scrolled, setScrolled] = useState(false);
@@ -61,7 +37,7 @@ export function SiteHeader() {
     >
       <div className="mx-auto flex h-16 max-w-[1140px] items-center justify-between gap-6 px-6 lg:px-8">
         <Link href="/" aria-label="TraceTxn home">
-          <Wordmark />
+          <SiteWordmark />
         </Link>
 
         <nav className="hidden items-center gap-8 md:flex">
