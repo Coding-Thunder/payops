@@ -62,7 +62,6 @@ export function FirebaseAuthForm({
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState<null | "email" | "google">(null);
   const [error, setError] = useState<string | null>(null);
-  const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [cfToken, setCfToken] = useState<string | null>(null);
 
   const requiresToken = Boolean(turnstileSiteKey);
@@ -119,7 +118,7 @@ export function FirebaseAuthForm({
     if (!captchaGate()) return;
     const auth = getFirebaseAuth();
     if (!auth) {
-      setError("Firebase Auth client failed to initialize");
+      setError("Sign-in is temporarily unavailable. Please try again in a moment.");
       return;
     }
     setBusy("email");
@@ -132,7 +131,9 @@ export function FirebaseAuthForm({
       await exchangeIdTokenForSession(idToken);
     } catch (err) {
       setError(humanizeAuthError(err, mode));
-      setErrorDetails(dumpErrorForUi(err));
+      // Raw technical detail goes to the console for debugging ONLY — never
+      // to the UI (it exposed code-level errors to end users).
+      console.error("[auth] sign-in error:", dumpErrorForUi(err));
     } finally {
       setBusy(null);
     }
@@ -143,7 +144,7 @@ export function FirebaseAuthForm({
     if (!captchaGate()) return;
     const auth = getFirebaseAuth();
     if (!auth) {
-      setError("Firebase Auth client failed to initialize");
+      setError("Sign-in is temporarily unavailable. Please try again in a moment.");
       return;
     }
     setBusy("google");
@@ -155,7 +156,9 @@ export function FirebaseAuthForm({
       await exchangeIdTokenForSession(idToken);
     } catch (err) {
       setError(humanizeAuthError(err, mode));
-      setErrorDetails(dumpErrorForUi(err));
+      // Raw technical detail goes to the console for debugging ONLY — never
+      // to the UI (it exposed code-level errors to end users).
+      console.error("[auth] sign-in error:", dumpErrorForUi(err));
     } finally {
       setBusy(null);
     }
@@ -170,11 +173,6 @@ export function FirebaseAuthForm({
           </AlertTitle>
           <AlertDescription>
             <div>{error}</div>
-            {errorDetails ? (
-              <pre className="mt-3 max-h-64 overflow-auto rounded bg-black/20 p-2 text-[10px] leading-snug whitespace-pre-wrap break-all font-mono">
-                {errorDetails}
-              </pre>
-            ) : null}
           </AlertDescription>
         </Alert>
       ) : null}
@@ -351,19 +349,13 @@ function humanizeAuthError(err: unknown, mode: "signin" | "signup"): string {
   const code =
     (err as AuthError | undefined)?.code ??
     (err as { code?: string } | undefined)?.code;
-  const serverResponse = (
-    err as { customData?: { serverResponse?: unknown } } | undefined
-  )?.customData?.serverResponse;
-  const serverHint = serverResponse
-    ? ` · server: ${JSON.stringify(serverResponse).slice(0, 220)}`
-    : "";
   switch (code) {
     case "auth/invalid-email":
-      return "That email looks wrong.";
+      return "Please enter a valid email address.";
     case "auth/user-not-found":
     case "auth/wrong-password":
     case "auth/invalid-credential":
-      return "Email or password didn't match our records.";
+      return "Incorrect email or password.";
     case "auth/email-already-in-use":
       return "An account with that email already exists. Sign in instead.";
     case "auth/weak-password":
@@ -374,7 +366,7 @@ function humanizeAuthError(err: unknown, mode: "signin" | "signup"): string {
     case "auth/popup-blocked":
       return "Your browser blocked the Google sign-in popup. Allow popups for this site and try again.";
     case "auth/network-request-failed":
-      return "Network error reaching Firebase. Check your connection and try again.";
+      return "Unable to connect. Please check your internet connection and try again.";
     case "auth/too-many-requests":
       return "Too many failed attempts. Wait a moment and try again.";
     case "auth/unauthorized-domain":
@@ -384,14 +376,11 @@ function humanizeAuthError(err: unknown, mode: "signin" | "signup"): string {
     case "auth/account-exists-with-different-credential":
       return "An account already exists with this email but a different sign-in method. Use that method instead.";
     case "auth/internal-error":
-      return `Firebase internal error.${serverHint || " Open DevTools console for the full payload."}`;
-    default: {
-      const verb = mode === "signup" ? "create the account" : "sign in";
-      const base = code
-        ? `Could not ${verb} (${code}).`
-        : `Could not ${verb}.`;
-      return `${base}${serverHint}`;
-    }
+      return "Something went wrong. Please try again.";
+    default:
+      // Never surface the raw Firebase code or server payload to the user;
+      // the full error is already in the console (see the top of this fn).
+      return `Could not ${mode === "signup" ? "create your account" : "sign in"}. Please try again.`;
   }
 }
 

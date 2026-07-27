@@ -99,7 +99,12 @@ function orderMatch(
   email: string,
 ): Record<string, unknown> {
   const branches: Record<string, unknown>[] = [{ customerId }];
-  if (email) branches.push({ "customer.email": email });
+  // Email fallback catches orders the backfill hasn't linked yet — but ONLY
+  // orders not linked to ANY client (customerId null/missing, which Mongo's
+  // `null` match covers). Never orders already linked to a DIFFERENT client,
+  // so one client's history can't bleed into another's via a shared email
+  // snapshot (two same-name clients, a reused/edited email, etc.).
+  if (email) branches.push({ customerId: null, "customer.email": email });
   return {
     orgId: orgFilter,
     state: { $ne: RecordState.ARCHIVED },

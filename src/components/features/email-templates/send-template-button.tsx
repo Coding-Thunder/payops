@@ -119,7 +119,13 @@ export function SendTemplateButton({
     };
   }, [open, templates]);
 
-  const sendable = (templates ?? []).filter((t) => t.hasActiveVersion);
+  // Sendable = every system template (always dispatchable from built-in
+  // copy, even when never customised) PLUS any custom template with an
+  // active version. The old `hasActiveVersion`-only filter hid both the
+  // uncustomised default templates AND freshly-created custom ones.
+  const sendable = (templates ?? []).filter(
+    (t) => t.kind === "system" || t.hasActiveVersion,
+  );
   const selected = sendable.find((t) => t.templateKey === selectedKey) ?? null;
 
   async function handleSubmit(e: React.FormEvent) {
