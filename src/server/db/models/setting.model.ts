@@ -44,7 +44,7 @@ export const DEFAULT_CANCELLATION_POLICY = "";
  * an enterprise contract.
  */
 export const DEFAULT_CONSENT_MESSAGE =
-  "I confirm that I understand and agree to proceed with this payment and booking.";
+  "I confirm that I understand and agree to proceed with this payment.";
 
 export interface SettingDoc {
   /** Legacy singleton key (`"default"`). Kept during migration so the

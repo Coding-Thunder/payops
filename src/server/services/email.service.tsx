@@ -74,6 +74,13 @@ interface SendArgs {
    *  EMAIL_FROM (platform default). When set, the tenant takes
    *  responsibility for SPF/DKIM alignment on the relay. */
   senderEmail?: string | null;
+  /** When true, a NON-delivery (no SMTP configured) is a hard failure that
+   *  THROWS rather than silently skipping. Use for critical customer sends
+   *  (e.g. the payment request) so the caller never marks the message as
+   *  "sent" or records a timeline event when nothing was delivered. Default
+   *  (false) keeps best-effort sends — welcome, confirmations — skipping
+   *  silently when SMTP is unset. Transport errors always throw regardless. */
+  required?: boolean;
 }
 
 /** Extract the mailbox portion of an RFC-5322 address header so we can
@@ -142,6 +149,13 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
         kind: args.kind,
       },
     });
+    // Critical sends must surface the non-delivery so the caller never marks
+    // the message as sent; best-effort sends keep skipping silently.
+    if (args.required) {
+      throw new ExternalServiceError(
+        "Email delivery isn't configured for this workspace yet, so the message couldn't be sent.",
+      );
+    }
     return { id: null };
   }
 
@@ -637,6 +651,10 @@ export async function sendPaymentRequestEmail(
     fromName: branding.brandName,
     replyTo: branding.supportEmail || null,
     senderEmail: branding.senderEmail || null,
+    // Critical: if this doesn't actually send, throw BEFORE we record the
+    // "email sent" evidence/timeline event or the route flips the order to
+    // PAYMENT_PENDING. #11 — never mark a failed request as sent.
+    required: true,
   });
 
   // Evidence chain: capture the rendered payment-request HTML the customer

@@ -255,7 +255,7 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
                   <FormControl>
                     <Textarea
                       rows={3}
-                      placeholder="I confirm that I understand and agree to proceed with this payment and booking."
+                      placeholder="I confirm that I understand and agree to proceed with this payment."
                       disabled={!canEdit || isSubmitting}
                       {...field}
                       value={field.value ?? ""}

@@ -45,7 +45,7 @@ async function seedRequestedConsent() {
       customerEmail: order.customer.email,
       customerName: order.customer.name,
       consentMessage:
-        "I confirm that I understand and agree to proceed with this payment and booking.",
+        "I confirm that I understand and agree to proceed with this payment.",
       consentEmailSubject: "Test subject",
       snapshot: {
         summary:
