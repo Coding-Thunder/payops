@@ -33,6 +33,7 @@ export interface CustomerDoc {
   phone: string;
   /** Optional CRM-lite identity fields. Editable from the profile page. */
   company: string | null;
+  country: string | null;
   notes: string | null;
   /** Free-form labels. Architecture-ready for saved segments / filters. */
   tags: string[];
@@ -68,6 +69,7 @@ const customerSchema = new Schema<CustomerDoc>(
     // all carry a phone already, so relaxing this is backward-safe.
     phone: { type: String, default: "", trim: true, maxlength: 32 },
     company: { type: String, default: null, trim: true, maxlength: 160 },
+    country: { type: String, default: null, trim: true, maxlength: 80 },
     notes: { type: String, default: null, maxlength: 4000 },
     tags: {
       type: [String],

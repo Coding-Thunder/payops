@@ -29,6 +29,7 @@ const patchSchema = z.object({
   name: z.string().max(120).optional(),
   phone: z.string().max(32).optional(),
   company: z.string().max(160).nullable().optional(),
+  country: z.string().max(80).nullable().optional(),
   notes: z.string().max(4000).nullable().optional(),
   tags: z.array(z.string().max(40)).max(50).optional(),
 });

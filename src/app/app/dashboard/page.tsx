@@ -1,256 +1,326 @@
 import Link from "next/link";
-import {
-  ArrowRightIcon,
-  ClockIcon,
-  DollarSignIcon,
-  PlusIcon,
-  TrendingUpIcon,
-  XCircleIcon,
-} from "lucide-react";
+import { ArrowRightIcon, SearchIcon } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ActivityFeed } from "@/components/features/activity/activity-feed";
-import { DisputeHealth } from "@/components/features/dashboard/dispute-health";
-import { RecentDisputes } from "@/components/features/dashboard/recent-disputes";
-import { OrderTable } from "@/components/features/orders/order-table";
-import { SetupChecklist } from "@/components/features/onboarding/setup-checklist";
+import { DashboardSearch } from "@/components/features/dashboard/dashboard-search";
+import { NewClientDialog } from "@/components/features/clients/new-client-dialog";
+import { OrderStatusBadge } from "@/components/common/status-badges";
 import { FadeIn } from "@/components/motion/fade-in";
-import { PageHeader } from "@/components/common/page-header";
-import { StatCard } from "@/components/common/stat-card";
-import { Permission, roleHasPermission } from "@/lib/constants/permissions";
-import { OrderStatus, RecordState } from "@/lib/constants/enums";
-import { formatCurrency } from "@/lib/format";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { initialsFromName } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { requireUser } from "@/server/auth/session";
-import { listAtRiskOrders, listOrders } from "@/server/services/order.service";
-import { getAnalyticsSummary } from "@/server/services/analytics.service";
-import { getOnboardingState } from "@/server/services/onboarding-state.service";
+import {
+  getDashboardData,
+  type DashboardData,
+} from "@/server/services/dashboard.service";
 
 export const metadata = { title: "Dashboard" };
 export const dynamic = "force-dynamic";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 export default async function DashboardPage() {
   const user = await requireUser();
-  const canSeeAll = roleHasPermission(user.role, Permission.ORDER_VIEW_ALL);
-  const canSeeAnalytics = roleHasPermission(user.role, Permission.ANALYTICS_VIEW);
 
-  const now = new Date();
-  const thirtyAgo = new Date(now.getTime() - 30 * DAY_MS);
-  const sixtyAgo = new Date(now.getTime() - 60 * DAY_MS);
-
-  const [recent, analytics, priorAnalytics, atRisk, onboarding] =
-    await Promise.all([
-      listOrders(
-        {
-          state: RecordState.ACTIVE,
-          page: 1,
-          pageSize: 5,
-          mine: !canSeeAll ? true : undefined,
-        },
-        { actor: user, orgId: user.orgId },
-      ),
-      canSeeAnalytics
-        ? getAnalyticsSummary({ from: thirtyAgo, to: now }, { orgId: user.orgId })
-        : null,
-      // Prior 30-day window, drives the trend deltas on the KPI row.
-      canSeeAnalytics
-        ? getAnalyticsSummary({ from: sixtyAgo, to: thirtyAgo }, { orgId: user.orgId })
-        : null,
-      canSeeAll ? listAtRiskOrders(user.orgId) : [],
-      getOnboardingState(user.orgId),
-    ]);
+  const data: DashboardData | null = user.orgId
+    ? await getDashboardData(user.orgId)
+    : null;
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Workspace"
-        title="Dashboard"
-        description="Every order, every payment, every dispute, one operator surface."
-        actions={
-          <Button asChild>
-            <Link href="/app/orders/create">
-              <PlusIcon className="size-3.5" />
-              New order
-            </Link>
-          </Button>
-        }
-      />
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
+            Dashboard
+          </h1>
+          <p className="mt-1 text-[13.5px] text-muted-foreground">
+            Find everything that has ever happened with a client.
+          </p>
+        </div>
+        <NewClientDialog />
+      </div>
 
-      {!onboarding.complete ? (
-        <FadeIn>
-          <SetupChecklist state={onboarding} />
-        </FadeIn>
-      ) : null}
+      {/* Global search */}
+      <DashboardSearch />
 
-      {canSeeAnalytics && analytics ? (
-        <FadeIn>
-          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard
-              icon={DollarSignIcon}
-              iconTone="success"
-              label="Revenue · 30d"
-              value={formatCurrency(
-                analytics.totals.revenue,
-                analytics.totals.currency,
-              )}
-              caption={`${analytics.totals.ordersPaid} paid orders`}
-              trend={revenueTrend(analytics, priorAnalytics)}
-            />
-            <StatCard
-              icon={TrendingUpIcon}
-              iconTone="info"
-              label="Conversion"
-              value={`${analytics.totals.conversionRate}%`}
-              caption={`${analytics.totals.ordersCreated} created`}
-              trend={pctPointTrend(
-                analytics?.totals.conversionRate,
-                priorAnalytics?.totals.conversionRate,
-              )}
-            />
-            <StatCard
-              icon={ClockIcon}
-              iconTone="warning"
-              label="Outstanding"
-              value={analytics.totals.ordersPending}
-              caption="Awaiting customer payment"
-            />
-            <StatCard
-              icon={XCircleIcon}
-              iconTone="destructive"
-              label="Failed · Expired"
-              value={
-                analytics.totals.ordersFailed + analytics.totals.ordersExpired
-              }
-              caption="Last 30 days"
-            />
-          </section>
-        </FadeIn>
-      ) : null}
+      {!data || !data.hasAnyClients ? (
+        <EmptyDashboard />
+      ) : (
+        <PopulatedDashboard data={data} />
+      )}
+    </div>
+  );
+}
 
-      {/* Two-column body: main flow on the left, dispute + activity
-          context on the right. Single column below `lg`. */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)] xl:gap-8">
-        {/* ── Main column ───────────────────────────────────────── */}
-        <section className="space-y-6">
-          <FadeIn delay={60} className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-[13.5px] font-semibold tracking-tight">
-                {canSeeAll ? "Recent orders" : "Your recent orders"}
-              </h2>
+/* ── Populated ───────────────────────────────────────────────────────── */
+
+function PopulatedDashboard({ data }: { data: DashboardData }) {
+  const { counts, recentClients, needsAttention } = data;
+
+  return (
+    <>
+      <FadeIn>
+        <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <StatCard
+            label="Client records"
+            value={counts.clientRecords}
+            caption="Total records"
+            dot="success"
+          />
+          <StatCard
+            label="Active clients"
+            value={counts.activeClients}
+            caption="Last 30 days"
+            dot="success"
+          />
+          <StatCard
+            label="Pending payments"
+            value={counts.pendingPayments}
+            caption="Awaiting collection"
+            dot={counts.pendingPayments > 0 ? "warning" : "success"}
+          />
+          <StatCard
+            label="Pending consents"
+            value={counts.pendingConsents}
+            caption="Consent not received"
+            dot={counts.pendingConsents > 0 ? "warning" : "success"}
+          />
+          <StatCard
+            label="Flagged records"
+            value={counts.flaggedRecords}
+            caption="Needs review"
+            dot={counts.flaggedRecords > 0 ? "destructive" : "success"}
+          />
+          <StatCard
+            label="Disputes"
+            value={counts.disputes}
+            caption="Open disputes"
+            dot={counts.disputes > 0 ? "destructive" : "success"}
+          />
+        </section>
+      </FadeIn>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+        {/* Recent Client Records */}
+        <FadeIn delay={60}>
+          <Card className="overflow-hidden p-0">
+            <div className="flex items-center justify-between px-5 pt-4">
+              <CardTitle className="text-[14px]">Recent Client Records</CardTitle>
               <Button asChild variant="ghost" size="sm">
-                <Link href="/app/orders">
+                <Link href="/app/customers">
                   View all
                   <ArrowRightIcon className="size-3" />
                 </Link>
               </Button>
             </div>
-            <OrderTable
-              items={recent.items}
-              emptyAction={
-                <Button asChild>
-                  <Link href="/app/orders/create">
-                    <PlusIcon className="size-3.5" />
-                    Create your first order
-                  </Link>
-                </Button>
-              }
-            />
+            <CardContent className="p-0 pt-3">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Client</TableHead>
+                    <TableHead className="hidden md:table-cell">
+                      Company
+                    </TableHead>
+                    <TableHead className="hidden sm:table-cell">
+                      Latest order
+                    </TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {recentClients.map((c) => (
+                    <TableRow key={c.id}>
+                      <TableCell>
+                        <Link
+                          href={`/app/customers/${c.id}`}
+                          className="flex items-center gap-3"
+                        >
+                          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-surface-2 text-[11px] font-semibold text-muted-foreground">
+                            {initialsFromName(c.name || c.email)}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium text-foreground">
+                              {c.name}
+                            </span>
+                            <span className="block truncate text-[12px] text-muted-foreground">
+                              {c.email || "—"}
+                            </span>
+                          </span>
+                        </Link>
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell text-[13px] text-muted-foreground">
+                        {c.company || "—"}
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell">
+                        {c.latestOrder ? (
+                          <Link
+                            href={`/app/orders/${c.latestOrder.id}`}
+                            className="block min-w-0"
+                          >
+                            <span className="block truncate font-mono text-[12px] font-medium text-foreground">
+                              {c.latestOrder.orderNumber}
+                            </span>
+                            {c.latestOrder.title ? (
+                              <span className="block truncate text-[12px] text-muted-foreground">
+                                {c.latestOrder.title}
+                              </span>
+                            ) : null}
+                          </Link>
+                        ) : (
+                          <span className="text-[12px] text-muted-foreground">
+                            No orders yet
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {c.latestOrder ? (
+                          <div className="flex flex-col items-start gap-1">
+                            <OrderStatusBadge status={c.latestOrder.status} />
+                            {c.latestOrder.consentPending ? (
+                              <Badge variant="warning">Awaiting consent</Badge>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button asChild variant="outline" size="sm">
+                          <Link href={`/app/customers/${c.id}`}>Open record</Link>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </FadeIn>
+
+        {/* Right rail: Recent Activity + Needs Attention */}
+        <aside className="space-y-6">
+          <FadeIn delay={120}>
+            <ActivityFeed />
           </FadeIn>
 
-          {recent.items.some((o) => o.status === OrderStatus.PAYMENT_PENDING) ? (
-            <FadeIn delay={120}>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-[13.5px]">
-                    Outstanding payments
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ul className="divide-y divide-border text-[12.5px]">
-                    {recent.items
-                      .filter((o) => o.status === OrderStatus.PAYMENT_PENDING)
-                      .map((o) => (
-                        <li
-                          key={o.id}
-                          className="flex items-center justify-between gap-3 py-2"
-                        >
-                          <Link
-                            href={`/app/orders/${o.id}`}
-                            className="flex min-w-0 flex-1 items-center gap-3 text-muted-foreground transition-colors hover:text-foreground"
-                          >
-                            <span className="flex min-w-0 flex-col leading-tight">
-                              <span className="truncate text-foreground">
-                                {o.customer.name}
-                              </span>
-                              <span className="truncate font-mono text-[10.5px] tabular-nums">
-                                {o.orderNumber}
-                              </span>
-                            </span>
-                          </Link>
-                          <span className="font-medium text-foreground tabular-nums">
-                            {formatCurrency(o.pricing.amount, o.pricing.currency)}
-                          </span>
-                        </li>
-                      ))}
-                  </ul>
-                </CardContent>
-              </Card>
-            </FadeIn>
-          ) : null}
-        </section>
-
-        {/* ── Right rail ────────────────────────────────────────── */}
-        <aside className="space-y-4">
-          {canSeeAll ? (
-            <FadeIn delay={60}>
-              <DisputeHealth atRisk={atRisk} />
-            </FadeIn>
-          ) : null}
-
-          {canSeeAll ? (
-            <FadeIn delay={120}>
-              <RecentDisputes orders={atRisk} />
-            </FadeIn>
-          ) : null}
-
           <FadeIn delay={180}>
-            <ActivityFeed />
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-[14px]">Needs attention</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {needsAttention.length === 0 ? (
+                  <p className="px-5 pb-5 text-[13px] text-muted-foreground">
+                    Nothing needs your attention right now.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-border">
+                    {needsAttention.map((item) => (
+                      <li key={item.id} className="px-5 py-3">
+                        <p className="text-[13px] font-medium text-foreground">
+                          {item.title}
+                        </p>
+                        <p className="mt-0.5 text-[12px] text-muted-foreground">
+                          {item.subtitle}
+                        </p>
+                        <Button
+                          asChild
+                          variant="outline"
+                          size="sm"
+                          className="mt-2"
+                        >
+                          <Link href={item.href}>{item.actionLabel}</Link>
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
           </FadeIn>
         </aside>
       </div>
-    </div>
+    </>
   );
 }
 
-/* ─────────── trend helpers ──────────────────────────────────────────── */
+/* ── Empty state ─────────────────────────────────────────────────────── */
 
-function revenueTrend(
-  current: { totals: { revenue: number; currency: string } },
-  prior: { totals: { revenue: number; currency: string } } | null,
-): { direction: "up" | "down" | "flat"; label: string } | undefined {
-  if (!prior) return undefined;
-  const cur = current.totals.revenue;
-  const pre = prior.totals.revenue;
-  if (pre === 0 && cur === 0) return undefined;
-  if (pre === 0) return { direction: "up", label: "new" };
-  const pct = ((cur - pre) / pre) * 100;
-  return {
-    direction: pct > 0.5 ? "up" : pct < -0.5 ? "down" : "flat",
-    label: `${pct >= 0 ? "+" : ""}${pct.toFixed(0)}%`,
-  };
+function EmptyDashboard() {
+  return (
+    <FadeIn>
+      <div className="flex flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-border bg-card/40 px-6 py-20 text-center">
+        <span className="grid size-12 place-items-center rounded-full bg-muted text-muted-foreground">
+          <SearchIcon className="size-5" />
+        </span>
+        <div className="space-y-1.5">
+          <h2 className="text-[17px] font-semibold text-foreground">
+            Create your first Client Record
+          </h2>
+          <p className="mx-auto max-w-md text-[13.5px] leading-relaxed text-muted-foreground">
+            Every order, invoice, payment, consent, and file becomes part of one
+            permanent client history. Nothing gets lost.
+          </p>
+        </div>
+        <NewClientDialog
+          trigger={
+            <Button size="lg" className="gap-1.5">
+              Create Client Record
+            </Button>
+          }
+        />
+      </div>
+    </FadeIn>
+  );
 }
 
-function pctPointTrend(
-  current?: number,
-  prior?: number,
-): { direction: "up" | "down" | "flat"; label: string } | undefined {
-  if (current === undefined || prior === undefined) return undefined;
-  if (current === prior) return undefined;
-  const diff = current - prior;
-  return {
-    direction: diff > 0.5 ? "up" : diff < -0.5 ? "down" : "flat",
-    label: `${diff >= 0 ? "+" : ""}${diff.toFixed(1)} pp`,
-  };
+/* ── Stat card ───────────────────────────────────────────────────────── */
+
+const DOT: Record<"success" | "warning" | "destructive", string> = {
+  success: "bg-success",
+  warning: "bg-warning",
+  destructive: "bg-destructive",
+};
+
+function StatCard({
+  label,
+  value,
+  caption,
+  dot,
+}: {
+  label: string;
+  value: number;
+  caption: string;
+  dot: "success" | "warning" | "destructive";
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <div className="flex items-start justify-between">
+        <p className="text-[10.5px] font-medium uppercase tracking-wider text-muted-foreground">
+          {label}
+        </p>
+        <span className={cn("mt-1 size-1.5 shrink-0 rounded-full", DOT[dot])} />
+      </div>
+      <p className="mt-2 text-[26px] font-semibold leading-none tracking-tight tabular-nums text-foreground">
+        {value.toLocaleString()}
+      </p>
+      <p className="mt-1.5 text-[11.5px] text-muted-foreground">{caption}</p>
+    </div>
+  );
 }

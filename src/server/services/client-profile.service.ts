@@ -71,6 +71,7 @@ export interface ClientProfileDTO {
   email: string;
   phone: string;
   company: string | null;
+  country: string | null;
   notes: string | null;
   tags: string[];
   customerSince: string | null;
@@ -222,6 +223,7 @@ export async function getClientProfile(
     email: customer.email,
     phone: customer.phone ?? "",
     company: customer.company ?? null,
+    country: customer.country ?? null,
     notes: customer.notes ?? null,
     tags: Array.isArray(customer.tags) ? customer.tags : [],
     customerSince: iso(customer.createdAt),
@@ -334,6 +336,7 @@ export interface UpdateClientInput {
   name?: string;
   phone?: string;
   company?: string | null;
+  country?: string | null;
   notes?: string | null;
   tags?: string[];
 }
@@ -383,6 +386,11 @@ export async function updateClient(
     if (v && v.length > 160) throw new ValidationError("Company is too long");
     if (v !== doc.company) changed.company = doc.company = v;
   }
+  if (input.country !== undefined) {
+    const v = input.country?.trim() || null;
+    if (v && v.length > 80) throw new ValidationError("Country is too long");
+    if (v !== doc.country) changed.country = doc.country = v;
+  }
   if (input.notes !== undefined) {
     const v = input.notes?.trim() || null;
     if (v && v.length > 4000) throw new ValidationError("Notes are too long");
@@ -422,6 +430,97 @@ export async function updateClient(
   }
 
   return getClientProfile(orgId, customerId);
+}
+
+/* ─── Create ───────────────────────────────────────────────────────────── */
+
+export interface CreateClientInput {
+  name: string;
+  email?: string;
+  phone?: string;
+  company?: string | null;
+  country?: string | null;
+  notes?: string | null;
+}
+
+export interface CreateClientResult {
+  id: string;
+  /** True when an existing client with this email was returned instead of
+   *  creating a duplicate. */
+  existed: boolean;
+}
+
+/**
+ * Create a new Client Profile from the "New Client Record" flow. Tenant-
+ * pinned + audited. Dedupes by (orgId, email): if a client with the same
+ * email already exists, returns that one (`existed: true`) rather than
+ * colliding on the unique index — the caller can just open it.
+ */
+export async function createClient(
+  orgId: string | null | undefined,
+  input: CreateClientInput,
+  ctx: UpdateClientContext,
+): Promise<CreateClientResult> {
+  const scopedOrgId = requireOrgId(orgId);
+  await connectMongo();
+
+  const name = input.name.trim();
+  if (!name) throw new ValidationError("Client name is required");
+  if (name.length > 120) throw new ValidationError("Name is too long");
+  const email = (input.email ?? "").toLowerCase().trim();
+  const phone = (input.phone ?? "").trim();
+  const company = input.company?.trim() || null;
+  const country = input.country?.trim() || null;
+  const notes = input.notes?.trim() || null;
+  const orgFilter = orgIdFilter(scopedOrgId);
+
+  if (email) {
+    const existing = await Customer.findOne({ orgId: orgFilter, email })
+      .select({ _id: 1 })
+      .lean<{ _id: Types.ObjectId } | null>();
+    if (existing) return { id: String(existing._id), existed: true };
+  }
+
+  try {
+    const created = await Customer.create({
+      orgId: orgFilter,
+      name,
+      email,
+      phone,
+      company,
+      country,
+      notes,
+      tags: [],
+    });
+    await recordAudit({
+      action: AuditAction.CUSTOMER_CREATED,
+      entityType: AuditEntity.CUSTOMER,
+      entityId: String(created._id),
+      orgId: scopedOrgId,
+      actor: {
+        userId: ctx.actor.id,
+        name: ctx.actor.name,
+        role: ctx.actor.role as never,
+      },
+      request: ctx.request ?? null,
+      metadata: { name, hasEmail: Boolean(email) },
+    });
+    return { id: String(created._id), existed: false };
+  } catch (err) {
+    // Lost a create race on the unique (orgId, email) index — re-read.
+    if (
+      email &&
+      typeof err === "object" &&
+      err !== null &&
+      (err as { code?: number }).code === 11000
+    ) {
+      const again = await Customer.findOne({ orgId: orgFilter, email })
+        .select({ _id: 1 })
+        .lean<{ _id: Types.ObjectId } | null>();
+      if (again) return { id: String(again._id), existed: true };
+    }
+    throw err;
+  }
 }
 
 /* ─── Timeline ─────────────────────────────────────────────────────────── */
