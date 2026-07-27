@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 import {
   BarChart3Icon,
+  CircleUserIcon,
   CreditCardIcon,
   HomeIcon,
   LogOutIcon,
@@ -127,6 +128,13 @@ const NAV_ACTIONS: CommandAction[] = [
 ];
 
 const ACCOUNT_ACTIONS: CommandAction[] = [
+  {
+    id: "go:account",
+    label: "My account",
+    keywords: "profile access permissions name",
+    icon: CircleUserIcon,
+    perform: (r) => r.push("/app/account"),
+  },
   {
     id: "logout",
     label: "Sign out",

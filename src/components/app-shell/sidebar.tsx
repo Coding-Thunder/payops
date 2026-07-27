@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3Icon,
+  CircleUserIcon,
   CreditCardIcon,
   GitBranchIcon,
   HomeIcon,
@@ -144,6 +145,14 @@ const SECTIONS: NavSection[] = [
         label: "Workspace settings",
         icon: SettingsIcon,
         permissions: [Permission.SETTINGS_VIEW],
+      },
+      // No permission gate — every member has an account. This is a
+      // MEMBER's only Settings-group surface (they're 403'd out of the
+      // owner-only Workspace settings above).
+      {
+        href: "/app/account",
+        label: "My account",
+        icon: CircleUserIcon,
       },
     ],
   },

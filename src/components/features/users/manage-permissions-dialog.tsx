@@ -10,9 +10,9 @@ import { FormDialog } from "@/components/common/form-dialog";
 import { api, ApiClientError } from "@/lib/api-client";
 import {
   MEMBER_FULL_PERMISSIONS,
-  Permission,
   type MemberPermissionMode,
 } from "@/lib/constants/permissions";
+import { memberPermissionGroups } from "@/lib/constants/permission-groups";
 import { PermissionDescription, PermissionLabel } from "@/lib/constants/labels";
 import { cn } from "@/lib/utils";
 import type { PublicUser } from "@/types";
@@ -22,43 +22,6 @@ interface ManagePermissionsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
-
-/**
- * Grouping is presentational only. The SOURCE OF TRUTH for what an owner may
- * grant is MEMBER_FULL_PERMISSIONS — any member-eligible permission not
- * placed in a named group below still renders (under "More"), so the editor
- * can never silently omit a grantable capability, and a restricted
- * permission can never appear because it isn't in MEMBER_FULL_PERMISSIONS.
- */
-const GROUPS: ReadonlyArray<{ label: string; permissions: Permission[] }> = [
-  {
-    label: "Clients",
-    permissions: [Permission.CUSTOMER_VIEW, Permission.CUSTOMER_MANAGE],
-  },
-  {
-    label: "Orders & payments",
-    permissions: [
-      Permission.ORDER_VIEW_OWN,
-      Permission.ORDER_VIEW_ALL,
-      Permission.ORDER_CREATE,
-      Permission.ORDER_UPDATE,
-      Permission.ORDER_REGENERATE_LINK,
-    ],
-  },
-  {
-    label: "Consent & documents",
-    permissions: [
-      Permission.CONSENT_VIEW,
-      Permission.DOCUMENT_VIEW,
-      Permission.DOCUMENT_ISSUE,
-    ],
-  },
-  {
-    label: "Catalog",
-    permissions: [Permission.ITEM_TYPE_VIEW, Permission.ITEM_VIEW],
-  },
-  { label: "Email", permissions: [Permission.EMAIL_TEMPLATE_VIEW] },
-];
 
 export function ManagePermissionsDialog({
   user,
@@ -73,16 +36,9 @@ export function ManagePermissionsDialog({
     () => new Set(user.permissions ?? []),
   );
 
-  // Any grantable permission not placed in a named group above — keeps the
-  // checklist exhaustive over MEMBER_FULL_PERMISSIONS even if a new key is
-  // added later without touching this file's groups.
-  const groups = useMemo(() => {
-    const placed = new Set(GROUPS.flatMap((g) => g.permissions));
-    const leftover = MEMBER_FULL_PERMISSIONS.filter((p) => !placed.has(p));
-    return leftover.length > 0
-      ? [...GROUPS, { label: "More", permissions: leftover }]
-      : GROUPS;
-  }, []);
+  // Shared, exhaustive-over-MEMBER_FULL_PERMISSIONS grouping (see
+  // permission-groups.ts) — the same source the read-only My Access view uses.
+  const groups = useMemo(() => memberPermissionGroups(), []);
 
   function toggle(permission: string, checked: boolean) {
     setGranted((prev) => {
