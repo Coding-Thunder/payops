@@ -135,7 +135,19 @@ export interface TrialState {
   atRisk: boolean;
 }
 
+/**
+ * Private-beta switch. TraceTxn is free + unlimited during the private beta,
+ * so the trial timer and the active-orders quota are OFF by default. Billing
+ * enforcement (and the trial banner / order-creation gate) only turns on when
+ * `BILLING_ENFORCED=true` is explicitly set — a single lever to flip for GA,
+ * with no other code change. Read at call time so tests can toggle it.
+ */
+function billingEnforced(): boolean {
+  return process.env.BILLING_ENFORCED === "true";
+}
+
 export async function getTrialState(orgId: string | null): Promise<TrialState | null> {
+  if (!billingEnforced()) return null; // private beta: no trials
   if (!orgId) return null;
   await connectMongo();
   const org = await Organization.findById(orgId)
@@ -172,6 +184,7 @@ export async function getTrialState(orgId: string | null): Promise<TrialState | 
  * orders" one.
  */
 export async function assertCanCreateOrder(orgId: string | null): Promise<void> {
+  if (!billingEnforced()) return; // private beta: free + unlimited
   if (!orgId) return; // legacy migration window, no metering
 
   // Trial gate first.

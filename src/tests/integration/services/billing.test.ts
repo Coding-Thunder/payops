@@ -33,10 +33,14 @@ import { ensureMongo, resetDatabase } from "@/tests/utils/db";
 const STARTER_LIMIT = PLAN_LIMITS.starter.activeOrderLimit;
 
 beforeEach(async () => {
+  // Billing/quota is off by default during the private beta; these tests
+  // exercise the enforced path.
+  process.env.BILLING_ENFORCED = "true";
   await ensureMongo();
   await resetDatabase();
 });
 afterEach(async () => {
+  delete process.env.BILLING_ENFORCED;
   await resetDatabase();
 });
 
