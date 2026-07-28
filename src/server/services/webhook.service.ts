@@ -822,6 +822,7 @@ async function handleDisputeCreated(
     // races against pre-tx code paths.
     const existingQuery = Dispute.findOne({
       gatewayDisputeId: d.gatewayDisputeId,
+      ...scopeOrgClause(scope),
     });
     const existing = await (session
       ? existingQuery.session(session)
@@ -988,6 +989,20 @@ async function handleDisputeCreated(
   return { handled: true, duplicate: false, orderId: String(order._id) };
 }
 
+/**
+ * orgId filter clause for tenant-scoped webhook lookups. Pins a dispute (or
+ * order) to the org the event was delivered for, so an event signed with
+ * org B's OWN webhook secret can never resolve and mutate org A's record —
+ * mirrors the scoping findOrderByPaymentIntent already applies.
+ */
+function scopeOrgClause(
+  scope: ProcessEventScope,
+): { orgId: Types.ObjectId } | Record<string, never> {
+  return scope.orgId && Types.ObjectId.isValid(scope.orgId)
+    ? { orgId: new Types.ObjectId(scope.orgId) }
+    : {};
+}
+
 async function handleDisputeUpdated(
   event: VerifiedPaymentEvent,
   scope: ProcessEventScope = {},
@@ -998,6 +1013,7 @@ async function handleDisputeUpdated(
   }
   const dispute = await Dispute.findOne({
     gatewayDisputeId: d.gatewayDisputeId,
+    ...scopeOrgClause(scope),
   });
   if (!dispute) {
     // Update arrived before created, rare but possible if Stripe retried
@@ -1097,6 +1113,7 @@ async function handleDisputeClosed(
   }
   let dispute = await Dispute.findOne({
     gatewayDisputeId: d.gatewayDisputeId,
+    ...scopeOrgClause(scope),
   });
   let materialisedDuringClose = false;
   if (!dispute) {
@@ -1108,6 +1125,7 @@ async function handleDisputeClosed(
     await handleDisputeCreated(event, scope);
     dispute = await Dispute.findOne({
       gatewayDisputeId: d.gatewayDisputeId,
+      ...scopeOrgClause(scope),
     });
     if (!dispute) {
       return { handled: false, duplicate: false, reason: "order_not_found" };
@@ -1227,6 +1245,7 @@ async function handleDisputeFundsWithdrawn(
   }
   const dispute = await Dispute.findOne({
     gatewayDisputeId: d.gatewayDisputeId,
+    ...scopeOrgClause(scope),
   });
   if (!dispute) {
     return { handled: false, duplicate: false, reason: "dispute_not_found" };
@@ -1339,12 +1358,12 @@ async function handleRefundCreated(
         "payment.processedWebhookEventIds": { $ne: event.eventId },
       },
       {
-        $set: {
-          refundedAmount: Math.max(
-            order.refundedAmount ?? 0,
-            totalRefunded,
-          ),
-        },
+        // Atomic $max — immune to out-of-order refund events and to a stale
+        // pre-transaction snapshot. Stripe delivers the CUMULATIVE
+        // amount_refunded per event with no ordering guarantee; a JS-side
+        // Math.max over the captured `order.refundedAmount` could clobber a
+        // higher total written by a concurrently-processed later event.
+        $max: { refundedAmount: totalRefunded },
         $push: {
           "payment.processedWebhookEventIds": {
             $each: [event.eventId],

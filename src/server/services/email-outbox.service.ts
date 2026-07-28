@@ -3,6 +3,7 @@ import "server-only";
 import { type ClientSession, Types } from "mongoose";
 
 import { EmailKind, UserRole } from "@/lib/constants/enums";
+import { resolveEffectivePermissions } from "@/lib/constants/permissions";
 import { logger } from "@/lib/logger";
 import {
   Order,
@@ -232,6 +233,11 @@ async function fetchOrderForOutbox(orderId: string) {
       name: "outbox",
       email: "system@tracetxn.local",
       role: UserRole.SUPER_ADMIN,
+      // System actor: the full owner permission set (sees every order).
+      permissions: resolveEffectivePermissions({
+        role: UserRole.SUPER_ADMIN,
+        permissionMode: "full",
+      }),
     },
   });
 }

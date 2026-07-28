@@ -22,6 +22,23 @@ import {
   regeneratePaymentLink,
 } from "@/server/services/order.service";
 import { actorFor } from "@/tests/utils/auth";
+import {
+  Permission,
+  resolveEffectivePermissions,
+} from "@/lib/constants/permissions";
+
+/** A member the owner custom-restricted to their OWN orders (withholding
+ *  ORDER_VIEW_ALL). Under the two-role model a *full* member sees all orders;
+ *  own-only visibility is now a custom restriction, not a role. */
+function ownOnlyMember(role: UserRole = UserRole.STAFF) {
+  return actorFor(role, {
+    permissions: resolveEffectivePermissions({
+      role,
+      permissionMode: "custom",
+      customGrants: [Permission.ORDER_VIEW_OWN, Permission.ORDER_CREATE],
+    }),
+  });
+}
 import { ensureMongo } from "@/tests/utils/db";
 import { createOrder as factoryCreateOrder } from "@/tests/factories/order.factory";
 import { createSettings } from "@/tests/factories/settings.factory";
@@ -121,8 +138,8 @@ describe("createOrder", () => {
 });
 
 describe("listOrders RBAC", () => {
-  it("STAFF sees only their own orders", async () => {
-    const me = actorFor(UserRole.STAFF);
+  it("a custom-restricted member (no view_all) sees only their own orders", async () => {
+    const me = ownOnlyMember();
     const other = actorFor(UserRole.STAFF);
 
     await factoryCreateOrder({ createdBy: { userId: me.id, name: me.name } });
@@ -185,9 +202,9 @@ describe("getOrderById", () => {
     ).rejects.toBeInstanceOf(NotFoundError);
   });
 
-  it("blocks STAFF from reading another staffer's order", async () => {
+  it("blocks a custom-restricted member from reading another member's order", async () => {
     const owner = actorFor(UserRole.STAFF);
-    const intruder = actorFor(UserRole.STAFF);
+    const intruder = ownOnlyMember();
     const order = await factoryCreateOrder({
       createdBy: { userId: owner.id, name: owner.name },
     });

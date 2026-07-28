@@ -7,6 +7,10 @@ import {
   UserRole,
 } from "@/lib/constants/enums";
 import {
+  resolveEffectivePermissions,
+  type Permission,
+} from "@/lib/constants/permissions";
+import {
   Document,
   DocumentKind,
   DocumentSequence,
@@ -55,6 +59,7 @@ describe("document.service", () => {
       name: string;
       email: string;
       role: UserRole;
+      permissions: ReadonlySet<Permission>;
     };
   }> {
     const ownerId = new Types.ObjectId();
@@ -119,6 +124,10 @@ describe("document.service", () => {
         name: `${label} owner`,
         email: `o-${ownerId.toString().slice(-8)}@x.test`,
         role: UserRole.SUPER_ADMIN,
+        permissions: resolveEffectivePermissions({
+          role: UserRole.SUPER_ADMIN,
+          permissionMode: "full",
+        }),
       },
     };
   }

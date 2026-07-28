@@ -23,7 +23,7 @@ import {
   PaymentError,
   ValidationError,
 } from "@/lib/errors";
-import { roleHasPermission, Permission } from "@/lib/constants/permissions";
+import { Permission } from "@/lib/constants/permissions";
 import { DomainEventType } from "@/lib/constants/events";
 import { logger } from "@/lib/logger";
 import { publishEvent } from "@/server/events/bus";
@@ -89,6 +89,11 @@ interface OrderActor {
   name: string;
   email: string;
   role: UserRole;
+  /** The actor's EFFECTIVE permission set (from the session). Authorization
+   *  MUST consult this, not roleHasPermission(role, …): a member whose raw
+   *  OrgMember.role is ADMIN can be custom-restricted to withhold
+   *  ORDER_VIEW_ALL, and the static role matrix would wrongly grant it. */
+  permissions: ReadonlySet<Permission>;
 }
 
 interface OrderContext {
@@ -627,7 +632,7 @@ export async function initiatePayment(
   const doc = await Order.findOne(scopedOrderFilter(id, ctx.orgId));
   if (!doc) throw new NotFoundError("Order not found");
 
-  const canSeeAll = roleHasPermission(ctx.actor.role, Permission.ORDER_VIEW_ALL);
+  const canSeeAll = ctx.actor.permissions.has(Permission.ORDER_VIEW_ALL);
   if (!canSeeAll && String(doc.createdBy.userId) !== ctx.actor.id) {
     throw new ForbiddenError(
       "You can only initiate payment on orders you created",
@@ -952,7 +957,7 @@ export async function listOrders(
   if (query.status) filter.status = query.status;
 
   // STAFF can only see their own orders unless explicitly granted ORDER_VIEW_ALL.
-  const canSeeAll = roleHasPermission(ctx.actor.role, Permission.ORDER_VIEW_ALL);
+  const canSeeAll = ctx.actor.permissions.has(Permission.ORDER_VIEW_ALL);
   if (query.mine || !canSeeAll) {
     filter["createdBy.userId"] = new Types.ObjectId(ctx.actor.id);
   }
@@ -1006,7 +1011,7 @@ export async function getOrderById(
   ).lean<OrderDoc & { _id: Types.ObjectId }>();
   if (!doc) throw new NotFoundError("Order not found");
 
-  const canSeeAll = roleHasPermission(ctx.actor.role, Permission.ORDER_VIEW_ALL);
+  const canSeeAll = ctx.actor.permissions.has(Permission.ORDER_VIEW_ALL);
   if (!canSeeAll && String(doc.createdBy.userId) !== ctx.actor.id) {
     throw new ForbiddenError("You can only view orders you created");
   }
@@ -1112,7 +1117,7 @@ export async function regeneratePaymentLink(
   const doc = await Order.findOne(scopedOrderFilter(id, ctx.orgId));
   if (!doc) throw new NotFoundError("Order not found");
 
-  const canSeeAll = roleHasPermission(ctx.actor.role, Permission.ORDER_VIEW_ALL);
+  const canSeeAll = ctx.actor.permissions.has(Permission.ORDER_VIEW_ALL);
   if (!canSeeAll && String(doc.createdBy.userId) !== ctx.actor.id) {
     throw new ForbiddenError("You can only regenerate links for your own orders");
   }
@@ -1425,7 +1430,7 @@ export async function updateOrderCustomer(
   const doc = await Order.findOne(scopedOrderFilter(id, ctx.orgId));
   if (!doc) throw new NotFoundError("Order not found");
 
-  const canSeeAll = roleHasPermission(ctx.actor.role, Permission.ORDER_VIEW_ALL);
+  const canSeeAll = ctx.actor.permissions.has(Permission.ORDER_VIEW_ALL);
   if (!canSeeAll && String(doc.createdBy.userId) !== ctx.actor.id) {
     throw new ForbiddenError("You can only edit orders you created");
   }
@@ -1574,10 +1579,7 @@ export async function reconcileOrderPayment(
   if (!doc) throw new NotFoundError("Order not found");
 
   if (ctx?.actor) {
-    const canSeeAll = roleHasPermission(
-      ctx.actor.role,
-      Permission.ORDER_VIEW_ALL,
-    );
+    const canSeeAll = ctx.actor.permissions.has(Permission.ORDER_VIEW_ALL);
     if (!canSeeAll && String(doc.createdBy.userId) !== ctx.actor.id) {
       throw new ForbiddenError(
         "You can only reconcile payment for orders you created",

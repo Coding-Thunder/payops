@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { Currency, UserRole } from "@/lib/constants/enums";
+import { resolveEffectivePermissions } from "@/lib/constants/permissions";
 import {
   EmailBlockKey,
   ItemAttributeType,
@@ -32,17 +33,16 @@ afterEach(async () => {
   // No global state to reset; resetDatabase between tests is sufficient.
 });
 
-function actorFor(): {
-  id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-} {
+function actorFor() {
   return {
     id: new Types.ObjectId().toString(),
     name: "Test agent",
     email: "agent@tracetxn.test",
     role: UserRole.ADMIN,
+    permissions: resolveEffectivePermissions({
+      role: UserRole.ADMIN,
+      permissionMode: "full",
+    }),
   };
 }
 

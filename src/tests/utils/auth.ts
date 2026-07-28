@@ -27,6 +27,10 @@ interface ActorOptions {
   id?: string;
   name?: string;
   email?: string;
+  /** Override the effective permission set — e.g. to model a custom-restricted
+   *  member (permissionMode "custom" withholding a grant). Defaults to the
+   *  role's full effective set. */
+  permissions?: ReadonlySet<Permission>;
 }
 
 export function actorFor(
@@ -48,8 +52,10 @@ export function actorFor(
     role,
     workspaceRole: toWorkspaceRole(role),
     // Mirrors the production session guard: members get the operational set,
-    // owners get everything.
-    permissions: resolveEffectivePermissions({ role, permissionMode: "full" }),
+    // owners get everything. Callers can override to model custom limits.
+    permissions:
+      opts.permissions ??
+      resolveEffectivePermissions({ role, permissionMode: "full" }),
     orgId,
     orgIds: [orgId],
     impersonation: null,

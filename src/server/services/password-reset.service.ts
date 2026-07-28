@@ -58,11 +58,18 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 function passwordHashHead(passwordHash: string): string {
-  // First 8 chars of the bcrypt hash. Bcrypt outputs are ~60 chars
-  // starting with `$2[ayb]$<cost>$` so chars beyond the cost-prefix
-  // are real per-user entropy. Slicing this here means the token
-  // binds to the CURRENT hash and rotates as soon as it changes.
-  return passwordHash.slice(0, 8);
+  // Bind the token to the ENTIRE bcrypt hash (salt + digest), not an 8-char
+  // slice. Bcrypt outputs start with a fixed `$2[ayb]$<cost>$` prefix, so
+  // slice(0,8) captured those 7 constant chars plus only ONE salt char (~6
+  // bits) — a rotated password's new hash collided with the old head ~1/64
+  // of the time, leaving a "dead" reset link still valid until its TTL. A
+  // sha256 over the whole hash rotates completely on any password change,
+  // and (with the 30-min TTL) is the sole single-use / anti-replay control.
+  return crypto
+    .createHash("sha256")
+    .update(passwordHash)
+    .digest("base64url")
+    .slice(0, 16);
 }
 
 export function generateResetToken(user: {

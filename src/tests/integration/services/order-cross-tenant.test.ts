@@ -7,7 +7,8 @@ import {
   RecordState,
   UserRole,
 } from "@/lib/constants/enums";
-import { NotFoundError } from "@/lib/errors";
+import { resolveEffectivePermissions } from "@/lib/constants/permissions";
+import { ForbiddenError, NotFoundError } from "@/lib/errors";
 import { Order } from "@/server/db/models";
 import {
   archiveOrder,
@@ -87,6 +88,10 @@ function orgBAdmin() {
       name: "Org B admin",
       email: "admin@orgb.test",
       role: UserRole.ADMIN,
+      permissions: resolveEffectivePermissions({
+        role: UserRole.ADMIN,
+        permissionMode: "full",
+      }),
     },
     orgId: ORG_B,
     request: null,
@@ -180,11 +185,43 @@ describe("Cross-tenant order access (Pass 5a)", () => {
         name: "Org A admin",
         email: "admin@orga.test",
         role: UserRole.ADMIN,
+        permissions: resolveEffectivePermissions({
+          role: UserRole.ADMIN,
+          permissionMode: "full",
+        }),
       },
       orgId: ORG_A,
       request: null,
     };
     const out = await getOrderById(orderId, orgAAdmin);
     expect(out.orderNumber).toBe("ORGA-XCT-1");
+  });
+
+  // Deep-audit M-1: order visibility must consult the EFFECTIVE permission
+  // set, not the static role matrix. A same-org ADMIN member whom the owner
+  // custom-restricted to WITHHOLD order:view_all must NOT see a coworker's
+  // order (previously roleHasPermission('ADMIN', view_all) wrongly granted it).
+  it("custom-restricted ADMIN member (no view_all) cannot read a coworker's order", async () => {
+    const { orderId } = await seedOrgAOrder(); // createdBy = a different user
+    const restrictedMember = {
+      actor: {
+        id: new Types.ObjectId().toString(), // NOT the order's creator
+        name: "Restricted member",
+        email: "restricted@orga.test",
+        role: UserRole.ADMIN,
+        permissions: resolveEffectivePermissions({
+          role: UserRole.ADMIN,
+          permissionMode: "custom",
+          customGrants: ["order:view_own", "order:create"], // no order:view_all
+        }),
+      },
+      orgId: ORG_A,
+      request: null,
+    };
+    // Intra-tenant own-order violation surfaces as ForbiddenError (the order
+    // exists in their org; they simply lack view_all and didn't create it).
+    await expect(
+      getOrderById(orderId, restrictedMember),
+    ).rejects.toBeInstanceOf(ForbiddenError);
   });
 });

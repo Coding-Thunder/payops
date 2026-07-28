@@ -28,7 +28,17 @@ export default async function PaymentSuccessPage({
   // this pairing check, a curl loop over order-number space pulls full
   // PII for every paid order on the platform.
   let order = orderNumber ? await getOrderByNumber(orderNumber) : null;
-  if (order && order.payment.paymentSessionId !== (sessionId ?? null)) {
+  // Fail CLOSED: only render when the order actually has a Stripe session id
+  // AND the request presents the matching one. A pre-payment order
+  // (NOT_INITIATED, no link yet) has a NULL paymentSessionId; the old
+  // `paymentSessionId !== (sessionId ?? null)` comparison passed when both
+  // were null, so omitting `session_id` leaked that order's PII to anyone
+  // holding just its number. Requiring a non-null, matching session id closes
+  // that hole while every legitimately-redirected payer still has the id.
+  if (
+    !order?.payment.paymentSessionId ||
+    order.payment.paymentSessionId !== sessionId
+  ) {
     order = null;
   }
 

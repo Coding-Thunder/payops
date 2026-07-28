@@ -53,6 +53,7 @@ if (!process.env.TRACETXN_MASTER_KEY) {
 import mongoose, { Types } from "mongoose";
 
 import { Currency, OrderStatus, PaymentGatewayKey, UserRole } from "@/lib/constants/enums";
+import { resolveEffectivePermissions } from "@/lib/constants/permissions";
 import { ItemPricingModel, SchedulingType } from "@/lib/constants/items";
 import { _resetMasterKeyForTesting } from "@/lib/crypto/envelope";
 import {
@@ -155,6 +156,10 @@ async function main() {
     name: "User Story Owner",
     email: ownerEmail,
     role: UserRole.SUPER_ADMIN,
+    permissions: resolveEffectivePermissions({
+      role: UserRole.SUPER_ADMIN,
+      permissionMode: "full",
+    }),
   };
 
   // Step 2: connect Stripe (per-org encrypted credentials)

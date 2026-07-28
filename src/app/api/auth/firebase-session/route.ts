@@ -66,7 +66,12 @@ export const POST = withApi(
       remoteIp: ctx.ip ?? null,
     });
 
-    let decoded: { uid: string; email?: string; name?: string };
+    let decoded: {
+      uid: string;
+      email?: string;
+      email_verified?: boolean;
+      name?: string;
+    };
     try {
       // checkRevoked=true so an admin who disabled a Firebase user in
       // the console takes effect on the next token presentation.
@@ -87,6 +92,10 @@ export const POST = withApi(
     const { token, user, isNewUser, orgId } = await firebaseExchange(
       {
         email: decoded.email,
+        // Only a verified email may link to / provision an account (prevents
+        // Firebase email-linking account takeover). Google OAuth always sets
+        // this true; email/password must verify first.
+        emailVerified: decoded.email_verified === true,
         displayName: decoded.name ?? null,
         firebaseUid: decoded.uid,
       },

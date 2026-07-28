@@ -9,6 +9,10 @@ import {
   PaymentGatewayKey,
   UserRole,
 } from "@/lib/constants/enums";
+import {
+  Permission,
+  resolveEffectivePermissions,
+} from "@/lib/constants/permissions";
 import { ItemPricingModel } from "@/lib/constants/items";
 import { _resetMasterKeyForTesting } from "@/lib/crypto/envelope";
 import { Order, AuditLog, GatewayMode, ItemType } from "@/server/db/models";
@@ -220,9 +224,17 @@ describe("reconcileOrderPayment", () => {
   it("rejects reconcile for an order the caller didn't create (same org, different user)", async () => {
     const owner = actorFor(UserRole.STAFF);
     // Stranger shares the SAME orgId so org-scope passes; only the
-    // per-user createdBy check should refuse.
+    // per-user createdBy check should refuse. Custom-restricted (no
+    // view_all) so they can only act on their OWN orders — a *full* member
+    // would legitimately see/act on all orders under the two-role model.
     const stranger: typeof owner = {
-      ...actorFor(UserRole.STAFF),
+      ...actorFor(UserRole.STAFF, {
+        permissions: resolveEffectivePermissions({
+          role: UserRole.STAFF,
+          permissionMode: "custom",
+          customGrants: [Permission.ORDER_VIEW_OWN, Permission.ORDER_CREATE],
+        }),
+      }),
       orgId: owner.orgId,
       orgIds: owner.orgIds,
     };

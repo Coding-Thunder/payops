@@ -8,6 +8,10 @@ import {
   PaymentGatewayKey,
   UserRole,
 } from "@/lib/constants/enums";
+import {
+  resolveEffectivePermissions,
+  type Permission,
+} from "@/lib/constants/permissions";
 import { _resetMasterKeyForTesting } from "@/lib/crypto/envelope";
 import {
   GatewayMode,
@@ -122,6 +126,7 @@ interface TestActor {
   name: string;
   email: string;
   role: UserRole;
+  permissions: ReadonlySet<Permission>;
 }
 
 function actor(): TestActor {
@@ -130,6 +135,10 @@ function actor(): TestActor {
     name: "Ada",
     email: "ada@tracetxn.test",
     role: UserRole.ADMIN,
+    permissions: resolveEffectivePermissions({
+      role: UserRole.ADMIN,
+      permissionMode: "full",
+    }),
   };
 }
 

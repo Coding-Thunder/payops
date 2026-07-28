@@ -155,6 +155,12 @@ export function publicUserFromDoc(doc: UserDoc & { _id: unknown }): SessionUser 
 export interface FirebaseExchangeInput {
   /** Lower-cased email from the verified Firebase ID token. */
   email: string;
+  /** Whether the ID token's `email_verified` claim is true. REQUIRED before
+   *  we will link this Firebase UID to an EXISTING account found by email or
+   *  provision a new one — otherwise anyone could register a Firebase
+   *  email/password account for a victim's address and take over / squat it.
+   *  Ignored on the fast uid-match path (a returning, already-linked user). */
+  emailVerified: boolean;
   /** Optional display name, used when this is the user's first sign-in
    *  and we have to provision a User row + Organization. Falls back to
    *  the local-part of the email. */
@@ -209,15 +215,32 @@ export async function firebaseExchange(
   let isNewUser = false;
 
   if (!user) {
+    // No returning (uid-linked) user. Before we either LINK this Firebase UID
+    // to an existing account discovered by email OR provision a brand-new
+    // one, the email MUST be verified. Without this gate, an attacker who
+    // knows a victim's email can register a Firebase email/password account
+    // for it (email_verified=false), present the genuine token here, and have
+    // their UID stamped onto the victim's existing row — a full account
+    // takeover — or squat an email that has no account yet. The fast uid-match
+    // path above is exempt (the UID binding is itself the proof).
+    if (!input.emailVerified) {
+      throw new UnauthorizedError(
+        "Please verify your email address with your sign-in provider before continuing.",
+      );
+    }
+
     user = await User.findOne({ email }).select(
       "+passwordHash name email role status primaryOrgId externalAuth",
     );
     if (user) {
       // Link the legacy / pre-Firebase user to this Firebase UID so the
-      // fast path hits on next sign-in.
+      // fast path hits on next sign-in. Set the whole `externalAuth` object
+      // rather than the dotted path: legacy users default `externalAuth` to
+      // null, and `$set: { "externalAuth.firebaseUid": … }` errors on a null
+      // parent ("Cannot create field 'firebaseUid' in element …").
       await User.updateOne(
         { _id: user._id },
-        { $set: { "externalAuth.firebaseUid": input.firebaseUid } },
+        { $set: { externalAuth: { firebaseUid: input.firebaseUid } } },
       );
     }
   }
