@@ -74,6 +74,12 @@ const serverSchema = z.object({
     .default(false),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
+  // ---- Resend HTTP API (preferred transport) ----
+  // When set (or when SMTP_PASS is itself a Resend `re_` key), email is sent
+  // over Resend's HTTPS API instead of SMTP. HTTPS (443) is never blocked by
+  // cloud egress rules and fails fast, unlike outbound SMTP (465/587) which
+  // hangs and 504s. Same key as SMTP_PASS — no new secret required.
+  RESEND_API_KEY: z.string().optional(),
   // Default is a VERIFIED tracetxn.com sender so mail works out of the box
   // even when EMAIL_FROM is unset in prod. (The old `tracetxn.example.com`
   // placeholder was an unverified domain — Resend rejected every send with

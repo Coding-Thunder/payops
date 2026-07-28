@@ -5,6 +5,7 @@ import { Types } from "mongoose";
 import { Permission } from "@/lib/constants/permissions";
 import { sendPaymentRequestSchema } from "@/lib/validation";
 import { getRequestContext } from "@/server/api/request-context";
+import { idempotencyKeyFrom, runIdempotent } from "@/server/api/idempotency";
 import { jsonOk, withApi } from "@/server/api/respond";
 import { requirePermission } from "@/server/auth/session";
 import { OrderStatus } from "@/lib/constants/enums";
@@ -77,43 +78,62 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
     );
   }
 
-  // 3. Send.
-  const result = await sendPaymentRequestEmail(
-    order,
-    {
-      subject: input.subject,
-      greeting: input.greeting,
-      intro: input.intro,
-      note: input.note,
-    },
-    { actor, request: reqCtx },
-  );
-
-  // 4. Transition LINK_GENERATED → PAYMENT_PENDING after a successful
-  // send. Doing it here (not in the email service) keeps the email
-  // module side-effect-free against the order doc. Conditional update
-  // means re-sends to an already-PENDING/PAID order are no-ops. Pin
-  // the tenant on the update so the wrong tenant can't flip another
-  // tenant's status by replaying this route with a guessed id.
-  if (order.status === OrderStatus.LINK_GENERATED) {
-    await Order.updateOne(
-      {
-        _id: id,
-        orgId: new Types.ObjectId(actor.orgId),
-        status: OrderStatus.LINK_GENERATED,
-      },
-      {
-        $set: {
-          status: OrderStatus.PAYMENT_PENDING,
-          "payment.status": OrderStatus.PAYMENT_PENDING,
+  // 3. Send — guarded by the client's Idempotency-Key so a timeout retry or
+  // double-submit cannot dispatch the email twice. A DUPLICATE returns the
+  // current order without re-sending; a FAILED send releases the claim so a
+  // real retry can go through.
+  const orgId = actor.orgId;
+  const payload = await runIdempotent(
+    "send-payment-request",
+    idempotencyKeyFrom(req),
+    async () => {
+      const result = await sendPaymentRequestEmail(
+        order,
+        {
+          subject: input.subject,
+          greeting: input.greeting,
+          intro: input.intro,
+          note: input.note,
         },
-      },
-    );
-  }
+        { actor, request: reqCtx },
+      );
 
-  const refreshed = await getOrderById(id, { actor, orgId: actor.orgId });
-  return jsonOk({
-    order: refreshed,
-    sent: { messageId: result.id, consentToken: result.consentToken },
-  });
+      // 4. Transition LINK_GENERATED → PAYMENT_PENDING after a successful
+      // send. Conditional + tenant-pinned so re-sends to an already-PENDING/
+      // PAID order are no-ops and no cross-tenant status flip is possible.
+      if (order.status === OrderStatus.LINK_GENERATED) {
+        await Order.updateOne(
+          {
+            _id: id,
+            orgId: new Types.ObjectId(orgId),
+            status: OrderStatus.LINK_GENERATED,
+          },
+          {
+            $set: {
+              status: OrderStatus.PAYMENT_PENDING,
+              "payment.status": OrderStatus.PAYMENT_PENDING,
+            },
+          },
+        );
+      }
+
+      const refreshed = await getOrderById(id, { actor, orgId });
+      return {
+        order: refreshed,
+        sent: {
+          messageId: result.id,
+          consentToken: result.consentToken,
+          deduplicated: false,
+        },
+      };
+    },
+    async () => {
+      const refreshed = await getOrderById(id, { actor, orgId });
+      return {
+        order: refreshed,
+        sent: { messageId: null, consentToken: null, deduplicated: true },
+      };
+    },
+  );
+  return jsonOk(payload);
 });

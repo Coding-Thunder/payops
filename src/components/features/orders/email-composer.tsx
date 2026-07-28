@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { formatTime } from "@/lib/format";
+import { useIdempotencyKey } from "@/lib/use-idempotency-key";
 import { useRouter } from "next/navigation";
 import {
   CheckCircle2Icon,
@@ -93,6 +94,7 @@ export function EmailComposer({
 }: EmailComposerProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const idempotency = useIdempotencyKey();
   const [draft, setDraft] = React.useState<DraftState>(() =>
     buildDraft(order, defaultSubject),
   );
@@ -169,7 +171,10 @@ export function EmailComposer({
     setSending(true);
     try {
       const body = buildPayload(draft, order);
-      await api.post(`/api/orders/${order.id}/send-payment-request`, body);
+      await api.post(`/api/orders/${order.id}/send-payment-request`, body, {
+        headers: { "Idempotency-Key": idempotency.take() },
+      });
+      idempotency.clear();
       const at = new Date().toISOString();
       setSentAt(at);
       onSent?.(at);

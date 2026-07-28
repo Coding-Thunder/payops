@@ -22,6 +22,7 @@ import { publishEvent } from "@/server/events/bus";
 import type { OrderDTO } from "@/types";
 
 import { classifyMailError, getMailer } from "@/server/email/smtp";
+import { deliverViaResend, resendApiKey } from "@/server/email/resend";
 import { inlinePublicImage } from "@/server/email/inline-image";
 import {
   UniversalOrderEmail,
@@ -122,7 +123,10 @@ function maskEmail(addr: string): string {
 }
 
 async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
-  const mailer = getMailer();
+  // Prefer Resend's HTTP API (fast, 443, never blocked). Fall back to SMTP
+  // only when no Resend key is present (e.g. legacy/test envs).
+  const apiKey = resendApiKey();
+  const mailer = apiKey ? null : getMailer();
   // Per-tenant overrides (when supplied) take precedence over the
   // platform defaults. Mailbox-level overrides require the tenant to
   // have aligned SPF/DKIM for the relay; we let the operator make
@@ -135,8 +139,8 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
   );
   const replyTo = args.replyTo?.trim() || env.server.EMAIL_REPLY_TO;
 
-  if (!mailer) {
-    logger.warn("email.skipped_no_smtp_config", {
+  if (!apiKey && !mailer) {
+    logger.warn("email.skipped_no_transport", {
       kind: args.kind,
       toMasked: maskEmail(args.to),
       orderId: args.orderId ?? undefined,
@@ -146,7 +150,7 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
       entityType: AuditEntity.ORDER,
       entityId: args.orderId ?? null,
       metadata: {
-        reason: "SMTP not configured (SMTP_HOST / SMTP_USER / SMTP_PASS)",
+        reason: "No email transport configured (RESEND_API_KEY or SMTP_*)",
         kind: args.kind,
       },
     });
@@ -161,15 +165,34 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
   }
 
   try {
-    const info = await mailer.sendMail({
-      from: fromAddress,
-      to: args.to,
-      replyTo: replyTo || undefined,
-      subject: args.subject,
-      html: args.html,
-      text: args.text,
-      headers: { "X-Entity-Kind": args.kind },
-    });
+    let messageId: string | null;
+    let response: string | null;
+    if (apiKey) {
+      // Preferred path: Resend HTTP API over 443 (fails fast, never blocked).
+      const sent = await deliverViaResend(apiKey, {
+        from: fromAddress,
+        to: args.to,
+        replyTo: replyTo || undefined,
+        subject: args.subject,
+        html: args.html,
+        text: args.text,
+        kind: args.kind,
+      });
+      messageId = sent.id;
+      response = "resend-http";
+    } else {
+      const info = await mailer!.sendMail({
+        from: fromAddress,
+        to: args.to,
+        replyTo: replyTo || undefined,
+        subject: args.subject,
+        html: args.html,
+        text: args.text,
+        headers: { "X-Entity-Kind": args.kind },
+      });
+      messageId = info.messageId ?? null;
+      response = info.response ?? null;
+    }
     await recordAudit({
       action: AuditAction.EMAIL_SENT,
       entityType: AuditEntity.ORDER,
@@ -177,11 +200,11 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
       metadata: {
         kind: args.kind,
         to: args.to,
-        messageId: info.messageId ?? null,
-        response: info.response ?? null,
+        messageId,
+        response,
       },
     });
-    return { id: info.messageId ?? null };
+    return { id: messageId };
   } catch (err) {
     // Classify the transport failure (auth / connection / throttled /
     // recipient / message) so the operator gets an actionable message

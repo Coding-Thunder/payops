@@ -7,6 +7,7 @@ import {
   templateKeyParam,
 } from "@/lib/validation";
 import { getRequestContext } from "@/server/api/request-context";
+import { idempotencyKeyFrom, runIdempotent } from "@/server/api/idempotency";
 import { jsonOk, withApi } from "@/server/api/respond";
 import { requirePermission } from "@/server/auth/session";
 import { sendCustomTemplateManually } from "@/server/services/email.service";
@@ -69,18 +70,21 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
     source = { kind: "customer", customerId: input.source.customerId };
   }
 
-  const result = await sendCustomTemplateManually(
-    {
-      templateKey,
-      to: input.to,
-      overrides: input.overrides,
-    },
-    {
-      actor,
-      orgId: actor.orgId,
-      source,
-      request: reqCtx,
-    },
+  // Idempotent: a timeout retry / double-submit with the same Idempotency-Key
+  // must not send the template twice. A duplicate returns a no-op ack; a
+  // failed send releases the claim so a real retry can go through.
+  const orgId = actor.orgId;
+  const result = await runIdempotent<Record<string, unknown>>(
+    "send-template",
+    idempotencyKeyFrom(req),
+    async () => ({
+      ...(await sendCustomTemplateManually(
+        { templateKey, to: input.to, overrides: input.overrides },
+        { actor, orgId, source, request: reqCtx },
+      )),
+      deduplicated: false,
+    }),
+    async () => ({ deduplicated: true }),
   );
   return jsonOk(result);
 });

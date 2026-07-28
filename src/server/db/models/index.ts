@@ -19,6 +19,8 @@ export type {
   OrganizationDocument,
 } from "./organization.model";
 
+export { IdempotencyKey } from "./idempotency-key.model";
+export type { IdempotencyKeyDoc } from "./idempotency-key.model";
 export { OrgMember } from "./org-member.model";
 export type {
   OrgMemberDoc,

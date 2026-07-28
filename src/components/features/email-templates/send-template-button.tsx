@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { api, ApiClientError } from "@/lib/api-client";
+import { useIdempotencyKey } from "@/lib/use-idempotency-key";
 import type { EmailTemplateSummaryDTO } from "@/types";
 
 type Source =
@@ -66,6 +67,7 @@ export function SendTemplateButton({
   label = "Send Email",
 }: SendTemplateButtonProps) {
   const [open, setOpen] = React.useState(false);
+  const idempotency = useIdempotencyKey();
   const [templates, setTemplates] = React.useState<EmailTemplateSummaryDTO[] | null>(null);
   const [templatesError, setTemplatesError] = React.useState<string | null>(null);
   const [templatesLoading, setTemplatesLoading] = React.useState(false);
@@ -152,7 +154,9 @@ export function SendTemplateButton({
             intro: introOverride.trim() || undefined,
           },
         },
+        { headers: { "Idempotency-Key": idempotency.take() } },
       );
+      idempotency.clear();
       toast.success(`Sent "${selected.displayName}" to ${to}`);
       setOpen(false);
       reset();
