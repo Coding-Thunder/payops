@@ -1,5 +1,16 @@
 /** Locale-aware client/server formatters for currency and dates. */
 
+/**
+ * The single timezone every date/time is rendered in. Pinned so the server
+ * (UTC on most hosts) and the browser (the viewer's zone) produce IDENTICAL
+ * text — otherwise every SSR'd date hydrates with a mismatch (React #418).
+ * Read from a build-time NEXT_PUBLIC var so both bundles agree; defaults to
+ * UTC. Set NEXT_PUBLIC_DISPLAY_TIMEZONE (e.g. "Asia/Kolkata", "America/New_York")
+ * to show a specific zone — still deterministic, still no hydration error.
+ */
+export const DISPLAY_TIMEZONE =
+  process.env.NEXT_PUBLIC_DISPLAY_TIMEZONE || "UTC";
+
 export function formatCurrency(amount: number, currency: string): string {
   try {
     return new Intl.NumberFormat("en-US", {
@@ -19,11 +30,26 @@ export function formatDate(
   const d = typeof value === "string" ? new Date(value) : value;
   if (Number.isNaN(d.getTime())) return "-";
   return new Intl.DateTimeFormat("en-US", {
+    // Pinned timezone → deterministic across server/client (no #418).
+    timeZone: DISPLAY_TIMEZONE,
     year: "numeric",
     month: "short",
     day: "2-digit",
     ...opts,
   }).format(d);
+}
+
+/** Deterministic time-only render (e.g. "08:14 AM") in the pinned zone. */
+export function formatTime(
+  value: string | Date | null | undefined,
+): string {
+  return formatDate(value, {
+    year: undefined,
+    month: undefined,
+    day: undefined,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export function formatDateTime(

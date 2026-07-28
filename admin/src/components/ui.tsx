@@ -147,10 +147,17 @@ export function Td({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Pinned display timezone + fixed locale so the server (UTC) and the browser
+// render IDENTICAL text — otherwise every date hydrates with a mismatch
+// (#418). Override with NEXT_PUBLIC_DISPLAY_TIMEZONE (e.g. "Asia/Kolkata").
+export const DISPLAY_TIMEZONE =
+  process.env.NEXT_PUBLIC_DISPLAY_TIMEZONE || "UTC";
+
 export function fmtDate(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
-  return d.toLocaleDateString(undefined, {
+  return d.toLocaleDateString("en-US", {
+    timeZone: DISPLAY_TIMEZONE,
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -160,7 +167,8 @@ export function fmtDate(iso: string | null): string {
 export function fmtDateTime(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
-  return d.toLocaleString(undefined, {
+  return d.toLocaleString("en-US", {
+    timeZone: DISPLAY_TIMEZONE,
     year: "numeric",
     month: "short",
     day: "numeric",

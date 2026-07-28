@@ -56,7 +56,10 @@ const TONE: Record<
 };
 
 function detectEnv(): "live" | "test" {
-  if (typeof window === "undefined") return "test";
+  // Read the NEXT_PUBLIC key directly — it's inlined on BOTH server and
+  // client, so the result is identical on each. The old `typeof window`
+  // guard made the server always return "test" while the client returned
+  // "live", which is a guaranteed hydration mismatch (#418).
   const k = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
   return k.startsWith("pk_live_") ? "live" : "test";
 }

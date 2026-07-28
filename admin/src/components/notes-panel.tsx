@@ -11,7 +11,9 @@ export interface Note {
 
 function fmt(iso: string | null): string {
   if (!iso) return "";
-  return new Date(iso).toLocaleString(undefined, {
+  // Fixed locale + pinned timezone → identical server/client text (no #418).
+  return new Date(iso).toLocaleString("en-US", {
+    timeZone: process.env.NEXT_PUBLIC_DISPLAY_TIMEZONE || "UTC",
     month: "short",
     day: "numeric",
     hour: "2-digit",

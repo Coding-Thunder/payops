@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { formatDateTime } from "@/lib/format";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
@@ -214,7 +215,7 @@ function ConnectedStripeCard({
             </>
           ) : null}
           <dt className="text-muted-foreground">Connected</dt>
-          <dd>{new Date(credential.configuredAt).toLocaleString()}</dd>
+          <dd>{formatDateTime(credential.configuredAt)}</dd>
         </dl>
 
         <WebhookHealthPanel canEdit={canEdit} />

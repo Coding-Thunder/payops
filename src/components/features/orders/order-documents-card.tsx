@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { formatDateTime } from "@/lib/format";
 import {
   DownloadIcon,
   FileTextIcon,
@@ -144,7 +145,7 @@ export function OrderDocumentsCard({
                     </Badge>
                   </div>
                   <div className="text-[11px] text-muted-foreground">
-                    {new Date(d.issuedAt).toLocaleString()}
+                    {formatDateTime(d.issuedAt)}
                   </div>
                 </div>
                 <Button

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { formatDateTime } from "@/lib/format";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -493,7 +494,7 @@ function VersionsList({
                   ) : null}
                 </p>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  {v.createdBy.name} · {new Date(v.createdAt).toLocaleString()}
+                  {v.createdBy.name} · {formatDateTime(v.createdAt)}
                 </p>
               </div>
               {v.active ? null : (

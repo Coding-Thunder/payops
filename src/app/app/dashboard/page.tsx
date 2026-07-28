@@ -318,7 +318,7 @@ function StatCard({
         <span className={cn("mt-1 size-1.5 shrink-0 rounded-full", DOT[dot])} />
       </div>
       <p className="mt-2 text-[26px] font-semibold leading-none tracking-tight tabular-nums text-foreground">
-        {value.toLocaleString()}
+        {value.toLocaleString("en-US")}
       </p>
       <p className="mt-1.5 text-[11.5px] text-muted-foreground">{caption}</p>
     </div>

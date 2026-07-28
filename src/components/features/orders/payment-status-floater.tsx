@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { formatDateTime } from "@/lib/format";
 import {
   ClockIcon,
   CheckCircle2Icon,
@@ -45,7 +46,7 @@ function describeOrder(order: OrderDTO): FloaterDescriptor {
         tone: "paid",
         label: "Payment received",
         detail: order.payment.paidAt
-          ? `Stripe confirmed at ${new Date(order.payment.paidAt).toLocaleString()}.`
+          ? `Stripe confirmed at ${formatDateTime(order.payment.paidAt)}.`
           : "Stripe has confirmed payment.",
       };
     case OrderStatus.FAILED:
@@ -100,7 +101,7 @@ export function PaymentStatusFloater({ order }: PaymentStatusFloaterProps) {
         setOverride({
           tone: "paid",
           label: "Payment received",
-          detail: `Stripe confirmed at ${new Date(event.at).toLocaleString()}.`,
+          detail: `Stripe confirmed at ${formatDateTime(event.at)}.`,
         });
         return;
       }

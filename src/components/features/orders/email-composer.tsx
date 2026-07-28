@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { formatTime } from "@/lib/format";
 import { useRouter } from "next/navigation";
 import {
   CheckCircle2Icon,
@@ -350,7 +351,7 @@ export function EmailComposer({
               <div className="flex items-center gap-2 text-emerald-700">
                 <CheckCircle2Icon className="size-4" />
                 <span className="text-[13px] font-medium">
-                  Email sent {new Date(sentAt).toLocaleTimeString()}
+                  Email sent {formatTime(sentAt)}
                 </span>
               </div>
               <p className="text-[12px] text-muted-foreground">
