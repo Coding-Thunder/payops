@@ -76,3 +76,24 @@ export function fieldIssuesFrom(err: unknown): FieldIssue[] {
     })
     .filter((x): x is FieldIssue => x !== null);
 }
+
+/**
+ * One-call helper for a form's catch block. Returns the banner message + the
+ * per-field issues to render beneath it:
+ *   - a 422 with field issues -> a "Please fix the following:" heading + issues
+ *   - any other ApiClientError -> its human message, no issues
+ *   - a non-API error (network, etc.) -> the caller's `fallback`, no issues
+ */
+export function describeApiError(
+  err: unknown,
+  fallback: string,
+): { message: string; issues: FieldIssue[] } {
+  const issues = fieldIssuesFrom(err);
+  if (issues.length > 0) {
+    return { message: "Please fix the following:", issues };
+  }
+  return {
+    message: err instanceof ApiClientError ? err.message : fallback,
+    issues: [],
+  };
+}

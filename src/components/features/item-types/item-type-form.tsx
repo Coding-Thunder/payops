@@ -17,7 +17,9 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
-import { api, ApiClientError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { describeApiError, type FieldIssue } from "@/lib/validation-errors";
+import { FieldIssueList } from "@/components/ui/field-issues";
 import {
   EMAIL_BLOCK_KEYS,
   ITEM_ATTRIBUTE_TYPES,
@@ -93,6 +95,7 @@ export function ItemTypeForm({ initial }: ItemTypeFormProps) {
   const [state, setState] = useState<FormState>(() => toFormState(initial));
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [fieldIssues, setFieldIssues] = useState<FieldIssue[]>([]);
   const isEdit = Boolean(initial);
 
   const sortedAttrs = useMemo(
@@ -143,6 +146,7 @@ export function ItemTypeForm({ initial }: ItemTypeFormProps) {
   async function onSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setError(null);
+    setFieldIssues([]);
     const payload = {
       key: state.key.trim().toLowerCase(),
       name: state.name.trim(),
@@ -178,19 +182,22 @@ export function ItemTypeForm({ initial }: ItemTypeFormProps) {
         router.refresh();
       });
     } catch (err) {
-      const message =
-        err instanceof ApiClientError
-          ? err.message
-          : "Could not save item type";
+      const { message, issues } = describeApiError(err, "Could not save item type");
       setError(message);
+      setFieldIssues(issues);
     }
   }
 
   return (
     <form onSubmit={onSubmit} className="space-y-8">
       {error ? (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[13px] text-destructive">
-          {error}
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[13px] text-destructive"
+        >
+          <p>{error}</p>
+          <FieldIssueList issues={fieldIssues} />
         </div>
       ) : null}
 

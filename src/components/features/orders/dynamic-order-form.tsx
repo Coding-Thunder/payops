@@ -19,8 +19,9 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
-import { api, ApiClientError } from "@/lib/api-client";
-import { fieldIssuesFrom, type FieldIssue } from "@/lib/validation-errors";
+import { api } from "@/lib/api-client";
+import { describeApiError, type FieldIssue } from "@/lib/validation-errors";
+import { FieldIssueList } from "@/components/ui/field-issues";
 import { currencyOptionLabel, type Currency } from "@/lib/constants/enums";
 import { SchedulingType } from "@/lib/constants/items";
 import type {
@@ -345,20 +346,11 @@ export function DynamicOrderForm({
       router.push(`/app/orders/${result.order.id}/email`);
       router.refresh();
     } catch (err) {
-      const issues = fieldIssuesFrom(err);
-      if (issues.length > 0) {
-        // 422: the server named the exact fields. Show them so the operator
-        // isn't left guessing behind a generic "Invalid request data".
-        setError("Please fix the following before creating the order:");
-        setFieldIssues(issues);
-      } else {
-        setError(
-          err instanceof ApiClientError
-            ? err.message
-            : "Could not create order",
-        );
-        setFieldIssues([]);
-      }
+      // 422s name the exact fields (see describeApiError); anything else keeps
+      // its generic message so the operator isn't guessing.
+      const { message, issues } = describeApiError(err, "Could not create order");
+      setError(message);
+      setFieldIssues(issues);
     } finally {
       setSubmitting(false);
     }
@@ -391,17 +383,7 @@ export function DynamicOrderForm({
           className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[13px] text-destructive"
         >
           <p>{error}</p>
-          {fieldIssues.length > 0 ? (
-            <ul className="mt-1.5 list-disc space-y-0.5 pl-5">
-              {fieldIssues.map((issue, i) => (
-                <li key={`${issue.path}-${i}`}>
-                  <span className="font-medium">{issue.label}</span>
-                  {": "}
-                  {issue.message}
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          <FieldIssueList issues={fieldIssues} />
         </div>
       ) : null}
 

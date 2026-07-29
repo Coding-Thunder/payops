@@ -19,7 +19,9 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
-import { api, ApiClientError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { describeApiError, type FieldIssue } from "@/lib/validation-errors";
+import { FieldIssueList } from "@/components/ui/field-issues";
 import { CURRENCIES, type Currency } from "@/lib/constants/enums";
 import type { ItemDTO } from "@/server/services/item.service";
 import type { ItemTypeDTO } from "@/server/services/item-type.service";
@@ -90,6 +92,7 @@ export function ItemForm({
   );
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [fieldIssues, setFieldIssues] = useState<FieldIssue[]>([]);
   const isEdit = Boolean(initial);
 
   const selectedItemType = useMemo(
@@ -107,6 +110,7 @@ export function ItemForm({
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setFieldIssues([]);
 
     const basePriceNum = state.basePrice.trim()
       ? Number(state.basePrice)
@@ -153,9 +157,9 @@ export function ItemForm({
         router.refresh();
       });
     } catch (err) {
-      setError(
-        err instanceof ApiClientError ? err.message : "Could not save item",
-      );
+      const { message, issues } = describeApiError(err, "Could not save item");
+      setError(message);
+      setFieldIssues(issues);
     }
   }
 
@@ -177,7 +181,10 @@ export function ItemForm({
     <form onSubmit={onSubmit} className="space-y-6">
       {error ? (
         <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>
+            <p>{error}</p>
+            <FieldIssueList issues={fieldIssues} />
+          </AlertDescription>
         </Alert>
       ) : null}
 

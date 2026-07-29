@@ -21,7 +21,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LoadingButton } from "@/components/ui/loading-button";
 import { Textarea } from "@/components/ui/textarea";
-import { api, ApiClientError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { describeApiError, type FieldIssue } from "@/lib/validation-errors";
+import { FieldIssueList } from "@/components/ui/field-issues";
 import { cn } from "@/lib/utils";
 
 interface EditClientDialogProps {
@@ -46,6 +48,7 @@ export function EditClientDialog({ client }: EditClientDialogProps) {
   const [open, setOpen] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [fieldIssues, setFieldIssues] = React.useState<FieldIssue[]>([]);
 
   const [name, setName] = React.useState(client.name);
   const [phone, setPhone] = React.useState(client.phone);
@@ -62,6 +65,7 @@ export function EditClientDialog({ client }: EditClientDialogProps) {
     setTags(client.tags);
     setTagDraft("");
     setError(null);
+    setFieldIssues([]);
     setSubmitting(false);
   }
 
@@ -83,6 +87,7 @@ export function EditClientDialog({ client }: EditClientDialogProps) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setFieldIssues([]);
     const trimmedName = name.trim();
     if (!trimmedName) {
       setError("Name can't be empty.");
@@ -123,9 +128,9 @@ export function EditClientDialog({ client }: EditClientDialogProps) {
       setOpen(false);
       router.refresh();
     } catch (err) {
-      setError(
-        err instanceof ApiClientError ? err.message : "Couldn't save changes",
-      );
+      const { message, issues } = describeApiError(err, "Couldn't save changes");
+      setError(message);
+      setFieldIssues(issues);
     } finally {
       setSubmitting(false);
     }
@@ -157,7 +162,10 @@ export function EditClientDialog({ client }: EditClientDialogProps) {
           <DialogBody className="space-y-4">
             {error ? (
               <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
+                <AlertDescription>
+                  <p>{error}</p>
+                  <FieldIssueList issues={fieldIssues} />
+                </AlertDescription>
               </Alert>
             ) : null}
 

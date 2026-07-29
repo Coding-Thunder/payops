@@ -21,7 +21,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LoadingButton } from "@/components/ui/loading-button";
 import { Textarea } from "@/components/ui/textarea";
-import { api, ApiClientError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { describeApiError, type FieldIssue } from "@/lib/validation-errors";
+import { FieldIssueList } from "@/components/ui/field-issues";
 
 interface NewClientDialogProps {
   /** Custom trigger element. Falls back to a default "New Client Record"
@@ -40,6 +42,7 @@ export function NewClientDialog({ trigger }: NewClientDialogProps) {
   const [open, setOpen] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [fieldIssues, setFieldIssues] = React.useState<FieldIssue[]>([]);
 
   const [name, setName] = React.useState("");
   const [company, setCompany] = React.useState("");
@@ -56,12 +59,14 @@ export function NewClientDialog({ trigger }: NewClientDialogProps) {
     setCountry("");
     setNotes("");
     setError(null);
+    setFieldIssues([]);
     setSubmitting(false);
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setFieldIssues([]);
     const trimmedName = name.trim();
     if (!trimmedName) {
       setError("Client name is required.");
@@ -87,9 +92,9 @@ export function NewClientDialog({ trigger }: NewClientDialogProps) {
       reset();
       router.push(`/app/customers/${id}`);
     } catch (err) {
-      setError(
-        err instanceof ApiClientError ? err.message : "Couldn't create client",
-      );
+      const { message, issues } = describeApiError(err, "Couldn't create client");
+      setError(message);
+      setFieldIssues(issues);
     } finally {
       setSubmitting(false);
     }
@@ -123,7 +128,10 @@ export function NewClientDialog({ trigger }: NewClientDialogProps) {
           <DialogBody className="space-y-4">
             {error ? (
               <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
+                <AlertDescription>
+                  <p>{error}</p>
+                  <FieldIssueList issues={fieldIssues} />
+                </AlertDescription>
               </Alert>
             ) : null}
 
