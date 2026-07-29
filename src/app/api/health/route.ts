@@ -37,7 +37,15 @@ export async function GET() {
   const status = warnings.length === 0 ? "healthy" : "degraded";
   return NextResponse.json({
     ok: true,
-    data: { status, ts: new Date().toISOString(), warnings },
+    data: {
+      status,
+      ts: new Date().toISOString(),
+      // Frozen at build time (next.config.ts) — the commit + build time of the
+      // running deploy. `curl /api/health` now answers "is my push live?".
+      version: process.env.APP_VERSION ?? "unknown",
+      builtAt: process.env.BUILT_AT ?? null,
+      warnings,
+    },
   });
 }
 

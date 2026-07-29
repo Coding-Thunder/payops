@@ -1,6 +1,41 @@
+import { execSync } from "node:child_process";
+
 import type { NextConfig } from "next";
 
+/**
+ * Resolve the deployed commit SHA at BUILD time so `/api/health` can echo it
+ * — answering "is my latest push actually live?" with a single curl. Prefer a
+ * platform-injected env var, else read it from git in the build checkout, else
+ * "unknown". The value is inlined into the bundle via `env` below, so it is
+ * frozen to whatever commit produced the running build.
+ */
+function resolveAppVersion(): string {
+  const fromEnv =
+    process.env.APP_VERSION ||
+    process.env.SOURCE_VERSION ||
+    process.env.COMMIT_SHA ||
+    process.env.GIT_COMMIT_SHA;
+  if (fromEnv) return fromEnv.slice(0, 12);
+  try {
+    return execSync("git rev-parse --short HEAD", {
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .toString()
+      .trim();
+  } catch {
+    return "unknown";
+  }
+}
+
+const APP_VERSION = resolveAppVersion();
+const BUILT_AT = new Date().toISOString();
+
 const nextConfig: NextConfig = {
+  // Frozen at build time — see resolveAppVersion(). Surfaced by /api/health.
+  env: {
+    APP_VERSION,
+    BUILT_AT,
+  },
   reactStrictMode: true,
   poweredByHeader: false,
   // Pin Turbopack's root to this app. The repo now contains a second
