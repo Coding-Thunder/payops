@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PackageIcon, PlusIcon, TrashIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +20,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
 import { api, ApiClientError } from "@/lib/api-client";
+import { fieldIssuesFrom, type FieldIssue } from "@/lib/validation-errors";
 import { currencyOptionLabel, type Currency } from "@/lib/constants/enums";
 import { SchedulingType } from "@/lib/constants/items";
 import type {
@@ -176,6 +177,18 @@ export function DynamicOrderForm({
   const [scheduling, setScheduling] = useState<SchedulingDraft | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Per-field 422 issues from the server, shown beneath the banner so the
+   *  operator sees exactly which field the API rejected and why. */
+  const [fieldIssues, setFieldIssues] = useState<FieldIssue[]>([]);
+  /** The submit button sits at the bottom of a potentially long form, so when
+   *  an error appears at the top we scroll it into view. `role="alert"` on the
+   *  banner (below) announces it to assistive tech. */
+  const errorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (error) {
+      errorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [error]);
 
   const requiresScheduling = lines.some(
     (l) => byKey.get(l.itemTypeKey)?.requiresScheduling,
@@ -276,6 +289,7 @@ export function DynamicOrderForm({
   async function onSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setError(null);
+    setFieldIssues([]);
     if (lines.length === 0) {
       setError("Add at least one line item.");
       return;
@@ -331,9 +345,20 @@ export function DynamicOrderForm({
       router.push(`/app/orders/${result.order.id}/email`);
       router.refresh();
     } catch (err) {
-      setError(
-        err instanceof ApiClientError ? err.message : "Could not create order",
-      );
+      const issues = fieldIssuesFrom(err);
+      if (issues.length > 0) {
+        // 422: the server named the exact fields. Show them so the operator
+        // isn't left guessing behind a generic "Invalid request data".
+        setError("Please fix the following before creating the order:");
+        setFieldIssues(issues);
+      } else {
+        setError(
+          err instanceof ApiClientError
+            ? err.message
+            : "Could not create order",
+        );
+        setFieldIssues([]);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -359,8 +384,24 @@ export function DynamicOrderForm({
   return (
     <form onSubmit={onSubmit} className="space-y-6">
       {error ? (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[13px] text-destructive">
-          {error}
+        <div
+          ref={errorRef}
+          role="alert"
+          aria-live="assertive"
+          className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[13px] text-destructive"
+        >
+          <p>{error}</p>
+          {fieldIssues.length > 0 ? (
+            <ul className="mt-1.5 list-disc space-y-0.5 pl-5">
+              {fieldIssues.map((issue, i) => (
+                <li key={`${issue.path}-${i}`}>
+                  <span className="font-medium">{issue.label}</span>
+                  {": "}
+                  {issue.message}
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </div>
       ) : null}
 
