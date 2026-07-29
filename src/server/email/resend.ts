@@ -23,6 +23,34 @@ export function resendApiKey(): string | null {
   return null;
 }
 
+/**
+ * Liveness check for the Resend credential, for `/api/health`. A REJECTED key
+ * is the exact failure that silently killed every payment-request email (all
+ * orders stalled at LINK_GENERATED with a 401 from Resend), so we surface it
+ * proactively instead of on the next customer send. Uses a cheap read-only
+ * `GET /domains` with a 5s cap; never throws.
+ *   "ok"           key present and accepted (2xx)
+ *   "invalid"      key present but rejected (401/403) — the actionable one
+ *   "unconfigured" no re_ key set (SMTP-only / dev)
+ *   "unknown"      network error or non-auth status — don't cry wolf
+ */
+export async function resendKeyStatus(): Promise<
+  "ok" | "invalid" | "unconfigured" | "unknown"
+> {
+  const key = resendApiKey();
+  if (!key) return "unconfigured";
+  try {
+    const res = await fetch("https://api.resend.com/domains", {
+      headers: { Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (res.status === 401 || res.status === 403) return "invalid";
+    return res.ok ? "ok" : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
 export interface ResendSendPayload {
   from: string;
   to: string;

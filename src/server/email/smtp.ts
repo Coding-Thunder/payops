@@ -112,6 +112,17 @@ export function classifyMailError(err: unknown): {
         "Your mail provider is temporarily throttling sends (rate limit or daily quota). Wait a few minutes, then try again.",
     };
   }
+  // Resend HTTP API rejects a bad/revoked key with 401 (403). Unlike an SMTP
+  // "check your app password", this is a SERVER-config error the operator can't
+  // retry away — the exact outage that silently failed every payment-request
+  // email. Say so plainly so nobody keeps hammering "send".
+  if (responseCode === 401 || responseCode === 403) {
+    return {
+      category: "auth",
+      message:
+        "The email provider rejected our API credentials — the email API key is invalid or revoked. This is a server configuration issue, not a temporary glitch; retrying won't help. An administrator needs to fix the email credentials in the app's environment.",
+    };
+  }
   if (
     code === "EAUTH" ||
     responseCode === 530 ||

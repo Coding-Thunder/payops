@@ -10,6 +10,17 @@ describe("classifyMailError", () => {
     expect(classifyMailError({ responseCode: 530 }).category).toBe("auth");
   });
 
+  it("maps a Resend HTTP 401/403 (invalid API key) to auth, not generic retry", () => {
+    // The exact outage: Resend rejected the key with 401. It must NOT read as
+    // a transient "try again" — it's a config error that won't self-resolve.
+    for (const responseCode of [401, 403]) {
+      const out = classifyMailError({ responseCode, response: "API key is invalid" });
+      expect(out.category).toBe("auth");
+      expect(out.message).not.toMatch(/try again/i);
+      expect(out.message.toLowerCase()).toMatch(/credential|api key|configuration/);
+    }
+  });
+
   it("maps socket/DNS/timeout codes to connection", () => {
     for (const code of ["ECONNECTION", "ETIMEDOUT", "ESOCKET", "ENOTFOUND"]) {
       expect(classifyMailError({ code }).category).toBe("connection");
