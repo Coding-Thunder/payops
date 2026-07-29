@@ -140,12 +140,20 @@ function shouldEnforceOrigin(
 
 function handleError(err: unknown): NextResponse {
   if (err instanceof ZodError) {
+    const issues = err.issues.map((i) => ({
+      path: i.path.join("."),
+      message: i.message,
+      code: i.code,
+    }));
+    // Log the failing FIELD PATHS (not the body — it carries customer PII)
+    // so a 422 in prod points straight at the offending field instead of an
+    // opaque "Unprocessable Entity". The client still gets the full `issues`.
+    logger.warn("api.validation_failed", {
+      fields: issues.map((i) => i.path || "(root)"),
+      codes: issues.map((i) => i.code),
+    });
     return jsonError(422, "VALIDATION_ERROR", "Invalid request data", {
-      issues: err.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-        code: i.code,
-      })),
+      issues,
     });
   }
 

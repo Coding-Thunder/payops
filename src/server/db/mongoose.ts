@@ -33,6 +33,12 @@ export async function connectMongo(): Promise<Mongoose> {
         bufferCommands: false,
         maxPoolSize: 10,
         serverSelectionTimeoutMS: 10_000,
+        // Fail a hung *connect* or a hung in-flight *operation* fast, so a
+        // stalled socket surfaces as a typed 500/502 the caller can retry
+        // instead of hanging past the ingress timeout and becoming a 504.
+        // Both are well below any reverse-proxy/serverless request ceiling.
+        connectTimeoutMS: 10_000,
+        socketTimeoutMS: 20_000,
         autoIndex: process.env.NODE_ENV !== "production",
       })
       .then((m) => {

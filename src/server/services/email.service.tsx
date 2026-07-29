@@ -164,6 +164,18 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
     return { id: null };
   }
 
+  // Which transport is actually live in prod? This one line answers it from
+  // the logs: `resend-http` = the fast 443 path (the fix), `smtp` = the old
+  // 465 path that hangs on the cloud host. If prod ever shows `smtp` here,
+  // the RESEND_API_KEY / re_-prefixed SMTP_PASS isn't reaching the runtime.
+  const transport = apiKey ? "resend-http" : "smtp";
+  const startedAt = Date.now();
+  logger.info("email.sending", {
+    transport,
+    kind: args.kind,
+    toMasked: maskEmail(args.to),
+    orderId: args.orderId ?? undefined,
+  });
   try {
     let messageId: string | null;
     let response: string | null;
@@ -193,6 +205,12 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
       messageId = info.messageId ?? null;
       response = info.response ?? null;
     }
+    logger.info("email.sent", {
+      transport,
+      kind: args.kind,
+      durationMs: Date.now() - startedAt,
+      messageId,
+    });
     await recordAudit({
       action: AuditAction.EMAIL_SENT,
       entityType: AuditEntity.ORDER,
@@ -212,9 +230,11 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
     // human `message` is what reaches the client.
     const { category, message } = classifyMailError(err);
     logger.error("email.send_failed", {
+      transport,
       kind: args.kind,
       toMasked: maskEmail(args.to),
       category,
+      durationMs: Date.now() - startedAt,
       err: err instanceof Error ? err.message : String(err),
     });
     await recordAudit({

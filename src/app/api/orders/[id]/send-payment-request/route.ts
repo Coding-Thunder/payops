@@ -4,6 +4,7 @@ import { Types } from "mongoose";
 
 import { Permission } from "@/lib/constants/permissions";
 import { sendPaymentRequestSchema } from "@/lib/validation";
+import { logger } from "@/lib/logger";
 import { getRequestContext } from "@/server/api/request-context";
 import { idempotencyKeyFrom, runIdempotent } from "@/server/api/idempotency";
 import { jsonOk, withApi } from "@/server/api/respond";
@@ -47,12 +48,25 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
   const actor = await requirePermission(Permission.ORDER_VIEW_OWN);
   if (!actor.orgId) throw new ForbiddenError("Active organization required");
   const { id } = await params;
+  // Trace tag so every log line for THIS request is greppable and each step's
+  // elapsed time is visible — if the logs stop between two steps, that async
+  // op is the one hanging (the classic 504 bottleneck-locator).
+  const t0 = Date.now();
+  const trace = { route: "send-payment-request", orderId: id };
+  const step = (name: string) =>
+    logger.info("send-payment-request.step", {
+      ...trace,
+      step: name,
+      elapsedMs: Date.now() - t0,
+    });
+  step("START");
   const body = await req.json().catch(() => ({}));
   const input = sendPaymentRequestSchema.parse(body);
   const reqCtx = await getRequestContext();
 
   // 1. Patch customer if edited.
   let order = await getOrderById(id, { actor, orgId: actor.orgId });
+  step("order-loaded");
   if (input.customer && Object.keys(input.customer).length > 0) {
     const patched = await updateOrderCustomer(id, input.customer, {
       actor,
@@ -60,6 +74,7 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
       request: reqCtx,
     });
     order = patched.order;
+    step("customer-patched");
   }
 
   // 2. Strict gate, payment link must exist before we email about it.
@@ -87,6 +102,7 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
     "send-payment-request",
     idempotencyKeyFrom(req),
     async () => {
+      step("before-send");
       const result = await sendPaymentRequestEmail(
         order,
         {
@@ -97,6 +113,7 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
         },
         { actor, request: reqCtx },
       );
+      step("email-sent");
 
       // 4. Transition LINK_GENERATED → PAYMENT_PENDING after a successful
       // send. Conditional + tenant-pinned so re-sends to an already-PENDING/
@@ -118,6 +135,7 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
       }
 
       const refreshed = await getOrderById(id, { actor, orgId });
+      step("END");
       return {
         order: refreshed,
         sent: {
