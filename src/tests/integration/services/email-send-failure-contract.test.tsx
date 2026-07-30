@@ -7,6 +7,7 @@ import { ExternalServiceError } from "@/lib/errors";
 import { Branding, ItemType } from "@/server/db/models";
 import { sendPaymentRequestEmail } from "@/server/services/email.service";
 import { getMailer } from "@/server/email/smtp";
+import { deliverViaResend, resendApiKey } from "@/server/email/resend";
 import type { OrderDTO } from "@/types";
 import { ensureMongo, resetDatabase } from "@/tests/utils/db";
 
@@ -19,12 +20,24 @@ vi.mock("@/server/email/smtp", async (importActual) => {
 
 const mockGetMailer = vi.mocked(getMailer);
 
+vi.mock("@/server/email/resend", async (importActual) => {
+  // Keep real key-detection/delivery; the tests drive the transport branch.
+  const actual = await importActual<typeof import("@/server/email/resend")>();
+  return { ...actual, resendApiKey: vi.fn(() => null), deliverViaResend: vi.fn() };
+});
+const mockResendApiKey = vi.mocked(resendApiKey);
+const mockDeliverViaResend = vi.mocked(deliverViaResend);
+
 beforeAll(async () => {
   await ensureMongo();
 });
 beforeEach(async () => {
   await resetDatabase();
   mockGetMailer.mockReset();
+  // Default: no Resend key → send path takes the SMTP branch (the SMTP suite
+  // relies on this). The Resend suite overrides it per-test.
+  mockResendApiKey.mockReturnValue(null);
+  mockDeliverViaResend.mockReset();
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -148,5 +161,45 @@ describe("sendPaymentRequestEmail — SMTP failure error contract", () => {
         note: null,
       }),
     ).rejects.toBeInstanceOf(ExternalServiceError);
+  });
+});
+
+describe("sendPaymentRequestEmail — Resend HTTP failure contract", () => {
+  it("wraps a Resend 401 (invalid API key) as an actionable 502 — the exact prod outage path", async () => {
+    const orgId = new Types.ObjectId().toString();
+    await seedOrgEmailDeps(orgId);
+
+    // Prod sets a Resend key, so the send takes the deliverViaResend branch —
+    // NOT the SMTP branch the tests above cover. This is the path that actually
+    // broke in production (the deployed key rejected with 401).
+    mockResendApiKey.mockReturnValue("re_live_testkey");
+    const resendErr = Object.assign(new Error("Resend API 401"), {
+      responseCode: 401,
+      response: JSON.stringify({
+        statusCode: 401,
+        name: "validation_error",
+        message: "API key is invalid",
+      }),
+    });
+    mockDeliverViaResend.mockRejectedValue(resendErr);
+
+    const promise = sendPaymentRequestEmail(requestOrder(orgId), {
+      subject: "Complete your payment",
+      greeting: null,
+      intro: null,
+      note: null,
+    });
+
+    await expect(promise).rejects.toBeInstanceOf(ExternalServiceError);
+    await expect(promise).rejects.toMatchObject({
+      code: "EXTERNAL_SERVICE_ERROR",
+      statusCode: 502,
+    });
+    // 401 → a config-error message telling the operator to fix credentials,
+    // never a transient "try again"...
+    await expect(promise).rejects.toThrow(/credential|api key|configuration/i);
+    await expect(promise).rejects.not.toThrow(/try again/i);
+    // ...and the raw Resend body never leaks to the client.
+    await expect(promise).rejects.not.toThrow(/validation_error/);
   });
 });
