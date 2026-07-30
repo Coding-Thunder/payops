@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoadingButton } from "@/components/ui/loading-button";
 import { toast } from "@/components/ui/sonner";
 import { api, ApiClientError } from "@/lib/api-client";
+import { useIdempotencyKey } from "@/lib/use-idempotency-key";
 
 /**
  * Documents card on the order detail page.
@@ -61,6 +62,7 @@ export function OrderDocumentsCard({
   const [docs, setDocs] = useState<DocumentDTO[] | null>(null);
   const [issuing, setIssuing] = useState<DocumentKind | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const idempotency = useIdempotencyKey();
 
   useEffect(() => {
     let cancelled = false;
@@ -91,7 +93,12 @@ export function OrderDocumentsCard({
       const res = await api.post<{ document: DocumentDTO }>(
         `/api/orders/${orderId}/documents`,
         { kind },
+        // Idempotency-Key so a double-submit / retry can't issue a duplicate
+        // invoice or receipt for this order.
+        { headers: { "Idempotency-Key": idempotency.take() } },
       );
+      // Success — retire the key so a later, deliberate reissue mints a new one.
+      idempotency.clear();
       setDocs((prev) => [res.document, ...(prev ?? [])]);
       toast.success(`${labelFor(kind)} ${res.document.number} issued`);
     } catch (err) {

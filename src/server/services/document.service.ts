@@ -318,6 +318,28 @@ export async function listDocumentsForOrder(
   return docs.map(toDTO);
 }
 
+/**
+ * The most-recently-issued document of a given kind for an order. Used by the
+ * issue route's idempotency `onDuplicate` branch to return the doc a retried /
+ * double-submitted request already created, instead of minting a second one.
+ */
+export async function latestDocumentForOrder(
+  orderId: string,
+  kind: DocumentKind,
+  ctx: { orgId: string },
+): Promise<DocumentDTO | null> {
+  await connectMongo();
+  if (!Types.ObjectId.isValid(orderId)) return null;
+  const doc = await Document.findOne({
+    orderId: new Types.ObjectId(orderId),
+    orgId: orgIdFilter(ctx.orgId),
+    kind,
+  })
+    .sort({ issuedAt: -1 })
+    .lean<(DocumentDoc & { _id: Types.ObjectId }) | null>();
+  return doc ? toDTO(doc) : null;
+}
+
 /* ──────────────────────────── HTML renderer ─────────────────────────── */
 
 /**
