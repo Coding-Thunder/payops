@@ -3,6 +3,7 @@ import { ZodError } from "zod";
 
 import { AppError, isAppError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
+import { clientIp } from "@/server/api/client-ip";
 
 import {
   applySecurityHeaders,
@@ -120,10 +121,7 @@ function shouldCheckBody(req: Request): boolean {
  *  map without leaking session material on a Set-Cookie dump. */
 function rateLimitKey(req: Request): string {
   const headers = req.headers;
-  const fwd =
-    headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    headers.get("x-real-ip") ||
-    "unknown";
+  const fwd = clientIp(headers) ?? "unknown";
   const cookie = headers.get("cookie") ?? "";
   const sessionMarker = cookie.length > 0 ? cookie.slice(0, 16) : "anon";
   return `${fwd}|${sessionMarker}`;

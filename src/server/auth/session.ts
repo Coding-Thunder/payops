@@ -73,6 +73,7 @@ type UserLean = {
   role: UserRole;
   status: string;
   primaryOrgId?: unknown;
+  sessionsInvalidBefore?: Date | null;
 };
 type MemberLean = {
   role?: UserRole;
@@ -117,6 +118,17 @@ async function validatedUserFromPayload(
 
   if (!user) return null;
   if (user.status !== "ACTIVE") return null;
+
+  // Session revocation: a password change stamps `sessionsInvalidBefore`, so
+  // any token minted before that instant (a still-live cookie on another
+  // device, or a stolen one) is rejected here and must re-authenticate.
+  if (
+    user.sessionsInvalidBefore &&
+    payload.iat &&
+    payload.iat * 1000 < new Date(user.sessionsInvalidBefore).getTime()
+  ) {
+    return null;
+  }
 
   // Resolve the active org. JWT claim wins (an explicit org-switch must be
   // respected even if the user's primary changed). Falls back to the user's

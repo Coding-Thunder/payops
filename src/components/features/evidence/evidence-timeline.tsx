@@ -306,9 +306,16 @@ function EmailRender({
           ) : null}
         </dl>
       </div>
-      <div
-        className="evidence-email-body rounded-md border border-border/70 bg-background p-4 text-[12.5px] text-foreground"
-        dangerouslySetInnerHTML={{ __html: body }}
+      {/* Sandboxed (no allow-scripts): the stored email HTML renders but can't
+          execute inline <script>, load plugins, or navigate the top frame —
+          neutralising stored-XSS on the app origin. The app-wide CSP keeps
+          script-src 'unsafe-inline', so it can't backstop a raw innerHTML sink
+          here; the sandbox does. */}
+      <iframe
+        title="Email body"
+        sandbox=""
+        srcDoc={body}
+        className="evidence-email-body h-72 w-full rounded-md border border-border/70 bg-background"
       />
     </div>
   );

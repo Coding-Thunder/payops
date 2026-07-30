@@ -20,6 +20,9 @@ export interface UserDoc {
   status: RecordState;
   createdBy?: Types.ObjectId | null;
   lastLoginAt?: Date | null;
+  /** Sessions (JWTs) issued before this instant are rejected. Bumped on a
+   *  password change so a reset revokes any still-live session cookie. */
+  sessionsInvalidBefore?: Date | null;
   /** Default organization a user lands in after login. Multi-org users
    *  will gain an org-switcher later; today every user has exactly one
    *  membership and this points at it. Nullable during the legacy →
@@ -71,6 +74,7 @@ const userSchema = new Schema<UserDoc>(
       default: null,
     },
     lastLoginAt: { type: Date, default: null },
+    sessionsInvalidBefore: { type: Date, default: null },
     primaryOrgId: {
       type: Schema.Types.ObjectId,
       ref: "Organization",

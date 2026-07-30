@@ -467,6 +467,9 @@ export async function resetUserPassword(
   ensureCanManageRole(ctx.actor, doc.role);
 
   doc.passwordHash = await hashPassword(input.newPassword);
+  // Boot the user's existing sessions too — an admin-initiated reset should
+  // invalidate any live cookie they (or someone else) still hold.
+  doc.sessionsInvalidBefore = new Date();
   await doc.save();
 
   await recordAudit({

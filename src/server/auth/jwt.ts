@@ -11,6 +11,9 @@ export interface SessionPayload {
   email: string;
   name: string;
   role: UserRole;
+  /** JWT issued-at (epoch seconds). jose populates it; we surface it so
+   *  session validation can reject tokens minted before a password change. */
+  iat?: number;
   /** Active organization for this session. Optional during the
    *  single-tenant → multi-tenant migration window: tokens signed
    *  pre-migration carry no orgId and the session resolver falls back
@@ -144,6 +147,7 @@ export async function verifySession(
       email: payload.email as string,
       name: payload.name as string,
       role: payload.role as UserRole,
+      iat: typeof payload.iat === "number" ? payload.iat : undefined,
       orgId,
       orgIds,
       imp,

@@ -313,6 +313,9 @@ export async function completePasswordReset(
 
   const nextHash = await hashPassword(newPassword);
   user.passwordHash = nextHash;
+  // Revoke every existing session so a completed reset also boots any live
+  // cookie (e.g. an attacker's), not just the reset link's own token.
+  user.sessionsInvalidBefore = new Date();
   await user.save();
 
   await recordAudit({
