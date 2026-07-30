@@ -114,6 +114,25 @@ describe("POST /api/orders", () => {
     );
   });
 
+  it("returns 400 (not 500) on a malformed JSON body", async () => {
+    sessionMock = await mockSession(actorFor(UserRole.ADMIN));
+
+    // A raw, unparseable body — req.json() throws SyntaxError. This is a
+    // client error and must not read as an INTERNAL_ERROR / 500.
+    const req = buildRequest("/api/orders", {
+      method: "POST",
+      body: "{ not: valid json",
+      headers: { "content-type": "application/json" },
+    });
+    const res = await createRoute(req);
+    const { status, body } = await jsonBody(res);
+    expect(status).toBe(400);
+    expectErr(body as never);
+    expect((body as { error: { code: string } }).error.code).toBe(
+      "BAD_REQUEST",
+    );
+  });
+
   it("STAFF role can create orders", async () => {
     sessionMock = await mockSession(actorFor(UserRole.STAFF));
     await seedRentalBookingFor(sessionMock.user);

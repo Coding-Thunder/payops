@@ -170,6 +170,15 @@ function handleError(err: unknown): NextResponse {
     return jsonError(err.statusCode, err.code, err.message, err.details);
   }
 
+  // A malformed or empty JSON request body: `req.json()` throws a SyntaxError.
+  // That's a CLIENT error (400), not a server bug — without this branch it
+  // fell through to the 500 below and logged at error level, so ~30 mutating
+  // routes turned a bad curl/double-submit into a fake "INTERNAL_ERROR".
+  if (err instanceof SyntaxError) {
+    logger.warn("api.bad_json", { message: err.message });
+    return jsonError(400, "BAD_REQUEST", "Request body must be valid JSON.");
+  }
+
   if (err instanceof Error) {
     logger.error("api.unhandled_error", { message: err.message });
     return jsonError(500, "INTERNAL_ERROR", "Something went wrong");
