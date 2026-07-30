@@ -17,38 +17,80 @@ let cachedCheck: { ts: number; warnings: string[] } | null = null;
 let warnedOnce = false;
 let warnedEmailOnce = false;
 
+/** DB reachability is checked on a short 15s cache — long enough not to ping
+ *  Mongo on every probe, short enough that a wedged connection surfaces fast
+ *  so the platform can recycle the instance. */
+const DB_TTL_MS = 15_000;
+let dbCheck: { ts: number; ok: boolean } | null = null;
+
+/**
+ * Is Mongo actually reachable right now? A `connect + admin().ping()` bounded
+ * to 3s. Unlike the readyState flag, this catches a "connected but wedged"
+ * socket (stale connection Mongo can't answer on).
+ */
+async function isDbReachable(): Promise<boolean> {
+  const now = Date.now();
+  if (dbCheck && now - dbCheck.ts < DB_TTL_MS) return dbCheck.ok;
+  let ok = false;
+  try {
+    await Promise.race([
+      (async () => {
+        const m = await connectMongo();
+        await m.connection.db?.admin().ping();
+      })(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("db probe timeout")), 3_000),
+      ),
+    ]);
+    ok = true;
+  } catch (err) {
+    ok = false;
+    logger.error("health.db_unreachable", {
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
+  dbCheck = { ts: now, ok };
+  return ok;
+}
+
 /**
  * GET /api/health
  *
- * Public liveness probe. Always returns 200 + `ok: true` so this
- * endpoint stays cheap for load balancers, but the `data.status`
- * field plus a `warnings` array surface ops-grade preconditions the
- * tenant should fix. Today the only check is:
+ * Readiness probe. Returns HTTP **503 + status "unhealthy"** when Mongo is
+ * unreachable (a hard dependency — the app can't serve), so the platform's
+ * health check recycles a wedged instance instead of leaving it up forever.
+ * Otherwise **200**, with `data.status` = "healthy" | "degraded" and a
+ * `warnings[]` array surfacing ops preconditions:
  *
- *   - encrypted `GatewayCredential` rows exist AND
- *     `TRACETXN_MASTER_KEY` is missing/malformed → "degraded"
+ *   - `TRACETXN_MASTER_KEY` missing while encrypted credentials exist
+ *   - the email transport credential being rejected by Resend
  *
- * (Decryption would otherwise fail on the next payment-link request.)
- *
- * The first detection of the misconfiguration logs once at ERROR so
- * an operator tailing logs sees it in the boot trail, not just on
- * their monitoring dashboard.
+ * The body (incl. `version`/`builtAt`) is returned on 503 too, so deploy
+ * verification keeps working during a DB blip.
  */
 export async function GET() {
+  const dbOk = await isDbReachable();
   const warnings = await computeWarnings();
-  const status = warnings.length === 0 ? "healthy" : "degraded";
-  return NextResponse.json({
-    ok: true,
-    data: {
-      status,
-      ts: new Date().toISOString(),
-      // Frozen at build time (next.config.ts) — the commit + build time of the
-      // running deploy. `curl /api/health` now answers "is my push live?".
-      version: process.env.APP_VERSION ?? "unknown",
-      builtAt: process.env.BUILT_AT ?? null,
-      warnings,
+  const status = !dbOk
+    ? "unhealthy"
+    : warnings.length === 0
+      ? "healthy"
+      : "degraded";
+  return NextResponse.json(
+    {
+      ok: dbOk,
+      data: {
+        status,
+        ts: new Date().toISOString(),
+        // Frozen at build time (next.config.ts) — the commit + build time of
+        // the running deploy. `curl /api/health` answers "is my push live?".
+        version: process.env.APP_VERSION ?? "unknown",
+        builtAt: process.env.BUILT_AT ?? null,
+        warnings,
+      },
     },
-  });
+    { status: dbOk ? 200 : 503 },
+  );
 }
 
 async function computeWarnings(): Promise<string[]> {

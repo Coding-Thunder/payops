@@ -842,7 +842,11 @@ export async function initiatePayment(
   if (result.kind === "raced") {
     // Another concurrent call flipped us out of NOT_INITIATED. Bin the
     // brand-new orphan gateway session and return the existing state.
-    void gateway.expireSession(session.sessionId);
+    void gateway.expireSession(session.sessionId).catch((err) => {
+      logger.warn("order.expire_session_failed", {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    });
     const racedDoc = await Order.findOne(
       scopedOrderFilter(id, ctx.orgId),
     ).lean<OrderDoc & { _id: Types.ObjectId }>();
@@ -1159,7 +1163,11 @@ export async function regeneratePaymentLink(
   // gateway (best-effort; gateway impls log + swallow on
   // already-expired).
   if (doc.payment.stripeSessionId) {
-    void gateway.expireSession(doc.payment.stripeSessionId);
+    void gateway.expireSession(doc.payment.stripeSessionId).catch((err) => {
+      logger.warn("order.expire_session_failed", {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    });
   }
 
   const gatewayProduct = describeProductForGateway(doc);
