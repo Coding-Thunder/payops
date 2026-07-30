@@ -442,6 +442,25 @@ export interface ComposedPaymentRequest {
   gatewayLabel: string | null;
 }
 
+type PaymentRequestConfig = {
+  branding: Awaited<ReturnType<typeof getBranding>>;
+  tpl: Awaited<ReturnType<typeof getActiveTemplateContent>>;
+  settings: Awaited<ReturnType<typeof getSettings>>;
+};
+
+/** The org config a payment-request email needs (branding + active template +
+ *  settings), loaded in one parallel round-trip so callers can share it. */
+async function loadPaymentRequestConfig(
+  orgId?: string | null,
+): Promise<PaymentRequestConfig> {
+  const [branding, tpl, settings] = await Promise.all([
+    getBranding(orgId),
+    getActiveTemplateContent("payment-request", orgId),
+    getSettings(orgId),
+  ]);
+  return { branding, tpl, settings };
+}
+
 export async function composePaymentRequestProps(
   order: OrderDTO,
   overrides: PaymentRequestOverrides = {},
@@ -450,17 +469,18 @@ export async function composePaymentRequestProps(
     consentMessage: string;
     consentRequired: boolean;
   } | null,
+  // Caller-supplied config to avoid a SECOND identical fetch on the send path
+  // (sendPaymentRequestEmail already loads this trio to build the subject +
+  // consent). Preview and other callers omit it and fetch fresh.
+  prefetched?: PaymentRequestConfig,
 ): Promise<ComposedPaymentRequest> {
   // Pass 5f: composable block renderer. Works for any ItemType, the
   // block list is resolved from the order's lineItems' ItemTypes plus
   // platform defaults. The legacy "vehicle + trip" UI is just one set
   // of contributed blocks (SCHEDULING_WINDOW + ITEM_HERO) on the
   // rental_booking ItemType.
-  const [branding, tpl, settings] = await Promise.all([
-    getBranding(order.orgId),
-    getActiveTemplateContent("payment-request", order.orgId),
-    getSettings(order.orgId),
-  ]);
+  const { branding, tpl, settings } =
+    prefetched ?? (await loadPaymentRequestConfig(order.orgId));
 
   const effectiveConsentMessage =
     consent?.consentMessage ?? settings.consentMessage;
@@ -627,11 +647,8 @@ export async function sendPaymentRequestEmail(
       "Order has no payment link yet, generate the link via the email composer before sending the request.",
     );
   }
-  const [branding, tpl, settings] = await Promise.all([
-    getBranding(order.orgId),
-    getActiveTemplateContent("payment-request", order.orgId),
-    getSettings(order.orgId),
-  ]);
+  const config = await loadPaymentRequestConfig(order.orgId);
+  const { branding, tpl, settings } = config;
 
   let consentUrl: string | null = null;
   let consentToken: string | null = null;
@@ -675,11 +692,18 @@ export async function sendPaymentRequestEmail(
     }
   }
 
-  const composed = await composePaymentRequestProps(order, overrides, {
-    consentUrl,
-    consentMessage: settings.consentMessage,
-    consentRequired: settings.consentMode === ConsentMode.REQUIRED,
-  });
+  const composed = await composePaymentRequestProps(
+    order,
+    overrides,
+    {
+      consentUrl,
+      consentMessage: settings.consentMessage,
+      consentRequired: settings.consentMode === ConsentMode.REQUIRED,
+    },
+    // Reuse the config already loaded above — no second round-trip on the
+    // revenue path (was 3–6 redundant Mongo reads per send).
+    config,
+  );
   const toAddress = overrides.toOverride?.trim() || order.customer.email;
   const html = await render(<UniversalOrderEmail {...composed.template} />);
   const text = await render(<UniversalOrderEmail {...composed.template} />, {
