@@ -11,29 +11,22 @@ import { cn } from "@/lib/utils";
  * not SaaS chrome.
  *
  * Layout (left→right):
- *   [LIVE|TEST badge]  [Workspace]  [Stripe health]  [Webhook health]
- *   [Queue]  [SSE]  [Region]  [UTC clock]  [Operator]
+ *   [LIVE|TEST badge]  [Workspace]  [System health]  [SSE]
+ *   [Region]  [UTC clock]  [Operator]
  *
  * Heights stay tight (28px). Type is monospace, 10.5px, uppercase
  * with letter-spacing, the visual signature of an ops console.
  *
- * Health indicators are presentational (dot + label). Real backends
- * for Stripe / webhook / queue health are wired separately and
- * stream into this component via props when available; defaults
- * read "OK" so the strip never *lies*, it shows the conservative
- * default until a real signal supersedes it.
- *
- * Pure client-side; no API calls. The SSE state is the only real
- * live data here today (via useRealtimeStatus). LIVE/TEST is
- * detected from the Stripe publishable-key env at first render.
+ * Health is REAL, not decorative: the SYS badge polls `/api/health` (public)
+ * every 60s and reflects healthy / degraded / unhealthy — so a rejected email
+ * key or an unreachable DB shows here instead of a fabricated green. (The old
+ * strip hard-coded Stripe/WH/Q to "OK" and read green straight through a live
+ * outage.) SSE state is live via useRealtimeStatus; LIVE/TEST is detected from
+ * the Stripe publishable-key env at first render.
  */
 
 export interface TelemetryStripProps {
   workspace: string;
-  /** Optional override; defaults to "OK" / "live". */
-  stripe?: "ok" | "degraded" | "down" | "unknown";
-  webhook?: "ok" | "degraded" | "down" | "unknown";
-  queue?: "ok" | "degraded" | "down" | "unknown";
   /** Optional explicit env mode. Defaults to detection from the
    *  Stripe publishable-key prefix at render time. */
   env?: "live" | "test";
@@ -66,14 +59,12 @@ function detectEnv(): "live" | "test" {
 
 export function TelemetryStrip({
   workspace,
-  stripe = "ok",
-  webhook = "ok",
-  queue = "ok",
   env,
   operatorLabel,
   region = "US-East",
 }: TelemetryStripProps) {
   const realtime = useRealtimeStatus();
+  const health = useSystemHealth();
   const mode = env ?? detectEnv();
 
   // UTC clock, ticks every 15s. Operators glance at it constantly
@@ -131,13 +122,7 @@ export function TelemetryStrip({
         </span>
       </Cell>
       <Cell>
-        <HealthBadge label="Stripe" tone={stripe} />
-      </Cell>
-      <Cell>
-        <HealthBadge label="WH" tone={webhook} />
-      </Cell>
-      <Cell>
-        <HealthBadge label="Q" tone={queue} />
+        <HealthBadge label="SYS" tone={health.tone} value={health.label} />
       </Cell>
       <Cell>
         <RealtimeDot status={realtime} />
@@ -221,9 +206,12 @@ function EnvBadge({ mode }: { mode: "live" | "test" }) {
 function HealthBadge({
   label,
   tone,
+  value,
 }: {
   label: string;
   tone: "ok" | "degraded" | "down" | "unknown";
+  /** Overrides the default tone label (e.g. "Degraded" instead of "Slow"). */
+  value?: string;
 }) {
   const t = TONE[tone];
   return (
@@ -242,10 +230,55 @@ function HealthBadge({
                 : "text-muted-foreground/80",
         )}
       >
-        {t.label}
+        {value ?? t.label}
       </span>
     </span>
   );
+}
+
+/* ─── Real system health (polls /api/health) ───────────────────── */
+
+type HealthTone = "ok" | "degraded" | "down" | "unknown";
+
+/**
+ * Polls the public `/api/health` endpoint and maps its `data.status` to a
+ * telemetry tone. Kept deliberately cheap: one fetch on mount then every 60s,
+ * and the endpoint itself is process-cached server-side. Never throws — a
+ * failed probe reads as "unknown" (dash), never a false "OK".
+ */
+function useSystemHealth(): { tone: HealthTone; label: string } {
+  const [state, setState] = React.useState<{ tone: HealthTone; label: string }>(
+    { tone: "unknown", label: "…" },
+  );
+  React.useEffect(() => {
+    let alive = true;
+    const check = async () => {
+      try {
+        const res = await fetch("/api/health", { cache: "no-store" });
+        const json = (await res.json()) as { data?: { status?: string } };
+        if (!alive) return;
+        const status = json?.data?.status;
+        setState(
+          status === "healthy"
+            ? { tone: "ok", label: "OK" }
+            : status === "degraded"
+              ? { tone: "degraded", label: "Degraded" }
+              : status === "unhealthy"
+                ? { tone: "down", label: "Down" }
+                : { tone: "unknown", label: "-" },
+        );
+      } catch {
+        if (alive) setState({ tone: "unknown", label: "-" });
+      }
+    };
+    void check();
+    const id = window.setInterval(() => void check(), 60_000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, []);
+  return state;
 }
 
 /* ─── SSE realtime dot (compact) ──────────────────────────────── */
