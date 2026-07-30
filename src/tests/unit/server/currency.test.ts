@@ -2,12 +2,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { toMinorUnits } from "@/server/services/order.service";
+import { toMinorUnits } from "@/server/payments/currency";
 
 /**
- * Pure helpers exported from the order service. The DB-touching surface
- * lives in the integration suite, these tests run instantly with no
- * Mongo connection.
+ * Currency minor-unit conversion — the single source of truth used by every
+ * payment gateway (previously duplicated in order.service). Pure, no Mongo.
  */
 
 describe("toMinorUnits", () => {

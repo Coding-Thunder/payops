@@ -65,25 +65,6 @@ import {
   upsertCustomerFromOrder,
 } from "./customer.service";
 
-const ZERO_DECIMAL_CURRENCIES = new Set([
-  "BIF",
-  "CLP",
-  "DJF",
-  "GNF",
-  "JPY",
-  "KMF",
-  "KRW",
-  "MGA",
-  "PYG",
-  "RWF",
-  "UGX",
-  "VND",
-  "VUV",
-  "XAF",
-  "XOF",
-  "XPF",
-]);
-
 interface OrderActor {
   id: string;
   name: string;
@@ -124,13 +105,6 @@ function scopedOrderFilter(
     return { _id: id, orgId: new Types.ObjectId(orgId) };
   }
   return { _id: id };
-}
-
-export function toMinorUnits(amount: number, currency: string): number {
-  if (ZERO_DECIMAL_CURRENCIES.has(currency.toUpperCase())) {
-    return Math.round(amount);
-  }
-  return Math.round(amount * 100);
 }
 
 function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO {
