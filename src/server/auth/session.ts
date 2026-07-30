@@ -66,50 +66,79 @@ export const getCurrentUser = cache(
   },
 );
 
+type UserLean = {
+  _id: unknown;
+  name: string;
+  email: string;
+  role: UserRole;
+  status: string;
+  primaryOrgId?: unknown;
+};
+type MemberLean = {
+  role?: UserRole;
+  permissionMode?: MemberPermissionMode;
+  permissions?: string[];
+} | null;
+
 async function validatedUserFromPayload(
   payload: SessionPayload,
 ): Promise<AuthenticatedUser | null> {
   await connectMongo();
-  const user = await User.findById(payload.sub).lean<{
-    _id: unknown;
-    name: string;
-    email: string;
-    role: UserRole;
-    status: string;
-    primaryOrgId?: unknown;
-  }>();
-  if (!user) return null;
-  if (user.status !== "ACTIVE") return null;
-  // Resolve the active org. JWT claim wins (an explicit org-switch must
-  // be respected even if the user's primary changed). Falls back to the
-  // user's primary org so legacy tokens issued before the multi-tenant
-  // migration keep working without forcing a re-login.
-  const orgId = payload.orgId ?? (user.primaryOrgId ? String(user.primaryOrgId) : null);
 
-  // Resolve the ACTIVE workspace membership: the per-org role + permission
-  // configuration is authoritative for authorization (a user could be a
-  // member of one workspace and the owner of another). Falls back to
-  // User.role for legacy sessions with no membership row.
-  let effectiveRole: UserRole = user.role;
-  let permissionMode: MemberPermissionMode = "full";
-  let customGrants: string[] = [];
-  if (orgId && Types.ObjectId.isValid(orgId)) {
-    const member = await OrgMember.findOne({
-      orgId: new Types.ObjectId(orgId),
-      userId: new Types.ObjectId(String(user._id)),
+  // Fast path: current tokens carry `orgId`, so the membership query's keys
+  // (orgId from the token, userId = payload.sub) are known WITHOUT the user
+  // doc — both reads run in parallel, halving auth latency on the app's
+  // highest-frequency path. Legacy no-orgId tokens keep the serial path (the
+  // org is derived from the user's primaryOrgId, which needs the user first).
+  const jwtOrgId =
+    payload.orgId && Types.ObjectId.isValid(payload.orgId)
+      ? payload.orgId
+      : null;
+
+  const userQuery = User.findById(payload.sub).lean<UserLean>();
+  const findMember = (org: string) =>
+    OrgMember.findOne({
+      orgId: new Types.ObjectId(org),
+      userId: new Types.ObjectId(String(payload.sub)),
       status: "ACTIVE",
     })
       .select({ role: 1, permissionMode: 1, permissions: 1 })
-      .lean<{
-        role?: UserRole;
-        permissionMode?: MemberPermissionMode;
-        permissions?: string[];
-      } | null>();
-    if (member) {
-      effectiveRole = member.role ?? user.role;
-      permissionMode = member.permissionMode ?? "full";
-      customGrants = member.permissions ?? [];
-    }
+      .lean<MemberLean>();
+
+  let user: UserLean | null;
+  let member: MemberLean = null;
+  let memberResolved = false;
+  if (jwtOrgId) {
+    [user, member] = await Promise.all([userQuery, findMember(jwtOrgId)]);
+    memberResolved = true;
+  } else {
+    user = await userQuery;
+  }
+
+  if (!user) return null;
+  if (user.status !== "ACTIVE") return null;
+
+  // Resolve the active org. JWT claim wins (an explicit org-switch must be
+  // respected even if the user's primary changed). Falls back to the user's
+  // primary org so legacy tokens keep working without forcing a re-login.
+  const orgId =
+    payload.orgId ?? (user.primaryOrgId ? String(user.primaryOrgId) : null);
+
+  // Legacy path only: now that the primary org is known, resolve membership.
+  // (The fast path already fetched it in parallel above.) The per-org role +
+  // permission config is authoritative for authorization; falls back to
+  // User.role for legacy sessions with no membership row.
+  if (!memberResolved && orgId && Types.ObjectId.isValid(orgId)) {
+    member = await findMember(orgId);
+  }
+
+  let effectiveRole: UserRole = user.role;
+  let permissionMode: MemberPermissionMode = "full";
+  let customGrants: string[] = [];
+  if (member) {
+    effectiveRole = member.role ?? user.role;
+    permissionMode = member.permissionMode ?? "full";
+    customGrants = member.permissions ?? [];
   }
 
   const permissions = resolveEffectivePermissions({
