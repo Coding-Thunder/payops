@@ -18,6 +18,7 @@
     "migrate:client-profiles": "tsx --env-file=.env.local scripts/migrate-orders-to-customers.ts",
     "migrate:client-profiles:prod": "tsx scripts/migrate-orders-to-customers.ts",
     "capture:marketing": "tsx --env-file=.env.local scripts/capture-marketing-screenshots.ts",
+    "ensure-indexes:prod": "tsx --env-file=.env.prod scripts/ensure-prod-indexes.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run --config ./vitest.unit.config.mts",
