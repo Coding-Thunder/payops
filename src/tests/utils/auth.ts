@@ -151,6 +151,19 @@ export async function mockSession(
       return user;
     });
 
+  // Faithful to production requireOwner(): OWNER workspace-role + a non-null
+  // org. Without this stub the permission-writer route (the most sensitive
+  // RBAC op) couldn't be integration-tested at its authz boundary.
+  const requireOwner = vi
+    .spyOn(sessionModule, "requireOwner")
+    .mockImplementation(async () => {
+      if (!user) throw new UnauthorizedError();
+      if (user.workspaceRole !== "OWNER" || !user.orgId) {
+        throw new ForbiddenError();
+      }
+      return user as AuthenticatedUser & { orgId: string };
+    });
+
   return {
     user: user ?? (null as never),
     restore() {
@@ -159,6 +172,7 @@ export async function mockSession(
       requirePermission.mockRestore();
       requireAnyPermission.mockRestore();
       requireRole.mockRestore();
+      requireOwner.mockRestore();
     },
   };
 }
