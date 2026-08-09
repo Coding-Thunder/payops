@@ -24,6 +24,27 @@ const serverSchema = z.object({
    *  keep working, but encouraged to rotate to a dedicated secret so a
    *  leak of session material doesn't also forge consent tokens. */
   CONSENT_TOKEN_SECRET: z.string().min(32).optional(),
+  /**
+   * Master key for the per-organization credential vault
+   * (`@/lib/crypto/secret-box`). 32 bytes, base64 or hex.
+   *
+   * INTENTIONALLY OPTIONAL. `parseServer()` throws on any validation
+   * failure and runs on the first `env.server` read in the request path, so
+   * marking this required would take down every deployment that has not set
+   * it yet — including production, on the deploy that introduced it. The
+   * vault therefore fails at the point of use ("credential vault is not
+   * configured") rather than at boot, and organizations with no stored
+   * credentials keep falling back to the deployment-level values.
+   *
+   * Generate with:
+   *   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+   */
+  CREDENTIALS_MASTER_KEY: z.string().optional(),
+  /** Rotation counter for CREDENTIALS_MASTER_KEY. New secrets are sealed
+   *  under this version; older rows keep opening under the version stamped
+   *  on them. */
+  CREDENTIALS_KEY_VERSION: z.coerce.number().int().positive().default(1),
+
   COOKIE_NAME: z.string().default("payops_session"),
   COOKIE_DOMAIN: z.string().optional(),
   COOKIE_SECURE: z

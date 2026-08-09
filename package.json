@@ -9,6 +9,8 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "seed": "tsx --env-file=.env.local scripts/seed.ts",
+    "seed:orgs": "tsx --env-file=.env.local scripts/seed-organizations.ts",
+    "indexes:audit": "tsx --env-file=.env.local scripts/build-indexes.ts",
     "seed:prod": "tsx scripts/seed.ts",
     "seed:aurora": "tsx --env-file=.env.prod scripts/seed-aurora.ts",
     "cleanup:aurora": "tsx --env-file=.env.prod scripts/cleanup-aurora.ts",

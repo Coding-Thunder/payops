@@ -1,6 +1,33 @@
 export { User } from "./user.model";
 export type { UserDoc, UserDocument } from "./user.model";
 
+export { Organization, ORGANIZATION_SLUG_REGEX } from "./organization.model";
+export type {
+  OrganizationBranding,
+  OrganizationDoc,
+  OrganizationDocument,
+  OrganizationEmail,
+  OrganizationEmailTransport,
+  OrganizationPayments,
+  OrganizationSupport,
+} from "./organization.model";
+
+export { OrganizationMember } from "./organization-member.model";
+export type {
+  OrganizationMemberDoc,
+  OrganizationMemberDocument,
+} from "./organization-member.model";
+
+export {
+  CredentialField,
+  CredentialProvider,
+  OrganizationCredential,
+} from "./organization-credential.model";
+export type {
+  OrganizationCredentialDoc,
+  OrganizationCredentialDocument,
+} from "./organization-credential.model";
+
 export { Order } from "./order.model";
 export type { OrderDoc, OrderDocument } from "./order.model";
 

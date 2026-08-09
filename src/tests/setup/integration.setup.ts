@@ -28,6 +28,15 @@ if (process.env.PAYOPS_IT_MONGO_URI) {
 process.env.MONGODB_DB = PER_FILE_DB;
 process.env.PAYOPS_TEST_MODE = "integration";
 
+// Fixed master key for the organization credential vault. Set here for the
+// same reason as the database name: `env.server` memoises on first read, so
+// anything assigned after the test module's imports is ignored. A constant
+// (rather than a random) key keeps failures reproducible. This is a test
+// value and has never been used to seal anything real.
+// (decodes to the 32 ASCII bytes "test-only-master-key-for-payops!")
+process.env.CREDENTIALS_MASTER_KEY ??=
+  "dGVzdC1vbmx5LW1hc3Rlci1rZXktZm9yLXBheW9wcyE=";
+
 import { afterAll, afterEach, beforeAll, beforeEach, vi } from "vitest";
 import mongoose from "mongoose";
 
