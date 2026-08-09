@@ -4,6 +4,30 @@ loadEnvFile(".env.test");
 
 import crypto from "node:crypto";
 
+/**
+ * Claim this file's private logical database *at module scope*, before the
+ * test file's own imports are evaluated.
+ *
+ * This has to happen here rather than in `beforeAll`. `src/lib/env.ts`
+ * memoises its parse on the first `env.server` read, and
+ * `payments/gateways/stripe.ts` reads `env.server` at module scope — so
+ * merely importing anything that reaches the gateway registry freezes the
+ * whole env snapshot, database name included. `beforeAll` runs *after* the
+ * test file's imports, so a name assigned there was silently ignored and
+ * every file quietly shared `payops-it-root`. Combined with
+ * `fileParallelism: true` and the `afterEach` collection wipe below, files
+ * deleted each other's rows mid-test.
+ *
+ * Vitest evaluates setup files before the test module, so assigning here is
+ * early enough for the frozen snapshot to capture the right name.
+ */
+const PER_FILE_DB = `it-${crypto.randomUUID().slice(0, 8)}`;
+if (process.env.PAYOPS_IT_MONGO_URI) {
+  process.env.MONGODB_URI = process.env.PAYOPS_IT_MONGO_URI;
+}
+process.env.MONGODB_DB = PER_FILE_DB;
+process.env.PAYOPS_TEST_MODE = "integration";
+
 import { afterAll, afterEach, beforeAll, beforeEach, vi } from "vitest";
 import mongoose from "mongoose";
 
@@ -72,7 +96,6 @@ vi.mock("next/headers", () => ({
  */
 
 let stripeStub: StripeStub | null = null;
-let perFileDbName: string | null = null;
 
 export function getCurrentTestStripe(): StripeStub {
   if (!stripeStub) {
@@ -84,16 +107,13 @@ export function getCurrentTestStripe(): StripeStub {
 }
 
 beforeAll(async () => {
-  const rootUri = process.env.PAYOPS_IT_MONGO_URI;
-  if (!rootUri) {
+  if (!process.env.PAYOPS_IT_MONGO_URI) {
     throw new Error(
       "PAYOPS_IT_MONGO_URI not set — did integration.global-setup.ts run?",
     );
   }
-  perFileDbName = `it-${crypto.randomUUID().slice(0, 8)}`;
-  process.env.MONGODB_DB = perFileDbName;
-  process.env.MONGODB_URI = rootUri;
-  process.env.PAYOPS_TEST_MODE = "integration";
+  // The database name itself is claimed at module scope above — reassigning
+  // it here would be too late to reach the memoised env snapshot.
 
   // Force a clean module-level cache for the shared mongoose connection.
   delete (globalThis as { __payopsMongoose?: unknown }).__payopsMongoose;
