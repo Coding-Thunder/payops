@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { AuditAction, OrderStatus } from "@/lib/constants/enums";
-import { AuditLog, Order } from "@/server/db/models";
+import { AuditAction, EmailKind, OrderStatus } from "@/lib/constants/enums";
+import {
+  AuditLog,
+  Order,
+  PendingEmail,
+  PendingEmailStatus,
+} from "@/server/db/models";
 import { processStripeEvent } from "@/server/services/webhook.service";
 import {
   asyncPaymentFailedWebhook,
@@ -91,19 +96,27 @@ describe("checkout.session.completed", () => {
     ]);
     expect([a.duplicate, b.duplicate].sort()).toEqual([false, true]);
 
+    // The send is no longer inline — the winning delivery enqueues exactly
+    // one outbox row and the loser enqueues none. That row is what
+    // guarantees the customer is mailed once.
+    const queued = await PendingEmail.find({
+      orderId: order._id,
+      kind: EmailKind.PAYMENT_CONFIRMATION,
+    });
+    expect(queued).toHaveLength(1);
+    expect(queued[0]!.status).toBe(PendingEmailStatus.PENDING);
+
+    // `confirmationEmailSentAt` is stamped by the drainer after a
+    // successful send, not by the webhook — so it is still null here.
     const updated = await Order.findById(order._id);
-    expect(updated?.payment.confirmationEmailSentAt).toBeInstanceOf(Date);
-    // No SMTP in tests — should have logged an EMAIL_FAILED row.
-    expect(
-      await AuditLog.countDocuments({ action: AuditAction.EMAIL_FAILED }),
-    ).toBe(1);
+    expect(updated?.payment.confirmationEmailSentAt).toBeNull();
   });
 
-  it("retries the confirmation email when a duplicate event arrives but the previous send failed", async () => {
-    // Simulate the state we'd reach if delivery #1 marked the order PAID
-    // but the SMTP send failed and rolled back the email claim. Delivery
-    // #2 should detect the gap and re-attempt the send rather than
-    // silently no-op.
+  it("never enqueues a second confirmation email for an already-paid order", async () => {
+    // A duplicate delivery for an order that is already PAID must not queue
+    // another email. Retrying a *failed* send is the outbox drainer's job
+    // (attempts + backoff on the PendingEmail row), not the webhook's — the
+    // webhook guarantees exactly one confirmation-email lifecycle per order.
     const order = await factoryCreateOrder({
       status: OrderStatus.PAID,
       payment: {
@@ -122,9 +135,6 @@ describe("checkout.session.completed", () => {
     });
     event.eventId = "evt_test_retry_email";
 
-    const before = await AuditLog.countDocuments({
-      action: AuditAction.EMAIL_FAILED,
-    });
     const result = await processStripeEvent(event);
 
     expect(result).toMatchObject({
@@ -133,17 +143,14 @@ describe("checkout.session.completed", () => {
       orderId: String(order._id),
     });
 
-    // No SMTP configured → another EMAIL_FAILED row was written (rather
-    // than silently skipping the retry).
-    const after = await AuditLog.countDocuments({
-      action: AuditAction.EMAIL_FAILED,
-    });
-    expect(after - before).toBe(1);
-
-    // The order's confirmationEmailSentAt is now stamped (claimed) so a
-    // subsequent duplicate won't re-attempt.
-    const updated = await Order.findById(order._id);
-    expect(updated?.payment.confirmationEmailSentAt).toBeInstanceOf(Date);
+    // The duplicate branch returns before the enqueue, so no outbox row is
+    // created and the customer cannot be double-mailed.
+    expect(
+      await PendingEmail.countDocuments({
+        orderId: order._id,
+        kind: EmailKind.PAYMENT_CONFIRMATION,
+      }),
+    ).toBe(0);
   });
 
   it("returns order_not_found when no matching order exists", async () => {

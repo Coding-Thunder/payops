@@ -99,7 +99,9 @@ describe("LoginForm", () => {
     await user.type(screen.getByLabelText(/password/i), "Hunter2!");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
-    await waitFor(() => expect(replace).toHaveBeenCalledWith("/dashboard"));
+    // `safeNext` rejects the protocol-relative path and falls back to the
+    // authed landing page, which lives under the `/app` prefix.
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/app/dashboard"));
   });
 
   it("surfaces a server error message inline", async () => {

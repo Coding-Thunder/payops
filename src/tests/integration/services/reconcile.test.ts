@@ -181,8 +181,34 @@ describe("reconcileOrderPayment", () => {
       validCreateOrderInput().charges[0].amount * 100,
     );
 
-    const result = await reconcileOrderPayment(created.id);
+    // An unauthenticated caller must present the gateway session id and it
+    // must match the one stored on the order. Without that proof this
+    // endpoint would be a no-auth way to trigger Stripe API calls for any
+    // guessed order id, so `reconcileOrderPayment` refuses.
+    const stored = await Order.findById(created.id);
+    const sessionId = stored!.payment.stripeSessionId!;
+
+    const result = await reconcileOrderPayment(created.id, undefined, {
+      sessionId,
+    });
     expect(result.changed).toBe(true);
     expect(result.order.status).toBe(OrderStatus.PAID);
+  });
+
+  it("refuses public reconcile when the session proof is missing or wrong", async () => {
+    const actor = actorFor(UserRole.ADMIN);
+    const { order: draft } = await createOrder(validCreateOrderInput(), {
+      actor,
+    });
+    const { order: created } = await initiatePayment(draft.id, { actor });
+
+    await expect(reconcileOrderPayment(created.id)).rejects.toThrow(
+      /invalid session/i,
+    );
+    await expect(
+      reconcileOrderPayment(created.id, undefined, {
+        sessionId: "cs_test_not_this_order",
+      }),
+    ).rejects.toThrow(/invalid session/i);
   });
 });

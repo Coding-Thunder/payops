@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { UserRole } from "@/lib/constants/enums";
+import { PaymentTiming, UserRole } from "@/lib/constants/enums";
 import { GET as listRoute, POST as createRoute } from "@/app/api/orders/route";
 import { actorFor, mockSession } from "@/tests/utils/auth";
 import { buildRequest, expectErr, expectOk, jsonBody } from "@/tests/utils/api";
@@ -69,11 +69,18 @@ describe("POST /api/orders", () => {
   it("returns 422 when validation fails", async () => {
     sessionMock = await mockSession(actorFor(UserRole.ADMIN));
 
+    // A negative charge amount must be rejected by `chargeInputSchema`.
+    // NB: this used to override a top-level `pricing` key, which the schema
+    // stopped having when the single amount became the `charges` breakdown —
+    // Zod silently stripped the unknown key, so the request was valid and the
+    // assertion had quietly stopped testing validation at all.
     const req = buildRequest("/api/orders", {
       method: "POST",
       body: {
         ...validCreateOrderInput(),
-        pricing: { amount: -1, currency: "USD" },
+        charges: [
+          { name: "Rental cost", amount: -1, timing: PaymentTiming.PREPAID },
+        ],
       },
     });
     const res = await createRoute(req);
