@@ -48,3 +48,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Build artifacts at ANY depth, not just the repo root.
+# The patterns above are root-anchored (leading "/"), so a nested app's
+# node_modules/.next stays stageable. That is how 26k files from another
+# branch's app once showed up as untracked on this branch. These unanchored
+# rules are the backstop — do not add a leading slash to them.
+node_modules/
+.next/
+out/
