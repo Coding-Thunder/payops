@@ -44,6 +44,15 @@ const PUBLIC_PREFIXES = [
   // acknowledgement.service verifies the HMAC token before any DB write.
   "/acknowledge/",
   "/api/acknowledge/",
+  // Per-organization gateway webhooks: /api/webhooks/<provider>/<orgSlug>.
+  // The deployment-level /api/webhooks/stripe is an exact PUBLIC_PATH above,
+  // which does NOT cover sub-paths — without this prefix the proxy would
+  // 307 a second organization's Stripe deliveries to /login and its
+  // payments would silently never confirm. The slug in the URL grants
+  // nothing: it only selects which signing secret to verify against, and an
+  // event signed with the wrong key is rejected exactly like an unsigned
+  // one.
+  "/api/webhooks/",
 ];
 
 /** Admin-only path prefixes (super_admin + admin). */
