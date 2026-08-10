@@ -51,7 +51,7 @@ const { sendPaymentConfirmationEmail } = await import(
 );
 
 const actor = actorFor(UserRole.ADMIN);
-const DEPLOYMENT_FROM = "TraceTxn Test <test@tracetxn.local>";
+const DEPLOYMENT_FROM = "PayOps Test <test@payops.local>";
 
 async function makeOrg(
   slug: string,

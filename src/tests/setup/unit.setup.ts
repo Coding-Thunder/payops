@@ -1,6 +1,6 @@
 import { loadEnvFile } from "./load-env";
 
-loadEnvFile(".env.test");
+loadEnvFile(".env.payops.test");
 
 import "@testing-library/jest-dom/vitest";
 

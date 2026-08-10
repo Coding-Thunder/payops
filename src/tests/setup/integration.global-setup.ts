@@ -18,7 +18,7 @@ import { loadEnvFile } from "./load-env";
 let mongod: MongoMemoryServer | null = null;
 
 export async function setup() {
-  loadEnvFile(".env.test");
+  loadEnvFile(".env.payops.test");
   process.env.PAYOPS_TEST_MODE = "integration";
 
   mongod = await MongoMemoryServer.create({

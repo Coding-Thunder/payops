@@ -46,7 +46,7 @@ const { sendPaymentConfirmationEmail, sendPaymentRequestEmail } = await import(
 );
 
 /** Values this deployment is configured with — see .env.test. */
-const EXPECTED_FROM = "TraceTxn Test <test@tracetxn.local>";
+const EXPECTED_FROM = "PayOps Test <test@payops.local>";
 /** EMAIL_REPLY_TO is unset in .env.test, and the service maps "" -> undefined. */
 const EXPECTED_REPLY_TO = undefined;
 /**
@@ -111,7 +111,7 @@ describe("payment confirmation email", () => {
     expect(html).toContain(EXPECTED_SUPPORT_PHONE);
     expect(html).toContain(order.orderNumber);
     // The operator-facing APP_NAME must never leak onto a customer surface.
-    expect(html).not.toContain("TraceTxn Test");
+    expect(html).not.toContain("PayOps Test");
   });
 });
 

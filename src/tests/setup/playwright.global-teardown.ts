@@ -19,7 +19,7 @@ import { loadEnvFile } from "./load-env";
 const CREDS_FILE = path.resolve(process.cwd(), "reports/.smoke-creds.json");
 
 export default async function globalTeardown() {
-  loadEnvFile(".env.smoke");
+  loadEnvFile(".env.payops.smoke");
 
   const uri = process.env.MONGODB_URI;
   const dbName = process.env.MONGODB_DB;

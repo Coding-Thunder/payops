@@ -36,7 +36,7 @@ const DEFAULT_CANCELLATION_POLICY = [
 ].join("\n");
 
 export default async function globalSetup() {
-  loadEnvFile(".env.smoke");
+  loadEnvFile(".env.payops.smoke");
 
   const uri = process.env.MONGODB_URI;
   const dbName = process.env.MONGODB_DB;

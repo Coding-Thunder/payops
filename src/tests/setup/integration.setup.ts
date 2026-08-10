@@ -1,6 +1,6 @@
 import { loadEnvFile } from "./load-env";
 
-loadEnvFile(".env.test");
+loadEnvFile(".env.payops.test");
 
 import crypto from "node:crypto";
 
