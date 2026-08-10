@@ -93,7 +93,26 @@ function scopeOf(ref: CredentialRef): SecretScope {
  * a ciphertext that has been moved between organizations.
  */
 export async function getSecret(ref: CredentialRef): Promise<string | null> {
-  const key = resolveMasterKey();
+  // A malformed CREDENTIALS_MASTER_KEY must not take down every payment on
+  // the deployment. `resolveMasterKey` throws on a key that is not 32 bytes,
+  // and this is called on the payment-link hot path — so a fat-fingered
+  // rotation would otherwise turn "the vault is misconfigured" into "nobody
+  // can generate a payment link", including the default organization, which
+  // does not even use the vault yet. Log loudly, degrade to "no stored
+  // credential", and let the caller's own rules decide: the default
+  // organization falls back to env, everyone else is refused.
+  let key: Buffer | null;
+  try {
+    key = resolveMasterKey();
+  } catch (err) {
+    logger.error("credentials.master_key_invalid", {
+      organizationId: ref.organizationId,
+      provider: ref.provider,
+      field: ref.field,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
   if (!key) return null;
   if (!Types.ObjectId.isValid(ref.organizationId)) return null;
 

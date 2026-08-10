@@ -14,7 +14,7 @@ import {
   OrderEvidenceActorType,
   OrderEvidenceEventType,
   OrderStatus,
-  type PaymentGatewayKey,
+  PaymentGatewayKey,
   RecordState,
   UserRole,
 } from "@/lib/constants/enums";
@@ -47,7 +47,7 @@ import type {
 import type { OrderDTO, PaginatedResult } from "@/types";
 
 import type { RequestContext } from "@/server/api/request-context";
-import { getStripe } from "@/server/payments/stripe";
+import { getStripe, getStripeFor } from "@/server/payments/stripe";
 import type {
   CreatedPaymentSession,
   SessionStatus,
@@ -56,6 +56,10 @@ import {
   getDefaultGateway,
   getGateway,
 } from "@/server/payments/gateways";
+import {
+  getGatewayForOrganization,
+  getStripeCredentialsForOrganization,
+} from "@/server/payments/resolve-gateway";
 import { recordAudit } from "./audit.service";
 import { captureEvidenceSafe } from "./evidence.service";
 import { getSettings } from "./settings.service";
@@ -559,12 +563,16 @@ export async function initiatePayment(
     };
   }
 
-  // Resolve gateway: explicit option > existing pinned > registry default.
-  const gatewayKey: PaymentGatewayKey =
-    options.gateway ??
-    (doc.payment.gateway as PaymentGatewayKey | null) ??
-    getDefaultGateway().key;
-  const gateway = getGateway(gatewayKey);
+  // Resolve the gateway from the ORDER'S organization, not the request's.
+  // They are normally the same, but pinning to the order means a link
+  // regenerated later is created on the same merchant account that took
+  // the original payment — even if the operator has since switched
+  // organizations in another tab.
+  //
+  // An explicit `options.gateway` or a previously pinned key still wins, so
+  // an order that already chose a gateway keeps it.
+  const gateway = await resolveGatewayForOrder(doc, options.gateway ?? null);
+  const gatewayKey = gateway.key;
   if (!gateway.enabled) {
     throw new ConflictError(
       `${gateway.label} is not available. Configure credentials in admin settings or pick another gateway.`,
@@ -793,10 +801,20 @@ interface BuildSessionInput {
   cancelUrl: string;
   expiresAt: Date;
   actor: OrderActor;
+  /** Client for the organization that owns this order. */
+  stripe: Stripe;
 }
 
 async function buildCheckoutSession(args: BuildSessionInput) {
-  const stripe = getStripe();
+  // The client is supplied by the caller rather than pulled from env.
+  //
+  // This builder is the one `regeneratePaymentLink` uses instead of the
+  // gateway abstraction. Before multi-tenancy `getStripe()` was correct
+  // here because there was exactly one Stripe account; now it would expire
+  // and re-create ANOTHER organization's checkout session on the
+  // deployment's account. The outgoing session arguments are deliberately
+  // untouched — only where the credentials come from has changed.
+  const stripe = args.stripe;
   const amountMinor = toMinorUnits(args.amount, args.currency);
   if (amountMinor < 50) {
     throw new ValidationError("Amount is below Stripe's minimum charge");
@@ -998,6 +1016,62 @@ export async function getOrderById(
 }
 
 /**
+ * The gateway an order's payment runs on.
+ *
+ * Resolution order:
+ *   1. an explicit override from the caller (the email composer lets an
+ *      operator pick),
+ *   2. the key already pinned on the order — once a session exists, later
+ *      operations must stay on the same merchant account,
+ *   3. the order's ORGANIZATION configuration.
+ *
+ * Note (3) reads the order's organization rather than the request's. For an
+ * order created before organizations existed this is null, which resolves
+ * to the deployment default — i.e. exactly today's behaviour.
+ */
+async function resolveGatewayForOrder(
+  doc: { organizationId?: Types.ObjectId | null; payment: { gateway?: string | null } },
+  override: PaymentGatewayKey | null,
+) {
+  // The pinned/override key chooses the PROVIDER. It must never choose the
+  // CREDENTIALS — those always come from the order's organization. Returning
+  // `getGateway(pinned)` here would hand back the env-backed registry
+  // singleton, and since the email composer sends `gateway: "STRIPE"` on
+  // every click, that would silently route every organization's payments
+  // through the deployment's own Stripe account.
+  const provider = (override ??
+    (doc.payment.gateway as PaymentGatewayKey | null) ??
+    null) as PaymentGatewayKey | null;
+
+  return getGatewayForOrganization(
+    doc.organizationId ? String(doc.organizationId) : null,
+    provider,
+  );
+}
+
+/**
+ * A Stripe client bound to the ORDER'S organization.
+ *
+ * Only for the legacy direct-builder path (`regeneratePaymentLink`), which
+ * predates the gateway abstraction. Everything else goes through
+ * `resolveGatewayForOrder`. Routing through the same organization resolver
+ * means the credential rules — env fallback for the default organization,
+ * hard refusal for anyone else — apply identically on both paths.
+ */
+async function getStripeForOrder(doc: {
+  organizationId?: Types.ObjectId | null;
+  payment: { gateway?: string | null };
+}): Promise<Stripe> {
+  const orgId = doc.organizationId ? String(doc.organizationId) : null;
+  if (!orgId) return getStripe();
+  // Runs the credential checks (and throws for an unconfigured non-default
+  // organization) before we touch Stripe at all.
+  await getGatewayForOrganization(orgId, PaymentGatewayKey.STRIPE);
+  const creds = await getStripeCredentialsForOrganization(orgId);
+  return creds ? getStripeFor(creds.secretKey) : getStripe();
+}
+
+/**
  * Refuse an order that belongs to another organization.
  *
  * Raises NotFound, deliberately, rather than Forbidden. A Forbidden here
@@ -1103,7 +1177,11 @@ export async function regeneratePaymentLink(
   }
 
   const settings = await getSettings();
-  const stripe = getStripe();
+  // Same merchant account the order's payment link was created on. Resolving
+  // through the organization also means a non-default organization with no
+  // stored credentials is REFUSED here rather than quietly expiring and
+  // re-creating its session on the deployment's Stripe account.
+  const stripe = await getStripeForOrder(doc);
   const expiresAt = new Date(
     Date.now() + settings.paymentExpiryHours * 60 * 60 * 1000,
   );
@@ -1123,6 +1201,7 @@ export async function regeneratePaymentLink(
   let session: Stripe.Checkout.Session;
   try {
     session = await buildCheckoutSession({
+      stripe,
       orderId: String(doc._id),
       orderNumber: doc.orderNumber,
       // Regeneration reuses the snapshot already attached to the order —
@@ -1656,9 +1735,11 @@ export async function reconcileOrderPayment(
   const wasPending =
     doc.status === OrderStatus.PAYMENT_PENDING ||
     doc.status === OrderStatus.LINK_GENERATED;
-  const gateway = getGateway(
-    (doc.payment.gateway as PaymentGatewayKey | null) ?? getDefaultGateway().key,
-  );
+  // Resolve through the order's organization so a status lookup queries the
+  // merchant account that actually holds the session. Looking it up on the
+  // deployment account would simply never find another organization's
+  // session and would silently report "unknown".
+  const gateway = await resolveGatewayForOrder(doc, null);
   if (!gateway.enabled) {
     return {
       order: orderToDTO(doc.toObject({ getters: false }) as OrderDoc & { _id: Types.ObjectId }),

@@ -7,7 +7,7 @@ import { logger } from "@/lib/logger";
 import { DisputeOutcome, DisputeStatus } from "@/lib/constants/enums";
 
 import { toMinorUnits } from "../currency";
-import { getStripe } from "../stripe";
+import { getStripeFor } from "../stripe";
 import type {
   CreatePaymentSessionInput,
   CreatedPaymentSession,
@@ -115,20 +115,42 @@ function mapStripeDisputeOutcome(
   }
 }
 
-const SECRET = env.server.STRIPE_SECRET_KEY;
-const HAS_CREDENTIALS = Boolean(SECRET);
-const IS_SANDBOX = SECRET.startsWith("sk_test_") || SECRET.startsWith("rk_test_");
+/** The two secrets a Stripe account needs. Held per organization in the
+ *  credential vault; falls back to the deployment env. */
+export interface StripeCredentials {
+  secretKey: string;
+  webhookSecret: string;
+}
 
-export const stripeGateway: PaymentGateway = {
+/**
+ * Build a Stripe gateway over a credential source.
+ *
+ * The resolver is a FUNCTION, not a value, for two reasons. It defers the
+ * env read out of module scope — previously `const SECRET =
+ * env.server.STRIPE_SECRET_KEY` executed on import, which froze the whole
+ * memoised env snapshot the moment anything touched the gateway registry
+ * (the cause of the per-file test-database bug fixed in 55b5e47). And it
+ * lets one organization's gateway be constructed from vault credentials
+ * while the default instance keeps reading env, with no second code path.
+ */
+export function createStripeGateway(
+  credentials: () => StripeCredentials,
+): PaymentGateway {
+  return {
   key: "STRIPE",
   label: "Stripe",
-  enabled: HAS_CREDENTIALS,
-  sandbox: IS_SANDBOX,
+  get enabled() {
+    return Boolean(credentials().secretKey);
+  },
+  get sandbox() {
+    const key = credentials().secretKey;
+    return key.startsWith("sk_test_") || key.startsWith("rk_test_");
+  },
 
   async createSession(
     input: CreatePaymentSessionInput,
   ): Promise<CreatedPaymentSession> {
-    const stripe = getStripe();
+    const stripe = getStripeFor(credentials().secretKey);
     const amountMinor = toMinorUnits(input.amount, input.currency);
     if (amountMinor < 50) {
       throw new Error("Amount is below Stripe's minimum charge");
@@ -200,7 +222,7 @@ export const stripeGateway: PaymentGateway = {
   },
 
   async expireSession(sessionId: string): Promise<void> {
-    const stripe = getStripe();
+    const stripe = getStripeFor(credentials().secretKey);
     try {
       await stripe.checkout.sessions.expire(sessionId);
     } catch (err) {
@@ -217,11 +239,15 @@ export const stripeGateway: PaymentGateway = {
     rawBody: string | Buffer,
     signatureHeader: string,
   ): VerifiedPaymentEvent {
-    const stripe = getStripe();
+    const { secretKey, webhookSecret } = credentials();
+    const stripe = getStripeFor(secretKey);
+    // Verified against THIS organization's signing secret. A signature made
+    // with another organization's secret must fail here, which is what stops
+    // one tenant's webhook from being accepted as another's.
     const event = stripe.webhooks.constructEvent(
       rawBody,
       signatureHeader,
-      env.server.STRIPE_WEBHOOK_SECRET,
+      webhookSecret,
     );
 
     const session = (() => {
@@ -378,7 +404,7 @@ export const stripeGateway: PaymentGateway = {
   },
 
   async getSessionStatus(sessionId: string): Promise<SessionStatus> {
-    const stripe = getStripe();
+    const stripe = getStripeFor(credentials().secretKey);
     const session = await stripe.checkout.sessions.retrieve(sessionId);
     const statusRaw = (session.status ?? "unknown") as string;
     const paymentRaw = (session.payment_status ?? "unknown") as string;
@@ -407,4 +433,19 @@ export const stripeGateway: PaymentGateway = {
           : null,
     };
   },
-};
+  };
+}
+
+/**
+ * The deployment-level Stripe gateway, reading `STRIPE_SECRET_KEY` and
+ * `STRIPE_WEBHOOK_SECRET` at call time.
+ *
+ * This is what the registry exposes, what every existing caller already
+ * uses, and what an organization with no stored credentials falls back to.
+ * Keeping it as a plain instance of the same factory means there is exactly
+ * one Stripe implementation — the per-organization path is not a fork.
+ */
+export const stripeGateway: PaymentGateway = createStripeGateway(() => ({
+  secretKey: env.server.STRIPE_SECRET_KEY,
+  webhookSecret: env.server.STRIPE_WEBHOOK_SECRET,
+}));
