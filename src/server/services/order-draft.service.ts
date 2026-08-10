@@ -8,6 +8,11 @@ import {
   type OrderDraftDocument,
 } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
+import {
+  organizationStamp,
+  withOrganizationScope,
+} from "@/server/db/organization-filter";
+import { getRequestOrganizationScope } from "@/server/auth/organization";
 import type { SessionUser } from "@/types";
 
 export interface OrderDraftDTO {
@@ -76,7 +81,15 @@ export async function listDrafts({
   actor,
 }: ActorCtx): Promise<OrderDraftDTO[]> {
   await connectMongo();
-  const docs = await OrderDraft.find({ ownerId: new Types.ObjectId(actor.id) })
+  // Drafts were already owner-scoped, which is not the same as
+  // organization-scoped: a user who belongs to two brands would otherwise
+  // see the drafts they started in one while working in the other.
+  const docs = await OrderDraft.find(
+    withOrganizationScope(
+      { ownerId: new Types.ObjectId(actor.id) },
+      await getRequestOrganizationScope(),
+    ),
+  )
     .sort({ lastEditedAt: -1 })
     .limit(50)
     .exec();
@@ -89,10 +102,15 @@ export async function getDraftById(
 ): Promise<OrderDraftDTO> {
   await connectMongo();
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Draft not found");
-  const doc = await OrderDraft.findOne({
-    _id: new Types.ObjectId(id),
-    ownerId: new Types.ObjectId(actor.id),
-  }).exec();
+  const doc = await OrderDraft.findOne(
+    withOrganizationScope(
+      {
+        _id: new Types.ObjectId(id),
+        ownerId: new Types.ObjectId(actor.id),
+      },
+      await getRequestOrganizationScope(),
+    ),
+  ).exec();
   if (!doc) throw new NotFoundError("Draft not found");
   return toDTO(doc);
 }
@@ -108,6 +126,7 @@ export async function createDraft(
   await connectMongo();
   const summary = summarize(data);
   const doc = await OrderDraft.create({
+    organizationId: organizationStamp(await getRequestOrganizationScope()),
     ownerId: new Types.ObjectId(actor.id),
     data,
     summary,
@@ -134,11 +153,13 @@ export async function updateDraft(
 ): Promise<OrderDraftDTO> {
   await connectMongo();
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Draft not found");
-  const filter: Record<string, unknown> = {
+  const scope = await getRequestOrganizationScope();
+  const base: Record<string, unknown> = {
     _id: new Types.ObjectId(id),
     ownerId: new Types.ObjectId(actor.id),
   };
-  if (expectedRevision !== null) filter.revision = expectedRevision;
+  if (expectedRevision !== null) base.revision = expectedRevision;
+  const filter = withOrganizationScope(base, scope);
   const summary = summarize(data);
   const updated = await OrderDraft.findOneAndUpdate(
     filter,
@@ -151,10 +172,15 @@ export async function updateDraft(
   if (!updated) {
     // Either the draft doesn't exist OR a concurrent write moved the
     // revision pointer. Distinguish so the client UX is correct.
-    const exists = await OrderDraft.exists({
-      _id: new Types.ObjectId(id),
-      ownerId: new Types.ObjectId(actor.id),
-    });
+    const exists = await OrderDraft.exists(
+      withOrganizationScope(
+        {
+          _id: new Types.ObjectId(id),
+          ownerId: new Types.ObjectId(actor.id),
+        },
+        scope,
+      ),
+    );
     if (!exists) throw new NotFoundError("Draft not found");
     throw new ConflictError(
       "Draft was modified elsewhere — refresh to pick up the latest changes",
@@ -169,8 +195,13 @@ export async function deleteDraft(
 ): Promise<void> {
   await connectMongo();
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Draft not found");
-  await OrderDraft.deleteOne({
-    _id: new Types.ObjectId(id),
-    ownerId: new Types.ObjectId(actor.id),
-  }).exec();
+  await OrderDraft.deleteOne(
+    withOrganizationScope(
+      {
+        _id: new Types.ObjectId(id),
+        ownerId: new Types.ObjectId(actor.id),
+      },
+      await getRequestOrganizationScope(),
+    ),
+  ).exec();
 }

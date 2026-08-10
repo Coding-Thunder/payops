@@ -8,6 +8,11 @@ import {
 import { logger } from "@/lib/logger";
 import { AuditLog } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
+import {
+  organizationStamp,
+  withOrganizationScope,
+} from "@/server/db/organization-filter";
+import { getRequestOrganizationScope } from "@/server/auth/organization";
 import { sessionOpt } from "@/server/db/transaction";
 import type { AuditLogDTO } from "@/types";
 
@@ -45,14 +50,22 @@ export async function recordAudit(
   input: RecordAuditInput,
   session: ClientSession | null = null,
 ): Promise<void> {
+  // Attribute the row to the acting organization. Null on webhook, outbox
+  // and script paths, which have no organization context and never should —
+  // matching how those rows looked before the migration.
+  const organizationId = organizationStamp(await getRequestOrganizationScope());
+
   if (session) {
     await connectMongo();
-    await AuditLog.create([buildDoc(input)], sessionOpt(session));
+    await AuditLog.create(
+      [{ ...buildDoc(input), organizationId }],
+      sessionOpt(session),
+    );
     return;
   }
   try {
     await connectMongo();
-    await AuditLog.create(buildDoc(input));
+    await AuditLog.create({ ...buildDoc(input), organizationId });
   } catch (err) {
     logger.error("audit.record_failed", {
       action: input.action,
@@ -135,10 +148,18 @@ export async function listAuditLogs(query: ListAuditQuery = {}) {
   await connectMongo();
   const page = Math.max(1, query.page ?? 1);
   const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 50));
-  const filter: Record<string, unknown> = {};
-  if (query.entityType) filter.entityType = query.entityType;
-  if (query.entityId) filter.entityId = query.entityId;
-  if (query.action) filter.action = query.action;
+  const base: Record<string, unknown> = {};
+  if (query.entityType) base.entityType = query.entityType;
+  if (query.entityId) base.entityId = query.entityId;
+  if (query.action) base.action = query.action;
+
+  // The audit log is the record of who did what. Unscoped, this hands one
+  // organization a readable feed of another's operators, customers and
+  // order numbers.
+  const filter = withOrganizationScope(
+    base,
+    await getRequestOrganizationScope(),
+  );
 
   const [items, total] = await Promise.all([
     AuditLog.find(filter)

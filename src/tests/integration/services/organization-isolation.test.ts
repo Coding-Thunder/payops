@@ -12,6 +12,18 @@ import {
   getOrderById,
   listOrders,
 } from "@/server/services/order.service";
+import { getAnalyticsSummary } from "@/server/services/analytics.service";
+import { listAuditLogs } from "@/server/services/audit.service";
+import {
+  createCarLink,
+  deactivateCarLink,
+  getCarLinkById,
+  listCarLinks,
+} from "@/server/services/car-link.service";
+import {
+  createDraft,
+  listDrafts,
+} from "@/server/services/order-draft.service";
 import { orgCookieName } from "@/server/auth/org-cookie";
 import { actorFor, mockSession } from "@/tests/utils/auth";
 import { createSettings } from "@/tests/factories/settings.factory";
@@ -215,5 +227,108 @@ describe("getOrderById is scoped", () => {
     await expect(getOrderById(legacy.id, { actor })).rejects.toThrow(
       /not found/i,
     );
+  });
+});
+
+describe("the dashboard is scoped", () => {
+  it("does not count another organization's revenue or orders", async () => {
+    // An unscoped $match here is the quiet kind of leak: another brand's
+    // revenue simply blends into your totals as a plausible number.
+    actingAs(otherOrg);
+    await newOrder("trip-1");
+    await newOrder("trip-2");
+
+    actingAs(defaultOrg);
+    const summary = await getAnalyticsSummary({});
+    expect(summary.totals.ordersCreated).toBe(0);
+
+    actingAs(otherOrg);
+    const theirs = await getAnalyticsSummary({});
+    expect(theirs.totals.ordersCreated).toBe(2);
+  });
+});
+
+describe("the audit log is scoped", () => {
+  it("does not expose another organization's activity", async () => {
+    // Audit rows carry operator names, customer emails and order numbers.
+    actingAs(otherOrg);
+    const theirOrder = await newOrder("trip");
+
+    actingAs(defaultOrg);
+    const { items } = await listAuditLogs({ pageSize: 100 });
+    expect(items.map((i) => i.entityId)).not.toContain(theirOrder.id);
+  });
+
+  it("still records rows for the acting organization", async () => {
+    actingAs(otherOrg);
+    const mine = await newOrder("trip");
+    const { items } = await listAuditLogs({ pageSize: 100 });
+    expect(items.map((i) => i.entityId)).toContain(mine.id);
+  });
+});
+
+describe("car links are scoped", () => {
+  async function newCarLink(make: string) {
+    return createCarLink(
+      {
+        carMake: make,
+        carType: "Camry",
+        imageUrl: "https://x.test/a.png",
+        notes: null,
+      },
+      { actor: { id: actor.id, name: actor.name, role: actor.role } },
+    );
+  }
+
+  it("does not list another organization's car links", async () => {
+    actingAs(otherOrg);
+    const theirs = await newCarLink("Toyota");
+
+    actingAs(defaultOrg);
+    const listed = await listCarLinks({ limit: 50 } as never);
+    expect(listed.map((c) => c.id)).not.toContain(theirs.id);
+  });
+
+  it("hides another organization's car link as NOT FOUND", async () => {
+    actingAs(otherOrg);
+    const theirs = await newCarLink("Honda");
+
+    actingAs(defaultOrg);
+    await expect(getCarLinkById(theirs.id)).rejects.toThrow(/not found/i);
+  });
+
+  it("refuses a cross-organization mutation at the query, not after it", async () => {
+    // Scoped in the FILTER, so the write never lands and is then rejected —
+    // there is no window where the document is briefly modified.
+    actingAs(otherOrg);
+    const theirs = await newCarLink("Mazda");
+
+    actingAs(defaultOrg);
+    await expect(
+      deactivateCarLink(theirs.id, {
+        actor: { id: actor.id, name: actor.name, role: actor.role },
+      }),
+    ).rejects.toThrow(/not found/i);
+
+    actingAs(otherOrg);
+    const stillActive = await getCarLinkById(theirs.id);
+    expect(stillActive.active).toBe(true);
+  });
+});
+
+describe("drafts are scoped", () => {
+  it("does not surface the same user's drafts from another organization", async () => {
+    // Drafts were already owner-scoped; that is not the same as
+    // organization-scoped for a user who belongs to two brands.
+    actingAs(otherOrg);
+    const theirs = await createDraft({ data: { note: "trip" } }, { actor });
+
+    actingAs(defaultOrg);
+    const mine = await listDrafts({ actor });
+    expect(mine.map((d) => d.id)).not.toContain(theirs.id);
+
+    actingAs(otherOrg);
+    const back = await listDrafts({ actor });
+    expect(back.map((d) => d.id)).toContain(theirs.id);
   });
 });

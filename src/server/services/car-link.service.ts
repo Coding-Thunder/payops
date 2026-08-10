@@ -11,6 +11,12 @@ import {
   ConflictError,
   NotFoundError,
 } from "@/lib/errors";
+import {
+  belongsToScope,
+  organizationStamp,
+  withOrganizationScope,
+} from "@/server/db/organization-filter";
+import { getRequestOrganizationScope } from "@/server/auth/organization";
 import type {
   CreateCarLinkInput,
   ListCarLinksQuery,
@@ -75,7 +81,9 @@ export async function listCarLinks(
     const rx = new RegExp(escaped, "i");
     filter.$or = [{ carMake: rx }, { carType: rx }, { notes: rx }];
   }
-  const docs = await CarLink.find(filter)
+  // Scope composes under `$and`; the search above owns the top-level `$or`.
+  const scope = await getRequestOrganizationScope();
+  const docs = await CarLink.find(withOrganizationScope(filter, scope))
     .sort({ updatedAt: -1 })
     .limit(query.limit)
     .lean<(CarLinkDoc & { _id: Types.ObjectId })[]>();
@@ -91,6 +99,11 @@ export async function getCarLinkById(id: string): Promise<CarLinkDTO> {
     CarLinkDoc & { _id: Types.ObjectId }
   >();
   if (!doc) throw new NotFoundError("Car link not found");
+  // NotFound rather than Forbidden — see the note in order.service; a
+  // different status would let one organization probe another's ids.
+  if (!belongsToScope(doc.organizationId, await getRequestOrganizationScope())) {
+    throw new NotFoundError("Car link not found");
+  }
   return toDTO(doc);
 }
 
@@ -103,6 +116,7 @@ export async function createCarLink(
   await connectMongo();
   try {
     const doc = await CarLink.create({
+      organizationId: organizationStamp(await getRequestOrganizationScope()),
       carMake: input.carMake,
       carType: input.carType,
       imageUrl: input.imageUrl,
@@ -156,8 +170,11 @@ export async function updateCarLink(
   if (Object.keys(set).length === 0) {
     return getCarLinkById(id);
   }
-  const doc = await CarLink.findByIdAndUpdate(
-    id,
+  const doc = await CarLink.findOneAndUpdate(
+    withOrganizationScope(
+      { _id: new Types.ObjectId(id) },
+      await getRequestOrganizationScope(),
+    ),
     { $set: set },
     { returnDocument: "after" },
   ).lean<CarLinkDoc & { _id: Types.ObjectId }>();
@@ -185,8 +202,11 @@ export async function deactivateCarLink(
   if (!Types.ObjectId.isValid(id)) {
     throw new NotFoundError("Car link not found");
   }
-  const doc = await CarLink.findByIdAndUpdate(
-    id,
+  const doc = await CarLink.findOneAndUpdate(
+    withOrganizationScope(
+      { _id: new Types.ObjectId(id) },
+      await getRequestOrganizationScope(),
+    ),
     { $set: { active: false } },
     { returnDocument: "after" },
   ).lean<CarLinkDoc & { _id: Types.ObjectId }>();
@@ -213,8 +233,11 @@ export async function restoreCarLink(
   if (!Types.ObjectId.isValid(id)) {
     throw new NotFoundError("Car link not found");
   }
-  const doc = await CarLink.findByIdAndUpdate(
-    id,
+  const doc = await CarLink.findOneAndUpdate(
+    withOrganizationScope(
+      { _id: new Types.ObjectId(id) },
+      await getRequestOrganizationScope(),
+    ),
     { $set: { active: true } },
     { returnDocument: "after" },
   ).lean<CarLinkDoc & { _id: Types.ObjectId }>();

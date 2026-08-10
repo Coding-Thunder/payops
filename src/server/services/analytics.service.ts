@@ -7,6 +7,8 @@ import {
 } from "@/lib/constants/enums";
 import { Order } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
+import { withOrganizationScope } from "@/server/db/organization-filter";
+import { getRequestOrganizationScope } from "@/server/auth/organization";
 
 export interface AnalyticsRange {
   from?: Date;
@@ -63,10 +65,18 @@ export async function getAnalyticsSummary(
 ): Promise<AnalyticsSummary> {
   await connectMongo();
   const { from, to } = resolveRange(range);
-  const baseMatch = {
-    state: RecordState.ACTIVE,
-    createdAt: { $gte: from, $lte: to },
-  };
+  // Every aggregate below spreads `baseMatch`, so scoping it once scopes the
+  // whole dashboard. Worth being deliberate about: an unscoped $match here
+  // would put another brand's revenue, order counts and staff leaderboard
+  // on this organization's dashboard, silently and in aggregate — the kind
+  // of leak nobody notices because it looks like a plausible number.
+  const baseMatch = withOrganizationScope(
+    {
+      state: RecordState.ACTIVE,
+      createdAt: { $gte: from, $lte: to },
+    },
+    await getRequestOrganizationScope(),
+  );
 
   const [statusAgg, dailyAgg, bookingAgg, staffAgg] = await Promise.all([
     Order.aggregate<{
