@@ -11,6 +11,7 @@ import {
   type OrganizationDoc,
 } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
+import type { OrganizationScopeInput } from "@/server/db/organization-filter";
 import type { OrganizationSummary } from "@/types";
 
 import { readSelectedOrgCookie } from "./org-cookie";
@@ -160,6 +161,57 @@ export async function assertOrganizationAccess(
   }
   return match;
 }
+
+/**
+ * The tenancy scope for the CURRENT request, ready to hand to
+ * `withOrganizationScope` / `belongsToScope`.
+ *
+ * Resolved from ambient request context rather than threaded through every
+ * service signature. That is a deliberate trade:
+ *
+ *   - the alternative is passing a scope argument down ~38 query sites,
+ *     where forgetting exactly one is a silent cross-tenant read that no
+ *     type checker catches;
+ *   - here the services ask for the scope themselves, so a new query is
+ *     scoped by construction.
+ *
+ * It returns UNSCOPED (`organizationId: null`) whenever there is no request
+ * cookie context to read — and that is correct, not a fallback:
+ *
+ *   - the outbox drainer and the migration scripts run outside a request
+ *     entirely and must see all rows;
+ *   - a Stripe webhook is a request, but carries no operator session, and
+ *     must be able to find its order regardless of who happens to be
+ *     logged in;
+ *   - an unmigrated deployment has no organizations, so there is nothing
+ *     to scope by and queries stay byte-identical to today.
+ *
+ * Because "no context" means "no scoping", the isolation guarantee is
+ * carried by tests that exercise the real service API across two
+ * organizations, not by the type system.
+ */
+export const getRequestOrganizationScope = cache(
+  async (): Promise<OrganizationScopeInput> => {
+    let selected: OrganizationSummary | null = null;
+    try {
+      selected = await getSelectedOrganization();
+    } catch {
+      // No request store (script / drainer / background job).
+      return { organizationId: null, isDefault: false };
+    }
+    if (!selected) return { organizationId: null, isDefault: false };
+
+    await connectMongo();
+    const row = await Organization.findById(selected.id)
+      .select("isDefault")
+      .lean<{ isDefault: boolean } | null>();
+
+    return {
+      organizationId: selected.id,
+      isDefault: Boolean(row?.isDefault),
+    };
+  },
+);
 
 /** The caller's role *within* an organization, which may differ from their
  *  global `User.role`. Null when they are not a member. */

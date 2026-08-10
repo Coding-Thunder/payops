@@ -33,6 +33,12 @@ import { logger } from "@/lib/logger";
 import { publishEvent } from "@/server/events/bus";
 import { Order, type OrderDoc } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
+import {
+  belongsToScope,
+  organizationStamp,
+  withOrganizationScope,
+} from "@/server/db/organization-filter";
+import { getRequestOrganizationScope } from "@/server/auth/organization";
 import type {
   ArchiveOrderInput,
   CreateOrderInput,
@@ -293,11 +299,17 @@ export async function createOrder(
   // Transactional: Order doc + audit row + genesis evidence row are
   // written together. A failure on evidence aborts the order create —
   // disputes never face a chain with a missing sequence 1.
+  // Stamp the acting organization. Null on an unmigrated deployment, which
+  // is exactly what pre-migration rows carry, so reads and writes stay
+  // consistent in both worlds.
+  const organizationId = organizationStamp(await getRequestOrganizationScope());
+
   const created = await withTx(async (session) => {
     const inserted = await Order.create(
       [
         {
           _id: orderId,
+          organizationId,
           orderNumber,
           bookingType: input.bookingType,
           status: OrderStatus.NOT_INITIATED,
@@ -508,6 +520,7 @@ export async function initiatePayment(
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
   const doc = await Order.findById(id);
   if (!doc) throw new NotFoundError("Order not found");
+  await assertOrderInScope(doc);
 
   const canSeeAll = roleHasPermission(ctx.actor.role, Permission.ORDER_VIEW_ALL);
   if (!canSeeAll && String(doc.createdBy.userId) !== ctx.actor.id) {
@@ -912,6 +925,7 @@ export async function listOrders(
   ctx: OrderContext,
 ): Promise<PaginatedResult<OrderDTO>> {
   await connectMongo();
+  const scope = await getRequestOrganizationScope();
   const filter: Record<string, unknown> = {};
   filter.state = query.state ?? RecordState.ACTIVE;
   if (query.status) filter.status = query.status;
@@ -944,14 +958,19 @@ export async function listOrders(
     filter.createdAt = range;
   }
 
+  // Tenancy last, composed under `$and`. The search box above may already
+  // own the top-level `$or`; assigning a second one would silently drop
+  // whichever lost the key collision.
+  const scoped = withOrganizationScope(filter, scope);
+
   const { page, pageSize } = query;
   const [items, total] = await Promise.all([
-    Order.find(filter)
+    Order.find(scoped)
       .sort({ createdAt: -1 })
       .skip((page - 1) * pageSize)
       .limit(pageSize)
       .lean<(OrderDoc & { _id: Types.ObjectId })[]>(),
-    Order.countDocuments(filter),
+    Order.countDocuments(scoped),
   ]);
   return {
     items: items.map(orderToDTO),
@@ -969,12 +988,34 @@ export async function getOrderById(
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
   const doc = await Order.findById(id).lean<OrderDoc & { _id: Types.ObjectId }>();
   if (!doc) throw new NotFoundError("Order not found");
+  await assertOrderInScope(doc);
 
   const canSeeAll = roleHasPermission(ctx.actor.role, Permission.ORDER_VIEW_ALL);
   if (!canSeeAll && String(doc.createdBy.userId) !== ctx.actor.id) {
     throw new ForbiddenError("You can only view orders you created");
   }
   return orderToDTO(doc);
+}
+
+/**
+ * Refuse an order that belongs to another organization.
+ *
+ * Raises NotFound, deliberately, rather than Forbidden. A Forbidden here
+ * would confirm that the id exists — letting a caller in one organization
+ * enumerate the order ids of another just by watching the status code. A
+ * cross-tenant read and a genuinely missing record must be indistinguishable.
+ *
+ * The check is applied after `findById` rather than folded into the query so
+ * that "not found" and "not yours" flow through one place instead of being
+ * re-derived at every fetch site.
+ */
+async function assertOrderInScope(doc: {
+  organizationId?: Types.ObjectId | null;
+}): Promise<void> {
+  const scope = await getRequestOrganizationScope();
+  if (!belongsToScope(doc.organizationId, scope)) {
+    throw new NotFoundError("Order not found");
+  }
 }
 
 export async function getOrderByNumber(
@@ -996,6 +1037,7 @@ export async function archiveOrder(
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
   const doc = await Order.findById(id);
   if (!doc) throw new NotFoundError("Order not found");
+  await assertOrderInScope(doc);
 
   if (doc.state === RecordState.ARCHIVED) {
     throw new ConflictError("Order is already archived");
@@ -1047,6 +1089,7 @@ export async function regeneratePaymentLink(
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
   const doc = await Order.findById(id);
   if (!doc) throw new NotFoundError("Order not found");
+  await assertOrderInScope(doc);
 
   const canSeeAll = roleHasPermission(ctx.actor.role, Permission.ORDER_VIEW_ALL);
   if (!canSeeAll && String(doc.createdBy.userId) !== ctx.actor.id) {
@@ -1284,6 +1327,7 @@ export async function setOrderRiskFlag(
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
   const doc = await Order.findById(id);
   if (!doc) throw new NotFoundError("Order not found");
+  await assertOrderInScope(doc);
 
   if (input.flagged) {
     doc.risk = {
@@ -1343,6 +1387,7 @@ export async function updateOrderCustomer(
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
   const doc = await Order.findById(id);
   if (!doc) throw new NotFoundError("Order not found");
+  await assertOrderInScope(doc);
 
   const canSeeAll = roleHasPermission(ctx.actor.role, Permission.ORDER_VIEW_ALL);
   if (!canSeeAll && String(doc.createdBy.userId) !== ctx.actor.id) {
@@ -1403,6 +1448,7 @@ export async function setConfirmationNumber(
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
   const doc = await Order.findById(id);
   if (!doc) throw new NotFoundError("Order not found");
+  await assertOrderInScope(doc);
 
   const canSeeAll = roleHasPermission(ctx.actor.role, Permission.ORDER_VIEW_ALL);
   if (!canSeeAll && String(doc.createdBy.userId) !== ctx.actor.id) {
@@ -1450,6 +1496,7 @@ export async function resendConfirmationEmail(
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
   const doc = await Order.findById(id).lean<OrderDoc & { _id: Types.ObjectId }>();
   if (!doc) throw new NotFoundError("Order not found");
+  await assertOrderInScope(doc);
 
   const canSeeAll = roleHasPermission(ctx.actor.role, Permission.ORDER_VIEW_ALL);
   if (!canSeeAll && String(doc.createdBy.userId) !== ctx.actor.id) {
