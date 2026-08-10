@@ -22,21 +22,31 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { LogoLockup } from "@/components/brand/logo";
+import { OrgSwitcher } from "@/components/app-shell/org-switcher";
 import { RealtimeIndicator } from "@/components/common/realtime-indicator";
 import { initialsFromName } from "@/lib/format";
 import { UserRoleLabel } from "@/lib/constants/labels";
 import { toast } from "@/components/ui/sonner";
 import { api } from "@/lib/api-client";
-import type { SessionUser } from "@/types";
+import type { OrganizationSummary, SessionUser } from "@/types";
 
 import { Sidebar } from "./sidebar";
 
 interface TopbarProps {
   user: SessionUser;
   brand: string;
+  /** Organizations this operator may act in. Empty on an unmigrated
+   *  deployment, in which case the switcher renders nothing. */
+  organizations?: OrganizationSummary[];
+  selectedOrgId?: string | null;
 }
 
-export function Topbar({ user, brand }: TopbarProps) {
+export function Topbar({
+  user,
+  brand,
+  organizations = [],
+  selectedOrgId = null,
+}: TopbarProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
@@ -85,6 +95,10 @@ export function Topbar({ user, brand }: TopbarProps) {
       </div>
 
       <div className="ml-auto flex items-center gap-2">
+        <OrgSwitcher
+          organizations={organizations}
+          selectedId={selectedOrgId}
+        />
         <RealtimeIndicator className="md:hidden" withLabel={false} />
         <button
           type="button"

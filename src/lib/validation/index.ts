@@ -17,3 +17,4 @@ export * from "./email-template";
 export * from "./consent";
 export * from "./evidence";
 export * from "./quotation";
+export * from "./organization";

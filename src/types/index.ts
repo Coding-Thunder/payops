@@ -38,6 +38,20 @@ export interface SessionUser {
   role: UserRole;
 }
 
+/**
+ * An organization as the client sees it. Lives here rather than beside the
+ * resolver in `@/server/auth/organization` because the switcher and the
+ * selection screen are client components, and that module is `server-only`
+ * — a value import from it would break the browser bundle. Everything on
+ * this shape is non-secret and safe to serialise.
+ */
+export interface OrganizationSummary {
+  id: string;
+  slug: string;
+  name: string;
+  brandName: string;
+}
+
 export interface OrderCustomer {
   name: string;
   email: string;

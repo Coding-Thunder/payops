@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { Suspense } from "react";
 
+import { OrganizationSelection } from "@/components/app-shell/organization-selection";
 import { Sidebar } from "@/components/app-shell/sidebar";
 import { TelemetryStrip } from "@/components/app-shell/telemetry-strip";
 import { Topbar } from "@/components/app-shell/topbar";
@@ -9,6 +10,11 @@ import { CommandPalette } from "@/components/command-palette";
 import { RouteTransitionLoader } from "@/components/common/route-transition-loader";
 import { RealtimeProvider } from "@/components/providers/realtime-provider";
 import { UserRoleLabel } from "@/lib/constants/labels";
+import {
+  getSelectedOrganization,
+  listMemberOrganizations,
+  organizationsExist,
+} from "@/server/auth/organization";
 import { getCurrentUser } from "@/server/auth/session";
 import { env } from "@/lib/env";
 
@@ -22,6 +28,24 @@ export default async function AuthenticatedLayout({
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   const brand = env.server.APP_NAME;
+
+  // Organizations are opt-in. Until an operator runs the seed there are no
+  // rows, `migrated` is false, and everything below behaves exactly as it
+  // did before this layer existed — no switcher, no gate, no extra query
+  // beyond one counted lookup.
+  const migrated = await organizationsExist();
+  const organizations = migrated ? await listMemberOrganizations() : [];
+  const selectedOrg = migrated ? await getSelectedOrganization() : null;
+
+  // Once migrated, an explicit selection is required. Rendering the chooser
+  // in place of `children` (rather than redirecting) means a page cannot
+  // render — and so an operational workflow cannot start — against an
+  // implicit or defaulted organization.
+  if (migrated && !selectedOrg) {
+    return (
+      <OrganizationSelection organizations={organizations} brand={brand} />
+    );
+  }
 
   return (
     <RealtimeProvider>
@@ -45,7 +69,12 @@ export default async function AuthenticatedLayout({
             />
           </div>
           <div className="print:hidden">
-            <Topbar user={user} brand={brand} />
+            <Topbar
+              user={user}
+              brand={brand}
+              organizations={organizations}
+              selectedOrgId={selectedOrg?.id ?? null}
+            />
           </div>
           {/* Shell padding lives inside main so every page gets a
               consistent inset on all four sides without a coloured
