@@ -19,6 +19,7 @@ import {
   Order,
   type OrderDoc,
   type OrderDocument,
+  Organization,
 } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 import { publishEvent } from "@/server/events/bus";
@@ -55,8 +56,12 @@ interface ProcessEventResult {
  */
 export async function processGatewayEvent(
   event: VerifiedPaymentEvent,
+  /** Organization whose endpoint received this delivery. Null for the
+   *  deployment-level Stripe endpoint. Enforced against the order. */
+  organizationId: string | null = null,
 ): Promise<ProcessEventResult> {
   await connectMongo();
+  expectedOrganizationId = organizationId;
   logger.info("payments.event", { id: event.eventId, type: event.type });
 
   // Best-effort: WEBHOOK_RECEIVED is non-transactional — observability
@@ -97,6 +102,45 @@ export async function processGatewayEvent(
  *  should import `processGatewayEvent`. */
 export const processStripeEvent = processGatewayEvent;
 
+/**
+ * The organization whose endpoint received the event currently being
+ * processed. Null for the deployment-level Stripe endpoint.
+ *
+ * Held here rather than threaded through every handler because the handlers
+ * are numerous and a missed parameter would silently reopen the hole this
+ * exists to close. `processGatewayEvent` is awaited end to end for one
+ * event, so there is no interleaving within a single call.
+ */
+let expectedOrganizationId: string | null = null;
+
+/**
+ * A payment event may only touch an order belonging to the SAME
+ * organization as the endpoint that received it.
+ *
+ * Without this, a webhook delivered to one brand's endpoint could mark
+ * ANOTHER brand's order paid, purely because the payload carried that
+ * order's id. The money would have landed in the first brand's merchant
+ * account while the second brand's books recorded the sale — two different
+ * legal entities, mismatched settlement, and an audit trail that does not
+ * reconcile.
+ *
+ * The deployment-level endpoint (organization null) may only touch the
+ * default organization's orders or unattributed pre-migration ones, which
+ * is the same rule stated for that endpoint's own tenant.
+ */
+async function orderBelongsToEndpoint(
+  order: OrderDocument,
+): Promise<boolean> {
+  const orderOrg = order.organizationId ? String(order.organizationId) : null;
+  if (expectedOrganizationId) return orderOrg === expectedOrganizationId;
+
+  if (orderOrg === null) return true; // pre-migration row
+  const def = await Organization.findOne({ isDefault: true })
+    .select("_id")
+    .lean<{ _id: unknown } | null>();
+  return Boolean(def && String(def._id) === orderOrg);
+}
+
 async function findOrderForEvent(
   event: VerifiedPaymentEvent,
 ): Promise<OrderDocument | null> {
@@ -122,10 +166,49 @@ async function findOrderForEvent(
   return null;
 }
 
+/**
+ * Single chokepoint: every handler goes through this, so the cross-brand
+ * check cannot be forgotten by one of them.
+ */
+async function findOrderForEndpoint(
+  event: VerifiedPaymentEvent,
+): Promise<OrderDocument | null> {
+  const order = await findOrderForEvent(event);
+  if (!order) return null;
+  if (await orderBelongsToEndpoint(order)) return order;
+
+  logger.error("payments.cross_organization_event", {
+    eventId: event.eventId,
+    type: event.type,
+    orderId: String(order._id),
+    orderOrganizationId: order.organizationId
+      ? String(order.organizationId)
+      : null,
+    endpointOrganizationId: expectedOrganizationId,
+  });
+  await recordAudit({
+    action: AuditAction.WEBHOOK_FAILED,
+    entityType: AuditEntity.WEBHOOK,
+    entityId: event.eventId,
+    metadata: {
+      reason: "cross_organization_event",
+      type: event.type,
+      orderId: String(order._id),
+      orderOrganizationId: order.organizationId
+        ? String(order.organizationId)
+        : null,
+      endpointOrganizationId: expectedOrganizationId,
+    },
+  });
+  // Treated as "not our order": the handler reports order_not_found and the
+  // record is left completely untouched.
+  return null;
+}
+
 async function handleCheckoutCompleted(
   event: VerifiedPaymentEvent,
 ): Promise<ProcessEventResult> {
-  const order = await findOrderForEvent(event);
+  const order = await findOrderForEndpoint(event);
   if (!order) {
     logger.warn("payments.order_not_found_for_session", {
       sessionId: event.sessionId,
@@ -395,7 +478,7 @@ export async function applyCheckoutPaid(
 async function handleCheckoutExpired(
   event: VerifiedPaymentEvent,
 ): Promise<ProcessEventResult> {
-  const order = await findOrderForEvent(event);
+  const order = await findOrderForEndpoint(event);
   if (!order) {
     return { handled: false, duplicate: false, reason: "order_not_found" };
   }
@@ -514,7 +597,7 @@ async function handleCheckoutExpired(
 async function handleCheckoutFailed(
   event: VerifiedPaymentEvent,
 ): Promise<ProcessEventResult> {
-  const order = await findOrderForEvent(event);
+  const order = await findOrderForEndpoint(event);
   if (!order) {
     return { handled: false, duplicate: false, reason: "order_not_found" };
   }
@@ -528,7 +611,7 @@ async function handleCheckoutFailed(
 async function handlePaymentFailed(
   event: VerifiedPaymentEvent,
 ): Promise<ProcessEventResult> {
-  const order = await findOrderForEvent(event);
+  const order = await findOrderForEndpoint(event);
   if (!order) {
     return { handled: false, duplicate: false, reason: "order_not_found" };
   }

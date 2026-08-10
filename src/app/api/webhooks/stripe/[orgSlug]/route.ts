@@ -74,5 +74,5 @@ export async function POST(req: NextRequest, { params }: Params) {
     );
   }
 
-  return handleStripeWebhook(req, gateway, org.slug);
+  return handleStripeWebhook(req, gateway, String(org._id), org.slug);
 }

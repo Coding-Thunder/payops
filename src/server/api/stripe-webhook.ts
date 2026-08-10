@@ -43,6 +43,10 @@ function bad(status: number, code: string, message: string) {
 export async function handleStripeWebhook(
   req: NextRequest,
   gateway: PaymentGateway,
+  /** Organization whose endpoint this is. Null for the deployment-level
+   *  endpoint. Enforced against the order the event references, so a
+   *  delivery to one brand can never settle another brand's order. */
+  organizationId: string | null = null,
   /** Included in audit rows so a failure can be traced to one tenant's
    *  endpoint. Null for the deployment-level endpoint. */
   organizationSlug: string | null = null,
@@ -85,7 +89,7 @@ export async function handleStripeWebhook(
   }
 
   try {
-    const result = await processGatewayEvent(event);
+    const result = await processGatewayEvent(event, organizationId);
     kickPostCommitDrain();
     return NextResponse.json({ ok: true, data: { received: true, ...result } });
   } catch (err) {

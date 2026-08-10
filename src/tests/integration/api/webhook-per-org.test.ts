@@ -205,3 +205,85 @@ describe("each endpoint verifies against ITS OWN signing secret", () => {
     expect(untouched?.status).not.toBe(OrderStatus.PAID);
   });
 });
+
+describe("a brand's gateway can never settle another brand's order", () => {
+  // The regulatory concern, stated as a test. Two brands are two legal
+  // entities with separate merchant accounts. If a delivery to brand B's
+  // endpoint could mark brand A's order PAID, the money would have landed
+  // in B's account while A's books recorded the sale — settlement that does
+  // not reconcile, against the wrong entity.
+  //
+  // The payload's order reference is attacker- or misconfiguration-
+  // controlled, so the binding has to be enforced server-side.
+
+  it("REFUSES an event whose order belongs to a different organization", async () => {
+    const tripId = await makeConfiguredOrg("tripreservations");
+
+    // An order owned by the OTHER brand.
+    const otherOrg = await Organization.create({
+      slug: "rentalconfirmation",
+      name: "rentalconfirmation",
+      brandName: "Rental Confirmation",
+      isDefault: true,
+      payments: { provider: PaymentGatewayKey.STRIPE },
+    });
+    const victim = await factoryCreateOrder({});
+    await Order.updateOne(
+      { _id: victim._id },
+      { $set: { organizationId: otherOrg._id as Types.ObjectId } },
+    );
+
+    // A correctly-signed delivery to TripReservations' endpoint that names
+    // the other brand's order.
+    const payload = JSON.stringify(
+      buildCheckoutCompleted({
+        orderId: String(victim._id),
+        orderNumber: victim.orderNumber,
+        amountTotal: Math.round(victim.pricing.amount * 100),
+      }),
+    );
+    const signed = signWebhook(payload, "whsec_tripreservations");
+
+    const res = await orgWebhook(
+      req("tripreservations", payload, signed),
+      params("tripreservations"),
+    );
+    const { status, body } = await jsonBody(res);
+
+    // Acked so the gateway stops retrying — but the order is untouched.
+    expect(status).toBe(200);
+    expect(JSON.stringify(body)).toMatch(/order_not_found/);
+
+    const after = await Order.findById(victim._id);
+    expect(after?.status).not.toBe(OrderStatus.PAID);
+    expect(after?.payment.paidAt ?? null).toBeNull();
+    expect(String(after?.organizationId)).toBe(String(otherOrg._id));
+    void tripId;
+  });
+
+  it("settles an order that DOES belong to the endpoint's organization", async () => {
+    const orgId = await makeConfiguredOrg("tripreservations");
+    const order = await factoryCreateOrder({});
+    await Order.updateOne(
+      { _id: order._id },
+      { $set: { organizationId: new Types.ObjectId(orgId) } },
+    );
+
+    const payload = JSON.stringify(
+      buildCheckoutCompleted({
+        orderId: String(order._id),
+        orderNumber: order.orderNumber,
+        amountTotal: Math.round(order.pricing.amount * 100),
+      }),
+    );
+    const signed = signWebhook(payload, "whsec_tripreservations");
+
+    const res = await orgWebhook(
+      req("tripreservations", payload, signed),
+      params("tripreservations"),
+    );
+    expect((await jsonBody(res)).status).toBe(200);
+    const after = await Order.findById(order._id);
+    expect(after?.status).toBe(OrderStatus.PAID);
+  });
+});

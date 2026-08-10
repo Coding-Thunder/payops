@@ -142,7 +142,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 
   try {
-    const result = await processGatewayEvent(event);
+    const result = await processGatewayEvent(event, String(org._id));
     kickPostCommitDrain();
     return NextResponse.json({ ok: true, data: { received: true, ...result } });
   } catch (err) {
