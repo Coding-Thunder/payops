@@ -4,7 +4,6 @@ import { Types } from "mongoose";
 
 import {
   AuditLog,
-  CarLink,
   Dispute,
   EmailTemplate,
   Order,
@@ -32,6 +31,9 @@ import { validCreateOrderInput } from "@/tests/fixtures/order-input.fixture";
  * the column and its index exist on every collection the migration claims to
  * own, so a new org-owned model that skips `schema.plugin(organizationScope)`
  * fails here rather than in production.
+ *
+ * CarLink is intentionally absent: the car library is shared reference data,
+ * like the `providers` catalog, not tenant-owned.
  */
 
 /** Every collection the migration declares organization-owned. */
@@ -41,7 +43,6 @@ const SCOPED: [string, Model<never>][] = [
   ["OrderEvidence", OrderEvidence as unknown as Model<never>],
   ["PaymentConsent", PaymentConsent as unknown as Model<never>],
   ["Dispute", Dispute as unknown as Model<never>],
-  ["CarLink", CarLink as unknown as Model<never>],
   ["Quotation", Quotation as unknown as Model<never>],
   ["AuditLog", AuditLog as unknown as Model<never>],
   ["EmailTemplate", EmailTemplate as unknown as Model<never>],

@@ -44,7 +44,6 @@ import type { Types } from "mongoose";
 import { connectMongo, disconnectMongo } from "../src/server/db/mongoose";
 import {
   AuditLog,
-  CarLink,
   Dispute,
   EmailTemplate,
   Order,
@@ -71,6 +70,9 @@ const ONLY = process.env.BACKFILL_ORG_ONLY?.split(",")
  * Every organization-owned collection. Mirrors the models carrying
  * `schema.plugin(organizationScope)`.
  *
+ * `car_links` is absent too: the car library is shared reference data, not
+ * tenant-owned, so there is nothing to attribute.
+ *
  * `email_templates` is deliberately ABSENT. A null organizationId there is
  * not an unattributed leftover — it is the shared deployment-wide default
  * that organizations fall back to when they have not overridden a template.
@@ -83,7 +85,6 @@ const TARGETS: { name: string; collection: () => Collection<Document> }[] = [
   { name: "order_evidence", collection: () => OrderEvidence.collection },
   { name: "payment_consents", collection: () => PaymentConsent.collection },
   { name: "disputes", collection: () => Dispute.collection },
-  { name: "car_links", collection: () => CarLink.collection },
   { name: "quotations", collection: () => Quotation.collection },
   { name: "audit_logs", collection: () => AuditLog.collection },
   { name: "pending_emails", collection: () => PendingEmail.collection },

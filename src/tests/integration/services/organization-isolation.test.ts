@@ -274,7 +274,7 @@ describe("the audit log is scoped", () => {
   });
 });
 
-describe("car links are scoped", () => {
+describe("car links are SHARED, not scoped", () => {
   async function newCarLink(make: string) {
     return createCarLink(
       {
@@ -287,39 +287,40 @@ describe("car links are scoped", () => {
     );
   }
 
-  it("does not list another organization's car links", async () => {
+  // The car library is reference data, like the `providers` rental-brand
+  // catalog: "Toyota Camry" and its image belong to no single brand. Both
+  // organizations share one library, so an entry added while working in
+  // either is available in the other.
+
+  it("shows an entry added by one organization to the other", async () => {
     actingAs(otherOrg);
-    const theirs = await newCarLink("Toyota");
+    const added = await newCarLink("Toyota");
 
     actingAs(defaultOrg);
     const listed = await listCarLinks({ limit: 50 } as never);
-    expect(listed.map((c) => c.id)).not.toContain(theirs.id);
+    expect(listed.map((c) => c.id)).toContain(added.id);
   });
 
-  it("hides another organization's car link as NOT FOUND", async () => {
+  it("lets either organization open any entry", async () => {
     actingAs(otherOrg);
-    const theirs = await newCarLink("Honda");
+    const added = await newCarLink("Honda");
 
     actingAs(defaultOrg);
-    await expect(getCarLinkById(theirs.id)).rejects.toThrow(/not found/i);
+    await expect(getCarLinkById(added.id)).resolves.toMatchObject({
+      id: added.id,
+    });
   });
 
-  it("refuses a cross-organization mutation at the query, not after it", async () => {
-    // Scoped in the FILTER, so the write never lands and is then rejected —
-    // there is no window where the document is briefly modified.
+  it("lets either organization deactivate an entry", async () => {
     actingAs(otherOrg);
-    const theirs = await newCarLink("Mazda");
+    const added = await newCarLink("Mazda");
 
     actingAs(defaultOrg);
-    await expect(
-      deactivateCarLink(theirs.id, {
-        actor: { id: actor.id, name: actor.name, role: actor.role },
-      }),
-    ).rejects.toThrow(/not found/i);
-
-    actingAs(otherOrg);
-    const stillActive = await getCarLinkById(theirs.id);
-    expect(stillActive.active).toBe(true);
+    await deactivateCarLink(added.id, {
+      actor: { id: actor.id, name: actor.name, role: actor.role },
+    });
+    const after = await getCarLinkById(added.id);
+    expect(after.active).toBe(false);
   });
 });
 
