@@ -5,6 +5,11 @@ import {
   type Types,
 } from "mongoose";
 
+import {
+  organizationScope,
+  type OrganizationScoped,
+} from "./organization-scope";
+
 import { registerModel } from "./register";
 
 /**
@@ -15,7 +20,7 @@ import { registerModel } from "./register";
  * Soft-deleted via `active=false` so historical orders that referenced a
  * link keep rendering its label in audit logs / order details.
  */
-export interface CarLinkDoc {
+export interface CarLinkDoc extends OrganizationScoped {
   carMake: string;
   carType: string;
   imageUrl: string;
@@ -88,6 +93,8 @@ carLinkSchema.index(
     name: "carLinks_dedupe",
   },
 );
+
+carLinkSchema.plugin(organizationScope);
 
 export const CarLink: Model<CarLinkDoc> = registerModel<CarLinkDoc>(
   "CarLink",

@@ -31,7 +31,7 @@ import {
  * (per-dispute, not per-order — the same Stripe event id can be
  * delivered to multiple disputes on the same order in rare cases).
  */
-export interface DisputeDoc {
+export interface DisputeDoc extends OrganizationScoped {
   orderId: Types.ObjectId;
   /** Denormalised lookup so admin views can render order context
    *  without a JOIN. Frozen at creation. */
@@ -138,6 +138,13 @@ const disputeSchema = new Schema<DisputeDoc>(
 
 disputeSchema.index({ orderId: 1, openedAt: -1 });
 disputeSchema.index({ status: 1, openedAt: -1 });
+
+import {
+  organizationScope,
+  type OrganizationScoped,
+} from "./organization-scope";
+
+disputeSchema.plugin(organizationScope);
 
 import { registerModel } from "./register";
 export const Dispute: Model<DisputeDoc> = registerModel<DisputeDoc>(

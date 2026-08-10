@@ -13,7 +13,7 @@ import {
  * Stripped down on purpose: there is no PII gating, no encryption, no
  * lifecycle — this is a B2B contact form, not a financial record.
  */
-export interface QuotationDoc {
+export interface QuotationDoc extends OrganizationScoped {
   fullName: string;
   companyName: string;
   workEmail: string;
@@ -114,6 +114,13 @@ const quotationSchema = new Schema<QuotationDoc>(
 
 quotationSchema.index({ createdAt: -1 });
 quotationSchema.index({ status: 1, createdAt: -1 });
+
+import {
+  organizationScope,
+  type OrganizationScoped,
+} from "./organization-scope";
+
+quotationSchema.plugin(organizationScope);
 
 import { registerModel } from "./register";
 export const Quotation: Model<QuotationDoc> = registerModel<QuotationDoc>(

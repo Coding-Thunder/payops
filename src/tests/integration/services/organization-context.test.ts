@@ -304,7 +304,7 @@ describe("GET /api/organizations", () => {
     sessionMock = await mockSession(actor);
     setNextHeaders({ cookies: { [orgCookieName()]: String(mine) } });
 
-    const res = await listRoute(buildRequest("/api/organizations"));
+    const res = await listRoute();
     const { status, body } = await jsonBody(res);
     expect(status).toBe(200);
     const data = (body as { data: { organizations: { slug: string }[]; selectedId: string | null } }).data;

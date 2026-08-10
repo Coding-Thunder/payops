@@ -33,7 +33,7 @@ import {
  * don't need to JOIN to render status.
  */
 
-export interface PaymentConsentDoc {
+export interface PaymentConsentDoc extends OrganizationScoped {
   orderId: Types.ObjectId;
   /** Denormalised lookup field — matches Order.orderNumber. Lets the
    *  hosted page render a recognisable header without a second query. */
@@ -228,6 +228,13 @@ const paymentConsentSchema = new Schema<PaymentConsentDoc>(
 paymentConsentSchema.index({ orderId: 1, createdAt: -1 });
 paymentConsentSchema.index({ status: 1, createdAt: -1 });
 paymentConsentSchema.index({ customerEmail: 1, createdAt: -1 });
+
+import {
+  organizationScope,
+  type OrganizationScoped,
+} from "./organization-scope";
+
+paymentConsentSchema.plugin(organizationScope);
 
 import { registerModel } from "./register";
 export const PaymentConsent: Model<PaymentConsentDoc> =

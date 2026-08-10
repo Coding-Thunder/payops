@@ -27,7 +27,7 @@ import {
 } from "@/lib/constants/enums";
 import { PROVIDER_KEY_REGEX } from "@/lib/constants/providers";
 
-export interface OrderDoc {
+export interface OrderDoc extends OrganizationScoped {
   orderNumber: string;
   bookingType: BookingType;
   status: OrderStatus;
@@ -503,6 +503,13 @@ orderSchema.pre("validate", function () {
     }
   }
 });
+
+import {
+  organizationScope,
+  type OrganizationScoped,
+} from "./organization-scope";
+
+orderSchema.plugin(organizationScope);
 
 import { registerModel } from "./register";
 export const Order: Model<OrderDoc> = registerModel<OrderDoc>(

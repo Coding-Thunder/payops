@@ -5,6 +5,11 @@ import {
   type Types,
 } from "mongoose";
 
+import {
+  organizationScope,
+  type OrganizationScoped,
+} from "./organization-scope";
+
 import { registerModel } from "./register";
 
 /**
@@ -14,7 +19,7 @@ import { registerModel } from "./register";
  * shape evolves, and validation happens at submit time. The DB only enforces
  * ownership, size, and a TTL so abandoned drafts don't accumulate.
  */
-export interface OrderDraftDoc {
+export interface OrderDraftDoc extends OrganizationScoped {
   ownerId: Types.ObjectId;
   /**
    * Raw form snapshot — exactly what react-hook-form has at the moment of
@@ -82,6 +87,8 @@ orderDraftSchema.index(
   { expireAfterSeconds: 60 * 60 * 24 * 30 },
 );
 orderDraftSchema.index({ ownerId: 1, lastEditedAt: -1 });
+
+orderDraftSchema.plugin(organizationScope);
 
 export const OrderDraft: Model<OrderDraftDoc> = registerModel<OrderDraftDoc>(
   "OrderDraft",

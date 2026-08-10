@@ -8,6 +8,10 @@ import {
 import { EMAIL_TEMPLATE_KEYS } from "@/lib/constants/email-templates";
 import type { EmailTemplateKey } from "@/lib/constants/email-templates";
 
+import {
+  organizationScope,
+  type OrganizationScoped,
+} from "./organization-scope";
 import { registerModel } from "./register";
 
 export { EMAIL_TEMPLATE_KEYS };
@@ -49,7 +53,9 @@ export interface EmailTemplateContent {
   footerNote: string | null;
 }
 
-export interface EmailTemplateDoc extends EmailTemplateContent {
+export interface EmailTemplateDoc
+  extends EmailTemplateContent,
+    OrganizationScoped {
   templateKey: EmailTemplateKey;
   version: number;
   active: boolean;
@@ -121,6 +127,12 @@ emailTemplateSchema.index(
 // concurrent writes; serializing activation through a single service
 // is cleaner).
 emailTemplateSchema.index({ templateKey: 1, active: 1 });
+
+// Templates are organization-scoped, but a NULL organizationId is
+// meaningful here rather than merely historical: it is the shared,
+// deployment-wide default that every organization falls back to when it has
+// not overridden a template. See the resolver in email-template.service.
+emailTemplateSchema.plugin(organizationScope);
 
 export const EmailTemplate: Model<EmailTemplateDoc> =
   registerModel<EmailTemplateDoc>("EmailTemplate", emailTemplateSchema);

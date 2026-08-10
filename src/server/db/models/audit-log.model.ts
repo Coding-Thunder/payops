@@ -15,7 +15,7 @@ import {
 const AUDIT_ACTIONS = Object.values(AuditAction);
 const AUDIT_ENTITIES = Object.values(AuditEntity);
 
-export interface AuditLogDoc {
+export interface AuditLogDoc extends OrganizationScoped {
   action: AuditAction;
   entityType: AuditEntity;
   entityId?: string | null;
@@ -83,6 +83,13 @@ const auditLogSchema = new Schema<AuditLogDoc>(
 auditLogSchema.index({ createdAt: -1 });
 auditLogSchema.index({ action: 1, createdAt: -1 });
 auditLogSchema.index({ entityType: 1, entityId: 1, createdAt: -1 });
+
+import {
+  organizationScope,
+  type OrganizationScoped,
+} from "./organization-scope";
+
+auditLogSchema.plugin(organizationScope);
 
 import { registerModel } from "./register";
 export const AuditLog: Model<AuditLogDoc> = registerModel<AuditLogDoc>(

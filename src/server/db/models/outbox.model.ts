@@ -7,6 +7,11 @@ import {
 
 import { EmailKind } from "@/lib/constants/enums";
 
+import {
+  organizationScope,
+  type OrganizationScoped,
+} from "./organization-scope";
+
 import { registerModel } from "./register";
 
 /* ─────────────────────────── ProcessedWebhookEvent ──────────────────────── */
@@ -22,7 +27,7 @@ import { registerModel } from "./register";
  * — well past Stripe's 3-day retry window but stops the collection
  * growing forever.
  */
-export interface ProcessedWebhookEventDoc {
+export interface ProcessedWebhookEventDoc extends OrganizationScoped {
   gatewayEventId: string;
   gateway: string;
   orderId?: Types.ObjectId | null;
@@ -55,6 +60,8 @@ processedWebhookEventSchema.index(
   { processedAt: 1 },
   { expireAfterSeconds: 60 * 60 * 24 * 90 },
 );
+
+processedWebhookEventSchema.plugin(organizationScope);
 
 export const ProcessedWebhookEvent: Model<ProcessedWebhookEventDoc> =
   registerModel<ProcessedWebhookEventDoc>(
@@ -90,7 +97,7 @@ export type PendingEmailStatus =
 
 const PENDING_EMAIL_STATUSES = Object.values(PendingEmailStatus);
 
-export interface PendingEmailDoc {
+export interface PendingEmailDoc extends OrganizationScoped {
   orderId: Types.ObjectId;
   kind: EmailKind;
   /** Captured for visibility on the admin jobs view. Actual send
@@ -164,6 +171,8 @@ pendingEmailSchema.index(
     partialFilterExpression: { status: PendingEmailStatus.SENT },
   },
 );
+
+pendingEmailSchema.plugin(organizationScope);
 
 export const PendingEmail: Model<PendingEmailDoc> =
   registerModel<PendingEmailDoc>("PendingEmail", pendingEmailSchema);

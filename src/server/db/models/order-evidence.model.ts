@@ -64,7 +64,7 @@ export interface OrderEvidenceRefs {
   messageId?: string | null;
 }
 
-export interface OrderEvidenceDoc {
+export interface OrderEvidenceDoc extends OrganizationScoped {
   orderId: Types.ObjectId;
   orderNumber: string;
   /** 1..N per order. Unique with orderId so concurrent writers can race
@@ -212,6 +212,13 @@ orderEvidenceSchema.pre("updateOne", function () {
 orderEvidenceSchema.pre("updateMany", function () {
   throw new Error(APPEND_ONLY_MESSAGE);
 });
+
+import {
+  organizationScope,
+  type OrganizationScoped,
+} from "./organization-scope";
+
+orderEvidenceSchema.plugin(organizationScope);
 
 import { registerModel } from "./register";
 export const OrderEvidence: Model<OrderEvidenceDoc> =
