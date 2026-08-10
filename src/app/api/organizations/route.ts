@@ -1,3 +1,6 @@
+import { PaymentGatewayKey } from "@/lib/constants/enums";
+import { Organization } from "@/server/db/models";
+import { connectMongo } from "@/server/db/mongoose";
 import { jsonOk, withApi } from "@/server/api/respond";
 import {
   getSelectedOrganization,
@@ -22,5 +25,36 @@ export const GET = withApi(async () => {
     listMemberOrganizations(),
     getSelectedOrganization(),
   ]);
-  return jsonOk({ organizations, selectedId: selected?.id ?? null });
+  // Which gateways the SELECTED organization may use. The email composer
+  // renders its provider dropdown from this instead of a hardcoded list —
+  // otherwise it shows "Stripe (available)" to a PayPal-only brand and tells
+  // the operator the money is going somewhere it is not.
+  let payments: {
+    provider: PaymentGatewayKey;
+    enabledProviders: PaymentGatewayKey[];
+  } | null = null;
+
+  if (selected) {
+    await connectMongo();
+    const org = await Organization.findById(selected.id)
+      .select("payments")
+      .lean<{
+        payments?: {
+          provider?: PaymentGatewayKey;
+          enabledProviders?: PaymentGatewayKey[];
+        };
+      } | null>();
+    const provider = org?.payments?.provider ?? PaymentGatewayKey.STRIPE;
+    const enabled =
+      org?.payments?.enabledProviders && org.payments.enabledProviders.length > 0
+        ? org.payments.enabledProviders
+        : [provider];
+    payments = { provider, enabledProviders: enabled };
+  }
+
+  return jsonOk({
+    organizations,
+    selectedId: selected?.id ?? null,
+    payments,
+  });
 });

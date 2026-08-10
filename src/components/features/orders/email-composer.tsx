@@ -84,6 +84,14 @@ function buildDraft(order: OrderDTO, defaultSubject: string): DraftState {
  * while the composer is still open we flip into a paid state so the
  * agent has zero-latency feedback.
  */
+const GATEWAY_LABEL: Record<string, string> = {
+  STRIPE: "Stripe",
+  PAYPAL: "PayPal",
+  RAZORPAY: "Razorpay",
+  AUTHORIZE_NET: "Authorize.net",
+  MANUAL: "Manual invoice",
+};
+
 export function EmailComposer({
   order,
   initialHtml,
@@ -91,6 +99,30 @@ export function EmailComposer({
   onSent,
 }: EmailComposerProps) {
   const router = useRouter();
+  // Providers this organization may actually use. The server has the final
+  // say either way — it ignores a value the brand has not enabled — but the
+  // UI must not claim a gateway that is not in play.
+  const [gatewayOptions, setGatewayOptions] = React.useState<string[]>([]);
+  const [chosenGateway, setChosenGateway] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    api
+      .get<{
+        payments: { provider: string; enabledProviders: string[] } | null;
+      }>("/api/organizations")
+      .then((res) => {
+        if (cancelled || !res?.payments) return;
+        setGatewayOptions(res.payments.enabledProviders);
+        setChosenGateway(res.payments.provider);
+      })
+      .catch(() => {
+        // Non-fatal: the server picks the provider regardless.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const queryClient = useQueryClient();
   const [draft, setDraft] = React.useState<DraftState>(() =>
     buildDraft(order, defaultSubject),
@@ -193,10 +225,15 @@ export function EmailComposer({
   async function handleGenerateLink() {
     setGenerating(true);
     try {
-      // No gateway sent on purpose: the server picks it from the order's
-      // organization. Hardcoding one here asked PayPal-configured brands
-      // for a Stripe session.
-      await api.post(`/api/orders/${order.id}/generate-payment-link`, {});
+      // Only send a gateway when the operator genuinely chose between
+      // several. The server ignores anything the organization has not
+      // enabled, so this is a preference, never an instruction.
+      await api.post(
+        `/api/orders/${order.id}/generate-payment-link`,
+        gatewayOptions.length > 1 && chosenGateway
+          ? { gateway: chosenGateway }
+          : {},
+      );
       toast.success("Payment link generated", {
         description: `Order ${order.orderNumber} is ready to send.`,
       });
@@ -363,34 +400,40 @@ export function EmailComposer({
         ) : (
           <Card>
             <CardContent className="space-y-4 pt-4">
-              {/* Gateway selector. Stripe is the only enabled
-                  implementation today; Razorpay / Authorize.net / PayPal
-                  appear disabled so the agent can see the architecture
-                  is gateway-agnostic. Once the link is generated the
-                  selector locks. */}
+              {/* Gateway selector, driven by the ORGANIZATION's enabled
+                  providers rather than a hardcoded list. It used to always
+                  read "Stripe (available)" with PayPal greyed out as
+                  "coming soon", which on a PayPal brand told the operator
+                  the money was going somewhere it was not. Once the link is
+                  generated the selector locks and shows what was used. */}
               <Field label="Payment gateway">
-                <select
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={Boolean(order.payment.paymentUrl)}
-                  defaultValue={order.payment.gateway ?? "STRIPE"}
-                  // No onChange — single enabled option means there's
-                  // nothing to track here. Wire useState when a second
-                  // gateway ships.
-                >
-                  <option value="STRIPE">Stripe (available)</option>
-                  <option value="RAZORPAY" disabled>
-                    Razorpay (coming soon)
-                  </option>
-                  <option value="AUTHORIZE_NET" disabled>
-                    Authorize.net (coming soon)
-                  </option>
-                  <option value="PAYPAL" disabled>
-                    PayPal (coming soon)
-                  </option>
-                  <option value="MANUAL" disabled>
-                    Manual invoice (future)
-                  </option>
-                </select>
+                {order.payment.gateway ? (
+                  <div className="rounded-md border border-input bg-muted/40 px-3 py-2 text-sm">
+                    {GATEWAY_LABEL[order.payment.gateway] ??
+                      order.payment.gateway}
+                  </div>
+                ) : gatewayOptions.length === 0 ? (
+                  <div className="rounded-md border border-input bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                    Loading…
+                  </div>
+                ) : gatewayOptions.length === 1 ? (
+                  // One provider: a dropdown with a single item is noise.
+                  <div className="rounded-md border border-input bg-muted/40 px-3 py-2 text-sm">
+                    {GATEWAY_LABEL[gatewayOptions[0]!] ?? gatewayOptions[0]}
+                  </div>
+                ) : (
+                  <select
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={chosenGateway ?? ""}
+                    onChange={(e) => setChosenGateway(e.target.value)}
+                  >
+                    {gatewayOptions.map((g) => (
+                      <option key={g} value={g}>
+                        {GATEWAY_LABEL[g] ?? g}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </Field>
 
               {/* Two-step CTA — generate link first, send second. Once a
