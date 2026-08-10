@@ -177,11 +177,37 @@ export interface PaymentGateway {
 
   createSession(input: CreatePaymentSessionInput): Promise<CreatedPaymentSession>;
   expireSession(sessionId: string): Promise<void>;
-  /** Verifies signature AND parses payload. Throws on invalid signature
-   *  or malformed body — the webhook route surfaces 400 in that case. */
+  /**
+   * Verifies authenticity AND parses the payload. Throws on a bad signature
+   * or malformed body — the webhook route surfaces 400 in that case.
+   *
+   * Takes the whole header set rather than one signature string, and may
+   * return a promise, because gateways authenticate webhooks in
+   * fundamentally different ways:
+   *
+   *   Stripe   computes an HMAC locally over `stripe-signature` — one
+   *            header, synchronous, no network.
+   *   PayPal   has no signing secret at all. Authenticity is established by
+   *            calling PayPal back at
+   *            /v1/notifications/verify-webhook-signature with FIVE
+   *            transmission headers plus the webhook id — an async round
+   *            trip that can fail on the network.
+   *
+   * A single-header synchronous signature could not express the second, so
+   * the contract is the union of both. Synchronous implementations simply
+   * return a value and callers await it.
+   */
   verifyWebhook(
     rawBody: string | Buffer,
-    signatureHeader: string,
-  ): VerifiedPaymentEvent;
+    headers: WebhookHeaders,
+  ): VerifiedPaymentEvent | Promise<VerifiedPaymentEvent>;
   getSessionStatus(sessionId: string): Promise<SessionStatus>;
+}
+
+/**
+ * Case-insensitive header lookup, satisfied by the Web `Headers` object a
+ * Route Handler already has. Keeps gateways from depending on Next types.
+ */
+export interface WebhookHeaders {
+  get(name: string): string | null;
 }

@@ -44,7 +44,7 @@ function placeholder({ key, label }: PlaceholderInput): PaymentGateway {
     async expireSession() {
       notImplemented("expireSession");
     },
-    verifyWebhook() {
+    verifyWebhook(): never {
       notImplemented("verifyWebhook");
       throw new Error("unreachable");
     },

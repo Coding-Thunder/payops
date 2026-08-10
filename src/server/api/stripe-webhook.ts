@@ -65,7 +65,7 @@ export async function handleStripeWebhook(
 
   let event;
   try {
-    event = gateway.verifyWebhook(rawBody, signature);
+    event = await gateway.verifyWebhook(rawBody, req.headers);
   } catch (err) {
     logger.warn("stripe.invalid_signature", {
       organizationSlug: organizationSlug ?? undefined,

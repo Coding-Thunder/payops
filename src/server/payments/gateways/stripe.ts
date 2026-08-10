@@ -17,6 +17,7 @@ import type {
   VerifiedDisputePayload,
   VerifiedPaymentEvent,
   VerifiedRefundPayload,
+  WebhookHeaders,
 } from "../gateway";
 
 /**
@@ -237,8 +238,11 @@ export function createStripeGateway(
 
   verifyWebhook(
     rawBody: string | Buffer,
-    signatureHeader: string,
+    headers: WebhookHeaders,
   ): VerifiedPaymentEvent {
+    // Stripe's scheme is a local HMAC over one header — no network, so this
+    // stays synchronous even though the interface permits a promise.
+    const signatureHeader = headers.get("stripe-signature") ?? "";
     const { secretKey, webhookSecret } = credentials();
     const stripe = getStripeFor(secretKey);
     // Verified against THIS organization's signing secret. A signature made

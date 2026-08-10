@@ -16,6 +16,7 @@ import { getSecret } from "@/server/services/organization-credential.service";
 
 import type { PaymentGateway } from "./gateway";
 import { getDefaultGateway, getGateway } from "./gateways";
+import { createPayPalGateway } from "./gateways/paypal";
 import {
   createStripeGateway,
   type StripeCredentials,
@@ -69,7 +70,10 @@ export class PaymentProviderNotConfiguredError extends ConflictError {
   }
 }
 
-type OrgPaymentConfig = Pick<OrganizationDoc, "brandName" | "isDefault"> & {
+type OrgPaymentConfig = Pick<
+  OrganizationDoc,
+  "slug" | "brandName" | "isDefault"
+> & {
   payments: OrganizationDoc["payments"];
 };
 
@@ -77,8 +81,34 @@ async function loadOrg(organizationId: string): Promise<OrgPaymentConfig | null>
   if (!Types.ObjectId.isValid(organizationId)) return null;
   await connectMongo();
   return Organization.findById(organizationId)
-    .select("brandName isDefault payments")
+    .select("slug brandName isDefault payments")
     .lean<OrgPaymentConfig | null>();
+}
+
+/**
+ * Per-organization credentials from the ENVIRONMENT.
+ *
+ * `ORG_<SLUG>_STRIPE_SECRET_KEY`, `ORG_<SLUG>_PAYPAL_CLIENT_SECRET`, and so
+ * on — slug uppercased with non-alphanumerics as underscores, so
+ * `tripreservations` reads `ORG_TRIPRESERVATIONS_PAYPAL_CLIENT_SECRET`.
+ *
+ * This is the primary path, ahead of the encrypted vault, and it exists
+ * because this deployment is operated by one person: adding a brand should
+ * be editing a env file and redeploying, not building a credential-entry UI
+ * and storing ciphertext in Mongo. The vault stays in place underneath for
+ * whenever that stops being true — nothing has to be migrated to switch,
+ * since env simply wins when present.
+ *
+ * Env vars are already the deployment's secret channel (DigitalOcean holds
+ * them, they are never in git), so this adds no new exposure.
+ */
+function envKey(slug: string, suffix: string): string {
+  return `ORG_${slug.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_${suffix}`;
+}
+
+function fromEnv(slug: string, suffix: string): string | null {
+  const v = process.env[envKey(slug, suffix)];
+  return v && v.trim() ? v.trim() : null;
 }
 
 /**
@@ -143,7 +173,8 @@ export async function getGatewayForOrganization(
     providerOverride ?? org.payments?.provider ?? PaymentGatewayKey.STRIPE;
 
   if (provider === PaymentGatewayKey.STRIPE) {
-    const [secretKey, webhookSecret] = await Promise.all([
+    // Env first, vault second. See fromEnv() above for why.
+    const [vaultKey, vaultHook] = await Promise.all([
       getSecret({
         organizationId,
         provider: CredentialProvider.STRIPE,
@@ -155,6 +186,9 @@ export async function getGatewayForOrganization(
         field: CredentialField.WEBHOOK_SECRET,
       }),
     ]);
+    const secretKey = fromEnv(org.slug, "STRIPE_SECRET_KEY") ?? vaultKey;
+    const webhookSecret =
+      fromEnv(org.slug, "STRIPE_WEBHOOK_SECRET") ?? vaultHook;
 
     if (secretKey && webhookSecret) {
       // Captured by value, so this gateway is permanently bound to THIS
@@ -196,7 +230,47 @@ export async function getGatewayForOrganization(
     throw new PaymentProviderNotConfiguredError(org.brandName, "Stripe");
   }
 
-  // Non-Stripe providers come from the registry. Placeholder entries throw
+  if (provider === PaymentGatewayKey.PAYPAL) {
+    const clientSecret =
+      fromEnv(org.slug, "PAYPAL_CLIENT_SECRET") ??
+      (await getSecret({
+        organizationId,
+        provider: CredentialProvider.PAYPAL,
+        field: CredentialField.CLIENT_SECRET,
+      }));
+    const clientId =
+      fromEnv(org.slug, "PAYPAL_CLIENT_ID") ??
+      org.payments?.publishableKey ??
+      "";
+    const webhookId = fromEnv(org.slug, "PAYPAL_WEBHOOK_ID") ?? "";
+
+    if (clientId && clientSecret && webhookId) {
+      const sandbox =
+        fromEnv(org.slug, "PAYPAL_SANDBOX") === "true" ||
+        Boolean(org.payments?.sandbox);
+      return createPayPalGateway(() => ({
+        clientId,
+        clientSecret,
+        webhookId,
+        sandbox,
+      }));
+    }
+
+    // No env fallback for PayPal, for ANY organization including the
+    // default: the deployment has no PayPal credentials of its own, so
+    // there is nothing coherent to fall back TO.
+    logger.error("payments.gateway.not_configured", {
+      organizationId,
+      brandName: org.brandName,
+      provider,
+      hasClientId: Boolean(clientId),
+      hasClientSecret: Boolean(clientSecret),
+      hasWebhookId: Boolean(webhookId),
+    });
+    throw new PaymentProviderNotConfiguredError(org.brandName, "PayPal");
+  }
+
+  // Remaining providers come from the registry. Placeholder entries throw
   // on use, which is the correct outcome until one is implemented.
   const gateway = getGateway(provider);
   if (!gateway.enabled) {
