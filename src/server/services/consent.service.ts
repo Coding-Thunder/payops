@@ -27,6 +27,11 @@ import { publishEvent } from "@/server/events/bus";
 import { Order, PaymentConsent } from "@/server/db/models";
 import type { PaymentConsentDoc } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
+import {
+  belongsToScope,
+  withOrganizationScope,
+} from "@/server/db/organization-filter";
+import { getRequestOrganizationScope } from "@/server/auth/organization";
 import type {
   PaymentConsentDTO,
   PaymentConsentSnapshot,
@@ -137,6 +142,14 @@ export async function requestConsent(
 
   const order = await Order.findById(orderObjectId);
   if (!order) throw new NotFoundError("Order not found");
+  // Operator-triggered, so it must not reach across organizations. The
+  // customer-facing token paths below are deliberately NOT scoped — the
+  // customer has no session and the signed token is their credential.
+  if (
+    !belongsToScope(order.organizationId, await getRequestOrganizationScope())
+  ) {
+    throw new NotFoundError("Order not found");
+  }
 
   const existing =
     order.consent?.currentConsentId &&
@@ -176,6 +189,9 @@ export async function requestConsent(
     doc = existing as unknown as PaymentConsentDoc & { _id: Types.ObjectId };
   } else {
     const created = await PaymentConsent.create({
+      // Inherit from the order, so a record created on a customer/webhook
+      // path still belongs to the right tenant.
+      organizationId: order.organizationId ?? null,
       orderId: orderObjectId,
       orderNumber: order.orderNumber,
       status: ConsentStatus.REQUESTED,
@@ -511,6 +527,9 @@ export async function verifyConsent(
   }
   const doc = await PaymentConsent.findById(consentId);
   if (!doc) throw new NotFoundError("Consent record not found");
+  if (!belongsToScope(doc.organizationId, await getRequestOrganizationScope())) {
+    throw new NotFoundError("Consent record not found");
+  }
   if (doc.status === ConsentStatus.NOT_REQUESTED) {
     throw new ConflictError("Cannot verify a consent that was never requested");
   }
@@ -595,9 +614,12 @@ export async function listConsentsForOrder(
   }
   await connectMongo();
   if (!Types.ObjectId.isValid(orderId)) return [];
-  const docs = await PaymentConsent.find({
-    orderId: new Types.ObjectId(orderId),
-  })
+  const docs = await PaymentConsent.find(
+    withOrganizationScope(
+      { orderId: new Types.ObjectId(orderId) },
+      await getRequestOrganizationScope(),
+    ),
+  )
     .sort({ createdAt: -1 })
     .lean();
   return docs.map((d) =>
@@ -618,6 +640,9 @@ export async function getConsentById(
   }
   const doc = await PaymentConsent.findById(consentId);
   if (!doc) throw new NotFoundError("Consent record not found");
+  if (!belongsToScope(doc.organizationId, await getRequestOrganizationScope())) {
+    throw new NotFoundError("Consent record not found");
+  }
   return consentToDTO(doc as unknown as PaymentConsentDoc & { _id: Types.ObjectId });
 }
 

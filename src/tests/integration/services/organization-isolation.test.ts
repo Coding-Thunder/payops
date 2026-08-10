@@ -6,7 +6,14 @@ import {
   RecordState,
   UserRole,
 } from "@/lib/constants/enums";
-import { Order, Organization, OrganizationMember } from "@/server/db/models";
+import {
+  Order,
+  OrderEvidence,
+  Organization,
+  OrganizationMember,
+} from "@/server/db/models";
+import { getEvidenceChain } from "@/server/services/evidence.service";
+import { listConsentsForOrder } from "@/server/services/consent.service";
 import {
   createOrder,
   getOrderById,
@@ -313,6 +320,56 @@ describe("car links are scoped", () => {
     actingAs(otherOrg);
     const stillActive = await getCarLinkById(theirs.id);
     expect(stillActive.active).toBe(true);
+  });
+});
+
+describe("evidence is scoped", () => {
+  it("inherits the order's organization, not the caller's context", async () => {
+    // createOrder writes a genesis evidence row in the same transaction.
+    // Most later evidence is written by a webhook with NO organization
+    // context, so inheriting from the order is what keeps a tenant's own
+    // evidence visible to them instead of falling to the default org.
+    actingAs(otherOrg);
+    const order = await newOrder("trip");
+
+    const rows = await OrderEvidence.find({
+      orderId: new Types.ObjectId(order.id),
+    }).lean<{ organizationId?: Types.ObjectId | null }[]>();
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(String(row.organizationId)).toBe(String(otherOrg));
+    }
+  });
+
+  it("refuses another organization's evidence chain as NOT FOUND", async () => {
+    // The chain carries customer email, amounts and consent signatures, and
+    // it reads the order directly rather than through the scoped
+    // getOrderById — so it needs its own check.
+    actingAs(otherOrg);
+    const theirs = await newOrder("trip");
+
+    actingAs(defaultOrg);
+    await expect(
+      getEvidenceChain(theirs.id, { actor }),
+    ).rejects.toThrow(/not found/i);
+  });
+
+  it("serves the chain to the owning organization", async () => {
+    actingAs(otherOrg);
+    const mine = await newOrder("trip");
+    const chain = await getEvidenceChain(mine.id, { actor });
+    expect(chain.events.length).toBeGreaterThan(0);
+  });
+});
+
+describe("consent is scoped for operators but not for customers", () => {
+  it("does not list another organization's consent records", async () => {
+    actingAs(otherOrg);
+    const theirs = await newOrder("trip");
+
+    actingAs(defaultOrg);
+    const listed = await listConsentsForOrder(theirs.id, { actor });
+    expect(listed).toEqual([]);
   });
 });
 

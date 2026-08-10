@@ -25,6 +25,11 @@ import {
   type OrderDoc,
 } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
+import {
+  belongsToScope,
+  withOrganizationScope,
+} from "@/server/db/organization-filter";
+import { getRequestOrganizationScope } from "@/server/auth/organization";
 import { resolveProvider } from "@/lib/constants/providers";
 import type {
   OrderEvidenceChainDTO,
@@ -100,6 +105,24 @@ export async function recordEvidence(
     JSON.stringify(input.payload),
   ) as Record<string, unknown>;
 
+  // Evidence inherits its organization from the ORDER, not from whoever
+  // happens to be making the request.
+  //
+  // Most evidence is written by a webhook or the outbox drainer, which have
+  // no organization context at all. Stamping from ambient scope would leave
+  // those rows null — and a null row is only visible to the DEFAULT
+  // organization, so TripReservations' own payment evidence would be
+  // invisible to TripReservations while showing up under RentalConfirmation.
+  // Reading it off the order is correct for every caller.
+  const orderScopeQuery = Order.findById(orderObjectId).select({
+    organizationId: 1,
+  });
+  const orderScope = await (session
+    ? orderScopeQuery.session(session)
+    : orderScopeQuery
+  ).lean<{ organizationId?: Types.ObjectId | null } | null>();
+  const organizationId = orderScope?.organizationId ?? null;
+
   for (let attempt = 1; attempt <= MAX_APPEND_RETRIES; attempt += 1) {
     const baseQuery = OrderEvidence.findOne({ orderId: orderObjectId })
       .sort({ sequence: -1 })
@@ -124,6 +147,7 @@ export async function recordEvidence(
       const created = await OrderEvidence.create(
         [
           {
+            organizationId,
             orderId: orderObjectId,
             orderNumber: input.orderNumber,
             sequence,
@@ -289,6 +313,15 @@ export async function getEvidenceChain(
     OrderDoc & { _id: Types.ObjectId }
   >();
   if (!orderDoc) throw new NotFoundError("Order not found");
+  // This path reads the order directly rather than through the (scoped)
+  // getOrderById, so the tenancy check has to be repeated here or the
+  // evidence chain becomes a way to read another organization's order —
+  // customer email, amounts, consent signatures and all.
+  if (
+    !belongsToScope(orderDoc.organizationId, await getRequestOrganizationScope())
+  ) {
+    throw new NotFoundError("Order not found");
+  }
 
   const docs = await OrderEvidence.find({
     orderId: new Types.ObjectId(orderId),
@@ -359,7 +392,13 @@ export async function getEvidenceEvent(
   const doc = await OrderEvidence.findById(eventId).lean<
     OrderEvidenceDoc & { _id: Types.ObjectId }
   >();
-  return doc ? evidenceToDTO(doc) : null;
+  if (!doc) return null;
+  // Already returns null for a missing event, so an out-of-scope event
+  // returning null too keeps the two indistinguishable.
+  if (!belongsToScope(doc.organizationId, await getRequestOrganizationScope())) {
+    return null;
+  }
+  return evidenceToDTO(doc);
 }
 
 /**
@@ -507,7 +546,16 @@ export async function searchEvidence(
     conditions.push({ "refs.messageId": q });
   }
 
-  const docs = await OrderEvidence.find({ $or: conditions })
+  // Evidence search is a free-text lookup across customer emails, consent
+  // token hashes and signature names — precisely the fields that must not
+  // cross tenants. The conditions own the top-level `$or`, so scope goes
+  // under `$and`.
+  const docs = await OrderEvidence.find(
+    withOrganizationScope(
+      { $or: conditions },
+      await getRequestOrganizationScope(),
+    ),
+  )
     .sort({ createdAt: -1 })
     .limit(limit)
     .lean<(OrderEvidenceDoc & { _id: Types.ObjectId })[]>();
@@ -578,9 +626,12 @@ export async function getEvidenceChainSummary(
       },
     };
   }
-  const docs = await OrderEvidence.find({
-    orderId: new Types.ObjectId(orderId),
-  })
+  const docs = await OrderEvidence.find(
+    withOrganizationScope(
+      { orderId: new Types.ObjectId(orderId) },
+      await getRequestOrganizationScope(),
+    ),
+  )
     .sort({ sequence: 1 })
     .lean<(OrderEvidenceDoc & { _id: Types.ObjectId })[]>();
   const verification = verifyChainFromDocs(docs, orderId);
