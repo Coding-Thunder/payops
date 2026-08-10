@@ -64,9 +64,20 @@ export interface EmailIdentity {
  * Per-organization SMTP secrets from the ENVIRONMENT, checked ahead of the
  * vault — same rule as payment credentials in resolve-gateway.ts.
  *
- * `ORG_<SLUG>_SMTP_PASSWORD`, slug uppercased with non-alphanumerics as
- * underscores. Adding a brand should be editing an env file, not operating
- * a credential UI.
+ * Slug uppercased with non-alphanumerics as underscores, so
+ * `tripreservations` reads `ORG_TRIPRESERVATIONS_*`. Recognised suffixes:
+ *
+ *   EMAIL_FROM        sender address        (overrides email.fromEmail)
+ *   EMAIL_FROM_NAME   display name          (overrides email.fromName)
+ *   EMAIL_REPLY_TO    reply-to address      (overrides email.replyTo)
+ *   SMTP_HOST/PORT/SECURE/USER              (override email.transport.*)
+ *   SMTP_PASSWORD     the secret            (no document equivalent)
+ *
+ * Only SMTP_PASSWORD has to live here — it is the one value that must never
+ * be in the database. The rest are ordinary configuration and are usually
+ * better on the organization document, where they are visible and editable;
+ * env support exists so a value set there is honoured rather than silently
+ * ignored.
  */
 function envKey(slug: string, suffix: string): string {
   return `ORG_${slug.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_${suffix}`;
@@ -146,7 +157,11 @@ export async function resolveEmailIdentity(
     .lean<OrgEmailConfig | null>();
   if (!org) return fallback;
 
-  const fromEmail = org.email?.fromEmail?.trim() ?? "";
+  // Env first, organization document second — same precedence as payment
+  // credentials. Without this, setting ORG_<SLUG>_EMAIL_FROM would be
+  // silently ignored, which is worse than not supporting it at all.
+  const fromEmail =
+    fromEnv(org.slug, "EMAIL_FROM") ?? org.email?.fromEmail?.trim() ?? "";
 
   if (!fromEmail) {
     if (org.isDefault) {
@@ -206,8 +221,14 @@ export async function resolveEmailIdentity(
   }
 
   return {
-    from: formatFrom(org.email?.fromName?.trim() || org.brandName, fromEmail),
-    replyTo: org.email?.replyTo?.trim() ?? "",
+    from: formatFrom(
+      fromEnv(org.slug, "EMAIL_FROM_NAME") ??
+        org.email?.fromName?.trim() ??
+        org.brandName,
+      fromEmail,
+    ),
+    replyTo:
+      fromEnv(org.slug, "EMAIL_REPLY_TO") ?? org.email?.replyTo?.trim() ?? "",
     brandName: org.brandName,
     supportEmail: org.support?.email?.trim() || branding.supportEmail,
     supportPhone: org.support?.phone?.trim() || branding.supportPhone,
