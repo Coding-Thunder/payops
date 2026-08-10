@@ -78,8 +78,20 @@ export interface OrganizationSupport {
 }
 
 export interface OrganizationPayments {
-  /** Which gateway this organization's payment links are created on. */
+  /** Default gateway for a NEW payment link. */
   provider: PaymentGatewayKey;
+  /**
+   * Every gateway this organization may use. An operator can pick any of
+   * these per order; anything outside the list is refused, so a stray value
+   * from the client cannot select a provider the brand has no account for.
+   *
+   * Empty means "just `provider`", which is how existing rows read. A brand
+   * can therefore start on one gateway and add a second later — e.g.
+   * TripReservations on PayPal today, with its own Stripe account added
+   * alongside — without a schema change, because credentials are already
+   * namespaced per (organization, provider).
+   */
+  enabledProviders: PaymentGatewayKey[];
   /** Publishable / client id — safe to expose to the browser. The matching
    *  secret lives in `organization_credentials`. */
   publishableKey: string;
@@ -193,6 +205,13 @@ const paymentsSubSchema = new Schema<OrganizationPayments>(
       enum: PAYMENT_GATEWAY_KEYS,
       required: true,
       default: PaymentGatewayKey.STRIPE,
+    },
+    enabledProviders: {
+      type: [String],
+      enum: PAYMENT_GATEWAY_KEYS,
+      required: true,
+      // Thunk: a shared array literal would be mutated across documents.
+      default: () => [],
     },
     publishableKey: { type: String, default: "", trim: true, maxlength: 255 },
     sandbox: { type: Boolean, default: false },

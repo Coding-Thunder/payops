@@ -193,10 +193,10 @@ export function EmailComposer({
   async function handleGenerateLink() {
     setGenerating(true);
     try {
-      await api.post(
-        `/api/orders/${order.id}/generate-payment-link`,
-        { gateway: "STRIPE" },
-      );
+      // No gateway sent on purpose: the server picks it from the order's
+      // organization. Hardcoding one here asked PayPal-configured brands
+      // for a Stripe session.
+      await api.post(`/api/orders/${order.id}/generate-payment-link`, {});
       toast.success("Payment link generated", {
         description: `Order ${order.orderNumber} is ready to send.`,
       });

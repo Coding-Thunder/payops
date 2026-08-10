@@ -1033,20 +1033,23 @@ async function resolveGatewayForOrder(
   doc: { organizationId?: Types.ObjectId | null; payment: { gateway?: string | null } },
   override: PaymentGatewayKey | null,
 ) {
-  // The pinned/override key chooses the PROVIDER. It must never choose the
-  // CREDENTIALS — those always come from the order's organization. Returning
-  // `getGateway(pinned)` here would hand back the env-backed registry
-  // singleton, and since the email composer sends `gateway: "STRIPE"` on
-  // every click, that would silently route every organization's payments
-  // through the deployment's own Stripe account.
-  const provider = (override ??
-    (doc.payment.gateway as PaymentGatewayKey | null) ??
-    null) as PaymentGatewayKey | null;
+  const orgId = doc.organizationId ? String(doc.organizationId) : null;
+  const pinned = (doc.payment.gateway as PaymentGatewayKey | null) ?? null;
 
-  return getGatewayForOrganization(
-    doc.organizationId ? String(doc.organizationId) : null,
-    provider,
-  );
+  // Already has a session: stay on the SAME provider, so a regenerate or a
+  // status lookup hits the merchant account that holds the original.
+  if (pinned) return getGatewayForOrganization(orgId, pinned);
+
+  // New session: pass the requested provider through, but the organization
+  // has the final say — getGatewayForOrganization honours it only if the
+  // brand has that provider enabled, and otherwise uses its default. That
+  // lets one brand offer several gateways while a stray client value (the
+  // composer hardcodes STRIPE) can never select one it has no account for.
+  if (orgId) return getGatewayForOrganization(orgId, override);
+
+  // Unmigrated deployment — no organization to consult, so an explicit
+  // choice is all there is. This is the pre-organization behaviour.
+  return getGatewayForOrganization(null, override);
 }
 
 /**

@@ -169,8 +169,19 @@ export async function getGatewayForOrganization(
     return providerOverride ? getGateway(providerOverride) : getDefaultGateway();
   }
 
+  // An override selects among the providers this organization has actually
+  // enabled. Outside that set it is ignored rather than obeyed — the email
+  // composer sends `gateway: "STRIPE"` on every click, and a PayPal-only
+  // brand must not be asked for a Stripe session because of it.
+  const configured = org.payments?.provider ?? PaymentGatewayKey.STRIPE;
+  const enabled =
+    org.payments?.enabledProviders && org.payments.enabledProviders.length > 0
+      ? org.payments.enabledProviders
+      : [configured];
   const provider =
-    providerOverride ?? org.payments?.provider ?? PaymentGatewayKey.STRIPE;
+    providerOverride && enabled.includes(providerOverride)
+      ? providerOverride
+      : configured;
 
   if (provider === PaymentGatewayKey.STRIPE) {
     // Env first, vault second. See fromEnv() above for why.
