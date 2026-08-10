@@ -103,7 +103,7 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
     return (
       <EmptyState
         title="No orders yet"
-        description="Create your first payable order to generate a Stripe payment link."
+        description="Create your first payable order to generate a payment link."
         action={emptyAction}
       />
     );

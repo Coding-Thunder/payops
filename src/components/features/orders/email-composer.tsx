@@ -253,7 +253,7 @@ export function EmailComposer({
   function copyLink() {
     if (!order.payment.paymentUrl) return;
     navigator.clipboard.writeText(order.payment.paymentUrl).then(
-      () => toast.success("Stripe link copied"),
+      () => toast.success("Payment link copied"),
       () => toast.error("Couldn't access clipboard"),
     );
   }
@@ -392,7 +392,7 @@ export function EmailComposer({
               </div>
               <p className="text-[12px] text-muted-foreground">
                 The composer is now read-only. Track the payment status on
-                this page — it will update the moment Stripe reports a
+                this page — it will update the moment the provider reports a
                 success or failure.
               </p>
             </CardContent>

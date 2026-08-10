@@ -214,7 +214,7 @@ function buildSteps(order: OrderDTO): Step[] {
       label: "Paid",
       when: null,
       state: "active",
-      helperText: "Awaiting Stripe",
+      helperText: "Awaiting confirmation",
     };
   } else {
     paid = {

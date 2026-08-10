@@ -52,7 +52,7 @@ export function OrderDetailsCard({ order }: OrderDetailsCardProps) {
               />
             </a>
             <div className="border-t border-border px-5 py-2.5 text-[11.5px] text-muted-foreground">
-              Public image used in the confirmation email and Stripe checkout.
+              Public image used in the confirmation email and the hosted checkout page.
             </div>
           </CardContent>
         </Card>

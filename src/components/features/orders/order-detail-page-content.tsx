@@ -169,7 +169,7 @@ export function OrderDetailPageContent({
         <CardHeader>
           <CardTitle className="text-base">Status</CardTitle>
           <CardDescription>
-            Lifecycle from order creation through Stripe confirmation.
+            Lifecycle from order creation through payment confirmation.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -182,7 +182,7 @@ export function OrderDetailPageContent({
           <AlertTitle>Order ready — payment not initiated yet</AlertTitle>
           <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <span>
-              The Stripe payment link is generated when you send the
+              The payment link is generated when you send the
               request email. Open the composer to send and initiate
               payment in one step.
             </span>

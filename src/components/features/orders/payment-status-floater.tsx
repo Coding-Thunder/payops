@@ -45,8 +45,8 @@ function describeOrder(order: OrderDTO): FloaterDescriptor {
         tone: "paid",
         label: "Payment received",
         detail: order.payment.paidAt
-          ? `Stripe confirmed at ${new Date(order.payment.paidAt).toLocaleString()}.`
-          : "Stripe has confirmed payment.",
+          ? `Payment confirmed at ${new Date(order.payment.paidAt).toLocaleString()}.`
+          : "Payment has been confirmed.",
       };
     case OrderStatus.FAILED:
       return {
@@ -54,7 +54,7 @@ function describeOrder(order: OrderDTO): FloaterDescriptor {
         label: "Payment failed",
         detail:
           order.payment.failureReason ??
-          "Stripe rejected the charge. Generate a new link or contact the customer.",
+          "The payment was declined. Generate a new link or contact the customer.",
       };
     case OrderStatus.EXPIRED:
       return {
@@ -67,7 +67,7 @@ function describeOrder(order: OrderDTO): FloaterDescriptor {
       return {
         tone: "pending",
         label: "Awaiting payment",
-        detail: `Watching Stripe for ${order.customer.name}'s payment in real time.`,
+        detail: `Watching for ${order.customer.name}'s payment in real time.`,
       };
   }
 }
@@ -100,7 +100,7 @@ export function PaymentStatusFloater({ order }: PaymentStatusFloaterProps) {
         setOverride({
           tone: "paid",
           label: "Payment received",
-          detail: `Stripe confirmed at ${new Date(event.at).toLocaleString()}.`,
+          detail: `Payment confirmed at ${new Date(event.at).toLocaleString()}.`,
         });
         return;
       }
@@ -110,7 +110,7 @@ export function PaymentStatusFloater({ order }: PaymentStatusFloaterProps) {
           label: "Payment failed",
           detail:
             (typeof payload.reason === "string" ? payload.reason : null) ??
-            "Stripe rejected the charge.",
+            "The payment was declined.",
         });
         return;
       }
