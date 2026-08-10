@@ -20,7 +20,12 @@ import { logger } from "@/lib/logger";
 import { publishEvent } from "@/server/events/bus";
 import type { OrderDTO } from "@/types";
 
-import { getMailer } from "@/server/email/smtp";
+import { getMailer, getMailerFor } from "@/server/email/smtp";
+import {
+  organizationIdForOrder,
+  resolveEmailIdentity,
+  type EmailIdentity,
+} from "@/server/email/identity";
 import { inlinePublicImage } from "@/server/email/inline-image";
 import type { EmailChargeBreakdown } from "@/server/email/components";
 import {
@@ -72,6 +77,13 @@ interface SendArgs {
   text?: string;
   kind: EmailKind;
   orderId?: string | null;
+  /**
+   * Sender identity for the owning organization. Omitted means "resolve it
+   * from the order", which is what every caller does; passing it explicitly
+   * is only for callers that have already resolved it and want to avoid a
+   * second lookup.
+   */
+  identity?: EmailIdentity | null;
 }
 
 /** Reduce a full email to `a***@example.com` for logger output — keeps
@@ -87,10 +99,28 @@ function maskEmail(addr: string): string {
   return `${head}***${domain}`;
 }
 
-async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
-  const mailer = getMailer();
-  const fromAddress = env.server.EMAIL_FROM;
-  const replyTo = env.server.EMAIL_REPLY_TO;
+async function sendEmail(
+  args: SendArgs,
+): Promise<{ id: string | null; from: string; replyTo: string | null }> {
+  // Identity is resolved from the ORDER'S organization, not from ambient
+  // request context — this runs on the outbox drainer and webhook paths,
+  // which have neither a session nor an organization cookie.
+  const identity =
+    args.identity ??
+    (args.orderId
+      ? await resolveEmailIdentity(
+          await organizationIdForOrder(args.orderId),
+          await getBranding(),
+        )
+      : null);
+
+  // An organization with its own SMTP account sends through it; everyone
+  // else uses the deployment transport exactly as before.
+  const mailer = identity?.transport
+    ? getMailerFor(identity.transport)
+    : getMailer();
+  const fromAddress = identity?.from ?? env.server.EMAIL_FROM;
+  const replyTo = identity?.replyTo || env.server.EMAIL_REPLY_TO;
 
   if (!mailer) {
     logger.warn("email.skipped_no_smtp_config", {
@@ -107,7 +137,7 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
         kind: args.kind,
       },
     });
-    return { id: null };
+    return { id: null, from: fromAddress, replyTo: replyTo || null };
   }
 
   try {
@@ -145,7 +175,11 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
         response: info.response ?? null,
       },
     });
-    return { id: info.messageId ?? null };
+    return {
+      id: info.messageId ?? null,
+      from: fromAddress,
+      replyTo: replyTo || null,
+    };
   } catch (err) {
     logger.error("email.send_failed", {
       kind: args.kind,
@@ -182,7 +216,15 @@ export async function sendPaymentConfirmationEmail(
     getBranding(),
     getActiveTemplateContent("payment-confirmation"),
   ]);
-  const brandName = branding.brandName;
+  // Brand shown to the customer comes from the ORDER's organization,
+  // falling back to the deployment Branding singleton. Resolved once here
+  // and handed to sendEmail so the body, the From header and the evidence
+  // row can never disagree about which brand sent the mail.
+  const identity = await resolveEmailIdentity(
+    await organizationIdForOrder(order.id),
+    branding,
+  );
+  const brandName = identity.brandName;
   // Inline the provider logo as a data URI so Gmail / Outlook render it
   // without proxying back to our server. Falls back to the original
   // (absolute) URL if the file is missing or remote — same visual result
@@ -196,8 +238,8 @@ export async function sendPaymentConfirmationEmail(
   const props: PaymentConfirmationEmailProps = {
     brandName,
     appUrl: env.server.APP_URL,
-    supportEmail: branding.supportEmail,
-    supportPhone: branding.supportPhone,
+    supportEmail: identity.supportEmail,
+    supportPhone: identity.supportPhone,
     customerName: order.customer.name,
     orderNumber: order.orderNumber,
     bookingType: order.bookingType,
@@ -234,10 +276,9 @@ export async function sendPaymentConfirmationEmail(
   });
   const finalSubject =
     tpl?.subject?.trim() || subjectForBookingType(order, brandName);
-  const fromAddress = env.server.EMAIL_FROM;
-  const replyTo = env.server.EMAIL_REPLY_TO || null;
   const recipient = order.customer.email;
   const sent = await sendEmail({
+    identity,
     to: recipient,
     subject: finalSubject,
     html,
@@ -257,14 +298,16 @@ export async function sendPaymentConfirmationEmail(
     payload: {
       kind: EmailKind.PAYMENT_CONFIRMATION,
       subject: finalSubject,
-      from: fromAddress,
-      replyTo,
+      // What was ACTUALLY sent, not what env says — for a non-default
+      // organization these differ, and the evidence chain is dispute-grade.
+      from: sent.from,
+      replyTo: sent.replyTo,
       to: recipient,
       messageId: sent.id,
       brand: {
         name: brandName,
-        supportEmail: branding.supportEmail,
-        supportPhone: branding.supportPhone,
+        supportEmail: identity.supportEmail,
+        supportPhone: identity.supportPhone,
       },
       amount: props.amount,
       paidOn: props.paidOn,
@@ -327,6 +370,11 @@ export async function composePaymentRequestProps(
     getActiveTemplateContent("payment-request"),
     getSettings(),
   ]);
+  // Organization brand, falling back to the deployment singleton.
+  const identity = await resolveEmailIdentity(
+    await organizationIdForOrder(order.id),
+    branding,
+  );
   const providerLogoInline = order.provider
     ? await inlinePublicImage(order.provider.logo)
     : null;
@@ -336,8 +384,8 @@ export async function composePaymentRequestProps(
   const effectiveConsentMessage =
     consent?.consentMessage ?? settings.consentMessage;
   const consentMailto = buildConsentMailto({
-    toEmail: branding.supportEmail,
-    brandName: branding.brandName,
+    toEmail: identity.supportEmail,
+    brandName: identity.brandName,
     order,
     consentMessage: effectiveConsentMessage,
   });
@@ -402,10 +450,10 @@ export async function composePaymentRequestProps(
   // to use defaults" hint covers BOTH the agent-side and template-side
   // defaults without the agent having to know about templates.
   return {
-    brandName: branding.brandName,
+    brandName: identity.brandName,
     appUrl: env.server.APP_URL,
-    supportEmail: branding.supportEmail,
-    supportPhone: branding.supportPhone,
+    supportEmail: identity.supportEmail,
+    supportPhone: identity.supportPhone,
     customerName: order.customer.name,
     orderNumber: order.orderNumber,
     bookingType: order.bookingType,
@@ -586,8 +634,8 @@ export async function sendPaymentRequestEmail(
     payload: {
       kind: EmailKind.PAYMENT_LINK,
       subject,
-      from: env.server.EMAIL_FROM,
-      replyTo: env.server.EMAIL_REPLY_TO || null,
+      from: sent.from,
+      replyTo: sent.replyTo,
       to: toAddress,
       messageId: sent.id,
       brand: {
