@@ -60,6 +60,23 @@ export interface EmailIdentity {
   } | null;
 }
 
+/**
+ * Per-organization SMTP secrets from the ENVIRONMENT, checked ahead of the
+ * vault — same rule as payment credentials in resolve-gateway.ts.
+ *
+ * `ORG_<SLUG>_SMTP_PASSWORD`, slug uppercased with non-alphanumerics as
+ * underscores. Adding a brand should be editing an env file, not operating
+ * a credential UI.
+ */
+function envKey(slug: string, suffix: string): string {
+  return `ORG_${slug.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_${suffix}`;
+}
+
+function fromEnv(slug: string, suffix: string): string | null {
+  const v = process.env[envKey(slug, suffix)];
+  return v && v.trim() ? v.trim() : null;
+}
+
 /** Compose a From header the way nodemailer expects. */
 function formatFrom(name: string, address: string): string {
   if (!name) return address;
@@ -72,7 +89,7 @@ function formatFrom(name: string, address: string): string {
 
 type OrgEmailConfig = Pick<
   OrganizationDoc,
-  "brandName" | "isDefault" | "email" | "support"
+  "slug" | "brandName" | "isDefault" | "email" | "support"
 >;
 
 /** The organization that owns an order, or null for pre-migration rows. */
@@ -125,7 +142,7 @@ export async function resolveEmailIdentity(
 
   await connectMongo();
   const org = await Organization.findById(organizationId)
-    .select("brandName isDefault email support")
+    .select("slug brandName isDefault email support")
     .lean<OrgEmailConfig | null>();
   if (!org) return fallback;
 
@@ -148,20 +165,29 @@ export async function resolveEmailIdentity(
 
   // SMTP password lives in the vault; the rest of the transport is ordinary
   // configuration on the organization document.
-  const host = org.email?.transport?.host?.trim() ?? "";
+  const host =
+    fromEnv(org.slug, "SMTP_HOST") ?? org.email?.transport?.host?.trim() ?? "";
   let transport: EmailIdentity["transport"] = null;
   if (host) {
-    const pass = await getSecret({
-      organizationId,
-      provider: CredentialProvider.SMTP,
-      field: CredentialField.PASSWORD,
-    });
+    // Env first, vault second.
+    const pass =
+      fromEnv(org.slug, "SMTP_PASSWORD") ??
+      (await getSecret({
+        organizationId,
+        provider: CredentialProvider.SMTP,
+        field: CredentialField.PASSWORD,
+      }));
     if (pass) {
       transport = {
         host,
-        port: org.email?.transport?.port ?? 587,
-        secure: Boolean(org.email?.transport?.secure),
-        user: org.email?.transport?.user ?? "",
+        port: Number(fromEnv(org.slug, "SMTP_PORT")) || org.email?.transport?.port || 587,
+        secure:
+          fromEnv(org.slug, "SMTP_SECURE") === "true" ||
+          Boolean(org.email?.transport?.secure),
+        user:
+          fromEnv(org.slug, "SMTP_USER") ??
+          org.email?.transport?.user ??
+          "",
         pass,
       };
     } else {
