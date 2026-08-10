@@ -103,6 +103,142 @@ type OrgEmailConfig = Pick<
   "slug" | "brandName" | "isDefault" | "email" | "support"
 >;
 
+/**
+ * The brand a CUSTOMER sees, for surfaces that are not email.
+ *
+ * `resolveEmailIdentity` above answers "who is this email from". This answers
+ * the neighbouring question — "whose name, logo and support contacts go on
+ * this page / this gateway checkout screen" — and it exists because those
+ * surfaces were all reading the deployment Branding singleton directly, which
+ * is RentalConfirmation's. A TripReservations customer was being emailed
+ * correctly and then landing on a page (and a PayPal approval screen) badged
+ * with the other brand.
+ *
+ * Same fallback rule as the email identity, for the same reason: the DEFAULT
+ * organization resolves to the deployment singleton byte-for-byte, so nothing
+ * about RentalConfirmation's output changes.
+ */
+export interface PublicBrand {
+  /** Null for the deployment fallback (no organization, or the default one
+   *  resolving to the singleton). Used to look up `ORG_<SLUG>_*` overrides. */
+  slug: string | null;
+  brandName: string;
+  /** May be empty for a non-default organization that has configured none —
+   *  callers must render the support block conditionally rather than
+   *  substituting the deployment's address. */
+  supportEmail: string;
+  /** Empty means "this brand publishes no phone number". */
+  supportPhone: string;
+  logo: string;
+  primaryColor: string;
+  footerTagline: string;
+  isDefault: boolean;
+}
+
+export interface PublicBrandFallback {
+  brandName: string;
+  supportEmail: string;
+  supportPhone: string;
+  logo?: string;
+  primaryColor?: string;
+  footerTagline?: string;
+}
+
+type OrgBrandConfig = Pick<
+  OrganizationDoc,
+  "slug" | "brandName" | "isDefault" | "email" | "support" | "branding"
+>;
+
+function fallbackBrand(
+  fallback: PublicBrandFallback,
+  slug: string | null = null,
+): PublicBrand {
+  return {
+    slug,
+    brandName: fallback.brandName,
+    supportEmail: fallback.supportEmail,
+    supportPhone: fallback.supportPhone,
+    logo: fallback.logo ?? "",
+    primaryColor: fallback.primaryColor ?? "#0B1220",
+    footerTagline: fallback.footerTagline ?? "",
+    isDefault: true,
+  };
+}
+
+export async function resolvePublicBrand(
+  organizationId: string | null,
+  fallback: PublicBrandFallback,
+): Promise<PublicBrand> {
+  if (!organizationId || !Types.ObjectId.isValid(organizationId)) {
+    return fallbackBrand(fallback);
+  }
+
+  await connectMongo();
+  const org = await Organization.findById(organizationId)
+    .select("slug brandName isDefault email support branding")
+    .lean<OrgBrandConfig | null>();
+  if (!org) return fallbackBrand(fallback);
+  if (org.isDefault) return fallbackBrand(fallback, org.slug);
+
+  // Support contacts deliberately do NOT fall back to the deployment's. An
+  // unset value here means the brand publishes none; printing the incumbent's
+  // support address and US phone number on another brand's booking is the
+  // exact leak this function exists to close.
+  //
+  // The sending mailbox is a sound last resort for email only — it is this
+  // brand's own address, and it is where a customer hitting Reply would land
+  // anyway.
+  const supportEmail =
+    org.support?.email?.trim() ||
+    fromEnv(org.slug, "EMAIL_FROM") ||
+    org.email?.fromEmail?.trim() ||
+    "";
+
+  // Visual tokens are cosmetic, carry no other brand's identity, and an
+  // organization that has uploaded no logo should still get a usable page.
+  return {
+    slug: org.slug,
+    brandName: org.brandName,
+    supportEmail,
+    supportPhone: org.support?.phone?.trim() || "",
+    logo: org.branding?.logo?.trim() || "",
+    primaryColor:
+      org.branding?.primaryColor?.trim() || fallback.primaryColor || "#0B1220",
+    footerTagline: org.branding?.footerTagline?.trim() || "",
+    isDefault: false,
+  };
+}
+
+/** Convenience for the many callers that hold an order id, not an org id. */
+export async function resolvePublicBrandForOrder(
+  orderId: string,
+  fallback: PublicBrandFallback,
+): Promise<PublicBrand> {
+  return resolvePublicBrand(await organizationIdForOrder(orderId), fallback);
+}
+
+/**
+ * Brand for the `?order=<orderNumber>` the gateways append to their return
+ * URLs. That param is all the /pay pages get, and it is enough — the only
+ * thing derived from it here is which brand's name to print, which the
+ * customer already knows. No booking detail is exposed by this lookup.
+ */
+export async function resolvePublicBrandForOrderNumber(
+  orderNumber: string | null | undefined,
+  fallback: PublicBrandFallback,
+): Promise<PublicBrand> {
+  const trimmed = orderNumber?.trim();
+  if (!trimmed) return fallbackBrand(fallback);
+  await connectMongo();
+  const row = await Order.findOne({ orderNumber: trimmed })
+    .select("organizationId")
+    .lean<{ organizationId?: Types.ObjectId | null } | null>();
+  return resolvePublicBrand(
+    row?.organizationId ? String(row.organizationId) : null,
+    fallback,
+  );
+}
+
 /** The organization that owns an order, or null for pre-migration rows. */
 export async function organizationIdForOrder(
   orderId: string,
@@ -230,8 +366,16 @@ export async function resolveEmailIdentity(
     replyTo:
       fromEnv(org.slug, "EMAIL_REPLY_TO") ?? org.email?.replyTo?.trim() ?? "",
     brandName: org.brandName,
-    supportEmail: org.support?.email?.trim() || branding.supportEmail,
-    supportPhone: org.support?.phone?.trim() || branding.supportPhone,
+    // Only the DEFAULT organization inherits the deployment's support
+    // contacts. For anyone else that fallback printed RentalConfirmation's
+    // address and US phone number in another brand's booking email — the
+    // sending mailbox is the correct last resort, and no phone at all is
+    // better than someone else's.
+    supportEmail:
+      org.support?.email?.trim() ||
+      (org.isDefault ? branding.supportEmail : fromEmail),
+    supportPhone:
+      org.support?.phone?.trim() || (org.isDefault ? branding.supportPhone : ""),
     transport,
   };
 }

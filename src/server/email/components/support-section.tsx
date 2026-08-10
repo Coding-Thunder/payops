@@ -54,48 +54,65 @@ export function SupportSection({
         in your message and we&apos;ll reply within one business day.
       </Text>
 
+      {/* A brand that publishes no phone number gets a full-width "Email us"
+          rather than a dead tel: link. Only a non-default organization can
+          reach that state — the deployment always has both. */}
       <Row style={{ marginTop: SPACE.md + 2 }}>
-        <Column style={{ width: "50%", paddingRight: 6 }}>
-          <Link
-            href={`mailto:${supportEmail}?subject=${encodeURIComponent(
-              `Help with order ${orderNumber}`,
-            )}&body=${encodeURIComponent(
-              `Hi,\n\nI need help with order ${orderNumber}.\n\n`,
-            )}`}
+        {supportEmail ? (
+          <Column
             style={{
-              display: "inline-block",
-              backgroundColor: COLOR.textPrimary,
-              color: COLOR.textInverted,
-              fontSize: 12,
-              fontWeight: 600,
-              padding: "9px 16px",
-              borderRadius: RADIUS.md,
-              textDecoration: "none",
-              letterSpacing: "-0.005em",
+              width: supportPhone ? "50%" : "100%",
+              paddingRight: supportPhone ? 6 : 0,
             }}
           >
-            Email us
-          </Link>
-        </Column>
-        <Column style={{ width: "50%", paddingLeft: 6 }}>
-          <Link
-            href={`tel:${supportPhone.replace(/[^\d+]/g, "")}`}
+            <Link
+              href={`mailto:${supportEmail}?subject=${encodeURIComponent(
+                `Help with order ${orderNumber}`,
+              )}&body=${encodeURIComponent(
+                `Hi,\n\nI need help with order ${orderNumber}.\n\n`,
+              )}`}
+              style={{
+                display: "inline-block",
+                backgroundColor: COLOR.textPrimary,
+                color: COLOR.textInverted,
+                fontSize: 12,
+                fontWeight: 600,
+                padding: "9px 16px",
+                borderRadius: RADIUS.md,
+                textDecoration: "none",
+                letterSpacing: "-0.005em",
+              }}
+            >
+              Email us
+            </Link>
+          </Column>
+        ) : null}
+        {supportPhone ? (
+          <Column
             style={{
-              display: "inline-block",
-              backgroundColor: COLOR.surface,
-              color: COLOR.textPrimary,
-              fontSize: 12,
-              fontWeight: 600,
-              padding: "8px 15px",
-              borderRadius: RADIUS.md,
-              textDecoration: "none",
-              letterSpacing: "-0.005em",
-              border: `1px solid ${COLOR.border}`,
+              width: supportEmail ? "50%" : "100%",
+              paddingLeft: supportEmail ? 6 : 0,
             }}
           >
-            Call us
-          </Link>
-        </Column>
+            <Link
+              href={`tel:${supportPhone.replace(/[^\d+]/g, "")}`}
+              style={{
+                display: "inline-block",
+                backgroundColor: COLOR.surface,
+                color: COLOR.textPrimary,
+                fontSize: 12,
+                fontWeight: 600,
+                padding: "8px 15px",
+                borderRadius: RADIUS.md,
+                textDecoration: "none",
+                letterSpacing: "-0.005em",
+                border: `1px solid ${COLOR.border}`,
+              }}
+            >
+              Call us
+            </Link>
+          </Column>
+        ) : null}
       </Row>
     </Section>
   );

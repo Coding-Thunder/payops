@@ -26,6 +26,7 @@ import { DomainEventType } from "@/lib/constants/events";
 import { publishEvent } from "@/server/events/bus";
 import { Order, PaymentConsent } from "@/server/db/models";
 import type { PaymentConsentDoc } from "@/server/db/models";
+import { resolvePublicBrand } from "@/server/email/identity";
 import { connectMongo } from "@/server/db/mongoose";
 import {
   belongsToScope,
@@ -307,16 +308,28 @@ async function loadConsentByTokenOrThrow(token: string) {
  */
 export async function getPublicConsentView(
   token: string,
-  branding: { brandName: string },
+  branding: { brandName: string; supportEmail?: string; supportPhone?: string },
 ): Promise<PublicConsentView> {
   const doc = await loadConsentByTokenOrThrow(token);
   await connectMongo();
   const order = await Order.findById(doc.orderId).lean();
+  // Brand from the booking's organization. The caller used to pass the
+  // deployment singleton straight through, so a customer who was emailed by
+  // one brand was asked to confirm a booking under another brand's name.
+  const organizationId = order?.organizationId
+    ? String(order.organizationId)
+    : null;
+  const brand = await resolvePublicBrand(organizationId, {
+    brandName: branding.brandName,
+    supportEmail: branding.supportEmail ?? "",
+    supportPhone: branding.supportPhone ?? "",
+  });
   return {
     status: doc.status as ConsentStatus,
     customerName: doc.customerName,
     customerEmail: doc.customerEmail,
-    brandName: branding.brandName,
+    brandName: brand.brandName,
+    organizationId,
     consentMessage: doc.consentMessage,
     snapshot: {
       bookingType: doc.snapshot.bookingType as BookingType,

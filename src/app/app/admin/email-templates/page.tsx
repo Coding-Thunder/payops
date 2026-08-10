@@ -20,7 +20,7 @@ import { Permission } from "@/lib/constants/permissions";
 import { formatDateTime } from "@/lib/format";
 import { requirePermission } from "@/server/auth/session";
 import {
-  getActiveTemplate,
+  getActiveTemplateForRequest,
   listTemplateVersions,
 } from "@/server/services/email-template.service";
 
@@ -67,7 +67,7 @@ export default async function AdminEmailTemplatesIndex() {
   const cards: TemplateCardData[] = await Promise.all(
     EMAIL_TEMPLATE_KEYS.map(async (key) => {
       const [active, versions] = await Promise.all([
-        getActiveTemplate(key),
+        getActiveTemplateForRequest(key),
         listTemplateVersions(key),
       ]);
       return {

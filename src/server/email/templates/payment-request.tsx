@@ -519,7 +519,11 @@ export function PaymentRequestEmail({
         supportPhone={supportPhone}
       />
 
-      <EmailFooter brandName={brandName} supportEmail={supportEmail} />
+      <EmailFooter
+        brandName={brandName}
+        supportEmail={supportEmail}
+        gatewayLabel={gatewayLabel}
+      />
     </EmailLayout>
   );
 }

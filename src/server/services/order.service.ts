@@ -39,6 +39,7 @@ import {
   withOrganizationScope,
 } from "@/server/db/organization-filter";
 import { getRequestOrganizationScope } from "@/server/auth/organization";
+import { resolvePublicBrand } from "@/server/email/identity";
 import type {
   ArchiveOrderInput,
   CreateOrderInput,
@@ -584,6 +585,14 @@ export async function initiatePayment(
     Date.now() + settings.paymentExpiryHours * 60 * 60 * 1000,
   );
   const branding = await getBranding();
+  // The gateway renders this as the MERCHANT on its own approval screen —
+  // PayPal puts it in the header of the page where the customer authorises
+  // the charge. Sourcing it from the deployment singleton showed every brand's
+  // customer "Rental Confirmation" at the exact moment they part with money.
+  const publicBrand = await resolvePublicBrand(
+    doc.organizationId ? String(doc.organizationId) : null,
+    branding,
+  );
   const productName = describeProductName({
     bookingType: doc.bookingType,
     provider: doc.provider?.id ?? resolveProvider(undefined).id,
@@ -618,7 +627,7 @@ export async function initiatePayment(
         bookingType: doc.bookingType,
         actorId: ctx.actor.id,
         actorEmail: ctx.actor.email,
-        appName: branding.brandName,
+        appName: publicBrand.brandName,
       },
     });
   } catch (err) {
@@ -803,6 +812,9 @@ interface BuildSessionInput {
   actor: OrderActor;
   /** Client for the organization that owns this order. */
   stripe: Stripe;
+  /** Brand shown on the Checkout page and the PaymentIntent description —
+   *  the OWNING organization's, not the deployment's. */
+  brandName: string;
 }
 
 async function buildCheckoutSession(args: BuildSessionInput) {
@@ -828,8 +840,9 @@ async function buildCheckoutSession(args: BuildSessionInput) {
   const description = describeProductDescription({ trip: args.trip });
   // Stripe metadata strings show up on the Stripe dashboard and on the
   // PaymentIntent description — admins can rebrand the workspace and the
-  // next checkout session reflects it without a redeploy.
-  const branding = await getBranding();
+  // next checkout session reflects it without a redeploy. The brand comes
+  // from the caller because it belongs to the order's organization.
+  const brandName = args.brandName;
 
   return stripe.checkout.sessions.create(
     {
@@ -867,10 +880,10 @@ async function buildCheckoutSession(args: BuildSessionInput) {
         bookingType: args.bookingType,
         actorId: args.actor.id,
         actorEmail: args.actor.email,
-        appName: branding.brandName,
+        appName: brandName,
       },
       payment_intent_data: {
-        description: `${branding.brandName} • ${args.orderNumber}`,
+        description: `${brandName} • ${args.orderNumber}`,
         metadata: {
           orderId: args.orderId,
           orderNumber: args.orderNumber,
@@ -1185,6 +1198,10 @@ export async function regeneratePaymentLink(
   // stored credentials is REFUSED here rather than quietly expiring and
   // re-creating its session on the deployment's Stripe account.
   const stripe = await getStripeForOrder(doc);
+  const regenBrand = await resolvePublicBrand(
+    doc.organizationId ? String(doc.organizationId) : null,
+    await getBranding(),
+  );
   const expiresAt = new Date(
     Date.now() + settings.paymentExpiryHours * 60 * 60 * 1000,
   );
@@ -1232,6 +1249,7 @@ export async function regeneratePaymentLink(
       cancelUrl: settings.cancelRedirectUrl,
       expiresAt,
       actor: ctx.actor,
+      brandName: regenBrand.brandName,
     });
   } catch (err) {
     logger.error("orders.regenerate_failed", {

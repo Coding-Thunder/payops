@@ -61,6 +61,13 @@ export interface PaymentConfirmationEmailProps {
   receiptUrl?: string | null;
   cancellationPolicy?: string;
   cancellationPolicyVersion?: string;
+  /**
+   * Processor that actually took the payment ("Stripe", "PayPal"). Null when
+   * unknown, in which case the trust line stays gateway-agnostic rather than
+   * asserting a processor that was not in the transaction — this receipt is
+   * the document most likely to end up attached to a chargeback.
+   */
+  gatewayLabel?: string | null;
 }
 
 /**
@@ -91,6 +98,7 @@ export function PaymentConfirmationEmail({
   receiptUrl,
   cancellationPolicy,
   cancellationPolicyVersion,
+  gatewayLabel,
 }: PaymentConfirmationEmailProps) {
   const preview = `${brandName} — payment confirmed for ${orderNumber} (${amount})`;
   const policyParagraphs = cancellationPolicy
@@ -188,7 +196,7 @@ export function PaymentConfirmationEmail({
         />
         {receiptUrl ? (
           <MetadataRow
-            label="Stripe receipt"
+            label={gatewayLabel ? `${gatewayLabel} receipt` : "Receipt"}
             value={
               <Link
                 href={receiptUrl}
@@ -262,7 +270,9 @@ export function PaymentConfirmationEmail({
             lineHeight: "16px",
           }}
         >
-          Payment processed securely by Stripe — PCI-DSS Level 1 certified.
+          {gatewayLabel
+            ? `Payment processed securely by ${gatewayLabel} — PCI-DSS Level 1 certified.`
+            : "Payment processed securely."}{" "}
           Your card details are encrypted end-to-end and never stored on our
           servers.
         </Text>
@@ -326,7 +336,11 @@ export function PaymentConfirmationEmail({
         supportPhone={supportPhone}
       />
 
-      <EmailFooter brandName={brandName} supportEmail={supportEmail} />
+      <EmailFooter
+        brandName={brandName}
+        supportEmail={supportEmail}
+        gatewayLabel={gatewayLabel}
+      />
     </EmailLayout>
   );
 }

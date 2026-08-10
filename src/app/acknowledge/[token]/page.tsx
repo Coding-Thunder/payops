@@ -1,5 +1,4 @@
 import { getPublicAcknowledgementView } from "@/server/services/acknowledgement.service";
-import { getBranding } from "@/server/services/branding.service";
 import { AppError } from "@/lib/errors";
 
 import { AcknowledgeForm } from "./acknowledge-form";
@@ -37,7 +36,11 @@ export default async function AcknowledgePage({
       err instanceof AppError &&
       (err.statusCode === 400 || err.statusCode === 404)
     ) {
-      const branding = await getBranding();
+      // An unparseable or expired token tells us nothing about which brand
+      // the customer belongs to, so this branch cannot name one. It used to
+      // print the deployment's support address, which for every tenant but
+      // the incumbent was another company's mailbox. Pointing them back at
+      // the email they already have routes correctly for all brands.
       return (
         <main className="mx-auto w-full max-w-xl px-4 py-10">
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
@@ -49,14 +52,8 @@ export default async function AcknowledgePage({
               No action is needed — your booking is unaffected.
             </p>
             <p className="mt-4 text-[13px] text-slate-500">
-              Need help? Contact{" "}
-              <a
-                href={`mailto:${branding.supportEmail}`}
-                className="text-slate-700 underline underline-offset-2"
-              >
-                {branding.supportEmail}
-              </a>
-              .
+              Need help? Just reply to the confirmation email you received and
+              our team will pick it up.
             </p>
           </div>
         </main>

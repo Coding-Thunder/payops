@@ -24,6 +24,7 @@ import { getMailer, getMailerFor } from "@/server/email/smtp";
 import {
   organizationIdForOrder,
   resolveEmailIdentity,
+  resolvePublicBrandForOrder,
   type EmailIdentity,
 } from "@/server/email/identity";
 import { inlinePublicImage } from "@/server/email/inline-image";
@@ -120,7 +121,14 @@ async function sendEmail(
     ? getMailerFor(identity.transport)
     : getMailer();
   const fromAddress = identity?.from ?? env.server.EMAIL_FROM;
-  const replyTo = identity?.replyTo || env.server.EMAIL_REPLY_TO;
+  // Only consult the deployment reply-to when NO identity was resolved.
+  // `identity.replyTo === ""` is documented as "this brand publishes no
+  // Reply-To" (identity.ts); `||` turned that into RentalConfirmation's
+  // support address, so another brand's customer hitting Reply — and its
+  // List-Unsubscribe requests — landed in the incumbent's inbox. The default
+  // organization is unaffected: deploymentIdentity() already carries
+  // EMAIL_REPLY_TO.
+  const replyTo = identity ? identity.replyTo : (env.server.EMAIL_REPLY_TO ?? "");
 
   if (!mailer) {
     logger.warn("email.skipped_no_smtp_config", {
@@ -212,18 +220,19 @@ export async function sendPaymentConfirmationEmail(
   // Branding is a single Mongo read per send. We deliberately don't cache
   // it across sends so a brand-name / support-contact change propagates to
   // the very next confirmation, no process restart required.
+  const orgId = await organizationIdForOrder(order.id);
   const [branding, tpl] = await Promise.all([
     getBranding(),
-    getActiveTemplateContent("payment-confirmation"),
+    // Template copy is per-organization, falling back to the shared default.
+    // Passed explicitly rather than read from request scope: this runs on the
+    // webhook and outbox-drainer paths, which have no session.
+    getActiveTemplateContent("payment-confirmation", orgId),
   ]);
   // Brand shown to the customer comes from the ORDER's organization,
   // falling back to the deployment Branding singleton. Resolved once here
   // and handed to sendEmail so the body, the From header and the evidence
   // row can never disagree about which brand sent the mail.
-  const identity = await resolveEmailIdentity(
-    await organizationIdForOrder(order.id),
-    branding,
-  );
+  const identity = await resolveEmailIdentity(orgId, branding);
   const brandName = identity.brandName;
   // Inline the provider logo as a data URI so Gmail / Outlook render it
   // without proxying back to our server. Falls back to the original
@@ -269,6 +278,11 @@ export async function sendPaymentConfirmationEmail(
     receiptUrl: order.payment.receiptUrl ?? null,
     cancellationPolicy: order.policy?.text ?? "",
     cancellationPolicyVersion: order.policy?.version ?? undefined,
+    // The receipt asserted "processed securely by Stripe — PCI-DSS Level 1"
+    // to every brand. Say who actually took the money, or say nothing.
+    gatewayLabel: order.payment.gateway
+      ? PAYMENT_GATEWAY_LABELS[order.payment.gateway as PaymentGatewayKey]
+      : null,
   };
   const html = await render(<PaymentConfirmationEmail {...props} />);
   const text = await render(<PaymentConfirmationEmail {...props} />, {
@@ -365,16 +379,14 @@ export async function composePaymentRequestProps(
     consentRequired: boolean;
   } | null,
 ): Promise<PaymentRequestEmailProps> {
+  const composeOrgId = await organizationIdForOrder(order.id);
   const [branding, tpl, settings] = await Promise.all([
     getBranding(),
-    getActiveTemplateContent("payment-request"),
+    getActiveTemplateContent("payment-request", composeOrgId),
     getSettings(),
   ]);
   // Organization brand, falling back to the deployment singleton.
-  const identity = await resolveEmailIdentity(
-    await organizationIdForOrder(order.id),
-    branding,
-  );
+  const identity = await resolveEmailIdentity(composeOrgId, branding);
   const providerLogoInline = order.provider
     ? await inlinePublicImage(order.provider.logo)
     : null;
@@ -423,12 +435,21 @@ export async function composePaymentRequestProps(
     }
   }
 
+  // Name the processor that will actually take the money. Hardcoding "Stripe"
+  // here put the wrong processor on the single primary action of a PayPal
+  // brand's email — the button said Stripe and opened PayPal, which is the
+  // classic phishing tell.
+  const gatewayLabel = order.payment.gateway
+    ? PAYMENT_GATEWAY_LABELS[order.payment.gateway as PaymentGatewayKey]
+    : null;
+  const payLabel = `Pay ${formatMoney(order.pricing.amount, order.pricing.currency)} securely with ${gatewayLabel ?? "our secure checkout"} →`;
   const primaryCta = alreadyConsented && checkoutUrl
     ? {
         url: checkoutUrl,
-        label: `Pay ${formatMoney(order.pricing.amount, order.pricing.currency)} securely with Stripe →`,
-        helperText:
-          "You already confirmed this booking — this opens Stripe Checkout.",
+        label: payLabel,
+        helperText: `You already confirmed this booking — this opens ${
+          gatewayLabel ? `${gatewayLabel} Checkout` : "secure checkout"
+        }.`,
       }
     : consentUrl
       ? {
@@ -441,7 +462,7 @@ export async function composePaymentRequestProps(
       : checkoutUrl
         ? {
             url: checkoutUrl,
-            label: `Pay ${formatMoney(order.pricing.amount, order.pricing.currency)} securely with Stripe →`,
+            label: payLabel,
             helperText: null,
           }
         : null;
@@ -471,9 +492,7 @@ export async function composePaymentRequestProps(
     },
     chargeBreakdown: buildEmailChargeBreakdown(order),
     paymentUrl: checkoutUrl,
-    gatewayLabel: order.payment.gateway
-      ? PAYMENT_GATEWAY_LABELS[order.payment.gateway as PaymentGatewayKey]
-      : null,
+    gatewayLabel,
     greeting: overrides.greeting ?? tpl?.greeting ?? null,
     intro: overrides.intro ?? tpl?.intro ?? null,
     note: overrides.note ?? tpl?.note ?? null,
@@ -537,16 +556,22 @@ export async function sendPaymentRequestEmail(
   }
   const [branding, tpl, settings] = await Promise.all([
     getBranding(),
-    getActiveTemplateContent("payment-request"),
+    getActiveTemplateContent(
+      "payment-request",
+      await organizationIdForOrder(order.id),
+    ),
     getSettings(),
   ]);
 
   let consentUrl: string | null = null;
   let consentToken: string | null = null;
+  // The subject was the one part of this send still sourced from the
+  // deployment singleton while the body used the resolved organization brand.
+  const subjectBrand = await resolvePublicBrandForOrder(order.id, branding);
   const subject =
     overrides.subject?.trim() ||
     tpl?.subject?.trim() ||
-    defaultPaymentRequestSubject(order, branding.brandName);
+    defaultPaymentRequestSubject(order, subjectBrand.brandName);
 
   if (context?.actor) {
     try {

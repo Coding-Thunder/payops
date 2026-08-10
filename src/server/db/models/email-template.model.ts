@@ -117,10 +117,13 @@ const emailTemplateSchema = new Schema<EmailTemplateDoc>(
   },
 );
 
-// Versions are unique per template-key.
+// Versions are unique per template-key WITHIN an organization. The
+// organizationId must lead: without it, the second brand to author a
+// template collides on version 1 with the first brand's version 1.
+// A null organizationId is its own bucket — the shared default.
 emailTemplateSchema.index(
-  { templateKey: 1, version: 1 },
-  { unique: true, name: "email_templates_key_version" },
+  { organizationId: 1, templateKey: 1, version: 1 },
+  { unique: true, name: "email_templates_org_key_version" },
 );
 // Only one active row per key — enforced at the service layer (Mongo's
 // partial-unique-index syntax is hairy with bool true filter under

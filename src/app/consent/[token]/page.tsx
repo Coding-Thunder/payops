@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
 
+import { PublicBrandChrome } from "@/components/public/public-brand-chrome";
+import { resolvePublicBrand } from "@/server/email/identity";
 import { getBranding } from "@/server/services/branding.service";
 import { getPublicConsentView } from "@/server/services/consent.service";
 import { AppError } from "@/lib/errors";
@@ -17,7 +19,7 @@ interface ConsentPageProps {
  * button in the payment-request email. Renders an order summary + a
  * single-button confirm form. On submit the form hits POST
  * /api/consent/[token]; on success we swap into a "thanks" state that
- * deep-links to the Stripe payment page.
+ * deep-links to the payment page.
  */
 export default async function ConsentPage({ params }: ConsentPageProps) {
   const { token } = await params;
@@ -25,9 +27,7 @@ export default async function ConsentPage({ params }: ConsentPageProps) {
 
   let view;
   try {
-    view = await getPublicConsentView(token, {
-      brandName: branding.brandName,
-    });
+    view = await getPublicConsentView(token, branding);
   } catch (err) {
     if (err instanceof AppError && (err.statusCode === 400 || err.statusCode === 404)) {
       notFound();
@@ -35,5 +35,27 @@ export default async function ConsentPage({ params }: ConsentPageProps) {
     throw err;
   }
 
-  return <ConsentForm token={token} initialView={view} branding={branding} />;
+  // Brand the chrome and the form's support links to the booking's
+  // organization. `branding` remains the fallback the default organization
+  // resolves to, so nothing about the incumbent brand's page changes.
+  const brand = await resolvePublicBrand(view.organizationId, branding);
+  const brandedForForm = {
+    ...branding,
+    brandName: brand.brandName,
+    supportEmail: brand.supportEmail,
+    supportPhone: brand.supportPhone,
+    logo: brand.logo,
+    primaryColor: brand.primaryColor,
+    footerTagline: brand.footerTagline,
+  };
+
+  return (
+    <PublicBrandChrome brand={brand} eyebrow="Secure confirmation">
+      <ConsentForm
+        token={token}
+        initialView={view}
+        branding={brandedForForm}
+      />
+    </PublicBrandChrome>
+  );
 }

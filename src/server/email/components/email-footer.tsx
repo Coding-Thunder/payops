@@ -9,17 +9,25 @@ interface EmailFooterProps {
   legalAddress?: string;
   /** Optional support email displayed in the legal block. */
   supportEmail?: string;
+  /**
+   * Payment processor that actually handled the money, e.g. "Stripe" or
+   * "PayPal". Omit and the attribution sentence is dropped entirely — this
+   * used to read "Powered by Stripe." unconditionally, which put a Stripe
+   * attribution in the legal footer of every PayPal brand's email.
+   */
+  gatewayLabel?: string | null;
 }
 
 /**
  * Bottom-of-email legal block. Muted, single column, no marketing
- * fluff. Always shows: copyright, automated-mail disclosure, "Powered
- * by Stripe" attribution.
+ * fluff. Shows copyright, the automated-mail disclosure, and — when the
+ * processor is known — its attribution.
  */
 export function EmailFooter({
   brandName,
   legalAddress,
   supportEmail,
+  gatewayLabel,
 }: EmailFooterProps) {
   const year = new Date().getUTCFullYear();
   return (
@@ -47,7 +55,7 @@ export function EmailFooter({
         }}
       >
         © {year} {brandName}. Automated payment receipt — replies route to
-        our support team. Powered by Stripe.
+        our support team.{gatewayLabel ? ` Powered by ${gatewayLabel}.` : ""}
       </Text>
       {supportEmail || legalAddress ? (
         <Text

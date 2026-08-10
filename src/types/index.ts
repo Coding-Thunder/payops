@@ -298,7 +298,11 @@ export interface PublicConsentView {
   status: ConsentStatus;
   customerName: string;
   customerEmail: string;
+  /** The OWNING organization's brand, not the deployment's. */
   brandName: string;
+  /** Owning organization, so the page can brand its chrome to match the
+   *  email that sent the customer here. Null for pre-migration bookings. */
+  organizationId: string | null;
   consentMessage: string;
   snapshot: PaymentConsentSnapshot;
   paymentUrl: string | null;
