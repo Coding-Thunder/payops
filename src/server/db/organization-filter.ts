@@ -32,15 +32,33 @@ import { Types } from "mongoose";
  * anything.
  */
 
+/** A Mongo clause safe to push onto `$and`. */
+export type ScopeClause = Record<string, unknown>;
+
 export interface OrganizationScopeInput {
   /** Selected organization id, or null on an unmigrated deployment. */
   organizationId: string | null;
   /** Whether that organization is the compatibility anchor. */
   isDefault: boolean;
+  /**
+   * Match nothing at all.
+   *
+   * A null `organizationId` is ambiguous on its own: it means "unmigrated
+   * deployment, no scoping applies" for a script or a webhook, and it meant
+   * the same thing for a REQUEST that simply had no organization selected —
+   * which quietly made every scoped query unscoped. In the browser that was
+   * invisible because the UI forces a selection, but a direct API call
+   * carrying only a session cookie read both brands.
+   *
+   * This flag is the third state: in a request, on a deployment that HAS
+   * organizations, with nothing selected. The caller has not proved which
+   * tenant they are acting as, so they see nothing rather than everything.
+   */
+  denyAll?: boolean;
 }
 
-/** A Mongo clause safe to push onto `$and`. */
-export type ScopeClause = Record<string, unknown>;
+/** The clause that matches no document. */
+const MATCH_NOTHING: ScopeClause = { _id: { $in: [] } };
 
 /**
  * The clause restricting a query to one organization, or `null` when no
@@ -49,11 +67,13 @@ export type ScopeClause = Record<string, unknown>;
 export function organizationScopeClause(
   scope: OrganizationScopeInput,
 ): ScopeClause | null {
+  // Checked FIRST: an undetermined tenant must never widen the query.
+  if (scope.denyAll) return MATCH_NOTHING;
   if (!scope.organizationId) return null;
   if (!Types.ObjectId.isValid(scope.organizationId)) {
     // A malformed id must never widen the query. Match nothing rather than
     // fall through to "no scope".
-    return { _id: { $in: [] } };
+    return MATCH_NOTHING;
   }
   const id = new Types.ObjectId(scope.organizationId);
 
@@ -98,7 +118,14 @@ export function withOrganizationScope<T extends Record<string, unknown>>(
 export function organizationStamp(
   scope: OrganizationScopeInput,
 ): Types.ObjectId | null {
-  if (!scope.organizationId || !Types.ObjectId.isValid(scope.organizationId)) {
+  // A denied scope still stamps null rather than throwing: the write paths
+  // that reach here are already gated on a real selection, and stamping an
+  // unowned row is strictly safer than stamping the wrong owner.
+  if (
+    scope.denyAll ||
+    !scope.organizationId ||
+    !Types.ObjectId.isValid(scope.organizationId)
+  ) {
     return null;
   }
   return new Types.ObjectId(scope.organizationId);
@@ -117,6 +144,7 @@ export function belongsToScope(
   documentOrganizationId: Types.ObjectId | null | undefined,
   scope: OrganizationScopeInput,
 ): boolean {
+  if (scope.denyAll) return false; // tenant undetermined — own nothing
   if (!scope.organizationId) return true; // unmigrated: no scoping
   const docId = documentOrganizationId ? String(documentOrganizationId) : null;
   if (docId === scope.organizationId) return true;

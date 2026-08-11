@@ -1,8 +1,16 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Types } from "mongoose";
 
-import { PaymentGatewayKey, UserRole } from "@/lib/constants/enums";
-import { Branding, Order, Organization } from "@/server/db/models";
+import { PaymentGatewayKey, RecordState, UserRole } from "@/lib/constants/enums";
+import {
+  Branding,
+  Order,
+  Organization,
+  OrganizationMember,
+} from "@/server/db/models";
+import { orgCookieName } from "@/server/auth/org-cookie";
+import { mockSession } from "@/tests/utils/auth";
+import { setNextHeaders } from "@/tests/utils/next-headers";
 import { createOrder } from "@/server/services/order.service";
 import { recordTermsAcknowledgement } from "@/server/services/acknowledgement.service";
 import { getPublicAcknowledgementView } from "@/server/services/acknowledgement.service";
@@ -90,7 +98,26 @@ async function makeOrg(opts: {
     ...(opts.email ? { email: opts.email } : {}),
     ...(opts.support ? { support: opts.support } : {}),
   });
-  return doc._id as Types.ObjectId;
+  const id = doc._id as Types.ObjectId;
+  await OrganizationMember.create({
+    organizationId: id,
+    userId: new Types.ObjectId(actor.id),
+    role: UserRole.ADMIN,
+    status: RecordState.ACTIVE,
+  });
+  return id;
+}
+
+/**
+ * Put the request inside an organization, the way the cookie does.
+ *
+ * Reads are fail-closed now: on a deployment that HAS organizations, a
+ * request with no selection sees nothing rather than everything. These tests
+ * therefore have to act as a real tenant — which is also what the operator
+ * UI does, so the coverage is closer to reality than it was.
+ */
+function actingAs(orgId: Types.ObjectId) {
+  setNextHeaders({ cookies: { [orgCookieName()]: String(orgId) } });
 }
 
 /** Trip Reservations as configured in production: own Gmail, own support
@@ -117,9 +144,10 @@ async function makeTripReservations() {
 }
 
 async function orderIn(
-  orgId: Types.ObjectId | null,
+  orgId: Types.ObjectId,
   patch: Record<string, unknown> = {},
 ) {
+  actingAs(orgId);
   const { order } = await createOrder(validCreateOrderInput(), { actor });
   await Order.updateOne(
     { _id: order.id },
@@ -129,12 +157,20 @@ async function orderIn(
   return getOrderById(order.id, { actor });
 }
 
+let sessionMock: Awaited<ReturnType<typeof mockSession>> | null = null;
+
 beforeEach(async () => {
   await ensureMongo();
   await createSettings();
   await seedBranding();
+  sessionMock = await mockSession(actor);
   sentMail.length = 0;
   process.env.ORG_TRIPRESERVATIONS_SMTP_PASSWORD = "app-password";
+});
+
+afterEach(() => {
+  sessionMock?.restore();
+  sessionMock = null;
 });
 
 describe("resolvePublicBrand", () => {

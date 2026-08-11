@@ -1,7 +1,6 @@
 import "server-only";
 
-import { type ClientSession, Types } from "mongoose";
-import type Stripe from "stripe";
+import { Types } from "mongoose";
 
 import { sessionOpt, withTx } from "@/server/db/transaction";
 
@@ -48,19 +47,11 @@ import type {
 import type { OrderDTO, PaginatedResult } from "@/types";
 
 import type { RequestContext } from "@/server/api/request-context";
-import { getStripe, getStripeFor } from "@/server/payments/stripe";
 import type {
   CreatedPaymentSession,
   SessionStatus,
 } from "@/server/payments/gateway";
-import {
-  getDefaultGateway,
-  getGateway,
-} from "@/server/payments/gateways";
-import {
-  getGatewayForOrganization,
-  getStripeCredentialsForOrganization,
-} from "@/server/payments/resolve-gateway";
+import { getGatewayForOrganization } from "@/server/payments/resolve-gateway";
 import { recordAudit } from "./audit.service";
 import { captureEvidenceSafe } from "./evidence.service";
 import { getSettings } from "./settings.service";
@@ -790,125 +781,6 @@ export async function initiatePayment(
   };
 }
 
-interface BuildSessionInput {
-  orderId: string;
-  orderNumber: string;
-  /** PREPAID total in MAJOR units — the ONLY figure the gateway charges. */
-  amount: number;
-  currency: string;
-  bookingType: BookingType;
-  provider: string;
-  customerEmail: string;
-  vehicle: { company: string; type: string; imageUrl?: string | null };
-  trip: {
-    pickupDate: string;
-    dropoffDate: string;
-    pickupLocation?: string | null;
-    dropoffLocation?: string | null;
-  };
-  successUrl: string;
-  cancelUrl: string;
-  expiresAt: Date;
-  actor: OrderActor;
-  /** Client for the organization that owns this order. */
-  stripe: Stripe;
-  /** Brand shown on the Checkout page and the PaymentIntent description —
-   *  the OWNING organization's, not the deployment's. */
-  brandName: string;
-}
-
-async function buildCheckoutSession(args: BuildSessionInput) {
-  // The client is supplied by the caller rather than pulled from env.
-  //
-  // This builder is the one `regeneratePaymentLink` uses instead of the
-  // gateway abstraction. Before multi-tenancy `getStripe()` was correct
-  // here because there was exactly one Stripe account; now it would expire
-  // and re-create ANOTHER organization's checkout session on the
-  // deployment's account. The outgoing session arguments are deliberately
-  // untouched — only where the credentials come from has changed.
-  const stripe = args.stripe;
-  const amountMinor = toMinorUnits(args.amount, args.currency);
-  if (amountMinor < 50) {
-    throw new ValidationError("Amount is below Stripe's minimum charge");
-  }
-
-  const productName = describeProductName({
-    bookingType: args.bookingType,
-    provider: args.provider,
-    vehicle: args.vehicle,
-  });
-  const description = describeProductDescription({ trip: args.trip });
-  // Stripe metadata strings show up on the Stripe dashboard and on the
-  // PaymentIntent description — admins can rebrand the workspace and the
-  // next checkout session reflects it without a redeploy. The brand comes
-  // from the caller because it belongs to the order's organization.
-  const brandName = args.brandName;
-
-  return stripe.checkout.sessions.create(
-    {
-      mode: "payment",
-      payment_method_types: ["card"],
-      customer_email: args.customerEmail,
-      client_reference_id: args.orderId,
-      success_url: `${args.successUrl}?order=${encodeURIComponent(args.orderNumber)}&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${args.cancelUrl}?order=${encodeURIComponent(args.orderNumber)}`,
-      expires_at: clampStripeExpiry(args.expiresAt),
-      line_items: [
-        {
-          quantity: 1,
-          price_data: {
-            currency: args.currency.toLowerCase(),
-            unit_amount: amountMinor,
-            product_data: {
-              name: productName,
-              description,
-              // Stripe renders these in the Checkout summary alongside
-              // the price. Only forward when the operator captured a
-              // valid http(s) URL — anything else (data URI, localhost,
-              // empty) Stripe will reject.
-              ...(args.vehicle.imageUrl &&
-              /^https?:\/\//i.test(args.vehicle.imageUrl)
-                ? { images: [args.vehicle.imageUrl] }
-                : {}),
-            },
-          },
-        },
-      ],
-      metadata: {
-        orderId: args.orderId,
-        orderNumber: args.orderNumber,
-        bookingType: args.bookingType,
-        actorId: args.actor.id,
-        actorEmail: args.actor.email,
-        appName: brandName,
-      },
-      payment_intent_data: {
-        description: `${brandName} • ${args.orderNumber}`,
-        metadata: {
-          orderId: args.orderId,
-          orderNumber: args.orderNumber,
-        },
-      },
-    },
-    {
-      idempotencyKey: `order:${args.orderId}:checkout`,
-    },
-  );
-}
-
-/**
- * Stripe's checkout session expiry must be between 30 minutes and 24 hours
- * from now. Clamp accordingly.
- */
-function clampStripeExpiry(date: Date): number {
-  const now = Date.now();
-  const min = now + 31 * 60 * 1000;
-  const max = now + 23 * 60 * 60 * 1000 + 30 * 60 * 1000;
-  const target = date.getTime();
-  const clamped = Math.min(Math.max(target, min), max);
-  return Math.floor(clamped / 1000);
-}
-
 interface ProductNameInput {
   bookingType: BookingType;
   provider: string;
@@ -1066,28 +938,6 @@ async function resolveGatewayForOrder(
 }
 
 /**
- * A Stripe client bound to the ORDER'S organization.
- *
- * Only for the legacy direct-builder path (`regeneratePaymentLink`), which
- * predates the gateway abstraction. Everything else goes through
- * `resolveGatewayForOrder`. Routing through the same organization resolver
- * means the credential rules — env fallback for the default organization,
- * hard refusal for anyone else — apply identically on both paths.
- */
-async function getStripeForOrder(doc: {
-  organizationId?: Types.ObjectId | null;
-  payment: { gateway?: string | null };
-}): Promise<Stripe> {
-  const orgId = doc.organizationId ? String(doc.organizationId) : null;
-  if (!orgId) return getStripe();
-  // Runs the credential checks (and throws for an unconfigured non-default
-  // organization) before we touch Stripe at all.
-  await getGatewayForOrganization(orgId, PaymentGatewayKey.STRIPE);
-  const creds = await getStripeCredentialsForOrganization(orgId);
-  return creds ? getStripeFor(creds.secretKey) : getStripe();
-}
-
-/**
  * Refuse an order that belongs to another organization.
  *
  * Raises NotFound, deliberately, rather than Forbidden. A Forbidden here
@@ -1193,11 +1043,22 @@ export async function regeneratePaymentLink(
   }
 
   const settings = await getSettings();
-  // Same merchant account the order's payment link was created on. Resolving
-  // through the organization also means a non-default organization with no
-  // stored credentials is REFUSED here rather than quietly expiring and
-  // re-creating its session on the deployment's Stripe account.
-  const stripe = await getStripeForOrder(doc);
+  // The merchant account that HOLDS the original session — resolved through
+  // the order's own organization and its pinned provider.
+  //
+  // This used to build a Stripe session directly, guarded by
+  // `getStripeForOrder`. The guard did not hold: for a PayPal-only brand the
+  // STRIPE override is correctly ignored, so `getGatewayForOrganization`
+  // returned the PayPal gateway and nothing threw; the Stripe credential
+  // lookup then found nothing for that brand and fell back to the
+  // DEPLOYMENT's client. Regenerating a link on a Trip Reservations order
+  // produced a checkout on Rental Confirmation's merchant account — the exact
+  // cross-brand settlement the rest of this file exists to prevent.
+  //
+  // Going through the gateway abstraction removes the possibility instead of
+  // patching the symptom: there is no longer a path here that can reach a
+  // Stripe client the organization does not own.
+  const gateway = await resolveGatewayForOrder(doc, null);
   const regenBrand = await resolvePublicBrand(
     doc.organizationId ? String(doc.organizationId) : null,
     await getBranding(),
@@ -1206,22 +1067,23 @@ export async function regeneratePaymentLink(
     Date.now() + settings.paymentExpiryHours * 60 * 60 * 1000,
   );
 
-  // Expire previous session if still open
+  // Expire the previous session. Stripe cancels it; PayPal has no cancel for
+  // an unapproved order and its adapter logs a deliberate no-op.
   if (doc.payment.stripeSessionId) {
     try {
-      await stripe.checkout.sessions.expire(doc.payment.stripeSessionId);
+      await gateway.expireSession(doc.payment.stripeSessionId);
     } catch (err) {
       logger.warn("orders.previous_session_expire_failed", {
         sessionId: doc.payment.stripeSessionId,
+        gateway: gateway.key,
         err: err instanceof Error ? err.message : String(err),
       });
     }
   }
 
-  let session: Stripe.Checkout.Session;
+  let session: CreatedPaymentSession;
   try {
-    session = await buildCheckoutSession({
-      stripe,
+    session = await gateway.createSession({
       orderId: String(doc._id),
       orderNumber: doc.orderNumber,
       // Regeneration reuses the snapshot already attached to the order —
@@ -1231,46 +1093,54 @@ export async function regeneratePaymentLink(
       // prepaid amount, identical to the initial link.
       amount: doc.pricing.amount,
       currency: doc.pricing.currency,
-      bookingType: doc.bookingType,
-      provider: doc.provider?.id ?? resolveProvider(undefined).id,
-      customerEmail: doc.customer.email,
-      vehicle: {
-        company: doc.vehicle.company,
-        type: doc.vehicle.type,
-        imageUrl: doc.vehicle.imageUrl ?? null,
-      },
-      trip: {
-        pickupDate: doc.trip.pickupDate.toISOString(),
-        dropoffDate: doc.trip.dropoffDate.toISOString(),
-        pickupLocation: doc.trip.pickupLocation ?? null,
-        dropoffLocation: doc.trip.dropoffLocation ?? null,
-      },
+      customer: doc.customer,
+      productName: describeProductName({
+        bookingType: doc.bookingType,
+        provider: doc.provider?.id ?? resolveProvider(undefined).id,
+        vehicle: { company: doc.vehicle.company, type: doc.vehicle.type },
+      }),
+      description: describeProductDescription({
+        trip: {
+          pickupDate: doc.trip.pickupDate.toISOString(),
+          dropoffDate: doc.trip.dropoffDate.toISOString(),
+          pickupLocation: doc.trip.pickupLocation ?? null,
+          dropoffLocation: doc.trip.dropoffLocation ?? null,
+        },
+      }),
+      imageUrls: doc.vehicle.imageUrl ? [doc.vehicle.imageUrl] : undefined,
       successUrl: settings.successRedirectUrl,
       cancelUrl: settings.cancelRedirectUrl,
       expiresAt,
-      actor: ctx.actor,
-      brandName: regenBrand.brandName,
+      metadata: {
+        orderId: String(doc._id),
+        orderNumber: doc.orderNumber,
+        bookingType: doc.bookingType,
+        actorId: ctx.actor.id,
+        actorEmail: ctx.actor.email,
+        appName: regenBrand.brandName,
+      },
     });
   } catch (err) {
     logger.error("orders.regenerate_failed", {
       orderId: String(doc._id),
+      gateway: gateway.key,
       err: err instanceof Error ? err.message : String(err),
     });
     throw new PaymentError("Could not regenerate the payment link", err);
   }
 
   if (!session.url) {
-    throw new PaymentError("Stripe did not return a checkout URL");
+    throw new PaymentError(`${gateway.label} did not return a checkout URL`);
   }
 
-  doc.payment.stripeSessionId = session.id;
+  doc.payment.stripeSessionId = session.sessionId;
   doc.payment.checkoutUrl = session.url;
-  doc.payment.expiresAt = new Date(
-    (session.expires_at ?? Math.floor(expiresAt.getTime() / 1000)) * 1000,
-  );
+  doc.payment.expiresAt = session.expiresAt;
   doc.payment.failureReason = null;
-  doc.payment.paymentIntentId =
-    typeof session.payment_intent === "string" ? session.payment_intent : null;
+  doc.payment.paymentIntentId = session.paymentIntentId;
+  // Pin the provider that actually holds this session, so a later reconcile
+  // or webhook looks it up on the right merchant account.
+  doc.payment.gateway = gateway.key;
   doc.status = OrderStatus.PAYMENT_PENDING;
   doc.payment.status = OrderStatus.PAYMENT_PENDING;
 
@@ -1287,7 +1157,7 @@ export async function regeneratePaymentLink(
         entityId: String(doc._id),
         actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
         request: ctx.request ?? null,
-        metadata: { stripeSessionId: session.id },
+        metadata: { stripeSessionId: session.sessionId, gateway: gateway.key },
       },
       txSession,
     );
@@ -1306,11 +1176,9 @@ export async function regeneratePaymentLink(
         },
         request: ctx.request ?? null,
         payload: {
-          paymentSessionId: session.id,
-          paymentIntentId:
-            typeof session.payment_intent === "string"
-              ? session.payment_intent
-              : null,
+          paymentSessionId: session.sessionId,
+          paymentIntentId: session.paymentIntentId,
+          gateway: gateway.key,
           checkoutUrl: session.url,
           amount: doc.pricing.amount,
           currency: doc.pricing.currency,
@@ -1319,11 +1187,8 @@ export async function regeneratePaymentLink(
             : null,
         },
         refs: {
-          paymentSessionId: session.id,
-          paymentIntentId:
-            typeof session.payment_intent === "string"
-              ? session.payment_intent
-              : null,
+          paymentSessionId: session.sessionId,
+          paymentIntentId: session.paymentIntentId,
           customerEmail: doc.customer.email,
         },
       },

@@ -196,10 +196,26 @@ export const getRequestOrganizationScope = cache(
     try {
       selected = await getSelectedOrganization();
     } catch {
-      // No request store (script / drainer / background job).
+      // No request store at all — a script, the outbox drainer, a background
+      // job. These run outside any organization on purpose and stay
+      // unscoped; there is no caller here whose tenant could be determined.
       return { organizationId: null, isDefault: false };
     }
-    if (!selected) return { organizationId: null, isDefault: false };
+    if (!selected) {
+      // A REQUEST with no selection is a different situation entirely, and
+      // conflating the two is what made this unscoped. On a deployment that
+      // has organizations, a caller who has not selected one has not proved
+      // which tenant they are — so they see nothing.
+      //
+      // The browser never reaches this: the app shell forces a selection.
+      // A direct API call carrying only a session cookie does, and it used
+      // to be served both brands' data.
+      if (await organizationsExist()) {
+        return { organizationId: null, isDefault: false, denyAll: true };
+      }
+      // No organizations at all — the pre-migration world, still unscoped.
+      return { organizationId: null, isDefault: false };
+    }
 
     await connectMongo();
     const row = await Organization.findById(selected.id)

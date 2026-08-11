@@ -180,8 +180,8 @@ describe("initiatePayment -> Stripe (via the gateway abstraction)", () => {
   });
 });
 
-describe("regeneratePaymentLink -> Stripe (bypasses the gateway)", () => {
-  it("sends exactly these arguments — note images is ABSENT, not empty", async () => {
+describe("regeneratePaymentLink -> Stripe (now via the gateway)", () => {
+  it("sends the same arguments the gateway path sends — the two have converged", async () => {
     const { actor, order } = await orderWithImage("data:image/png;base64,AAA");
     await regeneratePaymentLink(order.id, { actor });
 
@@ -194,11 +194,25 @@ describe("regeneratePaymentLink -> Stripe (bypasses the gateway)", () => {
       actorId: actor.id,
     };
 
-    // The direct builder guards on the regex before constructing the key, so
-    // the key never appears. This is the observable divergence from the
-    // gateway path above, which sent `images: []` for the same order.
+    // This expectation CHANGED, deliberately, and the change is the point of
+    // the fix.
+    //
+    // Regenerate used to call a direct Stripe builder that bypassed the
+    // gateway abstraction. That builder guarded on the image regex before
+    // constructing the key, so `images` was absent here while the gateway
+    // path sent `images: []` for the identical order — a divergence this
+    // test existed to record.
+    //
+    // The bypass is gone: regenerate now resolves the order's own gateway,
+    // which is what stops a PayPal brand's regenerated link being created on
+    // the deployment's Stripe account. The two paths therefore emit the same
+    // arguments, and `images: []` is what the gateway path has always sent in
+    // production for an order with no http image.
+    //
+    // Everything that could affect the charge — amount, currency, urls,
+    // metadata, appName, the payment-intent description — is unchanged.
     expect(normalise(stripe.sessionsCreated[1]!.params, ids)).toEqual(
-      commonExpectation({}),
+      commonExpectation({ images: [] }),
     );
   });
 
