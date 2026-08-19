@@ -17,6 +17,8 @@ const CHECK_TTL_MS = 5 * 60_000;
 interface Checks {
   warnings: string[];
   email: ResendKeyProbe;
+  /** When these checks actually ran — NOT when the response was built. */
+  checkedAt: string;
 }
 let cachedCheck: { ts: number; checks: Checks } | null = null;
 let warnedOnce = false;
@@ -75,7 +77,7 @@ async function isDbReachable(): Promise<boolean> {
  */
 export async function GET() {
   const dbOk = await isDbReachable();
-  const { warnings, email } = await computeChecks();
+  const { warnings, email, checkedAt } = await computeChecks();
   const status = !dbOk
     ? "unhealthy"
     : warnings.length === 0
@@ -100,6 +102,10 @@ export async function GET() {
           status: email.status,
           source: email.source,
           httpStatus: email.httpStatus,
+          // `ts` above is when this response was built; these checks are
+          // cached for 5 minutes, so without a separate timestamp a verdict
+          // up to CHECK_TTL_MS stale reads as if it were just measured.
+          checkedAt,
         },
         warnings,
       },
@@ -165,7 +171,11 @@ async function computeChecks(): Promise<Checks> {
     );
   }
 
-  const checks: Checks = { warnings, email };
+  const checks: Checks = {
+    warnings,
+    email,
+    checkedAt: new Date(now).toISOString(),
+  };
   cachedCheck = { ts: now, checks };
   return checks;
 }
