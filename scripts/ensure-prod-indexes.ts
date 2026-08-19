@@ -59,6 +59,70 @@ async function dedupeUnique(collName: string, field: string): Promise<void> {
   );
 }
 
+/**
+ * The four collections owned by the platform console (`src/console/server/db/
+ * models.ts`). They are built here rather than through their models because
+ * that module starts with `import "server-only"`, which throws outside a
+ * React Server Component — importing it from this plain tsx script would
+ * abort before a single index was built.
+ *
+ * Until the console was merged into this app it ran its own Mongoose connect
+ * helper that omitted `autoIndex`, taking Mongoose's default of `true` — so
+ * these indexes were being auto-built in production. It now shares the main
+ * connection, which pins `autoIndex: false` in prod, so they must be built
+ * from here.
+ *
+ * KEEP IN SYNC with the `schema.index(...)` calls in
+ * `src/console/server/db/models.ts`. Idempotent: createIndex is a no-op when
+ * an identical index already exists.
+ */
+async function ensureConsoleIndexes(): Promise<void> {
+  const db = mongoose.connection.db;
+  if (!db) return;
+  const specs: Array<{
+    collection: string;
+    keys: Record<string, 1 | -1>;
+    options?: { unique?: boolean; expireAfterSeconds?: number };
+  }> = [
+    // One live OTP per email (re-issuing replaces); TTL sweeps expired rows.
+    { collection: "admin_otps", keys: { email: 1 }, options: { unique: true } },
+    {
+      collection: "admin_otps",
+      keys: { expiresAt: 1 },
+      options: { expireAfterSeconds: 0 },
+    },
+    // The DB-backed admin allow-list.
+    { collection: "admin_users", keys: { email: 1 }, options: { unique: true } },
+    { collection: "admin_audit", keys: { createdAt: -1 } },
+    { collection: "admin_audit", keys: { actorEmail: 1, createdAt: -1 } },
+    {
+      collection: "admin_audit",
+      keys: { targetType: 1, targetId: 1, createdAt: -1 },
+    },
+    {
+      collection: "admin_notes",
+      keys: { subjectType: 1, subjectId: 1, createdAt: -1 },
+    },
+  ];
+
+  console.log("\nEnsuring platform-console indexes:");
+  for (const s of specs) {
+    try {
+      const name = await db
+        .collection(s.collection)
+        .createIndex(s.keys, s.options ?? {});
+      console.log(`  ✓ ${s.collection}.${name}`);
+    } catch (err) {
+      console.error(
+        `  ✗ ${s.collection} ${JSON.stringify(s.keys)}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      process.exitCode = 1;
+    }
+  }
+}
+
 async function main(): Promise<void> {
   const uri = process.env.MONGODB_URI;
   const dbName = process.env.MONGODB_DB;
@@ -76,6 +140,10 @@ async function main(): Promise<void> {
   console.log("De-duplicating before unique index builds:");
   await dedupeUnique("idempotency_keys", "key");
   await dedupeUnique("processed_webhook_events", "gatewayEventId");
+  await dedupeUnique("admin_otps", "email");
+  await dedupeUnique("admin_users", "email");
+
+  await ensureConsoleIndexes();
 
   const names = Object.keys(mongoose.models).sort();
   console.log(`\nEnsuring indexes for ${names.length} models:`);

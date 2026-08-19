@@ -58,6 +58,9 @@ src/
 │   │   ├── dashboard/      # KPI strip + dispute-anchored right rail
 │   │   ├── orders/         # Order list + detail + evidence view
 │   │   └── admin/          # Catalog, items, gateways, branding, etc.
+│   ├── admin/              # Platform super-admin console (see below)
+│   │   ├── (protected)/    # Console pages, gated by requireAdminPage()
+│   │   └── api/            # Console route handlers, /admin/api/*
 │   └── api/                # All route handlers
 ├── components/
 │   ├── marketing/          # Cover band, document chrome, regions, canvases
@@ -72,6 +75,11 @@ src/
 │   ├── errors.ts           # AppError hierarchy
 │   ├── format.ts           # currency, dates, UTC timestamps, hash short
 │   └── api-client.ts       # Typed fetch wrapper (browser)
+├── console/                # Platform super-admin console, non-route code
+│   ├── components/         # Console-only UI (hand-rolled, not shadcn)
+│   ├── lib/                # paths.ts (ADMIN_BASE), money, firebase client
+│   └── server/             # Console session, allow-list, OTP, services,
+│                           #   and its lean mirrors of shared collections
 ├── server/
 │   ├── auth/               # JWT, password hashing, session, RBAC
 │   ├── api/                # withApi wrapper, request-context, security
@@ -190,3 +198,48 @@ order flow continues normally. Check `/app/admin/audit` for the error.
 - [ ] Verify the at-rest backup policy on the production MongoDB cluster
 - [ ] Set up Stripe Connect / per-org webhook endpoints for any tenants
       onboarding with their own Stripe account
+
+## Platform super-admin console (`/admin`)
+
+The cross-tenant founder console — beta review, waitlist grants, user and
+order lookup, email ops, impersonation handoff, the admin allow-list.
+
+It used to be a **separate Next.js app** in `admin/`, deployed as its own
+DigitalOcean app from `source_dir: /admin` against the same MongoDB. It is
+now part of this application, mounted at `/admin`. One repo, one build, one
+deployable component.
+
+**It is a different security boundary from `/app/admin`.** `/app/admin` is
+the *tenant* (org-level) admin surface, gated by the normal `tracetxn_session`
+cookie and the STAFF/ADMIN/SUPER_ADMIN role. `/admin` is the *platform*
+console, gated by its own `admin_session` cookie (scoped to the `/admin` path)
+plus an allow-list in the `admin_users` collection. Holding one grants nothing
+in the other, in either direction.
+
+| | Tenant admin | Platform console |
+|---|---|---|
+| URL | `/app/admin`, `/api/admin/*` | `/admin`, `/admin/api/*` |
+| Cookie | `tracetxn_session` (path `/`) | `admin_session` (path `/admin`) |
+| Gate | `src/proxy.ts` role check | `requireAdminPage()` / `getAdminEmail()` |
+| Scope | one organization | cross-tenant |
+
+Notes for anyone touching it:
+
+- **`src/proxy.ts` deliberately skips `/admin/**` entirely**, before the
+  session cookie is read. The console's login page *is* `/admin`; gating it
+  would 307 the login flow itself. Every console page is guarded by
+  `requireAdminPage()` in `src/app/admin/(protected)/layout.tsx` and every
+  console route handler calls `getAdminEmail()` itself.
+- **Never hardcode a console path.** Build it from `ADMIN_BASE` / `ADMIN_API`
+  in `src/console/lib/paths.ts`.
+- **The console's mirrors of shared collections register under `Console`-
+  prefixed model names.** Mongoose has one model registry per process; a
+  shared name resolves silently by load order rather than throwing. See the
+  comment in `src/console/server/db/models.ts` and the regression test in
+  `src/tests/unit/server/console-model-registry.test.ts`.
+- **Console styles are scoped to `[data-console="admin"]`** in
+  `src/app/admin/console.css` — nothing may be declared on `:root`, `html` or
+  `body`, or the console's dark palette leaks into the marketing site.
+- **The console's indexes are not auto-built in production** (the app runs
+  `autoIndex: false`). Run `npm run ensure-indexes:prod` after deploying a
+  schema change; the specs live in `scripts/ensure-prod-indexes.ts`.

@@ -142,6 +142,21 @@ const nextConfig: NextConfig = {
       ].join(" "),
     ].join("; ");
 
+    // The platform super-admin console (`/admin/**`) shipped its own,
+    // deliberately tighter CSP when it was a separate app: no Stripe, no
+    // Turnstile — it talks to nothing but itself and Firebase/Google
+    // sign-in. Merging it in must not silently widen that. The console CSP
+    // below is the app CSP minus those two families, applied by a LATER
+    // matching `headers` entry: Next resolves duplicate keys last-wins, so
+    // `/admin/**` gets this one and every other path keeps the app CSP.
+    // Every pattern is /g: `https://*.stripe.com` appears in BOTH form-action
+    // and frame-src, and a string-argument `.replace()` would strip only the
+    // first, silently leaving the console able to frame Stripe.
+    const consoleCsp = csp
+      .replace(/ https:\/\/api\.stripe\.com/g, "")
+      .replace(/ https:\/\/\*\.stripe\.com/g, "")
+      .replace(/ https:\/\/challenges\.cloudflare\.com/g, "");
+
     return [
       {
         source: "/(.*)",
@@ -174,6 +189,26 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      // ── Platform super-admin console ──────────────────────────────────
+      // Must come AFTER the catch-all: for a duplicate header key, the last
+      // matching entry wins. Two sources because `/admin/:path*` does not
+      // match the bare `/admin` login page.
+      //
+      // Restores the two header guarantees the console had as a standalone
+      // app and would otherwise lose here: its narrower CSP, and HSTS (the
+      // catch-all block sets none — the main app only emits HSTS per-response
+      // from `applySecurityHeaders()` on `withApi` JSON routes, which no
+      // console handler goes through).
+      ...["/admin", "/admin/:path*"].map((source) => ({
+        source,
+        headers: [
+          { key: "Content-Security-Policy", value: consoleCsp },
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=63072000",
+          },
+        ],
+      })),
     ];
   },
 };

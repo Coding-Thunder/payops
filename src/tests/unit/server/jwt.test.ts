@@ -24,7 +24,10 @@ describe("JWT session", () => {
   it("round-trips a session payload via sign + verify", async () => {
     const token = await signSession(payload);
     const decoded = await verifySession(token);
-    expect(decoded).toEqual(payload);
+    // `toMatchObject`, not `toEqual`: a signed JWT also carries `iat`, and the
+    // optional claims (orgId / orgIds / imp) decode as explicit `undefined`.
+    // Asserting exact shape made this fail on a correct round trip.
+    expect(decoded).toMatchObject(payload);
   });
 
   it("verifySession returns null for an empty token", async () => {

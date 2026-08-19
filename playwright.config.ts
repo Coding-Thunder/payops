@@ -30,6 +30,10 @@ export default defineConfig({
 
   use: {
     baseURL: BASE_URL,
+    // `enforceSameOrigin` (src/server/api/security.ts) refuses a mutating
+    // request with no Origin/Referer. Playwright's APIRequestContext sends
+    // neither, so every API-driven test 403'd before reaching its assertion.
+    extraHTTPHeaders: { Origin: BASE_URL },
     actionTimeout: 10_000,
     navigationTimeout: 30_000,
     trace: "retain-on-failure",

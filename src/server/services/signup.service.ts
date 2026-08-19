@@ -383,7 +383,13 @@ async function uniqueOrgSlug(name: string): Promise<string> {
  * Kept conservative, adding more is cheap, removing one mid-flight
  * doesn't break anything that's already registered.
  */
-const RESERVED_SLUGS = new Set<string>([
+/**
+ * Slugs a tenant may never claim. Exported because the platform console
+ * provisions organizations too (`src/console/server/services/provision.ts`)
+ * and must apply the identical rule — it used to keep a hand-copy with a
+ * "keep in sync" comment, which is a drift waiting to happen.
+ */
+export const RESERVED_SLUGS = new Set<string>([
   // Routing keywords / future URL segments.
   "admin",
   "api",

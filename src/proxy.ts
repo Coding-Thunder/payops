@@ -13,6 +13,7 @@ const AUDIENCE = "tracetxn:web";
  *  /consent/*     → hosted consent confirmation (public, HMAC-token bound)
  *  /api/*         → API routes, auth applied selectively below
  *  /app/*         → the entire authed product
+ *  /admin/*       → platform super-admin console, own session, NOT gated here
  *
  * The authed product moved from a `(app)` route group to a literal
  * `/app` URL prefix so the root path can serve the marketing site.
@@ -94,8 +95,43 @@ const PUBLIC_PREFIXES = [
   "/api/webhooks/",
 ];
 
-/** Admin-only path prefixes (super_admin + admin). */
+/**
+ * TENANT admin-only path prefixes (super_admin + admin) — the org-level admin
+ * surface inside the product. NOT the platform console at `/admin`, which is
+ * a different application boundary with its own session; see
+ * `isPlatformConsole()`.
+ */
 const ADMIN_PATH_PREFIXES = ["/app/admin", "/api/admin"];
+
+/**
+ * The platform super-admin console, mounted at `/admin` (`src/app/admin/**`).
+ *
+ * It was a separate Next app on its own hostname until it was merged in, and
+ * it authenticates with its OWN cookie (`admin_session`) against its OWN
+ * allow-list — a tenant session grants nothing there and vice versa. So this
+ * proxy, which exists to gate tenant sessions, must not touch it:
+ *
+ *   - The console's login page IS `/admin`, and its credential endpoints are
+ *     `/admin/api/auth/*`. Gating them would 307 the login flow to `/login`
+ *     (a 307 preserves the method, so the browser would re-POST the OTP
+ *     request there) and nobody could ever sign in.
+ *   - Observe-only impersonation 403s every mutating request on this origin.
+ *     Now that the console shares the origin, that would block every console
+ *     POST/DELETE for an operator who happens to be mid-impersonation.
+ *
+ * Both are avoided by returning BEFORE the session cookie is read.
+ *
+ * Every console page is guarded server-side by `requireAdminPage()` in
+ * `src/app/admin/(protected)/layout.tsx`, and every console route handler
+ * calls `getAdminEmail()` itself — exactly as when it ran standalone with no
+ * middleware in front of it at all.
+ *
+ * Matched as exact-or-slash on purpose: a bare `startsWith("/admin")` would
+ * also swallow a future `/administrators` route and silently make it public.
+ */
+function isPlatformConsole(pathname: string): boolean {
+  return pathname === "/admin" || pathname.startsWith("/admin/");
+}
 
 function isPublic(pathname: string): boolean {
   if (PUBLIC_PATHS.includes(pathname)) return true;
@@ -159,6 +195,20 @@ async function verifyToken(token: string, secret: Uint8Array) {
  */
 export async function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
+  // Before anything else, and before the session cookie is read — see
+  // `isPlatformConsole()`.
+  //
+  // The only thing we do is stamp the requested path onto the forwarded
+  // headers. A server component cannot otherwise learn its own URL, and the
+  // console's auth guard needs it to send an unauthenticated operator back to
+  // where they were going after signing in. Request headers are client-
+  // supplied, so `requireAdminPage()` re-validates this as a console path
+  // before putting it in a redirect.
+  if (isPlatformConsole(pathname)) {
+    const headers = new Headers(req.headers);
+    headers.set("x-console-path", pathname + search);
+    return NextResponse.next({ request: { headers } });
+  }
   if (isPublic(pathname)) return NextResponse.next();
 
   const cookieName = process.env.COOKIE_NAME || "tracetxn_session";

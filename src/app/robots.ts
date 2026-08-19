@@ -27,6 +27,13 @@ export default function robots(): MetadataRoute.Robots {
           "/app/",
           "/pay/",
           "/consent/",
+          // Platform super-admin console. It carries `robots: noindex` in its
+          // own layout metadata, but that only helps once a crawler has
+          // fetched the page — and the console used to live on a separate
+          // hostname that was never in this sitemap at all. Disallowing the
+          // prefix keeps it out of the crawl entirely now that it shares the
+          // indexable marketing origin.
+          "/admin",
         ],
       },
       {

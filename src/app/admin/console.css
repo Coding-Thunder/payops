@@ -1,0 +1,96 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   Platform console theme.
+
+   This was the console's `globals.css` when it was a separate Next app. Two
+   things changed when it moved under `/admin` in the main app:
+
+   1. No `@import "tailwindcss"`. The root stylesheet already loads Tailwind
+      for the whole document, and its v4 source scanner already sees these
+      files (they live under `src/`). A second import would duplicate
+      preflight and the `@layer theme` token block — including
+      `--font-sans`, which would swap the entire app off Geist if the sheet
+      were ever hoisted into a shared chunk.
+
+   2. Nothing is declared on `:root`, `html` or `body` any more. The console's
+      token names (`--border`, `--muted`, `--accent`) collide with the main
+      app's shadcn tokens of the same names but INVERTED roles — the console's
+      `--muted` is a text color, the app's is a surface. Left on `:root` they
+      would repaint the marketing site and the tenant app the moment
+      `experimental.cssChunking` (default `true`) merged the two sheets, or
+      the moment anyone soft-navigated across the boundary — React does not
+      detach stylesheets on client navigation.
+
+   Everything is therefore scoped to the `data-console="admin"` wrapper in
+   `layout.tsx`. The attribute selector has the same (0,1,0) specificity as
+   `:root` but wins inside the console because it is CLOSER in the
+   inheritance chain — so correctness does not depend on stylesheet order.
+   Every existing `bg-[var(--panel)]` / `text-[var(--muted)]` call site keeps
+   working verbatim.
+   ────────────────────────────────────────────────────────────────────────── */
+
+[data-console="admin"] {
+  --bg: #0b1220;
+  --panel: #111a2e;
+  --panel-2: #0e1626;
+  --border: #1e2a44;
+  --text: #e7ecf5;
+  --muted: #93a1bd;
+  --accent: #5b8cff;
+  --accent-2: #3f6fe0;
+  --good: #34d399;
+  --warn: #fbbf24;
+  --bad: #f87171;
+
+  /* Was `html, body { background; color }` — the console no longer owns
+     either element, so the wrapper paints itself and fills the viewport. */
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+
+  /* The main app's `@layer base` sets `body { font-family: var(--font-sans);
+     font-size: 14px; letter-spacing: -0.006em; font-feature-settings: … }`.
+     The console inherited browser defaults + a system stack. Restore them so
+     the console renders exactly as it did standalone. */
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  font-size: 16px;
+  letter-spacing: normal;
+  font-feature-settings: normal;
+}
+
+/* The main app's base layer gives h1–h4 negative tracking; the console had
+   none. */
+[data-console="admin"] :is(h1, h2, h3, h4, h5, h6) {
+  letter-spacing: normal;
+}
+
+[data-console="admin"] a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* The main app masks autofill with a 1000px inset shadow in `--background`
+   (#F8FAFC) + `--foreground` (#0F172A), both `!important` — on a dark form
+   that renders as a white block with navy text. Only another `!important`
+   rule can beat it. */
+[data-console="admin"] :is(input, textarea, select):-webkit-autofill,
+[data-console="admin"] :is(input, textarea, select):-webkit-autofill:hover,
+[data-console="admin"] :is(input, textarea, select):-webkit-autofill:focus,
+[data-console="admin"] :is(input, textarea, select):-webkit-autofill:active {
+  box-shadow: 0 0 0 1000px var(--panel-2) inset !important;
+  -webkit-box-shadow: 0 0 0 1000px var(--panel-2) inset !important;
+  -webkit-text-fill-color: var(--text) !important;
+  caret-color: var(--text);
+}
+
+/* The main app's scrollbar + selection colors are tuned for a light surface. */
+[data-console="admin"] *::-webkit-scrollbar-thumb {
+  background: var(--border);
+}
+
+[data-console="admin"] ::selection {
+  background-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--text);
+}

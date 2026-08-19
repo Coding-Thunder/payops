@@ -124,6 +124,11 @@ customerSchema.index(
 // query falls back to a blocking in-memory sort over the whole tenant
 // (32MB cap → error 96 on large tenants). The backfill migration's
 // syncIndexes() builds these in production.
+// The four indexes below are orgId-leading, for the tenant app. The console
+// lists customers CROSS-TENANT, so none of them can serve its sorts.
+customerSchema.index({ createdAt: -1 });
+customerSchema.index({ lastOrderAt: -1 });
+customerSchema.index({ ordersCount: -1 });
 customerSchema.index({ orgId: 1, lastOrderAt: -1 }); // sort: activity (default)
 customerSchema.index({ orgId: 1, ordersCount: -1 }); // sort: orders
 customerSchema.index({ orgId: 1, createdAt: -1 }); // sort: created

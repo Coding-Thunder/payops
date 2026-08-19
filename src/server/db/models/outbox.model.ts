@@ -176,7 +176,12 @@ const pendingEmailSchema = new Schema<PendingEmailDoc>(
   },
 );
 
+// Drainer lookup.
 pendingEmailSchema.index({ status: 1, nextAttemptAt: 1 });
+// Console Email Ops: unfiltered list sorts by createdAt, and the status
+// filter is the one operators reach for when hunting failures.
+pendingEmailSchema.index({ createdAt: -1 });
+pendingEmailSchema.index({ status: 1, createdAt: -1 });
 
 // TTL on SENT rows, keep 7 days for audit visibility, then drop. FAILED
 // rows are NOT auto-deleted; ops should review them.

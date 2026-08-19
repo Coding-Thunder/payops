@@ -60,6 +60,14 @@ yarn-error.log*
 .env*
 !.env.example
 
+# Production/local env files WITHOUT a leading dot, e.g. `env.tracetxn.prod`.
+# The `.env*` rule above only matches names that START with a dot, so these
+# were fully committable — a real secrets file one `git add -A` away from the
+# index. Anchored to the repo root; the values live only on disk and in the
+# DigitalOcean app spec.
+/env.*.prod
+/env.*.local
+
 # vercel
 .vercel
 
@@ -70,9 +78,13 @@ next-env.d.ts
 # DigitalOcean App Platform spec — real values stay local.
 # Commit .do/app.example.yaml instead.
 .do/app.yaml
-# The rule above has a slash, so git anchors it to the repo root and it
-# matches ONLY /.do/app.yaml — NOT the second app's nested spec. Without
-# this line a filled-in admin/.do/app.yaml (live Mongo URI, the JWT_SECRET
-# shared with the main site, ADMIN_SESSION_SECRET, Resend key) is fully
-# committable. Keep both apps' real specs out of git.
-admin/.do/app.yaml
+
+# The admin console used to be a SECOND Next app under admin/ with its own
+# node_modules, .next, .do spec and .env.prod. It is now part of this app at
+# the /admin route. This keeps leftovers in an existing checkout from being
+# staged while that directory is drained.
+#
+# The LEADING SLASH is load-bearing: it anchors the rule to the repo root.
+# A bare `admin/` matches any directory of that name at any depth, which
+# silently swallows the console's own route tree at src/app/admin/.
+/admin/

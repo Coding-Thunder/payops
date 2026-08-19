@@ -18,6 +18,10 @@
 #     at ~250-400 MB heap.
 #   - Branch defaults to feat/general — change to main when shipping
 #     prod from main.
+#   - ONE app, ONE component. The platform super-admin console used to be
+#     a second DO app built from source_dir /admin; it now ships inside
+#     this one at the /admin route and that app should be deleted. Its
+#     env keys are folded into the block below.
 # =========================================================================
 
 name: tracetxn
@@ -26,7 +30,7 @@ region: nyc
 services:
   - name: web
     github:
-      repo: <your-gh-org>/<your-repo>
+      repo: Coding-Thunder/payops
       branch: feat/general
       deploy_on_push: true
 
@@ -136,6 +140,63 @@ services:
       - key: EMAIL_REPLY_TO
         scope: RUN_AND_BUILD_TIME
         value: support@yourdomain.com
+
+      # ──── PLATFORM SUPER-ADMIN CONSOLE (/admin) ─────────────────────
+      # The console used to be a SECOND DO app built from source_dir
+      # /admin with its own env block. It is now part of this component
+      # and reads these from the same env. It reuses MONGODB_URI,
+      # JWT_SECRET, SMTP_*, EMAIL_FROM_ACCOUNTS and the FIREBASE_* set
+      # declared above — do not re-declare those with different values.
+      #
+      # The console's OTP sign-in email goes over SMTP (nodemailer). If
+      # SMTP_HOST/USER/PASS are blank, the code is only logged and no one
+      # can sign in — keep them populated.
+      #
+      # Console ACCESS is not configured here: the `admin_users` collection
+      # is the only source of truth. There is no env allow-list.
+      - key: ADMIN_SESSION_SECRET
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+        value: "openssl rand -base64 48 (dedicated admin-session key)"
+      - key: ADMIN_APP_NAME
+        scope: RUN_AND_BUILD_TIME
+        value: TraceTxn Admin
+      # Same origin as the app now. Used for the beta activation link,
+      # the set-password link and the impersonation handoff.
+      - key: MAIN_APP_URL
+        scope: RUN_AND_BUILD_TIME
+        value: ${APP_URL}
+      # Signs the 60s single-use impersonation handoff token that
+      # /api/impersonate/start verifies. MUST differ from JWT_SECRET.
+      # Omit to disable impersonation.
+      - key: IMPERSONATION_SECRET
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+        value: "REPLACE_ME_WITH_OPENSSL_RAND_BASE64_48"
+
+      # ──── FIREBASE (Google sign-in, main app + console) ──────────────
+      - key: FIREBASE_SERVICE_ACCOUNT
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+        value: "'{\"type\":\"service_account\",\"project_id\":\"…\",…}'"
+      - key: NEXT_PUBLIC_FIREBASE_API_KEY
+        scope: RUN_AND_BUILD_TIME
+        value: ""
+      - key: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+        scope: RUN_AND_BUILD_TIME
+        value: ""
+      - key: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+        scope: RUN_AND_BUILD_TIME
+        value: ""
+      - key: NEXT_PUBLIC_FIREBASE_APP_ID
+        scope: RUN_AND_BUILD_TIME
+        value: ""
+      - key: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+        scope: RUN_AND_BUILD_TIME
+        value: ""
+      - key: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+        scope: RUN_AND_BUILD_TIME
+        value: ""
 
       # ──── OPTIONAL — Cloudflare Turnstile ───────────────────────────
       - key: NEXT_PUBLIC_TURNSTILE_SITE_KEY

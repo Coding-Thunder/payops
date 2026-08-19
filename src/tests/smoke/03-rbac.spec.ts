@@ -3,27 +3,34 @@ import { test, expect } from "@playwright/test";
 import { getSmokeCreds, loginAs, loginAsApi } from "./_helpers";
 
 /**
- * RBAC smoke, the security boundary the middleware enforces.
+ * RBAC smoke, the security boundary the proxy enforces.
  *
- *   - An anonymous visitor to /admin is redirected to /login.
- *   - A STAFF user reaching /admin is bounced to /dashboard.
+ *   - An anonymous visitor to /app/admin is redirected to /login.
+ *   - A STAFF user reaching /app/admin is bounced to /app/dashboard.
  *   - A STAFF user calling /api/admin/users via fetch gets a 403 JSON.
- *   - An ADMIN reaching /admin renders the admin overview.
+ *   - An ADMIN reaching /app/admin renders the admin overview.
+ *
+ * The URLs here are the TENANT (org-level) admin surface. They were written
+ * as bare `/admin` before the authed product moved under `/app/`, and `/admin`
+ * now serves the platform super-admin console — an entirely different
+ * boundary with its own session (covered by 06-console.spec.ts).
  */
 
-test.describe("middleware RBAC", () => {
-  test("anonymous visit to /admin redirects to /login with ?next", async ({
+test.describe("proxy RBAC", () => {
+  test("anonymous visit to /app/admin redirects to /login with ?next", async ({
     page,
   }) => {
-    await page.goto("/admin");
-    await expect(page).toHaveURL(/\/login\?next=%2Fadmin/);
+    await page.goto("/app/admin");
+    await expect(page).toHaveURL(/\/login\?next=%2Fapp%2Fadmin/);
   });
 
-  test("STAFF visiting /admin is bounced to /dashboard", async ({ page }) => {
+  test("STAFF visiting /app/admin is bounced to the dashboard", async ({
+    page,
+  }) => {
     const { staff } = getSmokeCreds();
     await loginAs(page, staff);
-    await page.goto("/admin");
-    await expect(page).toHaveURL(/\/dashboard/);
+    await page.goto("/app/admin");
+    await expect(page).toHaveURL(/\/app\/dashboard/);
   });
 
   test("STAFF calling /api/admin/users returns 403 JSON", async ({
@@ -38,11 +45,11 @@ test.describe("middleware RBAC", () => {
     expect(body.error.code).toBe("FORBIDDEN");
   });
 
-  test("ADMIN reaches /admin successfully", async ({ page }) => {
+  test("ADMIN reaches /app/admin successfully", async ({ page }) => {
     const { admin } = getSmokeCreds();
     await loginAs(page, admin);
-    await page.goto("/admin");
-    await expect(page).toHaveURL(/\/admin/);
+    await page.goto("/app/admin");
+    await expect(page).toHaveURL(/\/app\/admin/);
     await expect(page.getByRole("heading").first()).toBeVisible();
   });
 });

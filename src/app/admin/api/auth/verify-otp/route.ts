@@ -1,0 +1,78 @@
+import type { NextRequest } from "next/server";
+import { z } from "zod";
+
+import { isAllowedEmail, normalizeEmail } from "@/console/server/auth/allowlist";
+import { verifyOtp } from "@/console/server/auth/otp";
+import { setAdminCookie, signAdminSession } from "@/console/server/auth/session";
+import { recordAdminAction } from "@/console/server/audit";
+import { recordAdminLogin } from "@/console/server/services/admins";
+import { assertSameOrigin, jsonError, jsonOk, clientIp } from "@/console/server/http";
+import { rateLimit } from "@/console/server/rate-limit";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const schema = z.object({
+  email: z.string().email(),
+  code: z.string().regex(/^\d{6}$/, "Enter the 6-digit code"),
+});
+
+/**
+ * Step 2 (both paths): verify the OTP and, on success, mint the admin
+ * session cookie. The allow-list is re-checked here so a session can never
+ * be issued for a non-allow-listed email even if an OTP row somehow existed.
+ */
+export async function POST(req: NextRequest) {
+  const csrf = assertSameOrigin(req);
+  if (csrf) return csrf;
+
+  const ip = clientIp(req) ?? "unknown";
+  const body = await req.json().catch(() => ({}));
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) return jsonError(422, "VALIDATION_ERROR", "Enter your email and the 6-digit code");
+
+  const email = normalizeEmail(parsed.data.email);
+  // Per-(ip,email) + per-email caps. The atomic OTP attempt cap in
+  // verifyOtp is the primary brute-force defense; these bound request
+  // volume regardless of a spoofed client IP.
+  if (
+    !rateLimit(`otp-verify:${ip}:${email}`, 10, 10 * 60_000) ||
+    !rateLimit(`otp-verify-email:${email}`, 30, 10 * 60_000)
+  ) {
+    return jsonError(429, "RATE_LIMITED", "Too many attempts. Request a new code.");
+  }
+  if (!(await isAllowedEmail(email))) {
+    return jsonError(400, "BAD_REQUEST", "Invalid or expired code.");
+  }
+
+  const result = await verifyOtp(email, parsed.data.code);
+  if (result !== "ok") {
+    const message =
+      result === "too_many_attempts"
+        ? "Too many attempts. Request a new code."
+        : result === "expired"
+          ? "That code has expired. Request a new one."
+          : "Invalid or expired code.";
+    return jsonError(400, "BAD_REQUEST", message);
+  }
+
+  const token = await signAdminSession(email);
+  await setAdminCookie(token);
+  // Stamp last-login + self-heal a bootstrap admin into admin_users so they
+  // appear in the Admins list. Best-effort: never block sign-in on it.
+  try {
+    await recordAdminLogin(email);
+  } catch (err) {
+    console.error(
+      `[admin] recordAdminLogin failed for ${email}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+  await recordAdminAction({
+    action: "auth.login",
+    actorEmail: email,
+    targetType: "session",
+    ip,
+  });
+  return jsonOk({ ok: true });
+}

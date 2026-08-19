@@ -50,12 +50,24 @@ export function getSmokeCreds(): SmokeCreds {
   return cached;
 }
 
+/**
+ * Authenticate a browser context.
+ *
+ * Deliberately NOT by driving the /login form: that page renders
+ * `FirebaseAuthForm`, which short-circuits to an "unavailable" alert whenever
+ * `NEXT_PUBLIC_FIREBASE_*` is absent — as it is in the smoke environment, and
+ * as it must be, since a smoke run cannot reach real Firebase. The
+ * password endpoint is still the supported non-Firebase path, and
+ * `page.request` shares the context cookie jar, so the session cookie it
+ * sets is the one the browser then uses.
+ */
 export async function loginAs(page: Page, user: SmokeUser): Promise<void> {
-  await page.goto("/login");
-  await page.getByLabel(/work email/i).fill(user.email);
-  await page.getByLabel(/password/i).fill(user.password);
-  await page.getByRole("button", { name: /sign in/i }).click();
-  await page.waitForURL(/\/(dashboard|admin)/);
+  const res = await page.request.post("/api/auth/login", {
+    data: { email: user.email, password: user.password },
+  });
+  expect(res.status(), `login failed for ${user.email}`).toBe(200);
+  await page.goto("/app/dashboard");
+  await page.waitForURL(/\/app\/dashboard/);
 }
 
 export async function loginAsApi(

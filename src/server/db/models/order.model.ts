@@ -518,6 +518,11 @@ const orderSchema = new Schema<OrderDoc>(
   },
 );
 
+// Cross-tenant console list (`/admin/orders`) sorts by createdAt with no
+// status filter. The compound {status, createdAt} below cannot serve that —
+// a compound index only supports a sort on a suffix once every preceding key
+// is pinned by equality — so the default view was a COLLSCAN + in-memory sort.
+orderSchema.index({ createdAt: -1 });
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ "createdBy.userId": 1, createdAt: -1 });
 orderSchema.index({ "customer.email": 1, createdAt: -1 });
@@ -528,13 +533,22 @@ orderSchema.index({ "dispute.status": 1, "dispute.openedAt": -1 });
 // Org-scoped list queries, every multi-tenant read filters on orgId.
 // Partial index ignores legacy null-orgId rows so the index stays small
 // during the migration window.
+//
+// `$type: "objectId"` — NOT `{ $exists: true, $ne: null }`. MongoDB rejects
+// `$ne` inside a partialFilterExpression ("Expression not supported in
+// partial index"), and because `createIndexes()` is all-or-nothing per
+// collection, that one malformed spec made `npm run ensure-indexes:prod`
+// fail for the WHOLE orders collection — so none of the indexes below were
+// ever built in production. `$type` expresses the same intent (present, and
+// an ObjectId rather than null) and is the form already used by the two
+// partial indexes further down this file.
 orderSchema.index(
   { orgId: 1, createdAt: -1 },
-  { partialFilterExpression: { orgId: { $exists: true, $ne: null } } },
+  { partialFilterExpression: { orgId: { $type: "objectId" } } },
 );
 orderSchema.index(
   { orgId: 1, status: 1, createdAt: -1 },
-  { partialFilterExpression: { orgId: { $exists: true, $ne: null } } },
+  { partialFilterExpression: { orgId: { $type: "objectId" } } },
 );
 // Client Profile read path: every order for one client, newest first.
 // Partial so unlinked (null customerId) rows stay out of the index.

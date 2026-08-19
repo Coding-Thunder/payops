@@ -110,6 +110,8 @@ const userSchema = new Schema<UserDoc>(
 // email already has `unique: true` on the field definition above, so no
 // separate index call is needed - declaring both creates a duplicate-index
 // warning at startup.
+// Console user list sorts by createdAt across all orgs.
+userSchema.index({ createdAt: -1 });
 userSchema.index({ status: 1, role: 1 });
 // Partial-unique on externalAuth.firebaseUid so the lookup path in
 // firebaseExchange returns at most one row. Sparse so legacy users
