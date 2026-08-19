@@ -4,7 +4,7 @@ import { isEncryptionAvailable } from "@/lib/crypto/envelope";
 import { logger } from "@/lib/logger";
 import { GatewayCredential } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
-import { resendKeyStatus } from "@/server/email/resend";
+import { type ResendKeyProbe, resendKeyProbe } from "@/server/email/resend";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,7 +13,12 @@ export const dynamic = "force-dynamic";
  *  precondition state changes rarely (env tweak or a credential save)
  *  and we don't want every load-balancer health probe pinging Mongo. */
 const CHECK_TTL_MS = 5 * 60_000;
-let cachedCheck: { ts: number; warnings: string[] } | null = null;
+
+interface Checks {
+  warnings: string[];
+  email: ResendKeyProbe;
+}
+let cachedCheck: { ts: number; checks: Checks } | null = null;
 let warnedOnce = false;
 let warnedEmailOnce = false;
 
@@ -70,7 +75,7 @@ async function isDbReachable(): Promise<boolean> {
  */
 export async function GET() {
   const dbOk = await isDbReachable();
-  const warnings = await computeWarnings();
+  const { warnings, email } = await computeChecks();
   const status = !dbOk
     ? "unhealthy"
     : warnings.length === 0
@@ -86,6 +91,16 @@ export async function GET() {
         // the running deploy. `curl /api/health` answers "is my push live?".
         version: process.env.APP_VERSION ?? "unknown",
         builtAt: process.env.BUILT_AT ?? null,
+        // Reported unconditionally, not only when it is broken. A silent
+        // "unknown" (probe timed out) and a genuine "ok" used to produce the
+        // identical empty-warnings payload, which is how console sign-in
+        // stayed down under a green health check. `source` names the env var
+        // the key came from — never the key.
+        email: {
+          status: email.status,
+          source: email.source,
+          httpStatus: email.httpStatus,
+        },
         warnings,
       },
     },
@@ -93,10 +108,10 @@ export async function GET() {
   );
 }
 
-async function computeWarnings(): Promise<string[]> {
+async function computeChecks(): Promise<Checks> {
   const now = Date.now();
   if (cachedCheck && now - cachedCheck.ts < CHECK_TTL_MS) {
-    return cachedCheck.warnings;
+    return cachedCheck.checks;
   }
   const warnings: string[] = [];
 
@@ -126,17 +141,31 @@ async function computeWarnings(): Promise<string[]> {
   // request / consent / template email silently fails — the outage that
   // stalled all orders at LINK_GENERATED. Bounded (5s), cached (this whole
   // function is 5-min cached), and never fails the probe — only a warning.
-  const emailStatus = await resendKeyStatus();
-  if (emailStatus === "invalid") {
-    const msg =
-      "Email transport credential is INVALID — Resend rejected the API key (401). Payment-request, consent, and template emails will all fail. Fix RESEND_API_KEY / SMTP_PASS in the runtime env.";
+  const email = await resendKeyProbe();
+  if (email.status === "invalid") {
+    const msg = `Email transport credential is INVALID — Resend rejected the API key (HTTP ${email.httpStatus}), supplied by ${email.source}. Every outbound email will fail. Replace the key in the runtime env.`;
     warnings.push(msg);
     if (!warnedEmailOnce) {
       logger.error("health.email_key_invalid", { msg });
       warnedEmailOnce = true;
     }
+  } else if (email.status === "unconfigured") {
+    // Previously silent. "No key at all" and "key works" produced the same
+    // empty payload, so a deploy that simply never received the secret looked
+    // perfectly healthy while delivering nothing.
+    warnings.push(
+      "No email transport credential is configured (neither RESEND_API_KEY nor an re_-prefixed SMTP_PASS). Every outbound email will fail.",
+    );
+  } else if (email.status === "unknown") {
+    // Also previously silent: a probe that times out is not evidence of health.
+    warnings.push(
+      `Email transport credential could not be verified — the Resend probe returned ${
+        email.httpStatus !== null ? `HTTP ${email.httpStatus}` : `no response (${email.error ?? "timeout"})`
+      }. This is not a confirmation that email works.`,
+    );
   }
 
-  cachedCheck = { ts: now, warnings };
-  return warnings;
+  const checks: Checks = { warnings, email };
+  cachedCheck = { ts: now, checks };
+  return checks;
 }

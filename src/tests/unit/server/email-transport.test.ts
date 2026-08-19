@@ -3,12 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 /**
  * Regression guard for the production console-login outage.
  *
- * `src/server/email/resend.ts` existed and `/api/health` probed the Resend
- * key over HTTPS (reporting "healthy"), but nothing in production code ever
- * called `deliverViaResend` — every real send still opened an SMTP socket
- * with that same `re_…` credential, which Resend's SMTP gateway answered with
- * `535 Authentication credentials invalid`. Green health check, zero
- * delivered mail: sign-in OTPs, password resets and lead notifications alike.
+ * The move to Resend's HTTP API was applied to `email.service.tsx` and
+ * nowhere else. Three senders — the console's four mails, password reset and
+ * the quotation lead alert — kept their own nodemailer call and went on
+ * opening an SMTP socket with that same `re_…` credential, which Resend's
+ * SMTP gateway answers with `535 Authentication credentials invalid`.
+ * Meanwhile `/api/health` probed the key over HTTPS and reported "healthy".
+ * Green health check, zero delivered mail.
  *
  * These tests pin the invariant that fixes it: when a Resend key is present,
  * delivery goes over HTTPS and the SMTP transport is never even constructed.
@@ -154,5 +155,90 @@ describe("isEmailConfigured", () => {
   it("is false when nothing is configured", async () => {
     const { isEmailConfigured } = await import("@/server/email/send");
     expect(isEmailConfigured()).toBe(false);
+  });
+});
+
+describe("resendKeySource — names the env var, never the key", () => {
+  it("reports RESEND_API_KEY when one is set", async () => {
+    serverEnv.RESEND_API_KEY = "re_explicit";
+    serverEnv.SMTP_PASS = "re_fallback";
+    const { resendKeySource } = await import("@/server/email/resend");
+    expect(resendKeySource()).toBe("RESEND_API_KEY");
+  });
+
+  it("reports SMTP_PASS when only an re_-prefixed SMTP password is set", async () => {
+    serverEnv.SMTP_PASS = "re_from_smtp_pass";
+    const { resendKeySource } = await import("@/server/email/resend");
+    expect(resendKeySource()).toBe("SMTP_PASS");
+  });
+
+  it("reports none when SMTP_PASS is a real password rather than a Resend key", async () => {
+    serverEnv.SMTP_PASS = "an-ordinary-smtp-password";
+    const { resendKeySource } = await import("@/server/email/resend");
+    expect(resendKeySource()).toBe("none");
+  });
+});
+
+describe("resendKeyProbe — an unverified probe is not a healthy one", () => {
+  it("distinguishes a timed-out probe from a working key", async () => {
+    // The bug this pins: `unknown` and `ok` both produced an empty warnings
+    // array, so a probe that never reached Resend looked exactly like proof
+    // that email worked.
+    serverEnv.RESEND_API_KEY = "re_k";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("The operation was aborted")),
+    );
+    const { resendKeyProbe } = await import("@/server/email/resend");
+    const probe = await resendKeyProbe();
+
+    expect(probe.status).toBe("unknown");
+    expect(probe.httpStatus).toBeNull();
+    expect(probe.error).toContain("aborted");
+    expect(probe.status).not.toBe("ok");
+  });
+
+  it("surfaces the HTTP status Resend actually returned", async () => {
+    serverEnv.RESEND_API_KEY = "re_k";
+    stubFetch(401, { message: "API key is invalid" });
+    const { resendKeyProbe } = await import("@/server/email/resend");
+    expect(await resendKeyProbe()).toMatchObject({
+      status: "invalid",
+      source: "RESEND_API_KEY",
+      httpStatus: 401,
+    });
+  });
+
+  it("treats a non-auth error status as unverified, not as healthy", async () => {
+    serverEnv.RESEND_API_KEY = "re_k";
+    stubFetch(500, {});
+    const { resendKeyProbe } = await import("@/server/email/resend");
+    expect(await resendKeyProbe()).toMatchObject({
+      status: "unknown",
+      httpStatus: 500,
+    });
+  });
+
+  it("reports unconfigured with source none and makes no request", async () => {
+    const fetchMock = stubFetch();
+    const { resendKeyProbe } = await import("@/server/email/resend");
+    expect(await resendKeyProbe()).toEqual({
+      status: "unconfigured",
+      source: "none",
+      httpStatus: null,
+      error: null,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("returns ok only on a 2xx", async () => {
+    serverEnv.SMTP_PASS = "re_k";
+    stubFetch(200, { data: [] });
+    const { resendKeyProbe } = await import("@/server/email/resend");
+    expect(await resendKeyProbe()).toMatchObject({
+      status: "ok",
+      source: "SMTP_PASS",
+      httpStatus: 200,
+    });
   });
 });
