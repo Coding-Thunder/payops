@@ -60,6 +60,8 @@ export interface ResendSendPayload {
   text?: string;
   /** X-Entity-Kind header value for classification/analytics. */
   kind: string;
+  /** Additional headers merged alongside X-Entity-Kind. */
+  headers?: Record<string, string>;
 }
 
 /**
@@ -85,7 +87,7 @@ export async function deliverViaResend(
       html: payload.html,
       text: payload.text,
       reply_to: payload.replyTo || undefined,
-      headers: { "X-Entity-Kind": payload.kind },
+      headers: { "X-Entity-Kind": payload.kind, ...(payload.headers ?? {}) },
     }),
     // Fail fast — a hung transport must never block the HTTP request.
     signal: AbortSignal.timeout(10_000),

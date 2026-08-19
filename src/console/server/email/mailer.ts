@@ -1,38 +1,26 @@
 import "server-only";
 
-import nodemailer, { type Transporter } from "nodemailer";
-
 import { adminConsoleUrl, env } from "@/console/server/env";
+import {
+  EmailNotConfiguredError,
+  isEmailConfigured,
+  sendEmail,
+} from "@/server/email/send";
 
 /**
- * SMTP transport for the two mails this console sends: the sign-in OTP
- * and the "your access is ready" set-password link. Mirrors the main
- * app's `src/server/email/smtp.ts`; returns null when SMTP is unset (dev)
- * so the caller can log the code/link to the console instead.
+ * The console's four mails: the sign-in OTP, the beta invitation, the admin
+ * welcome, and the "your access is ready" set-password link.
+ *
+ * This module used to own a second SMTP transport that mirrored
+ * `src/server/email/smtp.ts`. That copy is why console sign-in broke in
+ * production: when the app moved to Resend's HTTP API, only
+ * `email.service.tsx` was migrated, so every OTP still went out over SMTP and
+ * came back `535 Authentication credentials invalid`. Transport selection now
+ * lives in exactly one place — `@/server/email/send` — and this module only
+ * builds the message bodies.
  */
-let cached: Transporter | null = null;
 
-export class EmailNotConfiguredError extends Error {
-  constructor() {
-    super("Email transport is not configured (SMTP_HOST/SMTP_USER/SMTP_PASS)");
-    this.name = "EmailNotConfiguredError";
-  }
-}
-
-export function getMailer(): Transporter | null {
-  const { SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS } = env.server;
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) return null;
-  if (cached) return cached;
-  cached = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: SMTP_PORT,
-    secure: SMTP_SECURE,
-    auth: { user: SMTP_USER, pass: SMTP_PASS.replace(/\s+/g, "") },
-    connectionTimeout: 10_000,
-    socketTimeout: 20_000,
-  });
-  return cached;
-}
+export { EmailNotConfiguredError };
 
 function escapeHtml(v: string): string {
   return v
@@ -44,9 +32,8 @@ function escapeHtml(v: string): string {
 }
 
 export async function sendOtpEmail(to: string, code: string): Promise<void> {
-  const mailer = getMailer();
   const minutes = env.server.OTP_TTL_MINUTES;
-  if (!mailer) {
+  if (!isEmailConfigured()) {
     // Previously this logged the plaintext OTP and returned, so the endpoint
     // reported `sent: true` and the operator waited for an email that was
     // never sent — while the code sat in the runtime log. Both halves were
@@ -58,14 +45,14 @@ export async function sendOtpEmail(to: string, code: string): Promise<void> {
     <p style="font-size:28px;font-weight:700;letter-spacing:4px;margin:12px 0">${code}</p>
     <p>It expires in ${minutes} minutes. If you didn't request it, ignore this email.</p>`;
   const text = `Your ${env.server.ADMIN_APP_NAME} sign-in code is: ${code}\nIt expires in ${minutes} minutes.`;
-  await mailer.sendMail({
+  await sendEmail({
     from: env.server.EMAIL_FROM_ACCOUNTS,
     to,
-    replyTo: env.server.EMAIL_REPLY_TO || undefined,
+    replyTo: env.server.EMAIL_REPLY_TO,
     subject: `${env.server.ADMIN_APP_NAME} sign-in code: ${code}`,
     html,
     text,
-    headers: { "X-Entity-Kind": "ADMIN_OTP" },
+    kind: "ADMIN_OTP",
   });
 }
 
@@ -75,8 +62,7 @@ export async function sendBetaInvitationEmail(args: {
   /** Full activation URL incl. the raw single-use token. Never logged. */
   url: string;
 }): Promise<void> {
-  const mailer = getMailer();
-  if (!mailer) {
+  if (!isEmailConfigured()) {
     // Deliberately does NOT log the URL/token. A missing SMTP config in dev
     // surfaces the email address only; the raw invitation token never hits
     // the logs. Throw so the caller records a send failure (status stays
@@ -84,7 +70,7 @@ export async function sendBetaInvitationEmail(args: {
     console.warn(
       `[admin] Beta invite for ${args.to} not sent (SMTP not configured).`,
     );
-    throw new Error("Email is not configured (SMTP unset)");
+    throw new Error("Email is not configured");
   }
   const html = `
     <p>Hi ${escapeHtml(args.name)},</p>
@@ -99,14 +85,14 @@ export async function sendBetaInvitationEmail(args: {
     "",
     "This link is single-use and expires in 7 days. If you didn't apply, ignore this email.",
   ].join("\n");
-  await mailer.sendMail({
+  await sendEmail({
     from: env.server.EMAIL_FROM_ACCOUNTS,
     to: args.to,
-    replyTo: env.server.EMAIL_REPLY_TO || undefined,
+    replyTo: env.server.EMAIL_REPLY_TO,
     subject: "You're in — activate your TraceTxn beta account",
     html,
     text,
-    headers: { "X-Entity-Kind": "BETA_INVITE" },
+    kind: "BETA_INVITE",
   });
 }
 
@@ -115,10 +101,9 @@ export async function sendAdminWelcomeEmail(args: {
   name: string;
   invitedByEmail?: string | null;
 }): Promise<void> {
-  const mailer = getMailer();
   const url = adminConsoleUrl();
   const app = env.server.ADMIN_APP_NAME;
-  if (!mailer) {
+  if (!isEmailConfigured()) {
     console.warn(
       `[admin] Welcome email for ${args.to} skipped (SMTP not configured). Sign-in: ${url}`,
     );
@@ -144,14 +129,14 @@ export async function sendAdminWelcomeEmail(args: {
   ]
     .filter(Boolean)
     .join("\n");
-  await mailer.sendMail({
+  await sendEmail({
     from: env.server.EMAIL_FROM_ACCOUNTS,
     to: args.to,
-    replyTo: env.server.EMAIL_REPLY_TO || undefined,
+    replyTo: env.server.EMAIL_REPLY_TO,
     subject: `You've been added to the ${app} console`,
     html,
     text,
-    headers: { "X-Entity-Kind": "ADMIN_WELCOME" },
+    kind: "ADMIN_WELCOME",
   });
 }
 
@@ -160,8 +145,7 @@ export async function sendAccessLinkEmail(args: {
   name: string;
   url: string;
 }): Promise<void> {
-  const mailer = getMailer();
-  if (!mailer) {
+  if (!isEmailConfigured()) {
     console.warn(`[admin] Access link for ${args.to}: ${args.url} (SMTP not configured)`);
     return;
   }
@@ -178,13 +162,13 @@ export async function sendAccessLinkEmail(args: {
     "",
     "This link expires in 30 minutes.",
   ].join("\n");
-  await mailer.sendMail({
+  await sendEmail({
     from: env.server.EMAIL_FROM_ACCOUNTS,
     to: args.to,
-    replyTo: env.server.EMAIL_REPLY_TO || undefined,
+    replyTo: env.server.EMAIL_REPLY_TO,
     subject: "Your TraceTxn access is ready",
     html,
     text,
-    headers: { "X-Entity-Kind": "ADMIN_ACCESS_GRANT" },
+    kind: "ADMIN_ACCESS_GRANT",
   });
 }

@@ -5,7 +5,7 @@ import { logger } from "@/lib/logger";
 import type { ParsedQuotationInput } from "@/lib/validation";
 import { Quotation, type QuotationDoc } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
-import { getMailer } from "@/server/email/smtp";
+import { isEmailConfigured, sendEmail } from "@/server/email/send";
 
 /**
  * Persist an enterprise quotation request and best-effort dispatch an
@@ -76,12 +76,15 @@ interface NotificationResult {
 async function sendInternalNotification(
   doc: QuotationDoc & { _id: unknown },
 ): Promise<NotificationResult | null> {
-  const mailer = getMailer();
-  if (!mailer) {
-    logger.warn("quotation.notification_skipped_no_smtp", {
+  if (!isEmailConfigured()) {
+    logger.warn("quotation.notification_skipped_no_transport", {
       workEmail: doc.workEmail,
     });
-    return { status: "SKIPPED", messageId: null, error: "smtp_not_configured" };
+    return {
+      status: "SKIPPED",
+      messageId: null,
+      error: "email_not_configured",
+    };
   }
 
   // Strip CR/LF from anything that lands in a header. Nodemailer encodes
@@ -123,18 +126,19 @@ async function sendInternalNotification(
   const html = `<pre style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.55;white-space:pre-wrap">${escapeHtml(text)}</pre>`;
 
   try {
-    const info = await mailer.sendMail({
+    const info = await sendEmail({
       from: env.server.EMAIL_FROM,
       to: NOTIFICATION_RECIPIENT,
       replyTo: doc.workEmail,
       subject,
       html,
       text,
+      kind: "QUOTATION_LEAD",
       headers: { "X-TraceTxn-Lead": String(doc._id) },
     });
     return {
       status: "SENT",
-      messageId: info.messageId ?? null,
+      messageId: info.messageId,
       error: null,
     };
   } catch (err) {

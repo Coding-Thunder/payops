@@ -13,7 +13,7 @@ import { logger } from "@/lib/logger";
 import { hashPassword } from "@/server/auth/password";
 import { User, type UserDoc } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
-import { getMailer } from "@/server/email/smtp";
+import { isEmailConfigured, sendEmail } from "@/server/email/send";
 import type { RequestContext } from "@/server/api/request-context";
 
 import { recordAudit } from "./audit.service";
@@ -209,11 +209,10 @@ async function sendResetEmail(args: {
   name: string;
   resetUrl: string;
 }): Promise<void> {
-  const mailer = getMailer();
-  if (!mailer) {
-    // No SMTP configured (local dev). Log the link so the operator
+  if (!isEmailConfigured()) {
+    // No transport configured (local dev). Log the link so the operator
     // can copy it from their console, same UX as Rails dev mode.
-    logger.warn("password_reset.smtp_missing", {
+    logger.warn("password_reset.transport_missing", {
       to: args.to,
       resetUrl: args.resetUrl,
     });
@@ -244,7 +243,7 @@ async function sendResetEmail(args: {
     `- ${appName}`,
   ].join("\n");
   try {
-    await mailer.sendMail({
+    await sendEmail({
       // Account-lifecycle mail (password reset, future signup welcome
       // + trial notifications + subscription events) always leaves
       // from EMAIL_FROM_ACCOUNTS so the customer sees a consistent
@@ -252,11 +251,11 @@ async function sendResetEmail(args: {
       // catch-all today.
       from: env.server.EMAIL_FROM_ACCOUNTS,
       to: args.to,
-      replyTo: env.server.EMAIL_REPLY_TO || undefined,
+      replyTo: env.server.EMAIL_REPLY_TO,
       subject: `Reset your ${appName} password`,
       html,
       text,
-      headers: { "X-Entity-Kind": "PASSWORD_RESET" },
+      kind: "PASSWORD_RESET",
     });
   } catch (err) {
     // Bury the SMTP error, never surface it to the caller because

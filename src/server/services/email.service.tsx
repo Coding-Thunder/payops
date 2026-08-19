@@ -21,8 +21,12 @@ import { logger } from "@/lib/logger";
 import { publishEvent } from "@/server/events/bus";
 import type { OrderDTO } from "@/types";
 
-import { classifyMailError, getMailer } from "@/server/email/smtp";
-import { deliverViaResend, resendApiKey } from "@/server/email/resend";
+import { classifyMailError } from "@/server/email/smtp";
+import { resendApiKey } from "@/server/email/resend";
+import {
+  isEmailConfigured,
+  sendEmail as deliverEmail,
+} from "@/server/email/send";
 import { inlinePublicImage } from "@/server/email/inline-image";
 import {
   UniversalOrderEmail,
@@ -123,10 +127,11 @@ function maskEmail(addr: string): string {
 }
 
 async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
-  // Prefer Resend's HTTP API (fast, 443, never blocked). Fall back to SMTP
-  // only when no Resend key is present (e.g. legacy/test envs).
+  // Transport choice (Resend HTTP over 443, else SMTP) is made once, in
+  // `@/server/email/send`. This local peek only labels the log line below —
+  // when it was also a *second* place that picked a transport, the console
+  // and password-reset senders drifted onto SMTP and stopped delivering.
   const apiKey = resendApiKey();
-  const mailer = apiKey ? null : getMailer();
   // Per-tenant overrides (when supplied) take precedence over the
   // platform defaults. Mailbox-level overrides require the tenant to
   // have aligned SPF/DKIM for the relay; we let the operator make
@@ -139,7 +144,7 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
   );
   const replyTo = args.replyTo?.trim() || env.server.EMAIL_REPLY_TO;
 
-  if (!apiKey && !mailer) {
+  if (!isEmailConfigured()) {
     logger.warn("email.skipped_no_transport", {
       kind: args.kind,
       toMasked: maskEmail(args.to),
@@ -177,34 +182,15 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
     orderId: args.orderId ?? undefined,
   });
   try {
-    let messageId: string | null;
-    let response: string | null;
-    if (apiKey) {
-      // Preferred path: Resend HTTP API over 443 (fails fast, never blocked).
-      const sent = await deliverViaResend(apiKey, {
-        from: fromAddress,
-        to: args.to,
-        replyTo: replyTo || undefined,
-        subject: args.subject,
-        html: args.html,
-        text: args.text,
-        kind: args.kind,
-      });
-      messageId = sent.id;
-      response = "resend-http";
-    } else {
-      const info = await mailer!.sendMail({
-        from: fromAddress,
-        to: args.to,
-        replyTo: replyTo || undefined,
-        subject: args.subject,
-        html: args.html,
-        text: args.text,
-        headers: { "X-Entity-Kind": args.kind },
-      });
-      messageId = info.messageId ?? null;
-      response = info.response ?? null;
-    }
+    const { messageId, response } = await deliverEmail({
+      from: fromAddress,
+      to: args.to,
+      replyTo,
+      subject: args.subject,
+      html: args.html,
+      text: args.text,
+      kind: args.kind,
+    });
     logger.info("email.sent", {
       transport,
       kind: args.kind,
