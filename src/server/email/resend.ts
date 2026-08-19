@@ -16,10 +16,16 @@ import { env } from "@/lib/env";
  * SMTP_PASS is used when it looks like a Resend key.
  */
 export function resendApiKey(): string | null {
-  const explicit = env.server.RESEND_API_KEY?.trim();
+  // Both sources are stripped of ALL whitespace, not just the ends. These two
+  // used to disagree — RESEND_API_KEY got `.trim()` while SMTP_PASS got
+  // `replace(/\s+/g, "")` — so a key pasted into a hosting dashboard with a
+  // line break or a stray space *inside* it survived cleaning and produced an
+  // opaque `401 validation_error / API key is invalid` from Resend. An API
+  // key never legitimately contains whitespace, so strip it everywhere.
+  const explicit = env.server.RESEND_API_KEY?.replace(/\s+/g, "");
   if (explicit) return explicit;
   const smtp = env.server.SMTP_PASS?.replace(/\s+/g, "");
-  if (smtp && smtp.startsWith("re_")) return smtp;
+  if (smtp?.startsWith("re_")) return smtp;
   return null;
 }
 
@@ -32,7 +38,7 @@ export type ResendKeyStatus = "ok" | "invalid" | "unconfigured" | "unknown";
  * without shell access to the running container.
  */
 export function resendKeySource(): "RESEND_API_KEY" | "SMTP_PASS" | "none" {
-  if (env.server.RESEND_API_KEY?.trim()) return "RESEND_API_KEY";
+  if (env.server.RESEND_API_KEY?.replace(/\s+/g, "")) return "RESEND_API_KEY";
   const smtp = env.server.SMTP_PASS?.replace(/\s+/g, "");
   if (smtp?.startsWith("re_")) return "SMTP_PASS";
   return "none";

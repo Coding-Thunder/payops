@@ -242,3 +242,34 @@ describe("resendKeyProbe — an unverified probe is not a healthy one", () => {
     });
   });
 });
+
+describe("resendApiKey — a dashboard-pasted key survives stray whitespace", () => {
+  it("strips whitespace from the INTERIOR of RESEND_API_KEY, not just the ends", async () => {
+    // The asymmetry this pins: RESEND_API_KEY used to get `.trim()` while
+    // SMTP_PASS got `replace(/\s+/g, "")`. A key wrapped across two lines in a
+    // hosting dashboard therefore reached Resend intact-but-broken and came
+    // back as an opaque `401 validation_error / API key is invalid`.
+    serverEnv.RESEND_API_KEY = " re_abc\n123 ";
+    const { resendApiKey } = await import("@/server/email/resend");
+    expect(resendApiKey()).toBe("re_abc123");
+  });
+
+  it("still prefers RESEND_API_KEY over SMTP_PASS after cleaning", async () => {
+    serverEnv.RESEND_API_KEY = "  re_explicit  ";
+    serverEnv.SMTP_PASS = "re_fallback";
+    const { resendApiKey } = await import("@/server/email/resend");
+    expect(resendApiKey()).toBe("re_explicit");
+  });
+
+  it("treats a whitespace-only RESEND_API_KEY as absent and falls through", async () => {
+    // An env var set to an empty/blank string in a dashboard must not shadow a
+    // working SMTP_PASS.
+    serverEnv.RESEND_API_KEY = "   ";
+    serverEnv.SMTP_PASS = "re_good_key";
+    const { resendApiKey, resendKeySource } = await import(
+      "@/server/email/resend"
+    );
+    expect(resendApiKey()).toBe("re_good_key");
+    expect(resendKeySource()).toBe("SMTP_PASS");
+  });
+});
