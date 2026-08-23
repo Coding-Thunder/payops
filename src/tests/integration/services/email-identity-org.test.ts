@@ -153,6 +153,62 @@ describe("an unconfigured second organization must not borrow the incumbent's id
   });
 });
 
+describe("a host on the DEFAULT organization is not a misconfiguration", () => {
+  /**
+   * The production outage this pins down.
+   *
+   * `seed-organizations` copies the deployment SMTP host onto the default
+   * organization's document, while the password stays where it has always
+   * been — in SMTP_PASS, not in an ORG_<SLUG>_SMTP_PASSWORD and not in the
+   * vault. Resolution saw a host, found no organization-scoped password, and
+   * threw the "add it in organization settings" refusal, which took the
+   * incumbent brand's email composer down and told the operator to fix
+   * configuration that was never wrong.
+   *
+   * The refusal is right for a SECOND brand and stays. It is wrong for the
+   * default one, whose own mailbox IS the deployment mailbox.
+   */
+  it("falls back to the deployment transport instead of refusing", async () => {
+    const rc = await makeOrg("rentalconfirmation", true, {
+      fromName: "Rental Confirmation",
+      fromEmail: "billing@rentalconfirmation.com",
+      transport: {
+        host: "smtp.gmail.com",
+        port: 587,
+        secure: false,
+        user: "billing@rentalconfirmation.com",
+      },
+    });
+
+    const order = await orderIn(rc);
+    await expect(sendPaymentConfirmationEmail(order)).resolves.toBeTruthy();
+
+    expect(sentMail).toHaveLength(1);
+    expect(sentMail[0]!.__transport).toBe("deployment");
+    expect(String(sentMail[0]!.from)).toContain("billing@rentalconfirmation.com");
+  });
+
+  it("still refuses for a NON-default organization in the same state", async () => {
+    const trip = await makeOrg("tripreservations", false, {
+      fromName: "Trip Reservations",
+      fromEmail: "no-reply@tripreservations.co.uk",
+      transport: {
+        host: "smtp.gmail.com",
+        port: 587,
+        secure: false,
+        user: "no-reply@tripreservations.co.uk",
+      },
+    });
+
+    const err = await sendPaymentConfirmationEmail(await orderIn(trip)).catch(
+      (e) => e,
+    );
+    expect(isAppError(err)).toBe(true);
+    expect((err as AppError).statusCode).toBe(409);
+    expect(sentMail).toHaveLength(0);
+  });
+});
+
 describe("two organizations do not share a sender", () => {
   it("keeps their From headers independent", async () => {
     const rc = await makeOrg("rentalconfirmation", true);

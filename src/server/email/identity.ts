@@ -341,6 +341,22 @@ export async function resolveEmailIdentity(
           "",
         pass,
       };
+    } else if (org.isDefault) {
+      // The DEFAULT organization falls back to the deployment transport,
+      // exactly as it does for the From address above.
+      //
+      // The refusal below exists so a second brand's mail can never leave the
+      // incumbent's mailbox. That reasoning does not apply here: for the
+      // default organization the deployment mailbox IS its own mailbox. And
+      // this state is the normal one, not an edge case — the seed copies the
+      // deployment SMTP host onto the default organization's document, while
+      // the password stays where it has always been, in SMTP_PASS. Throwing
+      // here took the incumbent brand's email composer down with a message
+      // telling the operator to fix configuration that was never wrong.
+      logger.debug("email.transport.default_org_uses_deployment", {
+        organizationId,
+        host,
+      });
     } else {
       // A host with no password cannot authenticate. Falling back to the
       // deployment transport would send this brand's mail out of the
