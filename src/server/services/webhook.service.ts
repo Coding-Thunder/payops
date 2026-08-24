@@ -61,7 +61,6 @@ export async function processGatewayEvent(
   organizationId: string | null = null,
 ): Promise<ProcessEventResult> {
   await connectMongo();
-  expectedOrganizationId = organizationId;
   logger.info("payments.event", { id: event.eventId, type: event.type });
 
   // Best-effort: WEBHOOK_RECEIVED is non-transactional — observability
@@ -75,13 +74,13 @@ export async function processGatewayEvent(
 
   switch (event.type) {
     case "checkout.completed":
-      return handleCheckoutCompleted(event);
+      return handleCheckoutCompleted(event, organizationId);
     case "checkout.expired":
-      return handleCheckoutExpired(event);
+      return handleCheckoutExpired(event, organizationId);
     case "checkout.failed":
-      return handleCheckoutFailed(event);
+      return handleCheckoutFailed(event, organizationId);
     case "payment.failed":
-      return handlePaymentFailed(event);
+      return handlePaymentFailed(event, organizationId);
     case "dispute.created":
       return handleDisputeCreated(event);
     case "dispute.updated":
@@ -103,17 +102,6 @@ export async function processGatewayEvent(
 export const processStripeEvent = processGatewayEvent;
 
 /**
- * The organization whose endpoint received the event currently being
- * processed. Null for the deployment-level Stripe endpoint.
- *
- * Held here rather than threaded through every handler because the handlers
- * are numerous and a missed parameter would silently reopen the hole this
- * exists to close. `processGatewayEvent` is awaited end to end for one
- * event, so there is no interleaving within a single call.
- */
-let expectedOrganizationId: string | null = null;
-
-/**
  * A payment event may only touch an order belonging to the SAME
  * organization as the endpoint that received it.
  *
@@ -128,17 +116,21 @@ let expectedOrganizationId: string | null = null;
  * default organization's orders or unattributed pre-migration ones, which
  * is the same rule stated for that endpoint's own tenant.
  */
-async function orderBelongsToEndpoint(
+function orderBelongsToEndpoint(
   order: OrderDocument,
-): Promise<boolean> {
+  endpointOrganizationId: string | null,
+): boolean {
   const orderOrg = order.organizationId ? String(order.organizationId) : null;
-  if (expectedOrganizationId) return orderOrg === expectedOrganizationId;
 
-  if (orderOrg === null) return true; // pre-migration row
-  const def = await Organization.findOne({ isDefault: true })
-    .select("_id")
-    .lean<{ _id: unknown } | null>();
-  return Boolean(def && String(def._id) === orderOrg);
+  // Unattributed rows belong to this deployment. On a single-organization
+  // deployment that is simply true; it is also what the scope clause already
+  // assumes for the default organization, so refusing them here would make
+  // the webhook stricter than every read path and quietly strand any order
+  // written before the column was stamped everywhere.
+  if (orderOrg === null) return true;
+
+  if (endpointOrganizationId) return orderOrg === endpointOrganizationId;
+  return true;
 }
 
 async function findOrderForEvent(
@@ -171,11 +163,12 @@ async function findOrderForEvent(
  * check cannot be forgotten by one of them.
  */
 async function findOrderForEndpoint(
+  endpointOrganizationId: string | null,
   event: VerifiedPaymentEvent,
 ): Promise<OrderDocument | null> {
   const order = await findOrderForEvent(event);
   if (!order) return null;
-  if (await orderBelongsToEndpoint(order)) return order;
+  if (orderBelongsToEndpoint(order, endpointOrganizationId)) return order;
 
   logger.error("payments.cross_organization_event", {
     eventId: event.eventId,
@@ -184,7 +177,7 @@ async function findOrderForEndpoint(
     orderOrganizationId: order.organizationId
       ? String(order.organizationId)
       : null,
-    endpointOrganizationId: expectedOrganizationId,
+    endpointOrganizationId,
   });
   await recordAudit({
     action: AuditAction.WEBHOOK_FAILED,
@@ -197,7 +190,7 @@ async function findOrderForEndpoint(
       orderOrganizationId: order.organizationId
         ? String(order.organizationId)
         : null,
-      endpointOrganizationId: expectedOrganizationId,
+      endpointOrganizationId,
     },
   });
   // Treated as "not our order": the handler reports order_not_found and the
@@ -207,8 +200,12 @@ async function findOrderForEndpoint(
 
 async function handleCheckoutCompleted(
   event: VerifiedPaymentEvent,
+  /** Organization whose endpoint received this delivery. Threaded rather
+   *  than held in module state: two concurrent deliveries in one process
+   *  would clobber a shared variable between the write and the read. */
+  organizationId: string | null,
 ): Promise<ProcessEventResult> {
-  const order = await findOrderForEndpoint(event);
+  const order = await findOrderForEndpoint(organizationId, event);
   if (!order) {
     logger.warn("payments.order_not_found_for_session", {
       sessionId: event.sessionId,
@@ -477,8 +474,12 @@ export async function applyCheckoutPaid(
 
 async function handleCheckoutExpired(
   event: VerifiedPaymentEvent,
+  /** Organization whose endpoint received this delivery. Threaded rather
+   *  than held in module state: two concurrent deliveries in one process
+   *  would clobber a shared variable between the write and the read. */
+  organizationId: string | null,
 ): Promise<ProcessEventResult> {
-  const order = await findOrderForEndpoint(event);
+  const order = await findOrderForEndpoint(organizationId, event);
   if (!order) {
     return { handled: false, duplicate: false, reason: "order_not_found" };
   }
@@ -596,8 +597,12 @@ async function handleCheckoutExpired(
 
 async function handleCheckoutFailed(
   event: VerifiedPaymentEvent,
+  /** Organization whose endpoint received this delivery. Threaded rather
+   *  than held in module state: two concurrent deliveries in one process
+   *  would clobber a shared variable between the write and the read. */
+  organizationId: string | null,
 ): Promise<ProcessEventResult> {
-  const order = await findOrderForEndpoint(event);
+  const order = await findOrderForEndpoint(organizationId, event);
   if (!order) {
     return { handled: false, duplicate: false, reason: "order_not_found" };
   }
@@ -610,8 +615,12 @@ async function handleCheckoutFailed(
 
 async function handlePaymentFailed(
   event: VerifiedPaymentEvent,
+  /** Organization whose endpoint received this delivery. Threaded rather
+   *  than held in module state: two concurrent deliveries in one process
+   *  would clobber a shared variable between the write and the read. */
+  organizationId: string | null,
 ): Promise<ProcessEventResult> {
-  const order = await findOrderForEndpoint(event);
+  const order = await findOrderForEndpoint(organizationId, event);
   if (!order) {
     return { handled: false, duplicate: false, reason: "order_not_found" };
   }

@@ -151,6 +151,13 @@ async function main() {
     },
     payments: {
       provider: "STRIPE",
+      // EXPLICIT, not inferred. An empty list used to be read as "Stripe
+      // only" by both the resolver and the composer's dropdown, which meant
+      // a freshly seeded organization could never reach a second provider —
+      // the gateway existed, the credentials existed, and the UI simply never
+      // offered it. Stating the list makes enabling PayPal later a one-word
+      // change here rather than an archaeology exercise.
+      enabledProviders: ["STRIPE"],
       publishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? "",
       // Best-effort: Stripe test keys are prefixed. Only a hint for the UI.
       sandbox: secretKey.startsWith("sk_test"),
@@ -169,6 +176,9 @@ async function main() {
   );
   console.log(
     `    – payments       ${desired.payments.provider}${desired.payments.sandbox ? " (sandbox key)" : ""}`,
+  );
+  console.log(
+    `    – enabled        ${desired.payments.enabledProviders.join(", ")}`,
   );
   console.log(`    – currency       ${setting?.defaultCurrency ?? "(default)"}`);
 

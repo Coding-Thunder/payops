@@ -19,6 +19,7 @@ import { UserRole } from "@/lib/constants/enums";
 import { actorFor } from "@/tests/utils/auth";
 import { createSettings } from "@/tests/factories/settings.factory";
 import { ensureMongo } from "@/tests/utils/db";
+import { resolveOrganizationId } from "@/server/auth/organization";
 import { validCreateOrderInput } from "@/tests/fixtures/order-input.fixture";
 
 /**
@@ -82,10 +83,16 @@ describe("every organization-owned model carries the tenancy column", () => {
 });
 
 describe("the column is inert until something sets it", () => {
-  it("leaves organizationId null on a normally-created order", async () => {
-    // P3 adds the column but changes no write path. An order created through
-    // the ordinary service must still come out unattributed, which is what
-    // makes this phase safe to deploy ahead of the backfill.
+  it("stamps the deployment's organization on a normally-created order", async () => {
+    // This assertion INVERTED, deliberately.
+    //
+    // It used to require `null` — the column existed but no write path set
+    // it, which is what made the multi-brand migration safe to deploy ahead
+    // of its backfill. With one organization resolved server-side there is
+    // no longer a request that cannot name its tenant, so every ordinary
+    // write is attributed. That is the point of the change: "every record
+    // must be unambiguously associated with the organization" is not true of
+    // a null column.
     await createSettings();
     const { order } = await createOrder(validCreateOrderInput(), {
       actor: actorFor(UserRole.ADMIN),
@@ -93,7 +100,8 @@ describe("the column is inert until something sets it", () => {
     const doc = await Order.findById(order.id).lean<{
       organizationId?: unknown;
     } | null>();
-    expect(doc!.organizationId ?? null).toBeNull();
+    expect(doc!.organizationId).toBeTruthy();
+    expect(String(doc!.organizationId)).toBe(await resolveOrganizationId());
   });
 
   it("accepts and round-trips an organization id once attributed", async () => {

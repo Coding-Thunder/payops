@@ -48,6 +48,10 @@ async function makeOrg(slug: string, isDefault = false) {
 
 beforeEach(async () => {
   await ensureMongo();
+  // This file builds its own organizations to exercise the vault's
+  // scope binding, so it takes the collection over from the one the suite
+  // seeds — two defaults would make the partial unique index unbuildable.
+  await Organization.deleteMany({});
   orgA = await makeOrg("rentalconfirmation", true);
   orgB = await makeOrg("tripreservations");
 });

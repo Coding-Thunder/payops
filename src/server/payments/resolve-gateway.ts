@@ -61,6 +61,26 @@ import {
  * failed, the organization's own configuration is incomplete. (PaymentError
  * would be wrong — that is 502, i.e. the gateway itself misbehaved.)
  */
+/**
+ * The provider is understood, but this deployment has not switched it on.
+ *
+ * Deliberately distinct from PaymentProviderNotConfiguredError: "we do not
+ * offer PayPal yet" and "PayPal is offered but its keys are missing" are
+ * different operational problems with different fixes, and an operator who
+ * cannot tell them apart will go looking for credentials that were never
+ * supposed to exist.
+ */
+export class PaymentProviderNotEnabledError extends ConflictError {
+  constructor(provider: string, enabled: readonly string[]) {
+    super(
+      `${provider} is not enabled on this deployment. Enabled provider(s): ${
+        enabled.join(", ") || "none"
+      }.`,
+    );
+    this.name = "PaymentProviderNotEnabledError";
+  }
+}
+
 export class PaymentProviderNotConfiguredError extends ConflictError {
   constructor(brand: string, provider: string) {
     super(
@@ -137,6 +157,104 @@ export async function getStripeCredentialsForOrganization(
   return { secretKey, webhookSecret };
 }
 
+/* ─────────────────────── provider selection ─────────────────────────── */
+
+/**
+ * How the caller arrived at a provider — and it changes the rules.
+ *
+ * `requested` is an operator or a client asking for one on a NEW session. It
+ * is a request, not an instruction: it is honoured only if the deployment has
+ * that provider enabled, and refused otherwise.
+ *
+ * `pinned` is the provider already recorded on an existing order. It is
+ * AUTHORITATIVE. It is never traded for a different one, because the session,
+ * the webhook that will settle it and the money all live in that provider's
+ * merchant account. If a pinned provider is not enabled the correct answer is
+ * a clear failure, never a substitution.
+ *
+ * These two were one `providerOverride` argument, and both were silently
+ * swapped for the organization's configured provider when they fell outside
+ * the enabled set. That is harmless only while every organization has exactly
+ * one gateway. The moment a deployment offers two, it means an order pinned to
+ * PayPal can be handed a Stripe session and have `payment.gateway` rewritten
+ * underneath it.
+ */
+export type ProviderSelection =
+  | { kind: "requested"; provider: PaymentGatewayKey | null }
+  | { kind: "pinned"; provider: PaymentGatewayKey };
+
+/** Providers this codebase has a real, non-placeholder implementation for. */
+const SUPPORTED: readonly PaymentGatewayKey[] = [
+  PaymentGatewayKey.STRIPE,
+  PaymentGatewayKey.PAYPAL,
+];
+
+function normaliseSelection(
+  input?: ProviderSelection | PaymentGatewayKey | null,
+): ProviderSelection {
+  if (!input) return { kind: "requested", provider: null };
+  if (typeof input === "string") return { kind: "requested", provider: input };
+  return input;
+}
+
+/**
+ * Refuse a key with no implementation behind it before anything else looks at
+ * it. RAZORPAY / AUTHORIZE_NET / MANUAL are enum placeholders whose registry
+ * entries throw on every operation; reaching one means a bad request got
+ * further than it should have.
+ */
+function assertSupported(provider: PaymentGatewayKey): void {
+  if (!SUPPORTED.includes(provider)) {
+    throw new PaymentProviderNotEnabledError(provider, SUPPORTED);
+  }
+}
+
+/** The providers this organization is actually switched on for. */
+export function enabledProvidersOf(org: {
+  payments?: { provider?: PaymentGatewayKey; enabledProviders?: PaymentGatewayKey[] } | null;
+}): PaymentGatewayKey[] {
+  const configured = org.payments?.provider ?? PaymentGatewayKey.STRIPE;
+  const listed = org.payments?.enabledProviders ?? [];
+  // An empty list still falls back to the configured provider so an
+  // unmigrated document keeps working, but the seed now writes the list
+  // explicitly — relying on "empty means Stripe" is how PayPal became
+  // unreachable from the UI on a freshly seeded organization.
+  const enabled = listed.length > 0 ? listed : [configured];
+  return enabled.filter((p) => SUPPORTED.includes(p));
+}
+
+function selectProvider(
+  org: OrgPaymentConfig,
+  sel: ProviderSelection,
+): PaymentGatewayKey {
+  const enabled = enabledProvidersOf(org);
+
+  if (sel.kind === "pinned") {
+    assertSupported(sel.provider);
+    // Authoritative. Not enabled is a hard failure, never a substitution.
+    if (!enabled.includes(sel.provider)) {
+      throw new PaymentProviderNotEnabledError(sel.provider, enabled);
+    }
+    return sel.provider;
+  }
+
+  if (sel.provider) {
+    assertSupported(sel.provider);
+    if (!enabled.includes(sel.provider)) {
+      throw new PaymentProviderNotEnabledError(sel.provider, enabled);
+    }
+    return sel.provider;
+  }
+
+  // No preference expressed — the organization's own default, which must
+  // itself be enabled.
+  const configured = org.payments?.provider ?? PaymentGatewayKey.STRIPE;
+  if (!enabled.includes(configured)) {
+    throw new PaymentProviderNotEnabledError(configured, enabled);
+  }
+  return configured;
+}
+
 /**
  * The gateway an organization's payments run on.
  *
@@ -158,30 +276,30 @@ export async function getGatewayForOrganization(
    * per-organization path would never have executed in production — every
    * brand would have charged through the deployment's Stripe account.
    */
-  providerOverride?: PaymentGatewayKey | null,
+  selection?: ProviderSelection | PaymentGatewayKey | null,
 ): Promise<PaymentGateway> {
+  const sel = normaliseSelection(selection);
+
   if (!organizationId) {
-    return providerOverride ? getGateway(providerOverride) : getDefaultGateway();
+    // No organization to consult. Only an explicit choice can select
+    // anything, and an unsupported key is still refused.
+    if (sel.provider) {
+      assertSupported(sel.provider);
+      return getGateway(sel.provider);
+    }
+    return getDefaultGateway();
   }
 
   const org = await loadOrg(organizationId);
   if (!org) {
-    return providerOverride ? getGateway(providerOverride) : getDefaultGateway();
+    if (sel.provider) {
+      assertSupported(sel.provider);
+      return getGateway(sel.provider);
+    }
+    return getDefaultGateway();
   }
 
-  // An override selects among the providers this organization has actually
-  // enabled. Outside that set it is ignored rather than obeyed — the email
-  // composer sends `gateway: "STRIPE"` on every click, and a PayPal-only
-  // brand must not be asked for a Stripe session because of it.
-  const configured = org.payments?.provider ?? PaymentGatewayKey.STRIPE;
-  const enabled =
-    org.payments?.enabledProviders && org.payments.enabledProviders.length > 0
-      ? org.payments.enabledProviders
-      : [configured];
-  const provider =
-    providerOverride && enabled.includes(providerOverride)
-      ? providerOverride
-      : configured;
+  const provider = selectProvider(org, sel);
 
   if (provider === PaymentGatewayKey.STRIPE) {
     // Env first, vault second. See fromEnv() above for why.

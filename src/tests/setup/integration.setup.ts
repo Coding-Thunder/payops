@@ -38,6 +38,9 @@ process.env.CREDENTIALS_MASTER_KEY ??=
   "dGVzdC1vbmx5LW1hc3Rlci1rZXktZm9yLXBheW9wcyE=";
 
 import { afterAll, afterEach, beforeAll, beforeEach, vi } from "vitest";
+
+import { _resetOrganizationCacheForTests } from "@/server/auth/organization";
+import { seedTestOrganization } from "@/tests/utils/organization";
 import mongoose from "mongoose";
 
 import { setStripeForTesting } from "@/server/payments/stripe";
@@ -128,7 +131,13 @@ beforeAll(async () => {
   delete (globalThis as { __payopsMongoose?: unknown }).__payopsMongoose;
 });
 
-beforeEach(() => {
+beforeEach(async () => {
+  // A single-organization deployment ALWAYS has its organization. Seeding one
+  // per test is not scaffolding around the tests — it is the state the
+  // application is only ever run in, and every scoped read, every stamped
+  // write and every audit row depends on it resolving.
+  await seedTestOrganization();
+
   stripeStub = createStripeStub({
     successBaseUrl: process.env.APP_URL ?? "http://localhost:3000",
   });
@@ -146,6 +155,10 @@ afterEach(async () => {
       await Promise.all(collections.map((c) => c.deleteMany({})));
     }
   }
+  // The wipe above deletes the organization too, and the resolver memoises
+  // it for the life of the process. Clearing the cache here is what stops
+  // the next test resolving an id that no longer exists.
+  _resetOrganizationCacheForTests();
 });
 
 afterAll(async () => {

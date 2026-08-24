@@ -102,18 +102,33 @@ export function EmailComposer({
   // Providers this organization may actually use. The server has the final
   // say either way — it ignores a value the brand has not enabled — but the
   // UI must not claim a gateway that is not in play.
-  const [gatewayOptions, setGatewayOptions] = React.useState<string[]>([]);
+  /**
+   * Every provider this deployment knows about, each with whether it is
+   * actually switched on. Rendering only the enabled ones would hide that
+   * PayPal exists; rendering them all as selectable would imply it works.
+   */
+  const [providers, setProviders] = React.useState<
+    { key: string; label: string; enabled: boolean }[]
+  >([]);
   const [chosenGateway, setChosenGateway] = React.useState<string | null>(null);
+  const enabledProviders = React.useMemo(
+    () => providers.filter((p) => p.enabled),
+    [providers],
+  );
 
   React.useEffect(() => {
     let cancelled = false;
     api
       .get<{
-        payments: { provider: string; enabledProviders: string[] } | null;
+        payments: {
+          provider: string;
+          enabledProviders: string[];
+          supportedProviders: { key: string; label: string; enabled: boolean }[];
+        } | null;
       }>("/api/organizations")
       .then((res) => {
         if (cancelled || !res?.payments) return;
-        setGatewayOptions(res.payments.enabledProviders);
+        setProviders(res.payments.supportedProviders);
         setChosenGateway(res.payments.provider);
       })
       .catch(() => {
@@ -230,7 +245,7 @@ export function EmailComposer({
       // enabled, so this is a preference, never an instruction.
       await api.post(
         `/api/orders/${order.id}/generate-payment-link`,
-        gatewayOptions.length > 1 && chosenGateway
+        enabledProviders.length > 1 && chosenGateway
           ? { gateway: chosenGateway }
           : {},
       );
@@ -412,27 +427,51 @@ export function EmailComposer({
                     {GATEWAY_LABEL[order.payment.gateway] ??
                       order.payment.gateway}
                   </div>
-                ) : gatewayOptions.length === 0 ? (
+                ) : providers.length === 0 ? (
                   <div className="rounded-md border border-input bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
                     Loading…
                   </div>
-                ) : gatewayOptions.length === 1 ? (
-                  // One provider: a dropdown with a single item is noise.
-                  <div className="rounded-md border border-input bg-muted/40 px-3 py-2 text-sm">
-                    {GATEWAY_LABEL[gatewayOptions[0]!] ?? gatewayOptions[0]}
-                  </div>
                 ) : (
-                  <select
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    value={chosenGateway ?? ""}
-                    onChange={(e) => setChosenGateway(e.target.value)}
+                  /* Every supported provider is listed. A provider that is
+                     not enabled is shown, disabled, and labelled — hiding it
+                     would misstate what the product supports, and enabling
+                     it would misstate what this deployment can do. The
+                     server refuses a disabled provider independently; this
+                     is signposting, not enforcement. */
+                  <div
+                    role="radiogroup"
+                    aria-label="Payment gateway"
+                    className="space-y-1.5"
                   >
-                    {gatewayOptions.map((g) => (
-                      <option key={g} value={g}>
-                        {GATEWAY_LABEL[g] ?? g}
-                      </option>
+                    {providers.map((p) => (
+                      <label
+                        key={p.key}
+                        className={
+                          p.enabled
+                            ? "flex cursor-pointer items-center gap-2.5 rounded-md border border-input px-3 py-2 text-sm hover:bg-muted/40"
+                            : "flex items-center gap-2.5 rounded-md border border-dashed border-input px-3 py-2 text-sm text-muted-foreground"
+                        }
+                      >
+                        <input
+                          type="radio"
+                          name="payment-gateway"
+                          value={p.key}
+                          checked={chosenGateway === p.key}
+                          disabled={!p.enabled}
+                          onChange={() => setChosenGateway(p.key)}
+                          className="accent-foreground"
+                        />
+                        <span className={p.enabled ? "" : "line-through"}>
+                          {p.label}
+                        </span>
+                        {p.enabled ? null : (
+                          <span className="ml-auto rounded-sm bg-muted px-1.5 py-0.5 text-[10.5px] font-medium uppercase tracking-wide">
+                            Coming soon
+                          </span>
+                        )}
+                      </label>
                     ))}
-                  </select>
+                  </div>
                 )}
               </Field>
 

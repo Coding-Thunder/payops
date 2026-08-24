@@ -921,20 +921,27 @@ async function resolveGatewayForOrder(
   const orgId = doc.organizationId ? String(doc.organizationId) : null;
   const pinned = (doc.payment.gateway as PaymentGatewayKey | null) ?? null;
 
-  // Already has a session: stay on the SAME provider, so a regenerate or a
-  // status lookup hits the merchant account that holds the original.
-  if (pinned) return getGatewayForOrganization(orgId, pinned);
+  // Already has a session: that provider is AUTHORITATIVE, not a preference.
+  // The session, the webhook that will settle it and the money all live in
+  // that provider's merchant account, so it is never traded for another one.
+  // If it is no longer enabled the caller gets a clear refusal — previously
+  // the pin was passed as an override and silently swapped for the
+  // organization's configured provider, which on a two-gateway deployment
+  // mints a Stripe session over a PayPal order and rewrites payment.gateway
+  // underneath it.
+  if (pinned) {
+    return getGatewayForOrganization(orgId, { kind: "pinned", provider: pinned });
+  }
 
-  // New session: pass the requested provider through, but the organization
-  // has the final say — getGatewayForOrganization honours it only if the
-  // brand has that provider enabled, and otherwise uses its default. That
-  // lets one brand offer several gateways while a stray client value (the
-  // composer hardcodes STRIPE) can never select one it has no account for.
-  if (orgId) return getGatewayForOrganization(orgId, override);
-
-  // Unmigrated deployment — no organization to consult, so an explicit
-  // choice is all there is. This is the pre-organization behaviour.
-  return getGatewayForOrganization(null, override);
+  // New session: the requested provider is a request. It is honoured only if
+  // this deployment has it enabled, and refused otherwise — the email
+  // composer sends `gateway: "STRIPE"` on every click, and a request for a
+  // provider that is switched off must fail loudly rather than quietly
+  // becoming a different one.
+  return getGatewayForOrganization(orgId, {
+    kind: "requested",
+    provider: override,
+  });
 }
 
 /**

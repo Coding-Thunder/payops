@@ -1,21 +1,13 @@
 import "server-only";
 
-import { cache } from "react";
 import { Types } from "mongoose";
 
-import { RecordState, UserRole } from "@/lib/constants/enums";
-import { ForbiddenError } from "@/lib/errors";
-import {
-  Organization,
-  OrganizationMember,
-  type OrganizationDoc,
-} from "@/server/db/models";
+import { RecordState } from "@/lib/constants/enums";
+import { Organization, type OrganizationDoc } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 import type { OrganizationScopeInput } from "@/server/db/organization-filter";
 import type { OrganizationSummary } from "@/types";
 
-import { readSelectedOrgCookie } from "./org-cookie";
-import { getCurrentUser } from "./session";
 
 /**
  * Resolving "which organization is this request acting in".
@@ -62,187 +54,81 @@ function toSummary(
   };
 }
 
+/* ──────────────────── the single organization ───────────────────────── */
+
 /**
- * Whether this deployment has been migrated to organizations at all.
+ * Himanshu's deployment serves exactly ONE organization, and this is how
+ * every path finds it.
  *
- * Cached per request: it is consulted by the layout, the page, and the
- * guard, and an uncached count would be three round trips on every render.
+ * It replaces a cookie. That matters for more than tidiness: the cookie only
+ * exists inside a browser request, so `getRequestOrganizationScope` returned
+ * "no tenant" on every webhook delivery, every outbox drain and every public
+ * consent or acknowledgement submission. Rows written from those paths were
+ * stamped `organizationId: null` and stayed visible only because the
+ * singleton carries `isDefault: true`, which makes the scope clause include
+ * unattributed rows. Resolving server-side means those records are now
+ * attributed correctly, which is what "every record must be unambiguously
+ * associated with the organization" actually requires.
+ *
+ * Memoised for the life of the process, not the request — one organization
+ * does not change between requests, and this is on the payment-link and
+ * webhook hot paths. ONLY a successful lookup is cached: memoising a miss on
+ * a not-yet-seeded database would make the process serve errors until it is
+ * restarted.
  */
-export const organizationsExist = cache(async (): Promise<boolean> => {
+let cachedOrganization: OrganizationSummary | null = null;
+
+/** Test seam — the suite seeds a fresh organization per file. */
+export function _resetOrganizationCacheForTests(): void {
+  cachedOrganization = null;
+}
+
+export async function getOrganization(): Promise<OrganizationSummary> {
+  if (cachedOrganization) return cachedOrganization;
+
   await connectMongo();
-  const n = await Organization.countDocuments({}).limit(1);
-  return n > 0;
-});
+  const doc = await Organization.findOne({ status: RecordState.ACTIVE })
+    .sort({ isDefault: -1, createdAt: 1 })
+    .select("slug name brandName")
+    .lean<
+      (Pick<OrganizationDoc, "slug" | "name" | "brandName"> & {
+        _id: Types.ObjectId;
+      }) | null
+    >();
 
-/**
- * Organizations the signed-in user may act in, ordered for a stable
- * switcher. Empty when unauthenticated or when the user has no memberships.
- */
-export const listMemberOrganizations = cache(
-  async (): Promise<OrganizationSummary[]> => {
-    const user = await getCurrentUser();
-    if (!user) return [];
-
-    await connectMongo();
-    const memberships = await OrganizationMember.find({
-      userId: new Types.ObjectId(user.id),
-      status: RecordState.ACTIVE,
-    })
-      .select("organizationId")
-      .lean<{ organizationId: Types.ObjectId }[]>();
-
-    if (memberships.length === 0) return [];
-
-    const orgs = await Organization.find({
-      _id: { $in: memberships.map((m) => m.organizationId) },
-      status: RecordState.ACTIVE,
-    })
-      .sort({ name: 1 })
-      .select("slug name brandName")
-      .lean<
-        (Pick<OrganizationDoc, "slug" | "name" | "brandName"> & {
-          _id: Types.ObjectId;
-        })[]
-      >();
-
-    return orgs.map(toSummary);
-  },
-);
-
-/**
- * The organization this request is acting in, or null if the user has not
- * chosen one (or chose one they may no longer use).
- */
-export const getSelectedOrganization = cache(
-  async (): Promise<OrganizationSummary | null> => {
-    const selectedId = await readSelectedOrgCookie();
-    if (!selectedId || !Types.ObjectId.isValid(selectedId)) return null;
-
-    // Re-resolve against the user's live memberships rather than trusting
-    // the cookie. Reusing the cached list keeps this to zero extra queries
-    // on a request that already rendered the switcher.
-    const allowed = await listMemberOrganizations();
-    return allowed.find((o) => o.id === selectedId) ?? null;
-  },
-);
-
-/**
- * The organization, or a refusal. For server code that must not proceed
- * without an explicit selection.
- */
-export async function requireOrganization(): Promise<OrganizationSummary> {
-  const org = await getSelectedOrganization();
-  if (!org) {
-    throw new ForbiddenError("Select an organization to continue");
+  if (!doc) {
+    // A single-tenant deployment with no tenant is a misconfiguration, not a
+    // state to quietly serve empty pages from. Loud beats blank.
+    throw new Error(
+      "No organization is seeded. Run `npm run seed:orgs` before starting the application.",
+    );
   }
-  return org;
+
+  cachedOrganization = toSummary(doc);
+  return cachedOrganization;
+}
+
+/** The organization id, for the many callers that only need to stamp it. */
+export async function resolveOrganizationId(): Promise<string> {
+  return (await getOrganization()).id;
 }
 
 /**
- * Authorize a specific organization id for the signed-in user.
+ * The tenancy scope for any code path, browser request or not.
  *
- * This is the function API routes call when an organization id arrives from
- * the client. It never trusts the supplied id: it is only accepted if it
- * matches one of the caller's own ACTIVE memberships.
+ * One organization means one answer, so this no longer depends on a cookie,
+ * a membership lookup, or whether a request store exists at all. That last
+ * part is the substantive change: the previous resolver returned "no tenant"
+ * outside a request, so webhook deliveries, outbox drains and public consent
+ * submissions all wrote `organizationId: null`.
+ *
+ * `isDefault: true` is deliberate and load-bearing. It makes
+ * `organizationScopeClause` match unattributed rows as well as stamped ones,
+ * which keeps history written before this change visible — including the four
+ * scoped collections nothing has ever stamped (disputes, quotations,
+ * pending_emails, processed_webhook_events). Setting it false would silently
+ * empty those.
  */
-export async function assertOrganizationAccess(
-  organizationId: string,
-): Promise<OrganizationSummary> {
-  if (!Types.ObjectId.isValid(organizationId)) {
-    throw new ForbiddenError("You do not have access to that organization");
-  }
-  const allowed = await listMemberOrganizations();
-  const match = allowed.find((o) => o.id === organizationId);
-  if (!match) {
-    // Deliberately the same message whether the organization does not
-    // exist, is disabled, or simply is not theirs — otherwise this becomes
-    // an oracle for enumerating organization ids.
-    throw new ForbiddenError("You do not have access to that organization");
-  }
-  return match;
-}
-
-/**
- * The tenancy scope for the CURRENT request, ready to hand to
- * `withOrganizationScope` / `belongsToScope`.
- *
- * Resolved from ambient request context rather than threaded through every
- * service signature. That is a deliberate trade:
- *
- *   - the alternative is passing a scope argument down ~38 query sites,
- *     where forgetting exactly one is a silent cross-tenant read that no
- *     type checker catches;
- *   - here the services ask for the scope themselves, so a new query is
- *     scoped by construction.
- *
- * It returns UNSCOPED (`organizationId: null`) whenever there is no request
- * cookie context to read — and that is correct, not a fallback:
- *
- *   - the outbox drainer and the migration scripts run outside a request
- *     entirely and must see all rows;
- *   - a Stripe webhook is a request, but carries no operator session, and
- *     must be able to find its order regardless of who happens to be
- *     logged in;
- *   - an unmigrated deployment has no organizations, so there is nothing
- *     to scope by and queries stay byte-identical to today.
- *
- * Because "no context" means "no scoping", the isolation guarantee is
- * carried by tests that exercise the real service API across two
- * organizations, not by the type system.
- */
-export const getRequestOrganizationScope = cache(
-  async (): Promise<OrganizationScopeInput> => {
-    let selected: OrganizationSummary | null = null;
-    try {
-      selected = await getSelectedOrganization();
-    } catch {
-      // No request store at all — a script, the outbox drainer, a background
-      // job. These run outside any organization on purpose and stay
-      // unscoped; there is no caller here whose tenant could be determined.
-      return { organizationId: null, isDefault: false };
-    }
-    if (!selected) {
-      // A REQUEST with no selection is a different situation entirely, and
-      // conflating the two is what made this unscoped. On a deployment that
-      // has organizations, a caller who has not selected one has not proved
-      // which tenant they are — so they see nothing.
-      //
-      // The browser never reaches this: the app shell forces a selection.
-      // A direct API call carrying only a session cookie does, and it used
-      // to be served both brands' data.
-      if (await organizationsExist()) {
-        return { organizationId: null, isDefault: false, denyAll: true };
-      }
-      // No organizations at all — the pre-migration world, still unscoped.
-      return { organizationId: null, isDefault: false };
-    }
-
-    await connectMongo();
-    const row = await Organization.findById(selected.id)
-      .select("isDefault")
-      .lean<{ isDefault: boolean } | null>();
-
-    return {
-      organizationId: selected.id,
-      isDefault: Boolean(row?.isDefault),
-    };
-  },
-);
-
-/** The caller's role *within* an organization, which may differ from their
- *  global `User.role`. Null when they are not a member. */
-export async function getOrganizationRole(
-  organizationId: string,
-): Promise<UserRole | null> {
-  const user = await getCurrentUser();
-  if (!user || !Types.ObjectId.isValid(organizationId)) return null;
-  await connectMongo();
-  const row = await OrganizationMember.findOne({
-    organizationId: new Types.ObjectId(organizationId),
-    userId: new Types.ObjectId(user.id),
-    status: RecordState.ACTIVE,
-  })
-    .select("role")
-    .lean<{ role: UserRole } | null>();
-  return row?.role ?? null;
+export async function getRequestOrganizationScope(): Promise<OrganizationScopeInput> {
+  return { organizationId: await resolveOrganizationId(), isDefault: true };
 }

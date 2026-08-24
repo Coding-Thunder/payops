@@ -1,60 +1,76 @@
 import { PaymentGatewayKey } from "@/lib/constants/enums";
+import { PaymentGatewayLabel } from "@/lib/constants/labels";
 import { Organization } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 import { jsonOk, withApi } from "@/server/api/respond";
-import {
-  getSelectedOrganization,
-  listMemberOrganizations,
-} from "@/server/auth/organization";
+import { getOrganization } from "@/server/auth/organization";
+import { enabledProvidersOf } from "@/server/payments/resolve-gateway";
 import { requireUser } from "@/server/auth/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/organizations — the organizations the caller may act in, plus
- * which one is currently selected.
+ * Providers this codebase can actually transact with, in display order.
  *
- * Scoped to the caller's own memberships; there is no "list all
- * organizations" surface, because a user has no legitimate reason to learn
- * that other tenants exist.
+ * Everything outside this list is an enum placeholder whose registry entry
+ * throws, so it is never offered — not even greyed out. Being IN this list
+ * means "implemented"; being in `enabledProviders` means "switched on".
+ */
+const SUPPORTED: PaymentGatewayKey[] = [
+  PaymentGatewayKey.STRIPE,
+  PaymentGatewayKey.PAYPAL,
+];
+
+/**
+ * GET /api/organizations — the deployment's organization and its payment
+ * configuration.
+ *
+ * There is exactly one organization, resolved server-side. It used to be
+ * whichever one a cookie named, filtered through the caller's memberships;
+ * both are gone, and with them the possibility of this returning `payments:
+ * null` because no selection had been made — which would leave the composer's
+ * provider dropdown empty and let it submit with no gateway at all.
+ *
+ * `supportedProviders` carries the enabled flag per provider rather than only
+ * listing the usable ones, so the operator can SEE that PayPal exists and is
+ * not available yet. Hiding it would misrepresent the roadmap; enabling it
+ * would misrepresent the deployment.
  */
 export const GET = withApi(async () => {
   await requireUser();
-  const [organizations, selected] = await Promise.all([
-    listMemberOrganizations(),
-    getSelectedOrganization(),
-  ]);
-  // Which gateways the SELECTED organization may use. The email composer
-  // renders its provider dropdown from this instead of a hardcoded list —
-  // otherwise it shows "Stripe (available)" to a PayPal-only brand and tells
-  // the operator the money is going somewhere it is not.
-  let payments: {
-    provider: PaymentGatewayKey;
-    enabledProviders: PaymentGatewayKey[];
-  } | null = null;
+  const organization = await getOrganization();
 
-  if (selected) {
-    await connectMongo();
-    const org = await Organization.findById(selected.id)
-      .select("payments")
-      .lean<{
-        payments?: {
-          provider?: PaymentGatewayKey;
-          enabledProviders?: PaymentGatewayKey[];
-        };
-      } | null>();
-    const provider = org?.payments?.provider ?? PaymentGatewayKey.STRIPE;
-    const enabled =
-      org?.payments?.enabledProviders && org.payments.enabledProviders.length > 0
-        ? org.payments.enabledProviders
-        : [provider];
-    payments = { provider, enabledProviders: enabled };
-  }
+  await connectMongo();
+  const org = await Organization.findById(organization.id)
+    .select("payments")
+    .lean<{
+      payments?: {
+        provider?: PaymentGatewayKey;
+        enabledProviders?: PaymentGatewayKey[];
+      };
+    } | null>();
+
+  const enabled = enabledProvidersOf(org ?? {});
+  // The default must be one the deployment can actually use, or the composer
+  // would preselect a provider the server is about to refuse.
+  const provider = enabled.includes(
+    org?.payments?.provider ?? PaymentGatewayKey.STRIPE,
+  )
+    ? (org?.payments?.provider ?? PaymentGatewayKey.STRIPE)
+    : enabled[0];
 
   return jsonOk({
-    organizations,
-    selectedId: selected?.id ?? null,
-    payments,
+    organizations: [organization],
+    selectedId: organization.id,
+    payments: {
+      provider,
+      enabledProviders: enabled,
+      supportedProviders: SUPPORTED.map((key) => ({
+        key,
+        label: PaymentGatewayLabel[key],
+        enabled: enabled.includes(key),
+      })),
+    },
   });
 });
