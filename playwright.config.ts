@@ -12,7 +12,12 @@ import path from "node:path";
 
 const PORT = Number(process.env.PLAYWRIGHT_PORT ?? 3100);
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${PORT}`;
-const SMOKE_ENV_FILE = path.resolve(__dirname, ".env.payops.smoke");
+// PAYOPS_ENV_DIR selects the deployment; unset resolves at the repo root.
+const SMOKE_ENV_FILE = path.resolve(
+  __dirname,
+  process.env.PAYOPS_ENV_DIR ?? "",
+  ".env.payops.smoke",
+);
 
 export default defineConfig({
   testDir: "./src/tests/smoke",

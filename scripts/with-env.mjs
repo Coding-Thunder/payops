@@ -28,7 +28,14 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
-const ENV_FILE = process.env.PAYOPS_ENV_FILE ?? ".env.payops.local";
+// Two selectors, both optional and both defaulting to today's behaviour:
+//   PAYOPS_ENV_FILE  an explicit path, wins outright
+//   PAYOPS_ENV_DIR   which deployment's copy of the standard filename to use
+// Unset, this resolves `.env.payops.local` at the repository root, which is
+// what every existing script does.
+const ENV_FILE =
+  process.env.PAYOPS_ENV_FILE ??
+  path.join(process.env.PAYOPS_ENV_DIR ?? "", ".env.payops.local");
 
 /** Minimal dotenv parse — same rules as src/tests/setup/load-env.ts. */
 function loadEnvFile(filename) {

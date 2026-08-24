@@ -8,13 +8,24 @@
  * .env.test instead of .env.smoke just because the helper was imported.
  * Tests opt in explicitly via the unit / integration setup files, and
  * Playwright global-setup loads .env.smoke itself.
+ *
+ * PAYOPS_ENV_DIR selects WHICH deployment's copy of that file to read. Unset
+ * — the default, and what every existing invocation does — resolves against
+ * the repository root exactly as before. Set to `himanshu-env` it reads the
+ * same filenames from there instead, which is how one deployment's config is
+ * swapped for another's without renaming a single variable.
  */
 
 import fs from "node:fs";
 import path from "node:path";
 
+/** Directory the env files are read from. Empty means the repository root. */
+export function envDir(): string {
+  return process.env.PAYOPS_ENV_DIR ?? "";
+}
+
 export function loadEnvFile(filename: string): void {
-  const file = path.resolve(process.cwd(), filename);
+  const file = path.resolve(process.cwd(), envDir(), filename);
   if (!fs.existsSync(file)) return;
   const text = fs.readFileSync(file, "utf8");
   for (const raw of text.split(/\r?\n/)) {
