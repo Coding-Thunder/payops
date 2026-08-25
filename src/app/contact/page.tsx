@@ -51,7 +51,11 @@ const LANES: Lane[] = [
   {
     eyebrow: "Support",
     title: "Customer support",
-    body: "Already using TraceTxn? Stuck on a connect step, missing a payment in your dashboard, evidence chain showing wrong? Reach support, Growth + Scale tiers get priority email; Starter gets best-effort within 2 business days.",
+    // No tier language here: billing is not wired up and `getPlan()` in
+    // billing.service.ts returns `starter` for every tenant, so a promise of
+    // "priority email on Growth + Scale" describes a plan nobody can be on.
+    // Two business days is what everyone actually gets today.
+    body: "Already using TraceTxn? Stuck on a connect step, an invoice missing from a client's timeline, a payment not matching up? Reach support, replies land within 2 business days.",
     email: "support@tracetxn.com",
     icon: HeadphonesIcon,
   },
