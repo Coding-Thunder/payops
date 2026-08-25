@@ -44,9 +44,12 @@ import { DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/seo";
  *    it will return when there are real nested pages to describe.
  *
  * CLAIM DISCIPLINE: `featureList` names only capability reachable by a
- * signed-in user today. Client files and links have models, services and REST
- * routes but no UI; approvals do not exist as a feature. None of the three
- * appear below. See faq-content.ts for the same rule applied to the FAQ.
+ * signed-in user today. Client files and links were withheld while they were
+ * backend-only; they now render as Files and Links tabs on
+ * /app/customers/[id] and are listed. Approvals still do not exist as a
+ * feature — "Approve" is only a configurable workflow-transition label
+ * (workflow.model.ts) — and are still not claimed. See faq-content.ts for the
+ * same rule applied to the FAQ.
  */
 
 interface StructuredDataProps {
@@ -141,6 +144,10 @@ export function StructuredData({
           "Card payments through Stripe with hosted checkout",
           // /consent/[token], payment-consent.model.ts
           "Hosted customer consent capture",
+          // FilesPanel on /app/customers/[id] -> /api/files, stored in GridFS
+          "Contracts and files attached to the client and their timeline",
+          // LinksPanel on /app/customers/[id] -> /api/links
+          "Shared links kept on the client record",
           // /app/orders/[id]/email, /app/admin/email-templates
           "Templated client email, recorded against the client",
           // audit-log.model.ts, /app/admin/audit
