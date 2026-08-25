@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
 
-import { SendTemplateButton } from "@/components/features/email-templates/send-template-button";
+import { EmailComposerDialog } from "@/components/features/email-composer/email-composer-dialog";
+import { FilesPanel } from "@/components/features/resources/files-panel";
+import { LinksPanel } from "@/components/features/resources/links-panel";
 import { ArchiveOrderButton } from "@/components/features/orders/archive-order-button";
 import { OrderConsentCard } from "@/components/features/orders/order-consent-card";
 import { OrderDetailsCard } from "@/components/features/orders/order-details-card";
@@ -38,6 +40,7 @@ import {
 import { useOrderQuery } from "@/hooks/use-order-query";
 import { useReconcilePayment } from "@/hooks/use-reconcile-payment";
 import { ApiClientError } from "@/lib/api-client";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ConsentStatus, OrderStatus, RecordState } from "@/lib/constants/enums";
 import type { UserRole } from "@/lib/constants/enums";
 import { Permission, roleHasPermission } from "@/lib/constants/permissions";
@@ -127,6 +130,9 @@ export function OrderDetailPageContent({
     order.state === RecordState.ACTIVE &&
     order.status !== OrderStatus.PAID;
   const canFlagRisk = roleHasPermission(role, Permission.ORDER_UPDATE);
+  const canManageFiles = roleHasPermission(role, Permission.CLIENT_FILE_MANAGE);
+  const canManageLinks = roleHasPermission(role, Permission.CLIENT_LINK_MANAGE);
+  const canManageClient = roleHasPermission(role, Permission.CUSTOMER_MANAGE);
 
   const needsPaymentLink = order.status === OrderStatus.NOT_INITIATED;
   const inFlight =
@@ -159,14 +165,18 @@ export function OrderDetailPageContent({
               <Badge variant="destructive">Flagged</Badge>
             ) : null}
             {canFlagRisk ? <RiskFlagDialog order={order} /> : null}
-            <SendTemplateButton
-              defaultRecipient={order.customer.email}
-              source={{
-                kind: "order",
-                orderId: order.id,
-                orderNumber: order.orderNumber,
-              }}
-            />
+            {/* The composer needs a Client Profile to hang the message
+                (and any attachment) off. Legacy orders written before the
+                customer spine exist without one, so the action only
+                appears when there's a client to attribute it to. */}
+            {order.customerId && canManageClient ? (
+              <EmailComposerDialog
+                customerId={order.customerId}
+                defaultRecipient={order.customer.email}
+                lockedOrderId={order.id}
+                lockedOrderNumber={order.orderNumber}
+              />
+            ) : null}
             {canArchive ? <ArchiveOrderButton orderId={order.id} /> : null}
           </div>
         }
@@ -224,6 +234,48 @@ export function OrderDetailPageContent({
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
           <OrderDetailsCard order={order} />
+
+          {/* Order Files and Order Links: the slice of the client's
+              resources that belongs to THIS order. Same rows as the
+              client-level lists — filtered, not duplicated — so a
+              proposal attached here is also on the client record. */}
+          {order.customerId ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Files &amp; links</CardTitle>
+                <CardDescription>
+                  Documents and external resources for this order. They also
+                  appear on {order.customer.name || "the client"}&rsquo;s
+                  profile.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Tabs defaultValue="files">
+                  <TabsList>
+                    <TabsTrigger value="files">Files</TabsTrigger>
+                    <TabsTrigger value="links">Links</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="files">
+                    <FilesPanel
+                      customerId={order.customerId}
+                      orderId={order.id}
+                      orderNumber={order.orderNumber}
+                      canManage={canManageFiles}
+                      canManageLinks={canManageLinks}
+                    />
+                  </TabsContent>
+                  <TabsContent value="links">
+                    <LinksPanel
+                      customerId={order.customerId}
+                      orderId={order.id}
+                      orderNumber={order.orderNumber}
+                      canManage={canManageLinks}
+                    />
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
+          ) : null}
         </div>
         <div className="space-y-6">
           <OrderPaymentCard order={order} canRegenerate={canRegenerate} />

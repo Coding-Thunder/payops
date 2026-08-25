@@ -153,7 +153,11 @@ export function WelcomeEmail({
         </Text>
       </Section>
 
-      <EmailFooter brandName="TraceTxn" supportEmail={supportEmail} />
+      <EmailFooter
+        brandName="TraceTxn"
+        supportEmail={supportEmail}
+        disclosure="message"
+      />
     </EmailLayout>
   );
 }

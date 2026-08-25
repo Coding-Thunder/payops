@@ -44,8 +44,21 @@ export const templateKeyParam = z
     "Template key must be lower-case kebab, 2 to 48 chars",
   );
 
+/** The written email. Long, because it IS the email — the 2000-char
+ *  `intro` cap that predates this field is a copy slot, not a message. */
+const optionalBody = z
+  .string()
+  .max(20_000, "That message is too long to save")
+  .optional()
+  .nullable()
+  .transform((v) => {
+    const trimmed = v?.trim();
+    return trimmed && trimmed.length > 0 ? trimmed : null;
+  });
+
 const contentFieldsSchema = z.object({
   subject: optionalLine,
+  body: optionalBody,
   greeting: optionalLine,
   intro: optionalParagraph,
   note: optionalParagraph,
@@ -64,6 +77,17 @@ export type CreateEmailTemplateVersionInput = z.infer<
  *  template). Carries the key, displayName, description + the same
  *  content payload as a version save. */
 export const createCustomTemplateSchema = contentFieldsSchema.extend({
+  /**
+   * OPTIONAL, and normally omitted.
+   *
+   * The key is an internal identifier — it routes the editor URL and
+   * pins the version stream. Operators were being asked to invent one
+   * ("lower-case kebab, 2 to 48 chars, starting with a letter") before
+   * they could write a single word of the email, which is a database
+   * concern wearing a form field's clothes. The service now derives it
+   * from the template name. It stays accepted here so the API remains
+   * usable by a caller that genuinely wants to choose the slug.
+   */
   templateKey: z
     .string()
     .trim()
@@ -71,7 +95,8 @@ export const createCustomTemplateSchema = contentFieldsSchema.extend({
     .regex(
       CUSTOM_TEMPLATE_KEY_REGEX,
       "Template key must be lower-case kebab (e.g. payment-reminder), 2 to 48 chars, starting with a letter",
-    ),
+    )
+    .optional(),
   displayName: z
     .string()
     .trim()
@@ -144,6 +169,7 @@ export const sendCustomTemplateSchema = z.object({
         .optional()
         .nullable()
         .transform((v) => (v && v.length > 0 ? v : null)),
+      body: optionalBody,
       greeting: z
         .string()
         .trim()

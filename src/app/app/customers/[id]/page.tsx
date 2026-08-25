@@ -19,7 +19,9 @@ import { StatCard } from "@/components/common/stat-card";
 import { OrderStatusBadge } from "@/components/common/status-badges";
 import { ClientTimeline } from "@/components/features/clients/client-timeline";
 import { EditClientDialog } from "@/components/features/clients/edit-client-dialog";
-import { SendTemplateButton } from "@/components/features/email-templates/send-template-button";
+import { EmailComposerDialog } from "@/components/features/email-composer/email-composer-dialog";
+import { FilesPanel } from "@/components/features/resources/files-panel";
+import { LinksPanel } from "@/components/features/resources/links-panel";
 import { FadeIn } from "@/components/motion/fade-in";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,6 +47,11 @@ import {
 import { NotFoundError } from "@/lib/errors";
 import { formatCurrency, formatDate, formatDateTime } from "@/lib/format";
 import { requirePermission } from "@/server/auth/session";
+import {
+  countClientFiles,
+  listClientOrderOptions,
+} from "@/server/services/client-file.service";
+import { countClientLinks } from "@/server/services/client-link.service";
 import {
   getClientProfile,
   getClientTimeline,
@@ -72,10 +79,16 @@ export default async function ClientProfilePage({ params }: ClientPageProps) {
 
   let profile;
   let timeline;
+  let fileCount = 0;
+  let linkCount = 0;
+  let orderOptions: Array<{ id: string; orderNumber: string }> = [];
   try {
-    [profile, timeline] = await Promise.all([
+    [profile, timeline, fileCount, linkCount, orderOptions] = await Promise.all([
       getClientProfile(user.orgId, id),
       getClientTimeline(user.orgId, id),
+      countClientFiles(user.orgId, id),
+      countClientLinks(user.orgId, id),
+      listClientOrderOptions(user.orgId, id),
     ]);
   } catch (err) {
     if (err instanceof NotFoundError) notFound();
@@ -85,6 +98,11 @@ export default async function ClientProfilePage({ params }: ClientPageProps) {
   const { totals } = profile;
   const canManage = roleHasPermission(user.role, Permission.CUSTOMER_MANAGE);
   const canCreateOrder = roleHasPermission(user.role, Permission.ORDER_CREATE);
+  // `permissions` is the effective set (role + custom grants − restricted),
+  // which is what the API routes gate on. Reading it here keeps the button
+  // and the endpoint from disagreeing for a member on custom grants.
+  const canManageFiles = user.permissions.has(Permission.CLIENT_FILE_MANAGE);
+  const canManageLinks = user.permissions.has(Permission.CLIENT_LINK_MANAGE);
   const currency = totals.currency ?? "USD";
   const createOrderHref = `/app/orders/create?customerId=${profile.id}`;
 
@@ -100,11 +118,13 @@ export default async function ClientProfilePage({ params }: ClientPageProps) {
         actions={
           <div className="flex items-center gap-2">
             {canManage ? <EditClientDialog client={profile} /> : null}
-            <SendTemplateButton
-              defaultRecipient={profile.email}
-              source={{ kind: "customer", customerId: profile.id }}
-              label="Send Email"
-            />
+            {canManage ? (
+              <EmailComposerDialog
+                customerId={profile.id}
+                defaultRecipient={profile.email}
+                label="Send Email"
+              />
+            ) : null}
           </div>
         }
       />
@@ -164,10 +184,32 @@ export default async function ClientProfilePage({ params }: ClientPageProps) {
               <TabsTrigger value="orders">
                 Orders ({profile.orders.length})
               </TabsTrigger>
+              {/* Files and Links sit side by side as peers. Links are not
+                  a fallback inside the upload flow — they're how most
+                  large deliverables actually reach a client. */}
+              <TabsTrigger value="files">Files ({fileCount})</TabsTrigger>
+              <TabsTrigger value="links">Links ({linkCount})</TabsTrigger>
             </TabsList>
 
             <TabsContent value="timeline">
               <ClientTimeline events={timeline} />
+            </TabsContent>
+
+            <TabsContent value="files">
+              <FilesPanel
+                customerId={profile.id}
+                orderOptions={orderOptions}
+                canManage={canManageFiles}
+                canManageLinks={canManageLinks}
+              />
+            </TabsContent>
+
+            <TabsContent value="links">
+              <LinksPanel
+                customerId={profile.id}
+                orderOptions={orderOptions}
+                canManage={canManageLinks}
+              />
             </TabsContent>
 
             <TabsContent value="orders" className="space-y-3">

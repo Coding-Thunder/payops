@@ -24,3 +24,5 @@ export * from "./password-reset";
 export * from "./item-type";
 export * from "./business-setup";
 export * from "./item";
+export * from "./client-resource";
+export * from "./compose-email";

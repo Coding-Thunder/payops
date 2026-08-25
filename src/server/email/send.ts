@@ -1,7 +1,13 @@
 import "server-only";
 
-import { deliverViaResend, resendApiKey } from "@/server/email/resend";
+import {
+  deliverViaResend,
+  resendApiKey,
+  type OutboundAttachment,
+} from "@/server/email/resend";
 import { getMailer } from "@/server/email/smtp";
+
+export type { OutboundAttachment };
 
 /**
  * The one place an email leaves this application.
@@ -49,6 +55,11 @@ export interface OutboundEmail {
   kind: string;
   /** Additional headers; carried by both transports. */
   headers?: Record<string, string>;
+  /** Files to send along with the message. Both transports carry them;
+   *  the CALLER is responsible for keeping the combined size inside
+   *  MAX_EMAIL_ATTACHMENT_TOTAL_BYTES, because a provider-side size
+   *  rejection is opaque and arrives after the operator hit Send. */
+  attachments?: readonly OutboundAttachment[];
 }
 
 export interface SendResult {
@@ -68,19 +79,36 @@ export function isEmailConfigured(): boolean {
   return resendApiKey() !== null || getMailer() !== null;
 }
 
+/**
+ * Collapse anything that could break out of a header value.
+ *
+ * A subject is a single line by definition, but `.trim()` only strips the
+ * ends — an embedded CRLF survives it, and one can also arrive through a
+ * resolved variable (a client record whose name contains a newline). Both
+ * current transports happen to mitigate this (Resend takes a JSON body;
+ * nodemailer encodes headers), but "the transport probably handles it" is
+ * not the same as handling it. This is the one place mail leaves the
+ * application, so it is the right place to guarantee it.
+ */
+function singleLine(value: string): string {
+  return value.replace(/[\r\n]+/g, " ").trim();
+}
+
 /** Deliver one email. Throws on failure; never returns a false success. */
 export async function sendEmail(msg: OutboundEmail): Promise<SendResult> {
   const key = resendApiKey();
+  const subject = singleLine(msg.subject);
   if (key) {
     const { id } = await deliverViaResend(key, {
       from: msg.from,
       to: msg.to,
       replyTo: msg.replyTo,
-      subject: msg.subject,
+      subject,
       html: msg.html,
       text: msg.text,
       kind: msg.kind,
       headers: msg.headers,
+      attachments: msg.attachments,
     });
     return { messageId: id, transport: "resend-http", response: "resend-http" };
   }
@@ -91,10 +119,17 @@ export async function sendEmail(msg: OutboundEmail): Promise<SendResult> {
     from: msg.from,
     to: msg.to,
     replyTo: msg.replyTo || undefined,
-    subject: msg.subject,
+    subject,
     html: msg.html,
     text: msg.text,
     headers: { "X-Entity-Kind": msg.kind, ...(msg.headers ?? {}) },
+    attachments: msg.attachments?.length
+      ? msg.attachments.map((a) => ({
+          filename: a.fileName,
+          content: a.content,
+          contentType: a.contentType,
+        }))
+      : undefined,
   });
   return {
     messageId: info.messageId ?? null,

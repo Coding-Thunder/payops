@@ -86,6 +86,12 @@ export type {
 export { Customer } from "./customer.model";
 export type { CustomerDoc, CustomerDocument } from "./customer.model";
 
+export { ClientFile, CLIENT_FILE_BUCKET } from "./client-file.model";
+export type { ClientFileDoc, ClientFileDocument } from "./client-file.model";
+
+export { ClientLink } from "./client-link.model";
+export type { ClientLinkDoc, ClientLinkDocument } from "./client-link.model";
+
 // Provider + CarLink models removed in Pass 5h.
 
 export { Branding, BRANDING_KEY } from "./branding.model";

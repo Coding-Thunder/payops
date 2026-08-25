@@ -12,6 +12,15 @@
  *   - processed_webhook_events{ gatewayEventId: 1 } UNIQUE  (webhook dedup)
  *   - org_members             { invite.tokenHash: 1 } SPARSE
  *   - order_drafts / outbox   TTL indexes (unbounded-growth guard on M0)
+ *   - client_files            { orgId, customerId, deletedAt, createdAt }
+ *                             + { orgId, orderId, createdAt } PARTIAL
+ *   - client_links            the same pair (Files & Links list views)
+ *
+ * NOTE on file BYTES: uploaded files live in the GridFS bucket
+ * `client_files` (collections `client_files.files` / `.chunks`), which is
+ * NOT a Mongoose model and so isn't in the loop below. The MongoDB driver
+ * creates that bucket's own indexes on first upload, independently of
+ * Mongoose's autoIndex setting, so there is nothing to build here.
  *
  * Unique indexes fail to build if duplicates already exist (likely precisely
  * because the index was never enforced), so the two new unique collections are

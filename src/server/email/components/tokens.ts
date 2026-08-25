@@ -32,6 +32,12 @@ export const COLOR = {
   textInverted: "#ffffff",
 
   // Accents (kept restrained, used sparingly)
+  /** Anchor colour for operator-written links in a message body.
+   *  Blue rather than the brand accent on purpose: in an email, a link
+   *  has to read as clickable to someone who has never seen this brand
+   *  before, and blue-underlined is the one convention every client
+   *  renders the same way. */
+  link: "#2563eb",
   success: "#0e9f6e",
   successSoft: "#ecfdf5",
   successBorder: "#d1fae5",

@@ -89,21 +89,30 @@ export function UniversalOrderEmail({
       />
 
       {variant === "confirmation" ? (
-        <SuccessBanner
-          label="Payment confirmed"
-          title={bannerTitle ?? `Thank you, ${customerName}.`}
-          description={
-            bannerDescription ?? (
-              <>
-                We&apos;ve received your payment for order{" "}
-                <strong style={{ color: COLOR.textPrimary }}>
-                  {ctx.order.orderNumber}
-                </strong>
-                . Details below, please keep this email for your records.
-              </>
-            )
-          }
-        />
+        <>
+          <SuccessBanner
+            label="Payment confirmed"
+            // The editor's Greeting / Intro fields map onto this
+            // variant's two copy slots. Without this the confirmation
+            // template's saved copy was silently dropped: an operator
+            // could edit it, save a version, and the receipt would go
+            // out with the code defaults anyway.
+            title={bannerTitle ?? greeting ?? `Thank you, ${customerName}.`}
+            description={
+              bannerDescription ??
+              intro ?? (
+                <>
+                  We&apos;ve received your payment for order{" "}
+                  <strong style={{ color: COLOR.textPrimary }}>
+                    {ctx.order.orderNumber}
+                  </strong>
+                  . Details below, please keep this email for your records.
+                </>
+              )
+            }
+          />
+          {note ? <CopyNote note={note} /> : null}
+        </>
       ) : (
         <RequestIntro
           customerName={customerName}
@@ -163,21 +172,38 @@ function RequestIntro({
       >
         {body}
       </Text>
-      {note ? (
-        <Text
-          style={{
-            ...typeStyle("label"),
-            margin: 0,
-            marginTop: SPACE.md,
-            padding: `${SPACE.sm}px ${SPACE.md}px`,
-            backgroundColor: COLOR.surfaceSubtle,
-            borderRadius: 6,
-            color: COLOR.textSecondary,
-          }}
-        >
-          {note}
-        </Text>
-      ) : null}
+      {note ? <NoteText note={note} /> : null}
+    </Section>
+  );
+}
+
+/** The tenant's optional note, as a soft callout. Shared by both
+ *  variants so "Optional note" in the editor means the same thing on a
+ *  payment request and a receipt. */
+function NoteText({ note }: { note: string }): React.ReactElement {
+  return (
+    <Text
+      style={{
+        ...typeStyle("label"),
+        margin: 0,
+        marginTop: SPACE.md,
+        padding: `${SPACE.sm}px ${SPACE.md}px`,
+        backgroundColor: COLOR.surfaceSubtle,
+        borderRadius: 6,
+        color: COLOR.textSecondary,
+      }}
+    >
+      {note}
+    </Text>
+  );
+}
+
+/** The confirmation variant has no intro section to hang the note off,
+ *  so it gets its own padded band beneath the banner. */
+function CopyNote({ note }: { note: string }): React.ReactElement {
+  return (
+    <Section style={{ padding: `0 ${SPACE.xxxl}px` }}>
+      <NoteText note={note} />
     </Section>
   );
 }

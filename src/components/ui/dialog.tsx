@@ -61,6 +61,9 @@ const dialogContentVariants = cva(
         md: "max-w-[480px]",
         lg: "max-w-[640px]",
         xl: "max-w-[760px]",
+        /** Work surfaces, not confirmations — the email composer needs
+         *  room for a real message plus a live preview beside it. */
+        "2xl": "max-w-[1080px]",
       },
     },
     defaultVariants: { size: "md" },

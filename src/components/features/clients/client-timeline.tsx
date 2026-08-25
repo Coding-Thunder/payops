@@ -6,6 +6,8 @@ import {
   ArrowRightIcon,
   BanknoteIcon,
   FileTextIcon,
+  LinkIcon,
+  PaperclipIcon,
   ReceiptIcon,
   RotateCcwIcon,
   ScaleIcon,
@@ -29,7 +31,9 @@ export interface TimelineEvent {
     | "refund"
     | "consent"
     | "document"
-    | "dispute";
+    | "dispute"
+    | "file"
+    | "link";
   title: string;
   detail: string | null;
   at: string;
@@ -88,6 +92,18 @@ const META: Record<
     dot: "bg-destructive-soft text-destructive",
     ring: "ring-destructive-border/60",
   },
+  file: {
+    label: "Files",
+    icon: PaperclipIcon,
+    dot: "bg-info-soft text-info",
+    ring: "ring-info-border/60",
+  },
+  link: {
+    label: "Links",
+    icon: LinkIcon,
+    dot: "bg-surface-2 text-foreground",
+    ring: "ring-border",
+  },
 };
 
 const ORDER: Category[] = [
@@ -97,6 +113,8 @@ const ORDER: Category[] = [
   "refund",
   "consent",
   "document",
+  "file",
+  "link",
   "dispute",
 ];
 
@@ -132,7 +150,8 @@ export function ClientTimeline({ events }: ClientTimelineProps) {
       <div className="rounded-lg border border-dashed border-border bg-card/40 p-10 text-center">
         <p className="text-sm font-medium text-foreground">No activity yet</p>
         <p className="mt-1 text-[13px] text-muted-foreground">
-          Orders, payments, and documents will appear here as they happen.
+          Orders, payments, files, and links will appear here as they
+          happen.
         </p>
       </div>
     );

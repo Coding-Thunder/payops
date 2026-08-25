@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { formatDateTime } from "@/lib/format";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -24,8 +23,16 @@ import { LoadingButton } from "@/components/ui/loading-button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
 import { api, ApiClientError } from "@/lib/api-client";
+import { manualVariablesUsed } from "@/lib/constants/email-variables";
+import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { EmailTemplateVersionDTO } from "@/types";
+
+import {
+  InsertVariableMenu,
+  focusCaret,
+  insertAtCaret,
+} from "./insert-variable-menu";
 
 interface TemplateOption {
   key: string;
@@ -34,17 +41,27 @@ interface TemplateOption {
 
 interface AdminTemplateEditorProps {
   /** Either a SYSTEM_EMAIL_TEMPLATE_KEYS entry or a tenant-defined
-   *  custom kebab slug. The editor doesn't care; the version-create
-   *  route handles both shapes. */
-  templateKey: string;
-  templates: readonly TemplateOption[];
-  versions: EmailTemplateVersionDTO[];
-  activeVersion: EmailTemplateVersionDTO | null;
+   *  custom slug. Absent in create mode — the server derives the key
+   *  from the name on save. */
+  templateKey?: string;
+  /** System templates are code-rendered layouts with named copy slots;
+   *  custom ones are a written email. The editor is a different shape
+   *  for each, so this is the top-level branch. */
+  kind: "system" | "custom";
+  displayName: string;
+  templates?: readonly TemplateOption[];
+  versions?: EmailTemplateVersionDTO[];
+  activeVersion?: EmailTemplateVersionDTO | null;
   initialHtml: string;
+  /** Create mode: no key yet, POST to the create endpoint on save. */
+  mode?: "edit" | "create";
 }
 
 interface DraftState {
+  displayName: string;
+  description: string;
   subject: string;
+  body: string;
   greeting: string;
   intro: string;
   note: string;
@@ -53,20 +70,31 @@ interface DraftState {
   footerNote: string;
 }
 
-const EMPTY_DRAFT: DraftState = {
-  subject: "",
-  greeting: "",
-  intro: "",
-  note: "",
-  supportHeadline: "",
-  supportDescription: "",
-  footerNote: "",
-};
-
-function draftFromVersion(version: EmailTemplateVersionDTO | null): DraftState {
-  if (!version) return EMPTY_DRAFT;
+function emptyDraft(displayName = ""): DraftState {
   return {
+    displayName,
+    description: "",
+    subject: "",
+    body: "",
+    greeting: "",
+    intro: "",
+    note: "",
+    supportHeadline: "",
+    supportDescription: "",
+    footerNote: "",
+  };
+}
+
+function draftFromVersion(
+  version: EmailTemplateVersionDTO | null | undefined,
+  fallbackName: string,
+): DraftState {
+  if (!version) return emptyDraft(fallbackName);
+  return {
+    displayName: version.displayName ?? fallbackName,
+    description: version.description ?? "",
     subject: version.subject ?? "",
+    body: version.body ?? "",
     greeting: version.greeting ?? "",
     intro: version.intro ?? "",
     note: version.note ?? "",
@@ -76,64 +104,92 @@ function draftFromVersion(version: EmailTemplateVersionDTO | null): DraftState {
   };
 }
 
-const DEBOUNCE_MS = 350;
+const DEBOUNCE_MS = 400;
 
 /**
- * Versioned no-code editor for the email-template content.
+ * The template editor: content on the left, live preview on the right.
  *
- * Save → creates a new immutable version and activates it. Past versions
- * stay in the history list; clicking "Activate this version" rolls
- * back. Live iframe preview reflects the editor's current draft.
+ * Two shapes, one component, because they're the same job:
+ *
+ *   custom  — Name, Subject, and the email itself. That's the whole
+ *             form. No key to invent, no seven-slot content grid to
+ *             reverse-engineer into a message.
+ *   system  — the named copy slots of a code-rendered transactional
+ *             layout (greeting / intro / note / support / footer). The
+ *             layout is fixed because it's what the payment flow sends;
+ *             only the words are yours.
+ *
+ * The preview is rendered by the SAME server function the saved
+ * template renders through, so what's on the right is what goes out.
  */
 export function AdminTemplateEditor({
   templateKey,
-  templates,
-  versions,
-  activeVersion,
+  kind,
+  displayName,
+  templates = [],
+  versions = [],
+  activeVersion = null,
   initialHtml,
+  mode = "edit",
 }: AdminTemplateEditorProps) {
   const router = useRouter();
+  const isCreate = mode === "create";
+  const isCustom = kind === "custom";
+
   const [draft, setDraft] = React.useState<DraftState>(() =>
-    draftFromVersion(activeVersion),
+    isCreate ? emptyDraft("") : draftFromVersion(activeVersion, displayName),
   );
   const [html, setHtml] = React.useState(initialHtml);
   const [previewLoading, setPreviewLoading] = React.useState(false);
   const [previewError, setPreviewError] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
   const [pendingActivateId, setPendingActivateId] = React.useState<string | null>(
     null,
   );
+  const bodyRef = React.useRef<HTMLTextAreaElement>(null);
+  const subjectRef = React.useRef<HTMLInputElement>(null);
+  const lastFocused = React.useRef<"subject" | "body">("body");
 
   // Reset the draft if the parent re-renders with a new active version
   // (e.g. after activating a historical version).
   const lastActiveId = React.useRef(activeVersion?.id ?? null);
   React.useEffect(() => {
+    if (isCreate) return;
     const currentId = activeVersion?.id ?? null;
     if (currentId !== lastActiveId.current) {
       lastActiveId.current = currentId;
-      setDraft(draftFromVersion(activeVersion));
+      setDraft(draftFromVersion(activeVersion, displayName));
     }
-  }, [activeVersion]);
+  }, [activeVersion, displayName, isCreate]);
 
-  // Debounced preview render, same endpoint the no-save preview uses.
+  // Debounced live preview.
   React.useEffect(() => {
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       setPreviewLoading(true);
       setPreviewError(null);
       try {
+        const endpoint = isCreate
+          ? "/api/admin/email-templates/preview"
+          : `/api/admin/email-templates/${templateKey}/preview`;
+        const payload = isCreate
+          ? {
+              displayName: draft.displayName || "New template",
+              subject: draft.subject.trim() || null,
+              body: draft.body.trim() || null,
+            }
+          : draftPayload(draft);
         const { html: rendered } = await api.post<{ html: string }>(
-          `/api/admin/email-templates/${templateKey}/preview`,
-          draftPayload(draft),
+          endpoint,
+          payload,
           { signal: controller.signal },
         );
         setHtml(rendered);
       } catch (err) {
         if (controller.signal.aborted) return;
         setPreviewError(
-          err instanceof ApiClientError
-            ? err.message
-            : "Couldn't render preview",
+          err instanceof ApiClientError ? err.message : "Couldn't render preview",
         );
       } finally {
         if (!controller.signal.aborted) setPreviewLoading(false);
@@ -143,17 +199,73 @@ export function AdminTemplateEditor({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [draft, templateKey]);
+  }, [draft, templateKey, isCreate]);
+
+  function set<K extends keyof DraftState>(key: K, value: DraftState[K]) {
+    setDraft((d) => ({ ...d, [key]: value }));
+  }
+
+  function handleInsert(token: string) {
+    const target = lastFocused.current;
+    if (target === "subject") {
+      const { value, caret } = insertAtCaret(
+        subjectRef.current,
+        draft.subject,
+        token,
+      );
+      set("subject", value.slice(0, 200));
+      focusCaret(subjectRef.current, caret);
+      return;
+    }
+    const { value, caret } = insertAtCaret(bodyRef.current, draft.body, token);
+    set("body", value);
+    focusCaret(bodyRef.current, caret);
+  }
 
   async function handleSave() {
     setSaving(true);
+    setSaveError(null);
     try {
-      await api.post(`/api/admin/email-templates/${templateKey}`, draftPayload(draft));
+      if (isCreate) {
+        if (draft.displayName.trim().length < 2) {
+          setSaveError("Give the template a name your team will recognise.");
+          return;
+        }
+        const created = await api.post<{ templateKey: string; displayName: string }>(
+          "/api/admin/email-templates/custom",
+          {
+            displayName: draft.displayName.trim(),
+            description: draft.description.trim() || undefined,
+            subject: draft.subject.trim() || null,
+            body: draft.body.trim() || null,
+          },
+        );
+        toast.success(`Created "${created.displayName}"`);
+        router.push(`/app/admin/email-templates/${created.templateKey}`);
+        router.refresh();
+        return;
+      }
+
+      // A renamed custom template updates its metadata across every
+      // version row, then saves the copy as a new version. Two calls
+      // because they're two different kinds of change: the name is
+      // registry metadata, the copy is versioned history.
+      if (isCustom && draft.displayName.trim() !== displayName) {
+        await api.patch(`/api/admin/email-templates/${templateKey}/rename`, {
+          displayName: draft.displayName.trim(),
+          description: draft.description.trim() || null,
+        });
+      }
+      await api.post(
+        `/api/admin/email-templates/${templateKey}`,
+        draftPayload(draft),
+      );
       toast.success("Saved as a new version");
       router.refresh();
     } catch (err) {
       const msg =
-        err instanceof ApiClientError ? err.message : "Couldn't save version";
+        err instanceof ApiClientError ? err.message : "Couldn't save template";
+      setSaveError(msg);
       toast.error(msg);
     } finally {
       setSaving(false);
@@ -169,117 +281,224 @@ export function AdminTemplateEditor({
       toast.success("Version activated");
       router.refresh();
     } catch (err) {
-      const msg =
-        err instanceof ApiClientError ? err.message : "Couldn't activate version";
-      toast.error(msg);
+      toast.error(
+        err instanceof ApiClientError ? err.message : "Couldn't activate version",
+      );
     } finally {
       setPendingActivateId(null);
     }
   }
 
   function handleResetToActive() {
-    setDraft(draftFromVersion(activeVersion));
+    setDraft(draftFromVersion(activeVersion, displayName));
   }
 
   const isDirty = React.useMemo(() => {
-    const base = draftFromVersion(activeVersion);
+    if (isCreate) {
+      return Boolean(draft.displayName.trim() || draft.subject.trim() || draft.body.trim());
+    }
+    const base = draftFromVersion(activeVersion, displayName);
     return (Object.keys(base) as Array<keyof DraftState>).some(
       (key) => base[key] !== draft[key],
     );
-  }, [draft, activeVersion]);
+  }, [draft, activeVersion, displayName, isCreate]);
+
+  // Legacy custom templates saved before the body field existed still
+  // carry copy in the old slots. Keep those fields visible for THOSE
+  // templates so their content stays editable, and hide them everywhere
+  // else — a new template should never meet them.
+  const hasLegacySlots = Boolean(
+    isCustom &&
+      !draft.body &&
+      (draft.greeting || draft.intro || draft.note),
+  );
+
+  const manualVars = manualVariablesUsed(draft.subject, draft.body);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,460px)_1fr]">
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,480px)_1fr]">
       <aside className="space-y-4">
-        <TemplateSwitcher
-          templateKey={templateKey}
-          templates={templates}
-          activeVersionLabel={activeVersion?.version ?? null}
-          totalVersions={versions.length}
-        />
+        {!isCreate && templates.length > 0 ? (
+          <TemplateSwitcher
+            templateKey={templateKey ?? ""}
+            templates={templates}
+            activeVersionLabel={activeVersion?.version ?? null}
+            totalVersions={versions.length}
+          />
+        ) : null}
 
         <Card>
           <CardHeader>
             <CardTitle className="text-[13px] tracking-tight">
-              Editable content
+              {isCustom ? "Template" : "Editable content"}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Field label="Subject" hint="Falls back to the system default when blank.">
+            {isCustom ? (
+              <>
+                <Field
+                  label="Template name"
+                  hint="What your team sees when picking a template."
+                >
+                  <Input
+                    value={draft.displayName}
+                    onChange={(e) => set("displayName", e.target.value)}
+                    placeholder="Project Update"
+                    maxLength={120}
+                    autoFocus={isCreate}
+                  />
+                </Field>
+                <Field
+                  label="When to use it"
+                  hint="Optional one-liner for your team."
+                >
+                  <Input
+                    value={draft.description}
+                    onChange={(e) => set("description", e.target.value)}
+                    placeholder="Weekly progress update for active projects."
+                    maxLength={500}
+                  />
+                </Field>
+              </>
+            ) : null}
+
+            <Field
+              label="Subject"
+              hint={
+                isCustom
+                  ? "Shown in the client's inbox. Variables work here too."
+                  : "Falls back to the system default when blank."
+              }
+            >
               <Input
+                ref={subjectRef}
                 value={draft.subject}
-                onChange={(e) =>
-                  setDraft((d) => ({ ...d, subject: e.target.value }))
-                }
+                onChange={(e) => set("subject", e.target.value)}
+                onFocus={() => (lastFocused.current = "subject")}
+                placeholder={isCustom ? "Update on {{order_name}}" : undefined}
                 maxLength={200}
               />
             </Field>
-            <Field
-              label="Greeting"
-              hint="The “Hi {name},” line. Leave blank to keep the default."
-            >
-              <Input
-                value={draft.greeting}
-                onChange={(e) =>
-                  setDraft((d) => ({ ...d, greeting: e.target.value }))
-                }
-                maxLength={200}
-              />
-            </Field>
-            <Field
-              label="Intro paragraph"
-              hint="The opening body copy under the heading."
-            >
-              <Textarea
-                rows={4}
-                value={draft.intro}
-                onChange={(e) =>
-                  setDraft((d) => ({ ...d, intro: e.target.value }))
-                }
-                maxLength={2000}
-              />
-            </Field>
-            <Field
-              label="Optional note"
-              hint="Renders as a callout block above the support section."
-            >
-              <Textarea
-                rows={3}
-                value={draft.note}
-                onChange={(e) =>
-                  setDraft((d) => ({ ...d, note: e.target.value }))
-                }
-                maxLength={2000}
-              />
-            </Field>
-            <Field
-              label="Support headline"
-              hint="Bold label for the support block."
-            >
-              <Input
-                value={draft.supportHeadline}
-                onChange={(e) =>
-                  setDraft((d) => ({ ...d, supportHeadline: e.target.value }))
-                }
-                maxLength={200}
-              />
-            </Field>
-            <Field
-              label="Support description"
-              hint="Smaller paragraph under the support headline."
-            >
-              <Textarea
-                rows={2}
-                value={draft.supportDescription}
-                onChange={(e) =>
-                  setDraft((d) => ({
-                    ...d,
-                    supportDescription: e.target.value,
-                  }))
-                }
-                maxLength={2000}
-              />
-            </Field>
+
+            {isCustom ? (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[12px] font-medium text-foreground">
+                    Email content
+                  </span>
+                  <InsertVariableMenu
+                    // The editor has no client or order in hand, so every
+                    // group is offerable here; what a given SEND can
+                    // actually resolve is decided in the composer.
+                    availability={{ order: true, payment: true }}
+                    onInsert={handleInsert}
+                  />
+                </div>
+                <Textarea
+                  ref={bodyRef}
+                  rows={16}
+                  value={draft.body}
+                  onChange={(e) => set("body", e.target.value)}
+                  onFocus={() => (lastFocused.current = "body")}
+                  maxLength={20_000}
+                  placeholder={
+                    "Hello {{client_name}},\n\nHere is an update regarding {{order_name}}.\n\n{{project_update}}\n\nNext up: {{next_step}}\n\nThanks,\n{{sender_name}}"
+                  }
+                  className="min-h-[280px] font-normal"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Blank lines start new paragraphs. Pasted links become
+                  clickable. Use <span className="font-medium">Insert</span> to
+                  add details that change per client.
+                </p>
+              </div>
+            ) : null}
+
+            {manualVars.length > 0 ? (
+              <Alert>
+                <AlertTitle className="text-[12px]">
+                  Filled in when sending
+                </AlertTitle>
+                <AlertDescription className="text-[11.5px]">
+                  {manualVars.map((v) => v.label).join(", ")} —{" "}
+                  {manualVars.length === 1 ? "this one is" : "these are"} asked
+                  for in the composer, so the same template works for every
+                  client.
+                </AlertDescription>
+              </Alert>
+            ) : null}
+
+            {!isCustom || hasLegacySlots ? (
+              <>
+                {hasLegacySlots ? (
+                  <p className="rounded-md bg-surface-1 px-3 py-2 text-[11.5px] text-muted-foreground">
+                    This template was written before the email editor existed.
+                    Its original copy is below — move it into{" "}
+                    <span className="font-medium">Email content</span> whenever
+                    you like.
+                  </p>
+                ) : null}
+                <Field
+                  label="Greeting"
+                  hint="The &ldquo;Hi {name},&rdquo; line. Leave blank to keep the default."
+                >
+                  <Input
+                    value={draft.greeting}
+                    onChange={(e) => set("greeting", e.target.value)}
+                    maxLength={200}
+                  />
+                </Field>
+                <Field
+                  label="Intro paragraph"
+                  hint="The opening body copy under the heading."
+                >
+                  <Textarea
+                    rows={4}
+                    value={draft.intro}
+                    onChange={(e) => set("intro", e.target.value)}
+                    maxLength={2000}
+                  />
+                </Field>
+                <Field
+                  label="Optional note"
+                  hint="Renders as a callout block above the support section."
+                >
+                  <Textarea
+                    rows={3}
+                    value={draft.note}
+                    onChange={(e) => set("note", e.target.value)}
+                    maxLength={2000}
+                  />
+                </Field>
+              </>
+            ) : null}
+
+            {!isCustom ? (
+              <>
+                <Field
+                  label="Support headline"
+                  hint="Bold label for the support block."
+                >
+                  <Input
+                    value={draft.supportHeadline}
+                    onChange={(e) => set("supportHeadline", e.target.value)}
+                    maxLength={200}
+                  />
+                </Field>
+                <Field
+                  label="Support description"
+                  hint="Smaller paragraph under the support headline."
+                >
+                  <Textarea
+                    rows={2}
+                    value={draft.supportDescription}
+                    onChange={(e) => set("supportDescription", e.target.value)}
+                    maxLength={2000}
+                  />
+                </Field>
+              </>
+            ) : null}
+
             <Field
               label="Footer note"
               hint="Optional extra line shown above the copyright."
@@ -287,15 +506,18 @@ export function AdminTemplateEditor({
               <Textarea
                 rows={2}
                 value={draft.footerNote}
-                onChange={(e) =>
-                  setDraft((d) => ({ ...d, footerNote: e.target.value }))
-                }
+                onChange={(e) => set("footerNote", e.target.value)}
                 maxLength={500}
               />
             </Field>
           </CardContent>
         </Card>
 
+        {saveError ? (
+          <Alert variant="destructive">
+            <AlertDescription>{saveError}</AlertDescription>
+          </Alert>
+        ) : null}
         {previewError ? (
           <Alert variant="destructive">
             <AlertTitle>Preview failed</AlertTitle>
@@ -307,37 +529,45 @@ export function AdminTemplateEditor({
           <LoadingButton
             onClick={handleSave}
             loading={saving}
+            loadingText={isCreate ? "Creating" : "Saving"}
             disabled={!isDirty}
           >
             <SaveIcon className="size-3.5" />
-            Save as new version
+            {isCreate ? "Save template" : "Save as new version"}
           </LoadingButton>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={handleResetToActive}
-            disabled={!isDirty}
-          >
-            <RotateCcwIcon className="size-3.5" />
-            Reset
-          </Button>
+          {isCreate ? null : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleResetToActive}
+              disabled={!isDirty}
+            >
+              <RotateCcwIcon className="size-3.5" />
+              Reset
+            </Button>
+          )}
         </div>
         <p className="text-[11px] text-muted-foreground">
-          Saving creates a new immutable version and activates it. Old
-          versions stay in history below, you can roll back at any time.
+          {isCreate
+            ? "We'll create the template and drop you into the editor to keep refining it."
+            : "Saving creates a new immutable version and activates it. Old versions stay in history below, you can roll back at any time."}
         </p>
 
-        <VersionsList
-          versions={versions}
-          pendingActivateId={pendingActivateId}
-          onActivate={handleActivate}
-        />
+        {isCreate ? null : (
+          <VersionsList
+            versions={versions}
+            pendingActivateId={pendingActivateId}
+            onActivate={handleActivate}
+          />
+        )}
       </aside>
 
       <section className="space-y-3 lg:sticky lg:top-4 lg:self-start">
         <div className="flex items-center justify-between">
-          <h2 className="text-[13px] font-semibold tracking-tight">Preview</h2>
+          <h2 className="text-[13px] font-semibold tracking-tight">
+            Preview{isCustom ? " · sample client data" : ""}
+          </h2>
           <span
             className={cn(
               "inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.12em]",
@@ -365,6 +595,7 @@ function draftPayload(draft: DraftState) {
   // Empty strings → null so the server treats blanks as "use default".
   return {
     subject: draft.subject.trim() || null,
+    body: draft.body.trim() || null,
     greeting: draft.greeting.trim() || null,
     intro: draft.intro.trim() || null,
     note: draft.note.trim() || null,

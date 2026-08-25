@@ -105,6 +105,14 @@ export async function resendKeyStatus(): Promise<ResendKeyStatus> {
   return (await resendKeyProbe()).status;
 }
 
+/** One file riding along with the message. `content` is the raw bytes;
+ *  the transport handles encoding. */
+export interface OutboundAttachment {
+  fileName: string;
+  content: Buffer;
+  contentType: string;
+}
+
 export interface ResendSendPayload {
   from: string;
   to: string;
@@ -116,6 +124,7 @@ export interface ResendSendPayload {
   kind: string;
   /** Additional headers merged alongside X-Entity-Kind. */
   headers?: Record<string, string>;
+  attachments?: readonly OutboundAttachment[];
 }
 
 /**
@@ -142,9 +151,20 @@ export async function deliverViaResend(
       text: payload.text,
       reply_to: payload.replyTo || undefined,
       headers: { "X-Entity-Kind": payload.kind, ...(payload.headers ?? {}) },
+      // Resend takes attachment bytes base64-encoded in the JSON body.
+      attachments: payload.attachments?.length
+        ? payload.attachments.map((a) => ({
+            filename: a.fileName,
+            content: a.content.toString("base64"),
+            content_type: a.contentType,
+          }))
+        : undefined,
     }),
     // Fail fast — a hung transport must never block the HTTP request.
-    signal: AbortSignal.timeout(10_000),
+    // Attachments make the request materially bigger, so the ceiling
+    // scales with the payload instead of timing out a legitimate 20 MB
+    // send that simply needs longer on the wire.
+    signal: AbortSignal.timeout(attachmentAwareTimeout(payload)),
   });
 
   if (!res.ok) {
@@ -159,4 +179,14 @@ export async function deliverViaResend(
 
   const data = (await res.json().catch(() => ({}))) as { id?: string };
   return { id: data.id ?? null };
+}
+
+/** 10s floor, plus 2s per MB of attachment. A 25 MB message gets a
+ *  minute — still bounded, still incapable of hanging a request. */
+function attachmentAwareTimeout(payload: ResendSendPayload): number {
+  const bytes = (payload.attachments ?? []).reduce(
+    (sum, a) => sum + a.content.byteLength,
+    0,
+  );
+  return 10_000 + Math.ceil(bytes / (1024 * 1024)) * 2_000;
 }

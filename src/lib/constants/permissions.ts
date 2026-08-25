@@ -82,6 +82,17 @@ export const Permission = {
    *  the profile is the tenant's system of record for that relationship. */
   CUSTOMER_VIEW: "customer:view",
   CUSTOMER_MANAGE: "customer:manage",
+
+  /** Files & Links — the contextual resource record hanging off a client
+   *  (and, optionally, one of their orders). Viewing rides with
+   *  CUSTOMER_VIEW's audience: anyone working a client's orders needs the
+   *  proposal and the Drive folder to do the job. Managing is a normal
+   *  operational capability, NOT an owner-only one — a member who can
+   *  create an order can attach the contract to it. */
+  CLIENT_FILE_VIEW: "client_file:view",
+  CLIENT_FILE_MANAGE: "client_file:manage",
+  CLIENT_LINK_VIEW: "client_link:view",
+  CLIENT_LINK_MANAGE: "client_link:manage",
 } as const;
 export type Permission = (typeof Permission)[keyof typeof Permission];
 
@@ -112,6 +123,14 @@ const STAFF_PERMISSIONS: readonly Permission[] = [
   // Staff work orders against clients, so they can open a Client Profile
   // to see that customer's history. Editing the profile is admin-only.
   Permission.CUSTOMER_VIEW,
+  // Files & Links are day-one workflow, not administration: staff attach
+  // the signed contract and paste the Drive folder as part of doing the
+  // work. Withholding these would push the exact behaviour this feature
+  // exists to end — sharing through WhatsApp and losing the thread.
+  Permission.CLIENT_FILE_VIEW,
+  Permission.CLIENT_FILE_MANAGE,
+  Permission.CLIENT_LINK_VIEW,
+  Permission.CLIENT_LINK_MANAGE,
 ];
 
 const ADMIN_ONLY_PERMISSIONS: readonly Permission[] = [
@@ -251,6 +270,10 @@ export const MEMBER_FULL_PERMISSIONS: readonly Permission[] = [
   Permission.ITEM_TYPE_VIEW,
   Permission.ITEM_VIEW,
   Permission.EMAIL_TEMPLATE_VIEW, // pick a template to send
+  Permission.CLIENT_FILE_VIEW,
+  Permission.CLIENT_FILE_MANAGE, // attach + share client documents
+  Permission.CLIENT_LINK_VIEW,
+  Permission.CLIENT_LINK_MANAGE, // record external resources
 ];
 
 /** The member-eligible allow-list as a Set. Exported so backend writers

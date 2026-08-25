@@ -42,6 +42,23 @@ export type { SystemEmailTemplateKey, EmailTemplateKind };
 export interface EmailTemplateContent {
   /** Custom subject line. Falls back to code default when null. */
   subject: string | null;
+  /**
+   * The email itself, as the operator wrote it — plain text with blank
+   * lines between paragraphs and `{{variable}}` tokens inline.
+   *
+   * This is the field a CUSTOM template is actually made of. The
+   * greeting/intro/note trio below predates it and exists because the
+   * system templates (payment-request / payment-confirmation) are
+   * code-rendered layouts with named copy slots; you can restyle those
+   * slots but you cannot rewrite the layout. A custom template has no
+   * fixed layout to slot into, so forcing it through the same three
+   * boxes made "write an email" feel like filling in a form.
+   *
+   * Null on legacy custom rows saved before this field existed — the
+   * renderer falls back to greeting/intro/note for those, so nothing
+   * that was already saved changes shape.
+   */
+  body: string | null;
   /** Custom greeting (e.g. "Hi {customerName},"). */
   greeting: string | null;
   /** Custom intro paragraph. */
@@ -159,6 +176,7 @@ const emailTemplateSchema = new Schema<EmailTemplateDoc>(
     active: { type: Boolean, required: true, default: false, index: true },
 
     subject: { type: String, default: null, maxlength: 200, trim: true },
+    body: { type: String, default: null, maxlength: 20_000 },
     greeting: { type: String, default: null, maxlength: 200, trim: true },
     intro: { type: String, default: null, maxlength: 2000, trim: true },
     note: { type: String, default: null, maxlength: 2000, trim: true },

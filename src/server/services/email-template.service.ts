@@ -68,6 +68,7 @@ function toDTO(
     version: doc.version,
     active: doc.active,
     subject: doc.subject,
+    body: doc.body ?? null,
     greeting: doc.greeting,
     intro: doc.intro,
     note: doc.note,
@@ -162,6 +163,7 @@ export async function getActiveTemplateContent(
   if (!active) return null;
   return {
     subject: active.subject,
+    body: active.body,
     greeting: active.greeting,
     intro: active.intro,
     note: active.note,
@@ -240,6 +242,7 @@ export async function createTemplateVersion(
     version: nextVersion,
     active: true,
     subject: input.subject ?? null,
+    body: input.body ?? null,
     greeting: input.greeting ?? null,
     intro: input.intro ?? null,
     note: input.note ?? null,
@@ -343,39 +346,97 @@ interface CustomTemplateCtx {
 }
 
 /**
+ * Turn a template NAME into a routable key.
+ *
+ * "Project Update" → "project-update". Non-alphanumerics collapse to
+ * hyphens; a leading digit gets a `t-` prefix because the key regex
+ * insists on a letter first. A name with nothing usable in it (emoji
+ * only, say) still has to produce something, so it falls back to
+ * "template".
+ */
+export function slugifyTemplateName(name: string): string {
+  const base = name
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/[\s-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+  if (!base) return "template";
+  return /^[a-z]/.test(base) ? base : `t-${base}`.slice(0, 48);
+}
+
+/**
+ * Find a key this tenant isn't already using, appending -2, -3, … to
+ * the slug. Bounded: after a handful of collisions we stop guessing and
+ * salt with a short random suffix rather than scanning forever.
+ */
+async function allocateTemplateKey(
+  orgObjectId: Types.ObjectId,
+  preferred: string,
+): Promise<string> {
+  for (let attempt = 1; attempt <= 20; attempt += 1) {
+    const candidate =
+      attempt === 1 ? preferred : `${preferred}-${attempt}`.slice(0, 48);
+    if (isSystemTemplateKey(candidate)) continue;
+    const taken = await EmailTemplate.exists({
+      orgId: orgObjectId,
+      templateKey: candidate,
+    });
+    if (!taken) return candidate;
+  }
+  return `${preferred.slice(0, 40)}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+/**
  * Create a brand-new custom template. Writes the very first version
- * (version=1, active=true) with whatever content fields were supplied,
+ * (version=1, active=true) with whatever content the operator wrote,
  * stamps the kind + displayName + description + (optional) initial
  * trigger bindings. Subsequent edits go through `createTemplateVersion`
  * which copies the metadata forward.
  *
- * Refuses to create against a system key, or against a slug already
- * owned by this tenant.
+ * The key is DERIVED from the display name unless the caller insists on
+ * one. Making an operator invent a slug before writing an email was a
+ * setup step in front of the actual task, and the only thing the slug
+ * has to be is unique within the tenant — which the server can work out
+ * for itself.
  */
 export async function createCustomTemplate(
   input: CreateCustomTemplateInput,
   ctx: CustomTemplateCtx,
 ): Promise<EmailTemplateVersionDTO> {
   await connectMongo();
-  const key = input.templateKey.trim().toLowerCase();
-  if (isSystemTemplateKey(key)) {
-    throw new ConflictError(
-      "That key is reserved for a system template. Pick a different one.",
-    );
-  }
-  if (!CUSTOM_TEMPLATE_KEY_REGEX.test(key)) {
-    throw new ValidationError(
-      "Template key must be lower-case kebab (e.g. payment-reminder), 2 to 48 chars, starting with a letter",
-    );
-  }
   const orgObjectId = orgIdFilter(ctx.orgId);
-  const collision = await EmailTemplate.exists({
-    orgId: orgObjectId,
-    templateKey: key,
-  });
-  if (collision) {
-    throw new ConflictError(
-      "You already have a template with that key, edit it from the templates page",
+
+  let key: string;
+  if (input.templateKey) {
+    // Explicit key: honour it, but hold it to every rule, an operator
+    // who chose the slug owns the collision too.
+    key = input.templateKey.trim().toLowerCase();
+    if (isSystemTemplateKey(key)) {
+      throw new ConflictError(
+        "That key is reserved for a system template. Pick a different one.",
+      );
+    }
+    if (!CUSTOM_TEMPLATE_KEY_REGEX.test(key)) {
+      throw new ValidationError(
+        "Template key must be lower-case kebab (e.g. payment-reminder), 2 to 48 chars, starting with a letter",
+      );
+    }
+    const collision = await EmailTemplate.exists({
+      orgId: orgObjectId,
+      templateKey: key,
+    });
+    if (collision) {
+      throw new ConflictError(
+        "You already have a template with that key, edit it from the templates page",
+      );
+    }
+  } else {
+    key = await allocateTemplateKey(
+      orgObjectId,
+      slugifyTemplateName(input.displayName),
     );
   }
 
@@ -389,6 +450,7 @@ export async function createCustomTemplate(
     version: 1,
     active: true,
     subject: input.subject ?? null,
+    body: input.body ?? null,
     greeting: input.greeting ?? null,
     intro: input.intro ?? null,
     note: input.note ?? null,

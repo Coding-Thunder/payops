@@ -26,6 +26,7 @@ import { resendApiKey } from "@/server/email/resend";
 import {
   isEmailConfigured,
   sendEmail as deliverEmail,
+  type OutboundAttachment,
 } from "@/server/email/send";
 import { inlinePublicImage } from "@/server/email/inline-image";
 import {
@@ -51,7 +52,10 @@ import { resolveEmailBlocksForOrder } from "./email-blocks.service";
 import { recordAudit } from "./audit.service";
 import { captureEvidenceSafe } from "./evidence.service";
 import { getBranding } from "./branding.service";
-import { getActiveTemplateContent } from "./email-template.service";
+import {
+  getActiveTemplate,
+  getActiveTemplateContent,
+} from "./email-template.service";
 import { requestConsent } from "./consent.service";
 import {
   buildConsentUrl,
@@ -87,6 +91,11 @@ interface SendArgs {
    *  (false) keeps best-effort sends — welcome, confirmations — skipping
    *  silently when SMTP is unset. Transport errors always throw regardless. */
   required?: boolean;
+  /** Files carried with the message. Callers must have already capped
+   *  the combined size (see MAX_EMAIL_ATTACHMENT_TOTAL_BYTES) — the
+   *  transport surfaces an over-size rejection as an opaque provider
+   *  error long after the operator pressed Send. */
+  attachments?: readonly OutboundAttachment[];
 }
 
 /** Extract the mailbox portion of an RFC-5322 address header so we can
@@ -190,6 +199,7 @@ async function sendEmail(args: SendArgs): Promise<{ id: string | null }> {
       html: args.html,
       text: args.text,
       kind: args.kind,
+      attachments: args.attachments,
     });
     logger.info("email.sent", {
       transport,
@@ -299,6 +309,13 @@ export async function sendPaymentConfirmationEmail(
     variant: "confirmation",
     blocks,
     ctx,
+    // The tenant's saved copy for this template. Previously only
+    // `subject` was read here, so the Greeting / Intro / Note an
+    // operator edited in the template editor never reached the receipt
+    // — the editor and the sent email disagreed.
+    greeting: tpl?.greeting?.trim() || null,
+    intro: tpl?.intro?.trim() || null,
+    note: tpl?.note?.trim() || null,
   };
   const html = await render(<UniversalOrderEmail {...props} />);
   const text = await render(<UniversalOrderEmail {...props} />, {
@@ -811,6 +828,9 @@ export async function sendPaymentRequestEmail(
 export interface SendCustomTemplateOverrides {
   /** Override the active version's subject. */
   subject?: string | null;
+  /** Replace the whole written message for this one send, without
+   *  burning a new template version. */
+  body?: string | null;
   /** Override the greeting / intro / note paragraphs the active
    *  version persisted. Useful for the agent's send-time tweaks
    *  without burning a new version. */
@@ -876,7 +896,7 @@ export async function sendCustomTemplateManually(
 
   const [branding, tpl] = await Promise.all([
     getBranding(ctx.orgId),
-    getActiveTemplateContent(input.templateKey, ctx.orgId),
+    getActiveTemplate(input.templateKey, ctx.orgId),
   ]);
   if (!tpl) {
     throw new Error(
@@ -888,17 +908,25 @@ export async function sendCustomTemplateManually(
     input.overrides?.subject?.trim() ||
     tpl.subject?.trim() ||
     `${branding.brandName} update`;
-  const eyebrow = isSystemTemplateKey(input.templateKey)
-    ? SYSTEM_TEMPLATE_LABELS[input.templateKey]
-    : input.templateKey
-        .split("-")
-        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-        .join(" ");
+  // The eyebrow is the template's NAME as the operator wrote it. Falling
+  // back to a title-cased key ("Payment-Reminder" → "Payment Reminder")
+  // only matters for rows that predate display names.
+  const eyebrow =
+    tpl.displayName?.trim() ||
+    (isSystemTemplateKey(input.templateKey)
+      ? SYSTEM_TEMPLATE_LABELS[input.templateKey]
+      : input.templateKey
+          .split("-")
+          .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+          .join(" "));
 
   const templateProps: CustomTemplateEmailProps = {
     brandName: branding.brandName,
     eyebrow,
     preview: subject,
+    // The written body wins when the template has one; the legacy slot
+    // fields still render for templates saved before `body` existed.
+    body: input.overrides?.body?.trim() ?? tpl.body?.trim() ?? null,
     greeting:
       input.overrides?.greeting?.trim() ?? tpl.greeting?.trim() ?? null,
     intro: input.overrides?.intro?.trim() ?? tpl.intro?.trim() ?? null,
@@ -954,6 +982,45 @@ export async function sendCustomTemplateManually(
   }
 
   return { id: sent.id };
+}
+
+/**
+ * Transport hand-off for the client composer.
+ *
+ * `sendEmail` above is module-private on purpose (it owns From-header
+ * construction, the no-transport policy, audit + classification), so the
+ * compose pipeline reaches it through this narrow door rather than
+ * rebuilding any of that. It renders nothing — the caller already has
+ * the exact HTML that was previewed.
+ *
+ * `required: true`: an operator watched this message compose and pressed
+ * Send. A silent no-op because email isn't configured would be a lie
+ * told directly to their face.
+ */
+export async function sendComposedMessage(args: {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+  orderId: string | null;
+  brandName: string;
+  supportEmail: string | null;
+  senderEmail: string | null;
+  attachments?: readonly OutboundAttachment[];
+}): Promise<{ id: string | null }> {
+  return sendEmail({
+    to: args.to,
+    subject: args.subject,
+    html: args.html,
+    text: args.text,
+    kind: EmailKind.CLIENT_MESSAGE,
+    orderId: args.orderId,
+    fromName: args.brandName,
+    replyTo: args.supportEmail,
+    senderEmail: args.senderEmail,
+    attachments: args.attachments,
+    required: true,
+  });
 }
 
 // ─── Platform welcome email ──────────────────────────────────────────────

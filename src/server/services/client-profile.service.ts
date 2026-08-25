@@ -6,6 +6,8 @@ import { AuditAction, AuditEntity, RecordState } from "@/lib/constants/enums";
 import { NotFoundError, ValidationError } from "@/lib/errors";
 import type { RequestContext } from "@/server/api/request-context";
 import {
+  ClientFile,
+  ClientLink,
   Customer,
   Dispute,
   Document as DocumentModel,
@@ -540,7 +542,9 @@ export interface TimelineEventDTO {
     | "refund"
     | "consent"
     | "document"
-    | "dispute";
+    | "dispute"
+    | "file"
+    | "link";
   title: string;
   detail: string | null;
   at: string;
@@ -554,7 +558,20 @@ export interface TimelineEventDTO {
 /**
  * Assemble the client's chronological cross-entity timeline: the profile
  * creation, every order (created / paid / refunded), consent lifecycle,
- * issued documents, and disputes — all tenant-scoped, newest first.
+ * issued documents, disputes, and the Files & Links activity — all
+ * tenant-scoped, newest first.
+ *
+ * Files and Links are DERIVED here rather than written to an event log,
+ * exactly like orders and documents: the row carries `createdAt`,
+ * `sharedWithClientAt` and `lastEmailedAt`, and those three timestamps
+ * are the three things that happened. That keeps the Timeline (the
+ * chronological history) and the Files/Links sections (the organised
+ * collection) as two views of one truth instead of two records that can
+ * disagree — which is precisely the duplication the brief warns against.
+ *
+ * Soft-deleted rows are deliberately INCLUDED: "Yogesh uploaded
+ * requirements.pdf" is a historical fact, and deleting the file later
+ * doesn't un-happen it.
  */
 export async function getClientTimeline(
   orgId: string | null | undefined,
@@ -606,7 +623,7 @@ export async function getClientTimeline(
     orders.map((o) => [String(o._id), o.orderNumber ?? "—"]),
   );
 
-  const [consents, documents, disputes] = await Promise.all([
+  const [consents, documents, disputes, files, links] = await Promise.all([
     email
       ? PaymentConsent.find({ orgId: orgFilter, customerEmail: email })
           .lean<
@@ -648,6 +665,56 @@ export async function getClientTimeline(
             }>
           >()
       : Promise.resolve([]),
+    ClientFile.find({ orgId: orgFilter, customerId: oid })
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .select({
+        fileName: 1,
+        orderId: 1,
+        orderNumber: 1,
+        visibility: 1,
+        addedBy: 1,
+        sharedWithClientAt: 1,
+        lastEmailedAt: 1,
+        createdAt: 1,
+      })
+      .lean<
+        Array<{
+          _id: Types.ObjectId;
+          fileName?: string;
+          orderId?: Types.ObjectId | null;
+          orderNumber?: string | null;
+          visibility?: string;
+          addedBy?: { name?: string; actorType?: string } | null;
+          sharedWithClientAt?: Date | null;
+          lastEmailedAt?: Date | null;
+          createdAt?: Date | null;
+        }>
+      >(),
+    ClientLink.find({ orgId: orgFilter, customerId: oid })
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .select({
+        name: 1,
+        source: 1,
+        orderId: 1,
+        orderNumber: 1,
+        addedBy: 1,
+        lastEmailedAt: 1,
+        createdAt: 1,
+      })
+      .lean<
+        Array<{
+          _id: Types.ObjectId;
+          name?: string;
+          source?: string;
+          orderId?: Types.ObjectId | null;
+          orderNumber?: string | null;
+          addedBy?: { name?: string; actorType?: string } | null;
+          lastEmailedAt?: Date | null;
+          createdAt?: Date | null;
+        }>
+      >(),
   ]);
 
   const events: TimelineEventDTO[] = [];
@@ -822,6 +889,126 @@ export async function getClientTimeline(
     }
   }
 
+  // Files: added → shared → emailed. Each timestamp is emitted only when
+  // it says something the previous one didn't, so a file uploaded as
+  // "shared with client" produces ONE line, not two identical ones a
+  // millisecond apart.
+  for (const f of files) {
+    if (!f.createdAt) continue;
+    const orderId = f.orderId ? String(f.orderId) : null;
+    const orderNumber =
+      f.orderNumber ?? (orderId ? (orderNumberById.get(orderId) ?? null) : null);
+    const detail = orderNumber ? `Order ${orderNumber}` : null;
+    const byClient = f.addedBy?.actorType === "CLIENT";
+    const who = byClient ? "Client" : (f.addedBy?.name ?? "Someone");
+    const fileName = f.fileName ?? "a file";
+    // Files the client provided read as theirs; the teammate who saved
+    // them is still named, just not as the origin.
+    const savedBy =
+      byClient && f.addedBy?.name ? `saved by ${f.addedBy.name}` : null;
+    events.push({
+      id: `file:${f._id}:added`,
+      kind: byClient ? "file.client_uploaded" : "file.added",
+      category: "file",
+      title: `${who} uploaded ${fileName}`,
+      detail: [savedBy, detail].filter(Boolean).join(" · ") || null,
+      at: iso(f.createdAt)!,
+      orderId,
+      orderNumber,
+      amount: null,
+      currency: null,
+      status: f.visibility ?? null,
+    });
+    if (
+      f.sharedWithClientAt &&
+      !sameMoment(f.sharedWithClientAt, f.createdAt) &&
+      !sameMoment(f.sharedWithClientAt, f.lastEmailedAt)
+    ) {
+      events.push({
+        id: `file:${f._id}:shared`,
+        kind: "file.shared",
+        category: "file",
+        title: `${who} shared ${fileName} with the client`,
+        detail,
+        at: iso(f.sharedWithClientAt)!,
+        orderId,
+        orderNumber,
+        amount: null,
+        currency: null,
+        status: "SHARED",
+      });
+    }
+    if (f.lastEmailedAt) {
+      events.push({
+        id: `file:${f._id}:emailed`,
+        kind: "file.emailed",
+        category: "file",
+        title: `${fileName} sent via email`,
+        detail,
+        at: iso(f.lastEmailedAt)!,
+        orderId,
+        orderNumber,
+        amount: null,
+        currency: null,
+        status: "SHARED",
+      });
+    }
+  }
+
+  // Links: added → shared via email.
+  for (const l of links) {
+    if (!l.createdAt) continue;
+    const orderId = l.orderId ? String(l.orderId) : null;
+    const orderNumber =
+      l.orderNumber ?? (orderId ? (orderNumberById.get(orderId) ?? null) : null);
+    const byClient = l.addedBy?.actorType === "CLIENT";
+    const who = byClient ? "Client" : (l.addedBy?.name ?? "Someone");
+    const name = l.name ?? "a link";
+    const detail = [l.source, orderNumber ? `Order ${orderNumber}` : null]
+      .filter(Boolean)
+      .join(" · ") || null;
+    events.push({
+      id: `link:${l._id}:added`,
+      kind: byClient ? "link.client_added" : "link.added",
+      category: "link",
+      title: `${who} added a link: ${name}`,
+      detail,
+      at: iso(l.createdAt)!,
+      orderId,
+      orderNumber,
+      amount: null,
+      currency: null,
+      status: null,
+    });
+    if (l.lastEmailedAt) {
+      events.push({
+        id: `link:${l._id}:emailed`,
+        kind: "link.emailed",
+        category: "link",
+        title: `${name} link shared with the client via email`,
+        detail,
+        at: iso(l.lastEmailedAt)!,
+        orderId,
+        orderNumber,
+        amount: null,
+        currency: null,
+        status: null,
+      });
+    }
+  }
+
   events.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
   return events;
+}
+
+/** Two timestamps close enough to be the same user action. Uploading a
+ *  file that is already "shared with client" writes both stamps in the
+ *  same request; they are one event, not two. */
+function sameMoment(
+  a?: Date | null,
+  b?: Date | null,
+  toleranceMs = 2000,
+): boolean {
+  if (!a || !b) return false;
+  return Math.abs(new Date(a).getTime() - new Date(b).getTime()) <= toleranceMs;
 }

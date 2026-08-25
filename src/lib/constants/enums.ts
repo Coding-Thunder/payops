@@ -147,6 +147,18 @@ export const AuditAction = {
 
   AUDIT_LOG_DELETED: "AUDIT_LOG_DELETED",
 
+  /** Files & Links lifecycle. `*_SHARED` fires when an item actually
+   *  leaves the workspace (attached to / inserted into an email), which
+   *  is the moment that matters for a dispute, not the upload. */
+  CLIENT_FILE_ADDED: "CLIENT_FILE_ADDED",
+  CLIENT_FILE_UPDATED: "CLIENT_FILE_UPDATED",
+  CLIENT_FILE_DELETED: "CLIENT_FILE_DELETED",
+  CLIENT_FILE_SHARED: "CLIENT_FILE_SHARED",
+  CLIENT_LINK_ADDED: "CLIENT_LINK_ADDED",
+  CLIENT_LINK_UPDATED: "CLIENT_LINK_UPDATED",
+  CLIENT_LINK_DELETED: "CLIENT_LINK_DELETED",
+  CLIENT_LINK_SHARED: "CLIENT_LINK_SHARED",
+
   EVIDENCE_RECORDED: "EVIDENCE_RECORDED",
   EVIDENCE_RECORD_FAILED: "EVIDENCE_RECORD_FAILED",
   EVIDENCE_EXPORTED: "EVIDENCE_EXPORTED",
@@ -168,6 +180,8 @@ export const AuditEntity = {
   ORDER_EVIDENCE: "ORDER_EVIDENCE",
   DISPUTE: "DISPUTE",
   CUSTOMER: "CUSTOMER",
+  CLIENT_FILE: "CLIENT_FILE",
+  CLIENT_LINK: "CLIENT_LINK",
 } as const;
 export type AuditEntity = (typeof AuditEntity)[keyof typeof AuditEntity];
 
@@ -231,6 +245,11 @@ export const EmailKind = {
   /** Team invitation with a single-use /join link, fired when an owner
    *  adds a member. Sent from EMAIL_FROM_ACCOUNTS. */
   TEAM_INVITE: "TEAM_INVITE",
+  /** A one-off message written in the client composer — blank or
+   *  template-seeded, possibly carrying file attachments. Distinct from
+   *  TEMPLATE_MANUAL so provider-side filtering can tell "the operator
+   *  wrote this" from "the operator fired a saved template as-is". */
+  CLIENT_MESSAGE: "CLIENT_MESSAGE",
 } as const;
 export type EmailKind = (typeof EmailKind)[keyof typeof EmailKind];
 

@@ -466,6 +466,9 @@ export interface EmailTemplateVersionDTO {
   active: boolean;
 
   subject: string | null;
+  /** The written email for custom templates. Null on system templates
+   *  (their layout is code) and on legacy custom rows. */
+  body: string | null;
   greeting: string | null;
   intro: string | null;
   note: string | null;
@@ -505,6 +508,97 @@ export interface CarLinkDTO {
   createdBy: { userId: string | null; name: string };
   createdAt: string;
   updatedAt: string;
+}
+
+/* ─── Files & Links ─────────────────────────────────────────────────── */
+
+/** One row in a Files list. The same row is what Client Files and Order
+ *  Files both render — the two views are filters over one collection,
+ *  never two copies of a file. */
+export interface ClientFileDTO {
+  id: string;
+  customerId: string;
+  /** Null when the file is attached to the client but no single order. */
+  orderId: string | null;
+  orderNumber: string | null;
+  fileName: string;
+  /** Lower-case extension, no dot — "pdf", "xlsx". */
+  extension: string;
+  mimeType: string;
+  sizeBytes: number;
+  description: string | null;
+  visibility: "INTERNAL" | "SHARED";
+  source: "DIRECT_UPLOAD" | "EMAIL" | "CLIENT_UPLOAD";
+  addedBy: {
+    userId: string | null;
+    name: string;
+    actorType: "BUSINESS" | "CLIENT";
+  };
+  /** Non-null once the file has gone out as an email attachment. */
+  lastEmailedAt: string | null;
+  emailSendCount: number;
+  sharedWithClientAt: string | null;
+  /** Same-origin, auth-gated byte stream. */
+  downloadUrl: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClientLinkDTO {
+  id: string;
+  customerId: string;
+  orderId: string | null;
+  orderNumber: string | null;
+  name: string;
+  url: string;
+  /** Bare hostname, `www.` stripped. */
+  host: string;
+  /** Friendly provider name ("Google Drive") or the host when unknown. */
+  source: string;
+  description: string | null;
+  addedBy: {
+    userId: string | null;
+    name: string;
+    actorType: "BUSINESS" | "CLIENT";
+  };
+  lastEmailedAt: string | null;
+  emailSendCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Everything the composer needs to open already knowing the context —
+ *  so the operator is never asked for something TraceTxn has on file. */
+export interface ComposeContextDTO {
+  client: {
+    id: string;
+    name: string;
+    email: string;
+    company: string | null;
+  };
+  business: { name: string };
+  sender: { name: string };
+  /** Orders the email can be attributed to, newest first. */
+  orders: Array<{
+    id: string;
+    orderNumber: string;
+    label: string;
+    status: string;
+    amount: number;
+    currency: string;
+    /** True once the order carries invoice / payment-link / settlement
+     *  data, which is what unlocks the invoice variable group. */
+    hasPayment: boolean;
+  }>;
+  /** Custom (operator-authored) templates only. Automated transactional
+   *  emails are fired by workflow events, not picked from here. */
+  templates: Array<{
+    templateKey: string;
+    displayName: string;
+    description: string | null;
+    subject: string;
+    body: string;
+  }>;
 }
 
 export interface PaginatedResult<T> {

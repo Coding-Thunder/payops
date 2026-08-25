@@ -9,6 +9,19 @@ interface EmailFooterProps {
   legalAddress?: string;
   /** Optional support email displayed in the legal block. */
   supportEmail?: string;
+  /**
+   * What kind of mail this is, for the disclosure line.
+   *
+   *   "receipt"  — the transactional payment emails.
+   *   "message"  — an operator wrote this one (custom templates and the
+   *                client composer).
+   *
+   * This exists because the disclosure used to read "Automated payment
+   * receipt" unconditionally, which meant a project update or a meeting
+   * invite went out footed as a payment receipt. Same payment-flavoured
+   * leakage as the preview bug, one layer down.
+   */
+  disclosure?: "receipt" | "message";
 }
 
 /**
@@ -25,6 +38,7 @@ export function EmailFooter({
   brandName,
   legalAddress,
   supportEmail,
+  disclosure = "receipt",
 }: EmailFooterProps) {
   const year = new Date().getUTCFullYear();
   return (
@@ -51,8 +65,10 @@ export function EmailFooter({
           color: COLOR.textMuted,
         }}
       >
-        © {year} {brandName}. Automated payment receipt, replies route to
-        our support team.
+        © {year} {brandName}.{" "}
+        {disclosure === "receipt"
+          ? "Automated payment receipt, replies route to our support team."
+          : "Replies route to our support team."}
       </Text>
       {supportEmail || legalAddress ? (
         <Text
