@@ -1,7 +1,7 @@
 {
-  "name": "TraceTxn, Payment Operations Platform",
+  "name": "TraceTxn, Client Management",
   "short_name": "TraceTxn",
-  "description": "Lifecycle visibility, hashed dispute evidence, and per-org Stripe orchestration. The operational console between you and your payment processor.",
+  "description": "One searchable record per client: orders, invoices, payments, and the full timeline of the relationship.",
   "id": "/?source=pwa",
   "start_url": "/",
   "scope": "/",
@@ -10,7 +10,7 @@
   "orientation": "any",
   "background_color": "#F8FAFC",
   "theme_color": "#0F172A",
-  "categories": ["business", "finance", "productivity"],
+  "categories": ["business", "productivity"],
   "lang": "en-US",
   "dir": "ltr",
   "icons": [
@@ -19,22 +19,6 @@
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
-    }
-  ],
-  "screenshots": [
-    {
-      "src": "/marketing/dashboard.webp",
-      "sizes": "1440x900",
-      "type": "image/webp",
-      "form_factor": "wide",
-      "label": "Operations dashboard"
-    },
-    {
-      "src": "/marketing/evidence-chain.webp",
-      "sizes": "1440x900",
-      "type": "image/webp",
-      "form_factor": "wide",
-      "label": "Hashed evidence chain for a disputed order"
     }
   ]
 }
