@@ -1,22 +1,52 @@
-import { env } from "@/lib/env";
+import { SCHEMA_FAQS } from "@/components/marketing/home/faq-content";
+import { DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/seo";
 
 /**
  * JSON-LD structured data for the marketing landing.
  *
- * Three top-level objects in a single @graph payload:
+ * Emits one `@graph` with four entities:
  *
- *  1. Organization, entity that publishes the page. Pinned with
- *     `@id` so the other entities can reference it.
- *  2. WebSite, the canonical site, with a SearchAction sitelinks
- *     box (helps Google render the search box in the SERP for
- *     branded queries).
- *  3. SoftwareApplication, the product itself. Pricing model is
- *     "QuotePending" (no fixed price; quote-based) and category is
- *     `BusinessApplication`. Google + Bing both ingest this for
- *     product knowledge panels.
+ *  1. Organization — the publisher, pinned with `@id` so the others reference
+ *     it rather than repeating themselves.
+ *  2. Person — the founder, referenced by the Organization.
+ *  3. WebSite — the canonical site.
+ *  4. SoftwareApplication — the product.
+ *  5. FAQPage — mirrored from the FAQ the page actually renders.
  *
- * One <script> tag with a single graph is the recommended pattern -
- * cleaner than three separate script tags, indexed identically.
+ * WHAT CHANGED AND WHY
+ *
+ * This graph used to declare the product as
+ * `"TraceTxn, Payment Operations Platform"` with
+ * `applicationSubCategory: "PaymentOperationsPlatform"`, a founder who
+ * `knowsAbout` "Chargeback Defense", and a hand-written FAQ whose entries did
+ * not match the page. Structured data is the single strongest machine-readable
+ * statement of what a product IS, so that graph — not the visible copy, which
+ * had already moved on — was what kept classifying TraceTxn as dispute
+ * software.
+ *
+ * Three things were REMOVED rather than reworded, because each was incorrect
+ * rather than merely off-message:
+ *
+ *  - `offers` declared `price: "0"` with `availability: "InStock"` while also
+ *    describing quote-based pricing. Those contradict each other, and neither
+ *    matches reality: the product is a closed private beta with no purchasable
+ *    plan (/pricing renders no tier table). Emitting a zero-price Offer for
+ *    something you cannot buy is a misrepresentation, so the product carries
+ *    no pricing claim at all until plans exist.
+ *
+ *  - `screenshot` pointed at four files under /public/marketing. Those images
+ *    still show the pre-rename "PayOps · OPS CONSOLE" chrome and a car-rental
+ *    demo vertical. Feeding a crawler screenshots of a differently-branded
+ *    product is worse than feeding it none.
+ *
+ *  - `BreadcrumbList` contained exactly one item pointing at the site root. A
+ *    single-item breadcrumb describes no trail and is rejected as invalid;
+ *    it will return when there are real nested pages to describe.
+ *
+ * CLAIM DISCIPLINE: `featureList` names only capability reachable by a
+ * signed-in user today. Client files and links have models, services and REST
+ * routes but no UI; approvals do not exist as a feature. None of the three
+ * appear below. See faq-content.ts for the same rule applied to the FAQ.
  */
 
 interface StructuredDataProps {
@@ -28,10 +58,10 @@ interface StructuredDataProps {
 
 export function StructuredData({
   baseUrl,
-  brand = env.public.NEXT_PUBLIC_APP_NAME,
-  description = "TraceTxn is the payment operations platform for the full order lifecycle, hashed dispute evidence, hosted consent, multi-gateway orchestration, and append-only audit. Built for retail, services, repair, dealership, B2B, and any commerce shape that takes money seriously.",
+  brand = SITE_NAME,
+  description = DESCRIPTION,
 }: StructuredDataProps) {
-  const url = (baseUrl ?? env.public.NEXT_PUBLIC_APP_URL).replace(/\/$/, "");
+  const url = (baseUrl ?? SITE_URL).replace(/\/$/, "");
 
   const graph = {
     "@context": "https://schema.org",
@@ -50,7 +80,6 @@ export function StructuredData({
         description,
         foundingDate: "2025",
         founder: { "@id": `${url}/#founder` },
-        sameAs: [],
         contactPoint: [
           {
             "@type": "ContactPoint",
@@ -68,24 +97,12 @@ export function StructuredData({
         jobTitle: "Founder · Principal Engineer",
         email: "hello@tracetxn.com",
         worksFor: { "@id": `${url}/#organization` },
+        // Was: Payment Operations, Chargeback Defense, Multi-Gateway
+        // Orchestration, Webhook Idempotency, Audit-Grade Evidence Chain.
         knowsAbout: [
-          "Payment Operations",
-          "Chargeback Defense",
-          "Multi-Gateway Orchestration",
-          "Webhook Idempotency",
-          "Audit-Grade Evidence Chain",
-        ],
-      },
-      {
-        "@type": "BreadcrumbList",
-        "@id": `${url}/#breadcrumb`,
-        itemListElement: [
-          {
-            "@type": "ListItem",
-            position: 1,
-            name: "TraceTxn",
-            item: url,
-          },
+          "Client Management",
+          "Service Business Operations",
+          "Invoicing and Payments",
         ],
       },
       {
@@ -96,103 +113,59 @@ export function StructuredData({
         description,
         publisher: { "@id": `${url}/#organization` },
         inLanguage: "en-US",
+        // No SearchAction: the sitelinks search box requires a real,
+        // crawlable site-search endpoint, and there isn't one. The previous
+        // docstring claimed this was emitted; it never was.
       },
       {
         "@type": "SoftwareApplication",
         "@id": `${url}/#software`,
-        name: `${brand}, Payment Operations Platform`,
+        name: brand,
         description,
         applicationCategory: "BusinessApplication",
-        applicationSubCategory: "PaymentOperationsPlatform",
-        operatingSystem: "Web, Cloud",
+        applicationSubCategory: "Client Management",
+        operatingSystem: "Web",
         url,
-        screenshot: [
-          `${url}/marketing/evidence-chain.webp`,
-          `${url}/marketing/dashboard.webp`,
-          `${url}/marketing/order-detail.webp`,
-          `${url}/marketing/disputes-admin.webp`,
-        ],
+        // Every line below maps to a route a signed-in user can open.
         featureList: [
-          "Lifecycle visibility per order",
-          "Hashed evidence chain, SHA-256 chained per-order",
-          "Hosted customer consent + signature capture",
-          "Multi-gateway orchestration (Stripe live; Razorpay, Authorize.net, Adyen, PayPal adapters)",
-          "Idempotent webhook handling",
-          "Append-only audit log",
-          "Realtime SSE updates",
-          "PDF + CSV dispute evidence export",
-          "Multi-tenant, every workspace fully isolated",
-          "Self-serve onboarding with vertical templates",
-          "Universal item + order primitives across business types",
+          // /app/customers, /app/customers/[id]
+          "One searchable record per client",
+          // ClientTimeline on /app/customers/[id]
+          "Client timeline of every order, invoice, payment and email",
+          // /app/orders, /app/orders/create, /app/admin/workflow
+          "Orders with a configurable status workflow",
+          // document.model.ts — INVOICE and RECEIPT, numbered per workspace
+          "Numbered invoices and receipts",
+          // Stripe is the live gateway; the others are scaffolded adapters
+          // and are deliberately not named here.
+          "Card payments through Stripe with hosted checkout",
+          // /consent/[token], payment-consent.model.ts
+          "Hosted customer consent capture",
+          // /app/orders/[id]/email, /app/admin/email-templates
+          "Templated client email, recorded against the client",
+          // audit-log.model.ts, /app/admin/audit
+          "Tamper-evident audit trail",
+          // organization + org-member models, permissions.ts
+          "Shared team workspaces with role-based access",
+          // The supporting use case, stated as one capability among many
+          // rather than as the product's identity.
+          "Per-order evidence chain, for when a payment is disputed",
         ],
-        offers: {
-          "@type": "Offer",
-          availability: "https://schema.org/InStock",
-          priceCurrency: "USD",
-          price: "0",
-          priceSpecification: {
-            "@type": "PriceSpecification",
-            priceCurrency: "USD",
-            description: "Quote-based pricing. Contact sales for a tailored proposal.",
-          },
-          url: `${url}/#quote`,
-        },
         publisher: { "@id": `${url}/#organization` },
         creator: { "@id": `${url}/#organization` },
       },
       {
         "@type": "FAQPage",
         "@id": `${url}/#faq`,
-        mainEntity: [
-          {
-            "@type": "Question",
-            name: "Is TraceTxn a multi-tenant SaaS?",
-            acceptedAnswer: {
-              "@type": "Answer",
-              text: "Yes. TraceTxn is a multi-tenant operational platform, every workspace is fully isolated by tenant boundary, with its own catalog, orders, evidence, and audit trail. Sign up free, connect Stripe, and run your first order within minutes.",
-            },
-          },
-          {
-            "@type": "Question",
-            name: "What kinds of businesses use TraceTxn?",
-            acceptedAnswer: {
-              "@type": "Answer",
-              text: "Retail, grocery, pharmacy, repair, dealership, services, equipment, B2B workflows, rentals, and any custom commerce shape that needs operational payment infrastructure, order workflows, evidence chains, dispute readiness, consent capture, and multi-gateway routing.",
-            },
-          },
-          {
-            "@type": "Question",
-            name: "Which payment gateways does TraceTxn support?",
-            acceptedAnswer: {
-              "@type": "Answer",
-              text: "Stripe is fully live today, checkout, webhooks, disputes, refunds. Razorpay and Authorize.net adapters are scaffolded for activation on credentials. Adyen and PayPal are on the roadmap. The orchestration layer was built gateway-agnostic from day one.",
-            },
-          },
-          {
-            "@type": "Question",
-            name: "How does TraceTxn help with chargeback disputes?",
-            acceptedAnswer: {
-              "@type": "Answer",
-              text: "Every order persists a hashed, append-only evidence chain, payment intent, charge id, customer consent signature, email correspondence, IP/UA capture, gateway receipts. When a dispute fires, the order auto-flags, the chain freezes, and a one-click PDF export is ready to forward to the bank.",
-            },
-          },
-          {
-            "@type": "Question",
-            name: "How is pricing structured?",
-            acceptedAnswer: {
-              "@type": "Answer",
-              text: "Self-serve workspaces start free. Custom routing, high-volume, regional gateway selection, or procurement-driven engagements run on a quote, start a conversation from the closing section of the landing page.",
-            },
-          },
-          {
-            "@type": "Question",
-            name: "How quickly can I be live?",
-            acceptedAnswer: {
-              "@type": "Answer",
-              text: "Self-serve onboarding takes a few minutes, create your workspace, connect Stripe (one-click test + auto-registered webhook), seed your catalog from a vertical template, and run your first order. Custom setups land within 1–2 weeks of quotation acceptance.",
-            },
-          },
-        ],
+        // Mirrors the rendered FAQ. Google requires the answer text to be
+        // visible on the page, so this is derived from the same array the
+        // component maps over — minus the entries withheld for making claims
+        // the app cannot yet honour.
+        mainEntity: SCHEMA_FAQS.map((f) => ({
+          "@type": "Question",
+          name: f.q,
+          acceptedAnswer: { "@type": "Answer", text: f.a },
+        })),
       },
     ],
   };

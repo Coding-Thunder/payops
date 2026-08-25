@@ -12,12 +12,13 @@ import {
   type LegalSection,
 } from "@/components/marketing/legal-doc";
 
-export const metadata: Metadata = {
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
   title: "Terms of Service",
-  description:
-    "Terms of Service for TraceTxn, the client record management platform for agencies and freelancers. The obligations between you (the business using the platform) and us (the operator of TraceTxn).",
-  alternates: { canonical: "/terms" },
-};
+  description: "Terms of Service for TraceTxn, the client record platform for agencies and freelancers. The obligations between you (the business using the platform) and us.",
+  path: "/terms",
+});
 
 /* ─────────────────────────────────────────────────────────────────────
  * MANUAL LEGAL REVIEW REQUIRED — resolve before publishing.

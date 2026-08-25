@@ -8,8 +8,16 @@ import { getApplicationForActivation } from "@/server/services/beta-application.
 
 import { ActivateForm } from "./activate-form";
 
+import { pageMetadata } from "@/lib/seo";
+import type { Metadata } from "next";
+
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Activate your TraceTxn account" };
+export const metadata: Metadata = pageMetadata({
+  title: "Activate your TraceTxn account",
+  description: "Activate a TraceTxn account from a single-use invitation link.",
+  path: "/activate",
+  noindex: true,
+});
 
 interface ActivatePageProps {
   searchParams: Promise<{ token?: string }>;

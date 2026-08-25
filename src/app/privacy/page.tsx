@@ -11,12 +11,13 @@ import {
   type LegalSection,
 } from "@/components/marketing/legal-doc";
 
-export const metadata: Metadata = {
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
   title: "Privacy Policy",
-  description:
-    "How TraceTxn collects, uses, shares, and protects personal information, including the sub-processors we rely on, how long we keep data, and your rights.",
-  alternates: { canonical: "/privacy" },
-};
+  description: "How TraceTxn collects, uses, shares, and protects personal information, including the sub-processors we rely on, how long we keep data, and your rights.",
+  path: "/privacy",
+});
 
 /* ════════════════════════════════════════════════════════════════════════
  * ⚠️  MANUAL LEGAL-REVIEW FLAGS — resolve before publishing.

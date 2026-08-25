@@ -2,6 +2,14 @@ import type { Metadata, Viewport } from "next";
 import { DM_Sans, Geist, Geist_Mono } from "next/font/google";
 
 import { AppProviders } from "@/components/providers/app-providers";
+import {
+  DESCRIPTION,
+  HEADLINE,
+  KEYWORDS,
+  SHORT_DESCRIPTION,
+  SITE_NAME,
+  SITE_URL,
+} from "@/lib/seo";
 
 import "./globals.css";
 
@@ -31,29 +39,27 @@ const dmSans = DM_Sans({
 /**
  * Root metadata.
  *
- * Strategy: full technical-SEO surface area at the root so every
- * route inherits sensible defaults, title template, canonical via
- * `metadataBase`, OG/Twitter cards, theme color, viewport. Per-page
- * `metadata` exports override the title + description.
+ * Strategy: shared defaults only — title template, `metadataBase`,
+ * OG/Twitter card shape, theme color, viewport. Every public page supplies
+ * its own title, description and SELF-REFERENCING canonical through
+ * `pageMetadata()` in `@/lib/seo`.
  *
- * Marketing intent: rank for the long-tail vocabulary an enterprise
- * payments lead actually searches for ("chargeback evidence platform",
- * "dispute readiness", "multi-gateway orchestration", "payment
- * operations audit trail"). Keywords here are advisory only, Google
- * doesn't use the meta tag, but they shape the OG/Twitter snippets
- * and document the brand-positioning vocabulary in code.
+ * What this root deliberately does NOT declare:
+ *
+ *  - a canonical. Next merges `alternates` wholesale, so a root canonical
+ *    silently made every non-overriding page a declared duplicate of `/`.
+ *  - `openGraph.images`. `src/app/opengraph-image.tsx` is a file convention
+ *    and wins regardless, so a static entry here was dead config.
+ *
+ * Marketing intent: the audience is an agency or freelancer looking for a
+ * place to keep client history, not a payments lead shopping for dispute
+ * tooling. The keyword list is small and lives in `@/lib/seo`; Google
+ * ignores the meta tag entirely, so it survives only as a statement of
+ * intent for whoever edits this next.
  */
 
-const SITE_NAME = process.env.NEXT_PUBLIC_APP_NAME || "TraceTxn";
-const SITE_URL = (
-  process.env.NEXT_PUBLIC_APP_URL || "https://tracetxn.example.com"
-).replace(/\/$/, "");
-const HEADLINE = "Payment Operations Platform · Dispute & Chargeback Evidence";
-const DESCRIPTION =
-  "TraceTxn is the payment operations platform built for the full order lifecycle. Lifecycle visibility, hashed evidence chain, hosted consent, and multi-gateway orchestration, for retail, services, repair, dealership, B2B, and every commerce shape that takes money seriously.";
-const SHORT_DESCRIPTION =
-  "Lifecycle visibility, hashed dispute evidence, and multi-gateway orchestration, operational infrastructure for modern commerce.";
-const OG_IMAGE = `${SITE_URL}/marketing/evidence-chain.webp`;
+// Positioning constants live in `@/lib/seo` so metadata, JSON-LD, the
+// sitemap and the OG image cannot drift apart again.
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -65,70 +71,19 @@ export const metadata: Metadata = {
   applicationName: SITE_NAME,
   generator: "Next.js",
   referrer: "strict-origin-when-cross-origin",
-  category: "fintech",
+  // The product is business software for service firms, not a
+  // financial product. "fintech" biased every classifier that reads it.
+  category: "business",
   classification: "business",
-  keywords: [
-    // Core positioning
-    "payment operations",
-    "payment operations platform",
-    "payment operations software",
-    "payment ops",
-    "payment ops platform",
-    // Disputes / chargebacks (highest commercial intent)
-    "chargeback evidence",
-    "chargeback management",
-    "chargeback defense",
-    "dispute evidence",
-    "dispute management software",
-    "dispute readiness",
-    "chargeback prevention",
-    "stripe dispute management",
-    "stripe chargeback evidence",
-    // Multi-gateway / orchestration
-    "payment orchestration",
-    "multi gateway payments",
-    "multi gateway orchestration",
-    "payment routing",
-    "stripe alternative",
-    // Audit / compliance
-    "payment audit trail",
-    "payment audit log",
-    "hashed evidence chain",
-    "soc compliance payments",
-    "payment compliance platform",
-    // Customer trust / consent
-    "payment consent capture",
-    "hosted consent flow",
-    "customer authorization",
-    // Webhook ops
-    "webhook idempotency",
-    "stripe webhook reliability",
-    // Brand / generic
-    "fintech",
-    "enterprise payments",
-    "order lifecycle platform",
-    "commerce operations platform",
-    "multi tenant payment platform",
-    "self serve payment operations",
-    "b2b payment workflows",
-    "order workflow software",
-    "payment evidence platform",
-    "merchant audit trail",
-    "consent capture platform",
-    "payment ops console",
-    "payment ops center",
-    "payment control tower",
-  ],
+  keywords: KEYWORDS,
   authors: [{ name: SITE_NAME, url: SITE_URL }],
   creator: SITE_NAME,
   publisher: SITE_NAME,
   manifest: "/manifest.webmanifest",
-  // Default canonical points at the landing; per-page overrides set
-  // their own `alternates.canonical` when needed.
-  alternates: {
-    canonical: SITE_URL,
-    languages: { "en-US": SITE_URL },
-  },
+  // NO root canonical. Next merges `alternates` wholesale, so declaring one
+  // here made every page that did not override it canonicalise to `/` —
+  // telling Google that /features, /pricing and /security were duplicates of
+  // the homepage. Each public page now sets its own via `pageMetadata()`.
   openGraph: {
     type: "website",
     url: SITE_URL,
@@ -136,14 +91,10 @@ export const metadata: Metadata = {
     description: DESCRIPTION,
     siteName: SITE_NAME,
     locale: "en_US",
-    images: [
-      {
-        url: OG_IMAGE,
-        width: 1440,
-        height: 900,
-        alt: `${SITE_NAME}, evidence chain for a disputed order`,
-      },
-    ],
+    // No `images` here on purpose: src/app/opengraph-image.tsx is a file
+    // convention and takes precedence, so a static entry was dead config
+    // pointing at /marketing/evidence-chain.webp — a screenshot that still
+    // carries the pre-rename "PayOps" chrome.
   },
   twitter: {
     card: "summary_large_image",
@@ -151,12 +102,6 @@ export const metadata: Metadata = {
     creator: `@${SITE_NAME.toLowerCase()}`,
     title: `${SITE_NAME}, ${HEADLINE}`,
     description: SHORT_DESCRIPTION,
-    images: [
-      {
-        url: OG_IMAGE,
-        alt: `${SITE_NAME}, evidence chain for a disputed order`,
-      },
-    ],
   },
   // Marketing surfaces are indexable; the authed app is locked behind
   // login. Per-page robots overrides can opt-out (e.g. /pay/success,

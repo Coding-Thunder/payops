@@ -10,12 +10,13 @@ import {
   type LegalSection,
 } from "@/components/marketing/legal-doc";
 
-export const metadata: Metadata = {
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
   title: "Refund Policy",
-  description:
-    "TraceTxn is currently a free private beta with no subscription charges, so there are no subscription refunds today. This policy will be updated when paid plans launch.",
-  alternates: { canonical: "/refunds" },
-};
+  description: "TraceTxn is currently a free private beta with no subscription charges, so there are no subscription refunds today. This policy updates when paid plans launch.",
+  path: "/refunds",
+});
 
 /**
  * Beta-stage Refund Policy. TraceTxn is a free private beta today:

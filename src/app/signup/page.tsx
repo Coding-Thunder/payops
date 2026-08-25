@@ -9,8 +9,16 @@ import { getCurrentUser } from "@/server/auth/session";
 import { signupInviteAccepted } from "@/server/auth/signup-gate";
 import { turnstileSiteKey } from "@/server/auth/turnstile";
 
+import { pageMetadata } from "@/lib/seo";
+import type { Metadata } from "next";
+
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Create your TraceTxn account" };
+export const metadata: Metadata = pageMetadata({
+  title: "Create your TraceTxn account",
+  description: "Create a TraceTxn workspace. Self-serve signup is invite-only during the private beta.",
+  path: "/signup",
+  noindex: true,
+});
 
 interface SignupPageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;

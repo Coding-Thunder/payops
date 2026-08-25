@@ -12,12 +12,13 @@ import {
   type LegalSection,
 } from "@/components/marketing/legal-doc";
 
-export const metadata: Metadata = {
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
   title: "Data Processing Addendum (DPA)",
-  description:
-    "How TraceTxn processes personal data on behalf of the businesses using the Service, what a DPA covers, and how to request data-processing terms for your organization.",
-  alternates: { canonical: "/dpa" },
-};
+  description: "How TraceTxn processes personal data on behalf of the businesses using the Service, what a DPA covers, and how to request data-processing terms.",
+  path: "/dpa",
+});
 
 /* ─────────────────────────────────────────────────────────────────────
  * MANUAL REVIEW REQUIRED — resolve before publishing.

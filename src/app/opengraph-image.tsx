@@ -3,6 +3,10 @@ import { ImageResponse } from "next/og";
 /**
  * Dynamic Open Graph image for the marketing landing.
  *
+ * Copy tracks `@/lib/seo`. The card previously led with a chargeback slogan,
+ * so every link preview — every Slack and LinkedIn share — positioned
+ * TraceTxn as dispute software before a visitor ever reached the site.
+ *
  * Auto-served by Next 16 at `/opengraph-image` and referenced
  * automatically in <meta property="og:image">, overrides any
  * static OG image set in the root metadata. Same image is used by
@@ -21,8 +25,11 @@ import { ImageResponse } from "next/og";
  */
 
 export const runtime = "edge";
+// Describes what the card actually renders: the wordmark, the headline, and
+// the capability strip below it. Screen-reader users get the card's content,
+// not a slogan the image does not contain.
 export const alt =
-  "TraceTxn, When the chargeback lands six weeks later, the evidence is already filed.";
+  "TraceTxn — a dark title card reading \u201CThe whole client relationship, in one record.\u201D above the line \u201COrders \u00B7 invoices \u00B7 payments \u00B7 timeline\u201D.";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -143,7 +150,7 @@ export default async function OgImage() {
               fontWeight: 500,
             }}
           >
-            · payment operations
+            · client management
           </div>
         </div>
 
@@ -166,7 +173,7 @@ export default async function OgImage() {
               maxWidth: 1020,
             }}
           >
-            When the chargeback{" "}
+            The whole{" "}
             <span
               style={{
                 backgroundImage:
@@ -175,9 +182,9 @@ export default async function OgImage() {
                 color: "transparent",
               }}
             >
-              lands six weeks later
+              client relationship
             </span>
-            , the evidence is already filed.
+            , in one record.
           </div>
         </div>
 
@@ -209,7 +216,7 @@ export default async function OgImage() {
                 background: "rgb(80,210,130)",
               }}
             />
-            Multi-gateway · audit-grade · self-serve
+            Orders · invoices · payments · timeline
           </div>
           <div
             style={{
@@ -219,7 +226,7 @@ export default async function OgImage() {
               color: "rgba(255,255,255,0.45)",
             }}
           >
-            Stripe live · Razorpay · Adyen
+            For agencies and freelancers
           </div>
         </div>
       </div>

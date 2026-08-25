@@ -7,8 +7,16 @@ import { getCurrentUser } from "@/server/auth/session";
 
 import { ForgotPasswordForm } from "./_components/forgot-password-form";
 
+import { pageMetadata } from "@/lib/seo";
+import type { Metadata } from "next";
+
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Reset your password" };
+export const metadata: Metadata = pageMetadata({
+  title: "Reset your password",
+  description: "Request a password reset link for your TraceTxn account.",
+  path: "/forgot-password",
+  noindex: true,
+});
 
 export default async function ForgotPasswordPage() {
   // Already signed in → bounce into the app rather than letting them

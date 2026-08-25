@@ -68,6 +68,7 @@ export function BrandFooter() {
               { label: "Terms", href: "/terms" },
               { label: "Privacy", href: "/privacy" },
               { label: "DPA", href: "/dpa" },
+              { label: "Refunds", href: "/refunds" },
             ]}
           />
         </div>

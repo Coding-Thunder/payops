@@ -5,8 +5,16 @@ import { env } from "@/lib/env";
 
 import { ResetPasswordForm } from "../_components/reset-password-form";
 
+import { pageMetadata } from "@/lib/seo";
+import type { Metadata } from "next";
+
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Reset your password" };
+export const metadata: Metadata = pageMetadata({
+  title: "Reset your password",
+  description: "Set a new password from a single-use reset link.",
+  path: "/reset-password",
+  noindex: true,
+});
 
 interface PageProps {
   params: Promise<{ token: string }>;

@@ -12,12 +12,13 @@ import { BrandCtaStrip } from "@/components/marketing/brand-cta-strip";
 import { BrandFooter } from "@/components/marketing/brand-footer";
 import { BrandNav } from "@/components/marketing/brand-nav";
 
-export const metadata: Metadata = {
-  title: "Contact, Sales, support, security",
-  description:
-    "Talk to TraceTxn. Sales for prospects, support for customers, security for vulnerability disclosure, careers + press inquiries, direct contact lines, no chatbot maze.",
-  alternates: { canonical: "/contact" },
-};
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Contact",
+  description: "Talk to TraceTxn \u2014 sales, support, security disclosure and press. Direct contact lines, no chatbot maze.",
+  path: "/contact",
+});
 
 /**
  * Four contact lanes, each a direct mailto. No contact form -

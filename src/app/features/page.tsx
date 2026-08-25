@@ -18,12 +18,14 @@ import {
   TimelineCard,
 } from "@/components/marketing/mocks/client-record";
 
-export const metadata: Metadata = {
-  title: "Features — One record for every client",
-  description:
-    "TraceTxn keeps invoices, payments, consent, files, notes, agreements, and history connected to one searchable record for each client. Built for agencies and freelancers.",
-  alternates: { canonical: "/features" },
-};
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Features",
+  description: "Client records and timelines, orders, numbered invoices and receipts, Stripe payments, consent capture, and a tamper-evident audit trail.",
+  path: "/features",
+  socialTitle: "Everything on one client record \u2022 TraceTxn",
+});
 
 /* Each feature is one alternating row: copy on one side, a real product
  * shape on the other. Order + copy match the product, no roadmap chrome. */

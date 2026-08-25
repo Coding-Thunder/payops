@@ -14,12 +14,13 @@ import { BrandCtaStrip } from "@/components/marketing/brand-cta-strip";
 import { BrandFooter } from "@/components/marketing/brand-footer";
 import { BrandNav } from "@/components/marketing/brand-nav";
 
-export const metadata: Metadata = {
-  title: "Security, Operational trust",
-  description:
-    "How TraceTxn protects your tenant data: encrypted Stripe credentials, hashed evidence chain, tenant-isolated collections, webhook signing-secret verification, bot protection.",
-  alternates: { canonical: "/security" },
-};
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Security",
+  description: "How TraceTxn protects your client data: tenant-isolated collections, encrypted gateway credentials, a tamper-evident audit trail, and webhook signature verification.",
+  path: "/security",
+});
 
 /* ────────────────────────── Pillars ─────────────────────────────────
  * Reads as a shipped-state security posture, NOT a roadmap. Honest

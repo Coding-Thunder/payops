@@ -5,12 +5,14 @@ import { BrandNav } from "@/components/marketing/brand-nav";
 import { WaitlistForm } from "@/components/marketing/waitlist-form";
 import { env } from "@/lib/env";
 
-export const metadata: Metadata = {
-  title: "Waitlist, Get an early invite",
-  description:
-    "Join the TraceTxn waitlist. Early invites unlock the Growth tier free for the first three months and direct access to the founders during onboarding.",
-  alternates: { canonical: "/waitlist" },
-};
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Waitlist",
+  description: "Join the TraceTxn waitlist. The product is invite-only during private beta; early invites include direct access to the team during onboarding.",
+  path: "/waitlist",
+  socialTitle: "Get an early invite \u2022 TraceTxn",
+});
 
 /**
  * Public waitlist. Single screen, brand-v1 chrome, minimal form

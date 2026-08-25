@@ -7,12 +7,14 @@ import { PricingFinalCta } from "@/components/marketing/pricing/final-cta";
 import { PricingHero } from "@/components/marketing/pricing/hero";
 import { PricingPlan } from "@/components/marketing/pricing/plan";
 
-export const metadata: Metadata = {
-  title: "Pricing — Free while we're in private beta",
-  description:
-    "TraceTxn is free during private beta. Give every client one searchable record — invoices, payments, consent, files, notes, and history in one place. Built for agencies and freelancers. No credit card required.",
-  alternates: { canonical: "/pricing" },
-};
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Pricing",
+  description: "TraceTxn is free during private beta \u2014 no card, no tiers. One searchable record per client: orders, invoices, payments and the full relationship timeline.",
+  path: "/pricing",
+  socialTitle: "Free while we're in private beta \u2022 TraceTxn",
+});
 
 /**
  * Pricing — private beta.

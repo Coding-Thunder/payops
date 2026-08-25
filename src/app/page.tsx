@@ -14,13 +14,14 @@ import { Solution } from "@/components/marketing/home/solution";
 import { UseCases } from "@/components/marketing/home/use-cases";
 import { StructuredData } from "@/components/marketing/seo/structured-data";
 
-export const metadata: Metadata = {
-  title:
-    "TraceTxn — One permanent record for every client",
-  description:
-    "TraceTxn gives agencies and freelancers one permanent, searchable record per client: invoices, payments, approvals, files, and the full timeline of the relationship. Stop reconstructing what happened across Gmail, Drive, Slack, and Stripe.",
-  alternates: { canonical: "/" },
-};
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "TraceTxn, Client Management for Agencies and Freelancers",
+  description: "One permanent, searchable record per client \u2014 orders, invoices, payments, email and the full timeline. Stop reconstructing what happened across Gmail and Stripe.",
+  path: "/",
+  absoluteTitle: true,
+});
 
 /**
  * Homepage — story-first redesign.

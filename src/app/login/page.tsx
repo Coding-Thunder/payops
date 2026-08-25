@@ -7,6 +7,16 @@ import { SiteWordmark } from "@/components/brand/site-wordmark";
 import { getCurrentUser } from "@/server/auth/session";
 import { turnstileSiteKey } from "@/server/auth/turnstile";
 
+import { pageMetadata } from "@/lib/seo";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Sign in",
+  description: "Sign in to your TraceTxn workspace.",
+  path: "/login",
+  noindex: true,
+});
+
 export const dynamic = "force-dynamic";
 
 interface LoginPageProps {

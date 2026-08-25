@@ -4,8 +4,16 @@ import { getInviteForActivation } from "@/server/services/team-invite.service";
 
 import { JoinForm, JoinSignedIn } from "./join-form";
 
+import { pageMetadata } from "@/lib/seo";
+import type { Metadata } from "next";
+
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Join your team on TraceTxn" };
+export const metadata: Metadata = pageMetadata({
+  title: "Join your team on TraceTxn",
+  description: "Accept a single-use invitation to join a TraceTxn workspace.",
+  path: "/join",
+  noindex: true,
+});
 
 interface JoinPageProps {
   params: Promise<{ token: string }>;
