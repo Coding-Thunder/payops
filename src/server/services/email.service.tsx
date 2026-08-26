@@ -959,7 +959,7 @@ export async function sendCustomTemplateManually(
     await captureEvidenceSafe({
       orderId: ctx.source.orderId,
       orderNumber: ctx.source.orderNumber,
-      eventType: OrderEvidenceEventType.PAYMENT_REQUEST_EMAIL_SENT,
+      eventType: OrderEvidenceEventType.CLIENT_MESSAGE_SENT,
       actor: {
         type: OrderEvidenceActorType.AGENT,
         userId: ctx.actor.id,

@@ -28,8 +28,18 @@ vi.mock("@/server/email/send", () => ({
 }));
 
 import { FileVisibility, ResourceActorType, ResourceSource } from "@/lib/constants/client-resources";
-import { UserRole } from "@/lib/constants/enums";
-import { Customer, Order, Organization, User } from "@/server/db/models";
+import {
+  OrderEvidenceEventType,
+  UserRole,
+} from "@/lib/constants/enums";
+import { OrderEvidenceEventLabel } from "@/lib/constants/labels";
+import {
+  Customer,
+  Order,
+  OrderEvidence,
+  Organization,
+  User,
+} from "@/server/db/models";
 import { createClientFile } from "@/server/services/client-file.service";
 import { createClientLink } from "@/server/services/client-link.service";
 import {
@@ -682,5 +692,79 @@ describe("compose context", () => {
     );
     expect(created.templateKey).not.toBe("payment-request");
     expect(created.kind).toBe("custom");
+  });
+});
+
+/**
+ * Regression guard for the "payment still appearing" report.
+ *
+ * There was exactly one evidence event type meaning "an operator emailed the
+ * customer about this order" — PAYMENT_REQUEST_EMAIL_SENT, hard-labelled
+ * "Payment request email sent" — and three senders reused it. The composer's
+ * only gate is `if (built.orderId)`, and the order-detail page passes
+ * lockedOrderId unconditionally, so sending a plain "Meeting notes" message
+ * stamped the order's evidence chain, the dispute PDF and the outcome panel
+ * with a payment request that never happened.
+ *
+ * The touchpoint itself is worth keeping — a chargeback needs to see that the
+ * operator wrote to the customer — so the fix names it honestly rather than
+ * dropping it.
+ */
+describe("a composed message is evidence, but it is not a payment request", () => {
+  it("stamps CLIENT_MESSAGE_SENT, never PAYMENT_REQUEST_EMAIL_SENT", async () => {
+    const orgId = await seedOrg();
+    const ctx = ctxFor(orgId);
+    const customerId = await seedClient(orgId);
+    const order = await seedOrder(orgId, customerId, "Brand refresh");
+
+    await sendComposedEmail(
+      {
+        to: "jane@abc.test",
+        customerId,
+        orderId: order.id,
+        subject: "Notes from today's call",
+        body: "Hi Jane,\n\nRecapping what we agreed on the call.",
+        templateKey: null,
+        variables: {},
+        linkIds: [],
+        attachmentFileIds: [],
+      },
+      ctx,
+    );
+
+    const rows = await OrderEvidence.find({
+      orderId: new Types.ObjectId(order.id),
+    })
+      .sort({ sequence: 1 })
+      .lean();
+
+    // The touchpoint must still exist: losing it would weaken the chain.
+    const emailEvents = rows.filter(
+      (r) =>
+        r.eventType === OrderEvidenceEventType.CLIENT_MESSAGE_SENT ||
+        r.eventType === OrderEvidenceEventType.PAYMENT_REQUEST_EMAIL_SENT,
+    );
+    expect(emailEvents).toHaveLength(1);
+
+    // ...and it must not claim a payment request happened.
+    expect(emailEvents[0].eventType).toBe(
+      OrderEvidenceEventType.CLIENT_MESSAGE_SENT,
+    );
+    expect(
+      rows.map((r) => r.eventType),
+    ).not.toContain(OrderEvidenceEventType.PAYMENT_REQUEST_EMAIL_SENT);
+  });
+
+  it("labels it in words an operator and a bank can both read", () => {
+    expect(
+      OrderEvidenceEventLabel[OrderEvidenceEventType.CLIENT_MESSAGE_SENT],
+    ).toBe("Message sent to client");
+    // The payment vocabulary is untouched — the genuine payment-request send
+    // still uses it.
+    expect(
+      OrderEvidenceEventLabel[
+        OrderEvidenceEventType.PAYMENT_REQUEST_EMAIL_SENT
+      ],
+    ).toBe("Payment request email sent");
   });
 });

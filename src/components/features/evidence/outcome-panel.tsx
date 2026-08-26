@@ -97,6 +97,7 @@ function ReadyVariant({
   const emailsSent = events.filter(
     (e) =>
       e.eventType === "PAYMENT_REQUEST_EMAIL_SENT" ||
+      e.eventType === "CLIENT_MESSAGE_SENT" ||
       e.eventType === "CONFIRMATION_EMAIL_SENT",
   ).length;
   const consentEvent = events.find(
@@ -474,6 +475,7 @@ function whyWon(
     events.some(
       (e) =>
         e.eventType === "PAYMENT_REQUEST_EMAIL_SENT" ||
+        e.eventType === "CLIENT_MESSAGE_SENT" ||
         e.eventType === "CONFIRMATION_EMAIL_SENT",
     )
   ) {

@@ -200,6 +200,16 @@ export const OrderEvidenceEventType = {
   PAYMENT_LINK_GENERATED: "PAYMENT_LINK_GENERATED",
   PAYMENT_LINK_REGENERATED: "PAYMENT_LINK_REGENERATED",
   PAYMENT_REQUEST_EMAIL_SENT: "PAYMENT_REQUEST_EMAIL_SENT",
+  /**
+   * An operator emailed the customer about this order, with no payment
+   * semantics — a composed message or a non-payment template.
+   *
+   * Exists because three senders used to share PAYMENT_REQUEST_EMAIL_SENT,
+   * so a "Meeting notes" message attached to an order appeared in the
+   * evidence timeline and the dispute PDF as "Payment request email sent".
+   * The touchpoint is worth keeping for a chargeback; the label was a lie.
+   */
+  CLIENT_MESSAGE_SENT: "CLIENT_MESSAGE_SENT",
   CONSENT_REQUESTED: "CONSENT_REQUESTED",
   CONSENT_RECEIVED: "CONSENT_RECEIVED",
   CONSENT_VERIFIED: "CONSENT_VERIFIED",

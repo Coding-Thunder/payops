@@ -148,6 +148,7 @@ export const OrderEvidenceEventLabel: Record<OrderEvidenceEventType, string> = {
   PAYMENT_LINK_GENERATED: "Payment link generated",
   PAYMENT_LINK_REGENERATED: "Payment link regenerated",
   PAYMENT_REQUEST_EMAIL_SENT: "Payment request email sent",
+  CLIENT_MESSAGE_SENT: "Message sent to client",
   CONSENT_REQUESTED: "Consent requested",
   CONSENT_RECEIVED: "Consent received",
   CONSENT_VERIFIED: "Consent verified",

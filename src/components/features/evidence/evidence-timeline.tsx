@@ -84,6 +84,7 @@ function TimelineRow({
     OrderEvidenceEventLabel[event.eventType] ?? event.eventType;
   const isEmailEvent =
     event.eventType === OrderEvidenceEventType.PAYMENT_REQUEST_EMAIL_SENT ||
+    event.eventType === OrderEvidenceEventType.CLIENT_MESSAGE_SENT ||
     event.eventType === OrderEvidenceEventType.CONFIRMATION_EMAIL_SENT;
   const html =
     isEmailEvent && typeof event.payload.html === "string"
