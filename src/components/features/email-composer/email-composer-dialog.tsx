@@ -116,6 +116,19 @@ export function EmailComposerDialog({
   const [context, setContext] = React.useState<ComposeContextDTO | null>(null);
   const [contextError, setContextError] = React.useState<string | null>(null);
   const [loadingContext, setLoadingContext] = React.useState(false);
+  /**
+   * In-flight guard for the context fetch. A ref, not state, deliberately.
+   *
+   * This used to be `loadingContext` itself, read in the effect's guard AND
+   * listed in its dependency array. So `setLoadingContext(true)` re-ran the
+   * effect, the cleanup set `cancelled = true`, and the `.finally` — guarded
+   * by `if (!cancelled)` — never cleared the flag. The dialog then sat with
+   * loadingContext stuck true, context null and contextError null, which
+   * renders as a permanently disabled "Use template" button that reports no
+   * error. A ref cannot be a dependency, so the effect can no longer cancel
+   * its own request.
+   */
+  const contextInFlight = React.useRef(false);
 
   const [to, setTo] = React.useState(defaultRecipient);
   const [subject, setSubject] = React.useState("");
@@ -163,10 +176,11 @@ export function EmailComposerDialog({
   // Load the client's context once per open. Deferred a frame so the
   // state flips don't fire synchronously inside the effect.
   React.useEffect(() => {
-    if (!open || context || loadingContext) return;
+    if (!open || context || contextInFlight.current) return;
     let cancelled = false;
     const handle = requestAnimationFrame(() => {
       if (cancelled) return;
+      contextInFlight.current = true;
       setLoadingContext(true);
       api
         .get<ComposeContextDTO>(
@@ -186,14 +200,18 @@ export function EmailComposerDialog({
           );
         })
         .finally(() => {
-          if (!cancelled) setLoadingContext(false);
+          // Deliberately NOT guarded by `cancelled`. The request has settled
+          // either way, and leaving these set is exactly what wedged the
+          // dialog shut.
+          contextInFlight.current = false;
+          setLoadingContext(false);
         });
     });
     return () => {
       cancelled = true;
       cancelAnimationFrame(handle);
     };
-  }, [open, context, loadingContext, customerId]);
+  }, [open, context, customerId]);
 
   const selectedOrder =
     orderId === NO_ORDER
