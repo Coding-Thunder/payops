@@ -69,6 +69,23 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+const TWO_TEMPLATES = [
+  {
+    templateKey: "meeting-time",
+    displayName: "Meeting Time",
+    description: "Propose a call",
+    subject: "Call on {{meeting_date}}",
+    body: "Hi {{client_name}}, can we talk at {{meeting_time}}?",
+  },
+  {
+    templateKey: "project-update",
+    displayName: "Project Update",
+    description: null,
+    subject: "Update on {{order_name}}",
+    body: "Here is where things stand.",
+  },
+];
+
 const CONTEXT = {
   client: { id: "c1", name: "Jane Doe", email: "jane@abc.test", company: null },
   business: { name: "Acme Studio" },
@@ -147,5 +164,95 @@ describe("email composer context loading", () => {
         screen.getByText(/couldn't load this client's details/i),
       ).toBeInTheDocument(),
     );
+  });
+});
+
+/**
+ * The interaction the screenshot showed failing: open the menu, see the
+ * templates, pick one, and have the composer receive its content. Exercised
+ * through the real UI rather than the context endpoint, because the endpoint
+ * was never the broken half.
+ */
+describe("email composer template selection", () => {
+  beforeEach(() => {
+    apiGet.mockReset();
+  });
+
+  async function openWithTemplates(templates = TWO_TEMPLATES) {
+    apiGet.mockResolvedValue({ ...CONTEXT, templates });
+    const user = await open();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /use template/i }),
+      ).toBeEnabled(),
+    );
+    return user;
+  }
+
+  it("opens the menu and lists every custom template", async () => {
+    const user = await openWithTemplates();
+    await user.click(screen.getByRole("button", { name: /use template/i }));
+
+    expect(await screen.findByText("Meeting Time")).toBeInTheDocument();
+    expect(screen.getByText("Project Update")).toBeInTheDocument();
+    // Descriptions render when present, and absence is not a crash.
+    expect(screen.getByText("Propose a call")).toBeInTheDocument();
+  });
+
+  it("fills subject and body from the chosen template", async () => {
+    const user = await openWithTemplates();
+    await user.click(screen.getByRole("button", { name: /use template/i }));
+    await user.click(await screen.findByText("Meeting Time"));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(/subject/i)).toHaveValue(
+        "Call on {{meeting_date}}",
+      ),
+    );
+    expect(screen.getByLabelText(/message/i)).toHaveValue(
+      "Hi {{client_name}}, can we talk at {{meeting_time}}?",
+    );
+  });
+
+  it("switching templates replaces the content, with nothing left over", async () => {
+    // applyTemplate is synchronous and reads the already-loaded context, so a
+    // late response cannot overwrite a newer pick. This pins that.
+    const user = await openWithTemplates();
+
+    await user.click(screen.getByRole("button", { name: /use template/i }));
+    await user.click(await screen.findByText("Meeting Time"));
+    await waitFor(() =>
+      expect(screen.getByLabelText(/subject/i)).toHaveValue(
+        "Call on {{meeting_date}}",
+      ),
+    );
+
+    // The trigger now shows the active template's name.
+    await user.click(screen.getByRole("button", { name: /meeting time/i }));
+    await user.click(await screen.findByText("Project Update"));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(/subject/i)).toHaveValue(
+        "Update on {{order_name}}",
+      ),
+    );
+    expect(screen.getByLabelText(/message/i)).toHaveValue(
+      "Here is where things stand.",
+    );
+    expect(screen.getByLabelText(/message/i)).not.toHaveValue(
+      "Hi {{client_name}}, can we talk at {{meeting_time}}?",
+    );
+  });
+
+  it("with no templates the control still opens and explains why it is empty", async () => {
+    // The empty state must NOT look like the bug: an enabled button whose menu
+    // says what to do, not a dead grey control.
+    const user = await openWithTemplates([]);
+    expect(screen.getByRole("button", { name: /use template/i })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: /use template/i }));
+    expect(
+      await screen.findByText(/no custom templates yet/i),
+    ).toBeInTheDocument();
   });
 });
