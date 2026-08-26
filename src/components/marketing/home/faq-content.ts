@@ -40,7 +40,7 @@ export const FAQS: FaqItem[] = [
   },
   {
     q: "Can I export my data?",
-    a: "Anytime. Export a client’s complete record — timeline, invoices, payments, approvals and files. It’s your data. There’s no lock-in and nothing is held hostage.",
+    a: "Anytime. Export a client’s complete record — timeline, invoices, payments and files. It’s your data. There’s no lock-in and nothing is held hostage.",
   },
   {
     q: "Who is it for?",
