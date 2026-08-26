@@ -1,4 +1,21 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+/**
+ * Firebase Admin is stubbed for the whole file. `firebaseConfigured` defaults
+ * to false, which reproduces the service-account-less environment the existing
+ * tests already ran in, so their behaviour is unchanged.
+ */
+const firebaseAuth = {
+  getUserByEmail: vi.fn(),
+  updateUser: vi.fn(),
+  createUser: vi.fn(),
+  revokeRefreshTokens: vi.fn(),
+};
+let firebaseConfigured = false;
+vi.mock("@/lib/firebase/admin", () => ({
+  getFirebaseAdminAuth: () => (firebaseConfigured ? firebaseAuth : null),
+  isFirebaseAdminConfigured: () => firebaseConfigured,
+}));
 
 import { AuditAction, RecordState, UserRole } from "@/lib/constants/enums";
 import { AuditLog, User } from "@/server/db/models";
@@ -212,5 +229,133 @@ describe("POST /api/auth/reset-password", () => {
     expect(await verifyPassword("FreshPass456!", reloaded!.passwordHash)).toBe(
       true,
     );
+  });
+});
+
+/**
+ * Regression guard for the reported sign-in bug: "correct email and password
+ * rejected".
+ *
+ * /login renders FirebaseAuthForm and calls signInWithEmailAndPassword, so
+ * Firebase Auth is the store sign-in reads. This service only ever wrote a
+ * bcrypt hash to Mongo. Completing a reset therefore set the password
+ * somewhere sign-in never looks: the new password failed and the old Firebase
+ * password kept working.
+ */
+describe("completePasswordReset keeps Firebase in step with Mongo", () => {
+  beforeEach(() => {
+    firebaseConfigured = true;
+    firebaseAuth.getUserByEmail.mockReset();
+    firebaseAuth.updateUser.mockReset();
+    firebaseAuth.createUser.mockReset();
+    firebaseAuth.revokeRefreshTokens.mockReset().mockResolvedValue(undefined);
+  });
+  afterEach(() => {
+    firebaseConfigured = false;
+  });
+
+  it("updates the password on the existing Firebase identity", async () => {
+    const user = await makeUser();
+    const token = _generateResetTokenForTesting(user);
+    firebaseAuth.getUserByEmail.mockResolvedValue({ uid: "fb-uid-1" });
+    firebaseAuth.updateUser.mockResolvedValue({ uid: "fb-uid-1" });
+
+    await completePasswordReset(token, "BrandNewPass456", { request: null });
+
+    expect(firebaseAuth.getUserByEmail).toHaveBeenCalledWith(user.email);
+    // Exact object match on purpose. `emailVerified` must be set on the
+    // UPDATE branch too: /signup calls createUserWithEmailAndPassword before
+    // the session exchange, so a failed exchange leaves an UNVERIFIED identity
+    // behind. Updating only its password gives the user a Firebase login that
+    // /api/auth/firebase-session then refuses (it requires a verified email),
+    // and nothing in this codebase ever sends a verification mail — a lockout
+    // with no way out.
+    expect(firebaseAuth.updateUser).toHaveBeenCalledWith("fb-uid-1", {
+      password: "BrandNewPass456",
+      emailVerified: true,
+    });
+    expect(firebaseAuth.createUser).not.toHaveBeenCalled();
+  });
+
+  it("revokes Firebase refresh tokens, so a reset really does evict an attacker", async () => {
+    // sessionsInvalidBefore only kills the app cookie. A live Firebase refresh
+    // token would otherwise mint a fresh ID token, and
+    // /api/auth/firebase-session would hand back a new session -- defeating
+    // the whole point of revoking on reset.
+    const user = await makeUser();
+    const token = _generateResetTokenForTesting(user);
+    firebaseAuth.getUserByEmail.mockResolvedValue({ uid: "fb-uid-1" });
+    firebaseAuth.updateUser.mockResolvedValue({ uid: "fb-uid-1" });
+
+    await completePasswordReset(token, "BrandNewPass456", { request: null });
+
+    expect(firebaseAuth.revokeRefreshTokens).toHaveBeenCalledWith("fb-uid-1");
+  });
+
+  it("provisions a Firebase identity for a pre-Firebase account", async () => {
+    const user = await makeUser();
+    const token = _generateResetTokenForTesting(user);
+    firebaseAuth.getUserByEmail.mockRejectedValue(
+      Object.assign(new Error("no user"), { code: "auth/user-not-found" }),
+    );
+    firebaseAuth.createUser.mockResolvedValue({ uid: "fb-uid-new" });
+
+    await completePasswordReset(token, "BrandNewPass456", { request: null });
+
+    expect(firebaseAuth.createUser).toHaveBeenCalledWith({
+      email: user.email,
+      password: "BrandNewPass456",
+      // Redeeming a single-use link sent to that mailbox is the proof of
+      // control; /api/auth/firebase-session refuses to link an unverified one.
+      emailVerified: true,
+    });
+  });
+
+  it("aborts without touching Mongo when Firebase rejects, leaving the link usable", async () => {
+    // The ordering guarantee. Writing Mongo first would burn the token AND
+    // leave sign-in broken — the user would be locked out with no way back.
+    const user = await makeUser();
+    const token = _generateResetTokenForTesting(user);
+    firebaseAuth.getUserByEmail.mockRejectedValue(
+      Object.assign(new Error("backend unavailable"), {
+        code: "auth/internal-error",
+      }),
+    );
+
+    await expect(
+      completePasswordReset(token, "BrandNewPass456", { request: null }),
+    ).rejects.toThrow();
+
+    const after = await User.findById(user._id).select("+passwordHash");
+    // Old password still valid, new one never took.
+    expect(await verifyPassword("OldPass123ABC", after!.passwordHash)).toBe(true);
+    expect(await verifyPassword("BrandNewPass456", after!.passwordHash)).toBe(
+      false,
+    );
+
+    // ...and the same token still works once Firebase recovers.
+    firebaseAuth.getUserByEmail.mockResolvedValue({ uid: "fb-uid-1" });
+    firebaseAuth.updateUser.mockResolvedValue({ uid: "fb-uid-1" });
+    await completePasswordReset(token, "BrandNewPass456", { request: null });
+
+    const healed = await User.findById(user._id).select("+passwordHash");
+    expect(await verifyPassword("BrandNewPass456", healed!.passwordHash)).toBe(
+      true,
+    );
+  });
+
+  it("still completes the Mongo write when Firebase is not configured", async () => {
+    // Local dev and any deployment still on the legacy bcrypt path.
+    firebaseConfigured = false;
+    const user = await makeUser();
+    const token = _generateResetTokenForTesting(user);
+
+    await completePasswordReset(token, "BrandNewPass456", { request: null });
+
+    const after = await User.findById(user._id).select("+passwordHash");
+    expect(await verifyPassword("BrandNewPass456", after!.passwordHash)).toBe(
+      true,
+    );
+    expect(firebaseAuth.updateUser).not.toHaveBeenCalled();
   });
 });

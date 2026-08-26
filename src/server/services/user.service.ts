@@ -41,6 +41,7 @@ import { connectMongo } from "@/server/db/mongoose";
 import type { PublicUser } from "@/types";
 
 import type { RequestContext } from "@/server/api/request-context";
+import { syncFirebasePassword } from "@/server/auth/firebase-password";
 import { hashPassword } from "@/server/auth/password";
 import { recordAudit } from "./audit.service";
 import {
@@ -466,6 +467,12 @@ export async function resetUserPassword(
   if (!doc) throw new NotFoundError("User not found");
   ensureCanManageRole(ctx.actor, doc.role);
 
+  // Firebase first, same reason as everywhere else: an admin who sets a
+  // password the user cannot then sign in with has helped nobody.
+  // The random placeholder hash minted for a PENDING invitee earlier in
+  // this file is deliberately NOT synced — nobody knows it, and that
+  // account stays DISABLED until the invite is accepted.
+  await syncFirebasePassword(doc.email, input.newPassword);
   doc.passwordHash = await hashPassword(input.newPassword);
   // Boot the user's existing sessions too — an admin-initiated reset should
   // invalidate any live cookie they (or someone else) still hold.

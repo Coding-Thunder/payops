@@ -24,6 +24,7 @@ import {
   type TeamInvite,
 } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
+import { syncFirebasePassword } from "@/server/auth/firebase-password";
 import { hashPassword } from "@/server/auth/password";
 import type { RequestContext } from "@/server/api/request-context";
 
@@ -185,6 +186,11 @@ export async function activateTeamInvite(
       throw new ValidationError("This invitation is no longer valid.");
     }
 
+    // Firebase first: /login signs in through it, so an invitee whose
+    // password lands only in Mongo is told their correct password is
+    // wrong. If this throws, the catch below releases the claim and the
+    // invitation stays usable rather than being burned half-accepted.
+    await syncFirebasePassword(user.email, input.password);
     user.passwordHash = await hashPassword(input.password);
     if (input.name?.trim()) user.name = input.name.trim().slice(0, 120);
     user.status = RecordState.ACTIVE;

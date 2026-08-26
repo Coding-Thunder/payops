@@ -10,6 +10,7 @@ import {
 import { env } from "@/lib/env";
 import { BadRequestError, ForbiddenError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
+import { syncFirebasePassword } from "@/server/auth/firebase-password";
 import { hashPassword } from "@/server/auth/password";
 import { User, type UserDoc } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
@@ -282,6 +283,7 @@ interface CompleteContext {
   request: RequestContext | null;
 }
 
+
 export async function completePasswordReset(
   token: string,
   newPassword: string,
@@ -309,6 +311,10 @@ export async function completePasswordReset(
       "This reset link is no longer valid, the password has already been changed.",
     );
   }
+
+  // Firebase FIRST: it is the store sign-in reads. If this throws, nothing
+  // below runs and the reset link stays usable.
+  await syncFirebasePassword(user.email, newPassword);
 
   const nextHash = await hashPassword(newPassword);
   user.passwordHash = nextHash;

@@ -18,6 +18,7 @@ import {
 } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 import { sessionOpt, withTx } from "@/server/db/transaction";
+import { syncFirebasePassword } from "@/server/auth/firebase-password";
 import { hashPassword } from "@/server/auth/password";
 import { logger } from "@/lib/logger";
 import type { SignupInput } from "@/lib/validation";
@@ -77,6 +78,20 @@ export async function signupFounder(
   }
 
   const passwordHash = await hashPassword(input.password);
+
+  // Give the founder a Firebase identity too. This path (reached from
+  // /activate via POST /api/beta/activate) used to write the bcrypt hash and
+  // nothing else, so the founder landed on the dashboard with a session — and
+  // then found their brand-new password rejected the next time they visited
+  // /login, because that page signs in through Firebase. It is every beta
+  // founder's first onboarding, so it is the main producer of "my correct
+  // password is wrong".
+  //
+  // Before the transaction on purpose: an external call does not belong inside
+  // one. If Firebase rejects, signup fails with nothing written; if the
+  // transaction later fails, the retry hits the update branch and succeeds.
+  await syncFirebasePassword(email, input.password);
+
   const slug = await uniqueOrgSlug(input.orgName);
 
   const { result, workspaceName } = await withTx(async (session) => {
