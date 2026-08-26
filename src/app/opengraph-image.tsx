@@ -20,11 +20,22 @@ import { ImageResponse } from "next/og";
  *   - 1200×630 is the canonical OG size (Slack / LinkedIn / Twitter
  *     all crop to this).
  *
- * Edge-runtime + system-font default (Inter on most platforms) so
- * cold-start time is sub-100ms.
+ * Runs on the DEFAULT Node runtime, deliberately. It used to declare
+ * `export const runtime = "edge"`, which returned a hard 504 in production:
+ * this app is self-hosted behind `next start` on DigitalOcean App Platform,
+ * where there is no edge runtime to serve it. The sibling `apple-icon.tsx`
+ * builds an identical `ImageResponse` from `next/og` WITHOUT that
+ * declaration and returns 200 on the same deployment — that contrast is what
+ * identified the cause.
+ *
+ * The damage was invisible from inside the app: every link preview — LinkedIn,
+ * X, Slack — got no card at all and fell back to whatever each platform had
+ * cached, which is why the social image looked stale long after the branding
+ * changed.
+ *
+ * System-font default (Inter on most platforms) keeps cold start cheap.
  */
 
-export const runtime = "edge";
 // Describes what the card actually renders: the wordmark, the headline, and
 // the capability strip below it. Screen-reader users get the card's content,
 // not a slogan the image does not contain.
@@ -163,17 +174,37 @@ export default async function OgImage() {
             zIndex: 2,
           }}
         >
-          <div
-            style={{
-              fontSize: 76,
-              fontWeight: 600,
-              lineHeight: 1.04,
-              letterSpacing: -2.4,
-              color: "white",
-              maxWidth: 1020,
-            }}
-          >
-            The whole{" "}
+        {/*
+          Satori refuses any div holding more than one child without an
+          explicit display. This block was a bare div wrapping two text runs
+          and a span, which threw "Expected <div> to have explicit
+          display: flex". Nobody saw it because the route also declared the
+          edge runtime and 504'd before ever rendering — fixing the runtime is
+          what surfaced this. Each run is now its own span so the layout is
+          deterministic, and the trailing space is non-breaking because flex
+          items do not preserve collapsing whitespace.
+        */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            fontSize: 76,
+            fontWeight: 600,
+            lineHeight: 1.04,
+            letterSpacing: -2.4,
+            color: "white",
+            maxWidth: 1020,
+          }}
+        >
+          {/*
+            Two explicit rows rather than one wrapping row. As a single
+            flex line the break landed BETWEEN the gradient span and the
+            comma, so the card rendered ", in one record." at the start of
+            line two. Pinning the rows keeps the comma against the phrase
+            it belongs to.
+          */}
+          <div style={{ display: "flex" }}>
+            <span>The whole&#160;</span>
             <span
               style={{
                 backgroundImage:
@@ -184,8 +215,10 @@ export default async function OgImage() {
             >
               client relationship
             </span>
-            , in one record.
+            <span>,</span>
           </div>
+          <span>in one record.</span>
+        </div>
         </div>
 
         {/* Sub-line, privately deployed signal */}
