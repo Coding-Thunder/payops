@@ -154,8 +154,13 @@ export function resolveProvider(
     snapshot && "name" in snapshot && typeof snapshot.name === "string"
       ? snapshot.name
       : id;
+  // An empty string is "no logo", not "a logo at the empty path". Left as a
+  // plain typeof check, a provider saved through the admin form with no
+  // logo produced `absoluteUrl(appUrl, "")` → the site root, and every
+  // customer email rendered <img src="https://host/"> — the HTML page
+  // fetched as an image.
   const logo =
-    snapshot && "logo" in snapshot && typeof snapshot.logo === "string"
+    snapshot && "logo" in snapshot && typeof snapshot.logo === "string" && snapshot.logo.trim()
       ? snapshot.logo
       : UNKNOWN_PROVIDER.logo;
   const primaryColor =

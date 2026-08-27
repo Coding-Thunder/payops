@@ -56,8 +56,78 @@ export function getMailerFor(config: SmtpTransportConfig): Transporter {
     connectionTimeout: 10_000,
     socketTimeout: 20_000,
   });
-  orgTransports.set(key, transport);
-  return transport;
+  const wrapped = withGlobalCc(transport);
+  orgTransports.set(key, wrapped);
+  return wrapped;
+}
+
+/* ─────────────────────────── global CC ──────────────────────────────── */
+
+/**
+ * Merge the deployment-wide CC into one message.
+ *
+ * Exported for its own tests: this is the only piece with branching, and it
+ * is far easier to prove correct directly than through a live transport.
+ *
+ * Rules, all of them about not sending someone the same mail twice:
+ *   - no EMAIL_CC configured  → the message is returned untouched, which is
+ *     what every deployment that does not set it continues to do
+ *   - the address is already in `to` or `cc` → not added again
+ *   - an existing `cc` is PRESERVED and appended to, never replaced
+ *
+ * Only string and string[] recipients are handled, because that is all this
+ * codebase produces. A nodemailer Address object is passed through rather
+ * than half-understood — silently dropping a CC is better than mangling a
+ * recipient list.
+ */
+export function applyGlobalCc<T extends { to?: unknown; cc?: unknown }>(
+  mail: T,
+  ccAddress: string | undefined,
+): T {
+  const cc = ccAddress?.trim();
+  if (!cc) return mail;
+
+  const asList = (v: unknown): string[] | null => {
+    if (v == null) return [];
+    if (typeof v === "string") return v.split(",").map((s) => s.trim()).filter(Boolean);
+    if (Array.isArray(v) && v.every((x) => typeof x === "string")) {
+      return (v as string[]).map((s) => s.trim()).filter(Boolean);
+    }
+    return null; // Address object(s) — leave well alone.
+  };
+
+  const existingCc = asList(mail.cc);
+  const to = asList(mail.to);
+  if (existingCc === null || to === null) return mail;
+
+  const seen = new Set([...to, ...existingCc].map((a) => a.toLowerCase()));
+  if (seen.has(cc.toLowerCase())) return mail;
+
+  return { ...mail, cc: [...existingCc, cc] };
+}
+
+/**
+ * Wrap a transport so every message it sends carries the global CC.
+ *
+ * Done at the transport rather than in the send helpers because there are
+ * three independent `sendMail` call sites — the email service, the
+ * acknowledgement notification and the quotation sender — and only two
+ * places that build a transport. Putting it here means a fourth call site
+ * added later inherits the behaviour instead of forgetting it.
+ *
+ * `Object.create` shadows `sendMail` while leaving `verify`, `close` and the
+ * rest delegating to the real transport.
+ */
+function withGlobalCc(transport: Transporter): Transporter {
+  const cc = env.server.EMAIL_CC?.trim();
+  if (!cc) return transport;
+
+  const wrapped: Transporter = Object.create(transport);
+  wrapped.sendMail = ((mail: Parameters<Transporter["sendMail"]>[0]) =>
+    transport.sendMail(
+      applyGlobalCc(mail as Record<string, unknown>, cc) as typeof mail,
+    )) as Transporter["sendMail"];
+  return wrapped;
 }
 
 /** Test-only: drop cached per-organization transports. */
@@ -75,7 +145,7 @@ export function getMailer(): Transporter | null {
 
   if (cached) return cached;
 
-  cached = nodemailer.createTransport({
+  const transport = nodemailer.createTransport({
     host: SMTP_HOST,
     port: SMTP_PORT,
     secure: SMTP_SECURE, // true => SMTPS (465), false => STARTTLS (587)
@@ -92,6 +162,7 @@ export function getMailer(): Transporter | null {
     socketTimeout: 20_000,
   });
 
+  cached = withGlobalCc(transport);
   return cached;
 }
 

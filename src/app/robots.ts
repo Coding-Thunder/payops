@@ -5,39 +5,20 @@ import { env } from "@/lib/env";
 /**
  * robots.txt — surfaced by Next at `/robots.txt`.
  *
- *  - Crawlers may index the landing page and the login route.
- *  - Everything authed (`/app/*`), every API (`/api/*`), and every
- *    customer-facing token-bound surface (`/pay/*`, `/consent/*`)
- *    is disallowed: those URLs are either gated, single-use, or
- *    contain credential-like path segments that should never leak
- *    into a search index.
- *  - Sitemap URL pinned absolutely so crawlers reach it without
- *    relying on the request host.
+ * Everything is disallowed. There is no marketing surface on a
+ * single-merchant deployment: `/` redirects to a private operator sign-in,
+ * and every customer-facing route (`/pay/*`, `/consent/*`,
+ * `/acknowledge/*`) is single-use and carries a credential in its path, so
+ * an indexed URL is a leaked one.
+ *
+ * `/acknowledge/` was previously missing from the disallow list even though
+ * it is token-bound exactly like `/consent/`.
  */
 export default function robots(): MetadataRoute.Robots {
   const base = env.public.NEXT_PUBLIC_APP_URL.replace(/\/$/, "");
 
   return {
-    rules: [
-      {
-        userAgent: "*",
-        allow: ["/", "/login"],
-        disallow: [
-          "/api/",
-          "/app/",
-          "/pay/",
-          "/consent/",
-        ],
-      },
-      {
-        // AI crawlers — defensible default: opt OUT of being scraped
-        // into LLM training corpora. The site exists to convert
-        // prospects, not to feed a model. Easy to flip later if
-        // marketing decides to allow.
-        userAgent: ["GPTBot", "ClaudeBot", "Google-Extended", "CCBot", "Bytespider"],
-        disallow: "/",
-      },
-    ],
+    rules: [{ userAgent: "*", disallow: "/" }],
     sitemap: `${base}/sitemap.xml`,
     host: base,
   };

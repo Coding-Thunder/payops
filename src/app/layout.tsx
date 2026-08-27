@@ -33,15 +33,30 @@ const geistMono = Geist_Mono({
  * and document the brand-positioning vocabulary in code.
  */
 
-const SITE_NAME = process.env.NEXT_PUBLIC_APP_NAME || "PayOps";
+/**
+ * Fallbacks are the merchant's own brand and host, not the platform's.
+ *
+ * These two variables are the single point where a customer-visible name
+ * enters the document head, and NEXT_PUBLIC_* values are inlined at BUILD
+ * time — so a deployment that forgets one on the build environment ships a
+ * silently wrong title rather than failing. Defaulting to the platform's
+ * name made that failure mode "every customer sees PayOps"; defaulting to
+ * the merchant makes it a no-op.
+ */
+const SITE_NAME =
+  process.env.NEXT_PUBLIC_APP_NAME || "ReservationCarRentals.com";
 const SITE_URL = (
-  process.env.NEXT_PUBLIC_APP_URL || "https://payops.example.com"
+  process.env.NEXT_PUBLIC_APP_URL || "https://himanshu.rentalconfirmation.com"
 ).replace(/\/$/, "");
-const HEADLINE = "Payment Operations Platform · Dispute & Chargeback Evidence";
-const DESCRIPTION =
-  "PayOps is the payment operations platform built for the full lifecycle. Lifecycle visibility, hashed evidence chain, hosted consent, and multi-gateway orchestration — deployed privately on a domain you own. Reserved for one merchant per instance.";
-const SHORT_DESCRIPTION =
-  "Lifecycle visibility, hashed dispute evidence, and multi-gateway orchestration — privately deployed.";
+// This deployment serves ONE merchant, and these strings reach that
+// merchant's customers: they are the <meta description> on the hosted
+// consent page and on both /pay return pages, and they are what a customer
+// sees when a payment link is pasted into WhatsApp or iMessage. The copy
+// that used to live here pitched the payment-operations product itself,
+// which is the vendor's positioning, not the merchant's business.
+const HEADLINE = "Secure Booking Payments & Confirmations";
+const DESCRIPTION = `Pay for your booking with ${SITE_NAME} through a secure, single-use payment link. Card details are handled entirely by a PCI-DSS Level 1 certified payment provider, and a written confirmation and receipt are emailed the moment payment clears.`;
+const SHORT_DESCRIPTION = `Secure booking payments and written confirmations from ${SITE_NAME}.`;
 const OG_IMAGE = `${SITE_URL}/marketing/evidence-chain.webp`;
 
 export const metadata: Metadata = {
@@ -56,49 +71,20 @@ export const metadata: Metadata = {
   referrer: "strict-origin-when-cross-origin",
   category: "fintech",
   classification: "business",
+  // Scoped to what this deployment actually is — a merchant's booking
+  // payment surface. The previous list was the vendor product's SEO
+  // vocabulary ("chargeback evidence", "stripe alternative", "payment
+  // orchestration"); indexing this host against those terms describes a
+  // business the customer is not buying from.
   keywords: [
-    // Core positioning
-    "payment operations",
-    "payment operations platform",
-    "payment operations software",
-    "payment ops",
-    "payment ops platform",
-    // Disputes / chargebacks (highest commercial intent)
-    "chargeback evidence",
-    "chargeback management",
-    "chargeback defense",
-    "dispute evidence",
-    "dispute management software",
-    "dispute readiness",
-    "chargeback prevention",
-    "stripe dispute management",
-    "stripe chargeback evidence",
-    // Multi-gateway / orchestration
-    "payment orchestration",
-    "multi gateway payments",
-    "multi gateway orchestration",
-    "payment routing",
-    "stripe alternative",
-    // Audit / compliance
-    "payment audit trail",
-    "payment audit log",
-    "hashed evidence chain",
-    "soc compliance payments",
-    "payment compliance platform",
-    // Customer trust / consent
-    "payment consent capture",
-    "hosted consent flow",
-    "customer authorization",
-    // Webhook ops
-    "webhook idempotency",
-    "stripe webhook reliability",
-    // Brand / generic
-    "fintech",
-    "enterprise payments",
-    "rental payment platform",
-    "payment ops console",
-    "payment ops center",
-    "payment control tower",
+    "car rental booking payment",
+    "secure booking payment link",
+    "rental reservation confirmation",
+    "booking confirmation email",
+    "prepaid rental deposit",
+    "pay for car rental online",
+    "secure card payment",
+    "booking receipt",
   ],
   authors: [{ name: SITE_NAME, url: SITE_URL }],
   creator: SITE_NAME,
@@ -122,7 +108,7 @@ export const metadata: Metadata = {
         url: OG_IMAGE,
         width: 1440,
         height: 900,
-        alt: `${SITE_NAME} — evidence chain for a disputed order`,
+        alt: `${SITE_NAME} — secure booking payment`,
       },
     ],
   },
@@ -135,7 +121,7 @@ export const metadata: Metadata = {
     images: [
       {
         url: OG_IMAGE,
-        alt: `${SITE_NAME} — evidence chain for a disputed order`,
+        alt: `${SITE_NAME} — secure booking payment`,
       },
     ],
   },

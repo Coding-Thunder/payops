@@ -114,6 +114,27 @@ export function SupportSection({
           </Column>
         ) : null}
       </Row>
+
+      {/* The number in plain text, not only behind the button.
+          "Call us" carries it in a tel: href, which works in a mail client
+          but leaves the number unreadable to anyone who prints the email,
+          forwards it as text, or is using a client that strips tel: links.
+          The support ADDRESS is already legible in the footer; the phone
+          had no such line. */}
+      {supportPhone ? (
+        <Text
+          style={{
+            ...typeStyle("label"),
+            margin: 0,
+            marginTop: SPACE.sm,
+            fontSize: 11,
+            lineHeight: "16px",
+            color: COLOR.textMuted,
+          }}
+        >
+          Or call {supportPhone}.
+        </Text>
+      ) : null}
     </Section>
   );
 }

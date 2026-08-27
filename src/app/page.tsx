@@ -1,71 +1,34 @@
 import type { Metadata } from "next";
-
-import { GsapController } from "@/components/marketing/gsap-controller";
-import { MarketingFooter } from "@/components/marketing/marketing-footer";
-import { MarketingNav } from "@/components/marketing/marketing-nav";
-import { StructuredData } from "@/components/marketing/seo/structured-data";
-import { EnterpriseChoose } from "@/components/marketing/sections/enterprise-choose";
-import { FightDisputes } from "@/components/marketing/sections/fight-disputes";
-import { Hero } from "@/components/marketing/sections/hero";
-import { Lifecycle } from "@/components/marketing/sections/lifecycle";
-import { MultiGateway } from "@/components/marketing/sections/multi-gateway";
-import { OrgSetups } from "@/components/marketing/sections/org-setups";
-import { QuotationForm } from "@/components/marketing/sections/quotation-form";
-import { env } from "@/lib/env";
+import { redirect } from "next/navigation";
 
 /**
- * Landing-page metadata. Overrides the root template defaults with
- * a heavier, more keyword-rich description and pinned canonical so
- * `/` is the authoritative URL even if the page is loaded via
- * tracking params (utm_*, ref=, etc.).
+ * `/` on a single-merchant deployment.
+ *
+ * This route used to render the platform vendor's product marketing site —
+ * "Payment Operations Platform · Chargeback Evidence", a multi-gateway
+ * feature tour, JSON-LD declaring the host to be a SoftwareApplication, and
+ * a lead-capture form addressed to the vendor's team. All of that describes
+ * the software, not the business the customer is paying.
+ *
+ * On this deployment the hostname belongs to the merchant, and the only
+ * people who reach it are that merchant's customers (arriving from a payment
+ * link) and its own operators. Neither should be shown a pitch for the
+ * platform, so `/` now goes straight to the operator sign-in, which is
+ * branded from APP_NAME.
+ *
+ * Nothing was deleted: every marketing component still lives under
+ * `src/components/marketing/`, and restoring the landing page is a revert of
+ * this one file.
+ *
+ * Customers are never sent here — no email, payment page or consent page
+ * links to `/`. Their journey is entirely token-bound: /consent/<token>,
+ * the gateway's hosted checkout, then /pay/success.
  */
 export const metadata: Metadata = {
-  title:
-    "Payment Operations Platform · Chargeback Evidence · Multi-Gateway Orchestration",
-  description:
-    "Lifecycle visibility from order creation to chargeback. Hashed evidence chain, hosted consent, multi-gateway orchestration. Reserved for one merchant per instance. Stripe live · Razorpay + Authorize.net next.",
-  alternates: { canonical: "/" },
+  // Nothing to index: this is a redirect to a private sign-in screen.
+  robots: { index: false, follow: false },
 };
 
-/**
- * PayOps marketing landing page.
- *
- * Seven chapters, each with its own color theme (CSS variables in
- * `globals.css` driven by `data-theme`):
- *
- *   1. Hero        — obsidian (dark, aurora orbs)
- *   2. Disputes    — orange (sticky scroll, evidence chain)
- *   3. Lifecycle   — sage (React timeline + 12-surface bento)
- *   4. Gateways    — cobalt (logo bento + code interface block)
- *   5. Trust       — cream (animated counters + audit pillars)
- *   6. Deployment  — ultraviolet (steps + included list)
- *   7. Closing     — closing/dark (form + email channel)
- *
- * Free scroll only — snap-mandatory removed. The GSAP controller
- * handles reveal + parallax + count-up + theme-aware nav.
- */
-export default function LandingPage() {
-  return (
-    <div>
-      {/* Structured data (Organization / WebSite / SoftwareApplication
-          / FAQPage) — rendered server-side, picked up by Google +
-          Bing for rich-result eligibility (FAQ accordion, sitelinks
-          search box, product knowledge panel). */}
-      <StructuredData />
-      <MarketingNav />
-      <GsapController />
-      <main>
-        <Hero />
-        <FightDisputes />
-        <Lifecycle />
-        <MultiGateway />
-        <EnterpriseChoose />
-        <OrgSetups />
-        <QuotationForm
-          turnstileSiteKey={env.public.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null}
-        />
-      </main>
-      <MarketingFooter />
-    </div>
-  );
+export default function RootPage() {
+  redirect("/login");
 }

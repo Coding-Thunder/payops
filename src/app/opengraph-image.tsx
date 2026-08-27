@@ -21,8 +21,20 @@ import { ImageResponse } from "next/og";
  */
 
 export const runtime = "edge";
-export const alt =
-  "PayOps — When the chargeback lands six weeks later, the evidence is already filed.";
+
+/**
+ * The brand shown on the card. Read from the environment rather than baked
+ * in: this image is what renders when a customer pastes their payment link
+ * into WhatsApp or iMessage, so it has to be the merchant's name, not the
+ * platform's.
+ *
+ * Edge runtime, so only NEXT_PUBLIC_* is readable here — which is the right
+ * variable anyway, since this is a public surface.
+ */
+const BRAND =
+  process.env.NEXT_PUBLIC_APP_NAME || "ReservationCarRentals.com";
+
+export const alt = `${BRAND} — secure booking payment and written confirmation.`;
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -121,7 +133,7 @@ export default async function OgImage() {
               letterSpacing: -1,
             }}
           >
-            P
+            {BRAND.trim().charAt(0).toUpperCase() || "•"}
           </div>
           <div
             style={{
@@ -131,7 +143,7 @@ export default async function OgImage() {
               color: "white",
             }}
           >
-            PayOps
+            {BRAND}
           </div>
           <div
             style={{
@@ -143,7 +155,7 @@ export default async function OgImage() {
               fontWeight: 500,
             }}
           >
-            · payment operations
+            · secure payments
           </div>
         </div>
 
@@ -166,7 +178,7 @@ export default async function OgImage() {
               maxWidth: 1020,
             }}
           >
-            When the chargeback{" "}
+            Your booking is confirmed{" "}
             <span
               style={{
                 backgroundImage:
@@ -175,13 +187,13 @@ export default async function OgImage() {
                 color: "transparent",
               }}
             >
-              lands six weeks later
+              the moment your payment clears
             </span>
-            , the evidence is already filed.
+            .
           </div>
         </div>
 
-        {/* Sub-line — privately deployed signal */}
+        {/* Sub-line — trust signals */}
         <div
           style={{
             marginTop: "auto",
@@ -209,7 +221,7 @@ export default async function OgImage() {
                 background: "rgb(80,210,130)",
               }}
             />
-            Privately deployed · reserved per merchant
+            Secure checkout · PCI-DSS Level 1
           </div>
           <div
             style={{
@@ -219,7 +231,7 @@ export default async function OgImage() {
               color: "rgba(255,255,255,0.45)",
             }}
           >
-            Stripe live · Razorpay · Adyen
+            Card payments secured by Stripe
           </div>
         </div>
       </div>

@@ -72,6 +72,15 @@ const serverSchema = z.object({
     .default(false),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
+  /**
+   * Address copied on EVERY outgoing email from this deployment.
+   *
+   * Optional, and its absence is the default: a deployment that does not set
+   * it sends exactly what it sent before. That is what keeps this safe to
+   * carry in shared code — the behaviour is chosen by configuration, not by
+   * which branch is deployed.
+   */
+  EMAIL_CC: z.string().optional(),
   EMAIL_FROM: z
     .string()
     .default("PayOps <no-reply@payops.example.com>"),
