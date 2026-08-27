@@ -10,10 +10,10 @@ import { cn } from "@/lib/utils";
 export type CalendarProps = React.ComponentProps<typeof DayPicker>;
 
 /**
- * shadcn-style Calendar for react-day-picker v9.
+ * shadcn-style Calendar for react-day-picker v10.
  *
  * Why descendant selectors (`[&>button]:`) instead of modifiersClassNames:
- * v9 applies the `rdp-selected` / `rdp-today` classes to the day's TD
+ * v9+ applies the `rdp-selected` / `rdp-today` classes to the day's TD
  * wrapper, not the button. Targeting the button via `[&>button]:` produces
  * CSS like `.rdp-day.rdp-selected > button { … }` which wins specificity
  * cleanly without `!important`.
@@ -71,10 +71,27 @@ function Calendar({
         ),
         // Today: only a subtle accent tint — never wins over selected.
         today: "[&>button]:bg-accent/60 [&>button]:font-medium",
-        outside:
-          "[&>button]:text-muted-foreground/40 [&>button]:hover:bg-transparent [&>button]:hover:text-muted-foreground/40",
-        disabled:
-          "[&>button]:text-muted-foreground/30 [&>button]:hover:bg-transparent [&>button]:cursor-not-allowed",
+        // An outside day belongs to the neighbouring month but is a normal,
+        // selectable date — react-day-picker fills the first and last rows
+        // with them. It previously rendered at 40% muted with its hover
+        // feedback removed, which is all but indistinguishable from the
+        // disabled style below, so the first days of next month read as
+        // unavailable when they are not. De-emphasised, but visibly alive.
+        outside: cn(
+          "[&>button]:text-muted-foreground",
+          "[&>button]:hover:bg-accent [&>button]:hover:text-accent-foreground",
+        ),
+        // Scoped to `button:disabled` rather than `button` so it outranks
+        // the outside rule on specificity. A day can be both — the leading
+        // days of the displayed month when they fall before minDate — and
+        // with two equally specific rules the winner would come down to
+        // whatever order Tailwind happened to emit them in.
+        disabled: cn(
+          "[&>button:disabled]:text-muted-foreground/30",
+          "[&>button:disabled]:cursor-not-allowed",
+          "[&>button:disabled]:hover:bg-transparent",
+          "[&>button:disabled]:hover:text-muted-foreground/30",
+        ),
         hidden: "invisible",
         ...classNames,
       }}
