@@ -39,6 +39,7 @@ function toPublic(doc: UserDoc & { _id: Types.ObjectId | string }): PublicUser {
     status: doc.status,
     createdBy: doc.createdBy ? String(doc.createdBy) : null,
     lastLoginAt: doc.lastLoginAt ? doc.lastLoginAt.toISOString() : null,
+    hiddenFromTeamList: doc.hiddenFromTeamList === true,
     createdAt: doc.createdAt.toISOString(),
     updatedAt: doc.updatedAt.toISOString(),
   };
@@ -63,9 +64,32 @@ function ensureCanManageRole(actor: UserActor, targetRole: UserRole) {
   }
 }
 
-export async function listUsers(query: ListUsersQuery) {
+/**
+ * The Team members list.
+ *
+ * Accounts flagged `hiddenFromTeamList` are omitted. That flag is a display
+ * preference and nothing more: this is the ONLY query that honours it, and
+ * it is the only query behind the Team page. Login (`auth.service`), the
+ * session lookup (`auth/session`), `getUserById`, `updateUser` and
+ * `resetUserPassword` all address the user directly and are untouched, so a
+ * hidden account keeps its role, its permissions and its ability to sign
+ * in. Audit rows denormalise the actor's name, email and role onto
+ * themselves, so an audit trail naming a hidden user still reads correctly.
+ *
+ * `$ne: true` rather than `false` because documents written before the
+ * field existed do not carry it at all.
+ *
+ * `includeHidden` is the deliberate way back in — for an internal screen
+ * that needs the complete roster. No caller passes it today; the Team page
+ * and its API both use the default.
+ */
+export async function listUsers(
+  query: ListUsersQuery,
+  opts: { includeHidden?: boolean } = {},
+) {
   await connectMongo();
   const filter: Record<string, unknown> = {};
+  if (!opts.includeHidden) filter.hiddenFromTeamList = { $ne: true };
   if (query.role) filter.role = query.role;
   if (query.status) filter.status = query.status;
   if (query.q) {

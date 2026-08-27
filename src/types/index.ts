@@ -27,6 +27,9 @@ export interface PublicUser {
   status: RecordState;
   createdBy?: string | null;
   lastLoginAt?: string | null;
+  /** Hidden from the Team members list. Visibility only — the account is
+   *  unaffected in every other respect. */
+  hiddenFromTeamList: boolean;
   createdAt: string;
   updatedAt: string;
 }

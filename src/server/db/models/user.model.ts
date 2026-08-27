@@ -20,6 +20,18 @@ export interface UserDoc {
   status: RecordState;
   createdBy?: Types.ObjectId | null;
   lastLoginAt?: Date | null;
+  /**
+   * Keep this account out of the Team members list.
+   *
+   * VISIBILITY ONLY — it is not a permission, not a status, and not a
+   * security boundary. The account authenticates, authorises, appears as an
+   * audit actor and is fetchable by id exactly as before; the single thing
+   * it changes is whether `listUsers()` returns the row.
+   *
+   * Absent on every document written before this field existed, which is
+   * why the query filters on `$ne: true` rather than `false`.
+   */
+  hiddenFromTeamList?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -58,6 +70,7 @@ const userSchema = new Schema<UserDoc>(
       default: null,
     },
     lastLoginAt: { type: Date, default: null },
+    hiddenFromTeamList: { type: Boolean, default: false },
   },
   {
     timestamps: true,

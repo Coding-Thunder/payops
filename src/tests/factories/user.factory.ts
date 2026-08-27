@@ -37,6 +37,7 @@ export function buildUser(seed: UserSeed = {}): UserDoc & { _id: Types.ObjectId 
     status: seed.status ?? RecordState.ACTIVE,
     createdBy: seed.createdBy ?? null,
     lastLoginAt: seed.lastLoginAt ?? null,
+    hiddenFromTeamList: seed.hiddenFromTeamList ?? false,
     createdAt: seed.createdAt ?? new Date(),
     updatedAt: seed.updatedAt ?? new Date(),
   };
@@ -61,6 +62,7 @@ export async function createUser(
     status: seed.status,
     createdBy: seed.createdBy ?? undefined,
     lastLoginAt: seed.lastLoginAt ?? undefined,
+    hiddenFromTeamList: seed.hiddenFromTeamList ?? false,
   })) as UserDocument;
   return Object.assign(doc, { plainPassword });
 }
