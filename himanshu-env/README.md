@@ -92,7 +92,7 @@ handler together.
 
 `.env.payops.prod` holds the real DigitalOcean values — same Mongo cluster as
 the existing deployment, database `himanshu-payops`, host
-`himanshu.rentalconfirmation.com`. Two secrets are deliberately absent and
+`reservationcarrentals.rentalconfirmation.com`. Two secrets are deliberately absent and
 must be supplied before the app can start:
 
 ```

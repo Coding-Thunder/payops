@@ -46,7 +46,7 @@ const geistMono = Geist_Mono({
 const SITE_NAME =
   process.env.NEXT_PUBLIC_APP_NAME || "ReservationCarRentals.com";
 const SITE_URL = (
-  process.env.NEXT_PUBLIC_APP_URL || "https://himanshu.rentalconfirmation.com"
+  process.env.NEXT_PUBLIC_APP_URL || "https://reservationcarrentals.rentalconfirmation.com"
 ).replace(/\/$/, "");
 // This deployment serves ONE merchant, and these strings reach that
 // merchant's customers: they are the <meta description> on the hosted
