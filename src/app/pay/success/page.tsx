@@ -14,7 +14,11 @@ import {
 import { resolveProvider } from "@/lib/constants/providers";
 import { OrderStatus, PaymentGatewayKey } from "@/lib/constants/enums";
 import { summarizeCharges } from "@/lib/charges";
-import { formatCurrency, formatDateTime } from "@/lib/format";
+import {
+  formatCurrency,
+  formatDateTime,
+  paymentAmountLabel,
+} from "@/lib/format";
 import { logger } from "@/lib/logger";
 
 import { PaymentSuccessAutoRefresh } from "./auto-refresh";
@@ -180,7 +184,9 @@ export default async function PaymentSuccessPage({
               ? `${brand} is waiting for ${gatewayLabel ?? "the payment provider"} to finalise this charge. This page refreshes automatically.`
               : `Thank you. ${brand} has confirmed your payment and a receipt is on its way to your inbox.`}
           </p>
-          {stillPending ? <PaymentSuccessAutoRefresh /> : null}
+          {stillPending ? (
+            <PaymentSuccessAutoRefresh gatewayLabel={gatewayLabel} />
+          ) : null}
         </div>
 
         {order && providerMeta && amount ? (
@@ -188,8 +194,14 @@ export default async function PaymentSuccessPage({
             {/* ─── Amount + Order ─── */}
             <div className="grid grid-cols-2 gap-4 border-t border-slate-100 px-8 py-6">
               <div>
+                {/* "Amount paid" only once the gateway has actually
+                    confirmed the charge. While the payment is still being
+                    confirmed this figure is the ORDER total — PayPal in
+                    particular sends the customer back on approval, before
+                    any capture — and calling an uncaptured amount "paid"
+                    tells them money moved when it has not. */}
                 <p className="text-[11px] font-semibold uppercase tracking-[0.10em] text-slate-500">
-                  Amount paid
+                  {paymentAmountLabel(!stillPending)}
                 </p>
                 <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums text-slate-900">
                   {amount}

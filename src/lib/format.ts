@@ -104,3 +104,17 @@ export function resolveOrderAgent(
   if (email) return email;
   return "System";
 }
+
+/**
+ * How to label the figure on the customer's payment return page.
+ *
+ * "Amount paid" is a claim that money moved, and it must only be made once
+ * the gateway has actually confirmed the charge. PayPal in particular sends
+ * the customer back the moment they APPROVE — before any capture exists —
+ * and the page showed "AMOUNT PAID $0.50" for a payment that had never been
+ * taken. Until confirmation the figure is the order total, so it is labelled
+ * as one.
+ */
+export function paymentAmountLabel(confirmed: boolean): string {
+  return confirmed ? "Amount paid" : "Amount";
+}
