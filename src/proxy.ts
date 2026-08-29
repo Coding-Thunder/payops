@@ -44,6 +44,15 @@ const PUBLIC_PREFIXES = [
   // acknowledgement.service verifies the HMAC token before any DB write.
   "/acknowledge/",
   "/api/acknowledge/",
+  // Operator-uploaded provider and branding logos, served from GridFS by
+  // GET /api/assets/<id>. These render on the payment, consent and
+  // acknowledgement pages and inside confirmation emails, where the viewer
+  // has NO staff session — without this the proxy 307s the image request to
+  // /login and the customer sees a broken logo, which is the very bug the
+  // durable asset store was added to fix. Safe to expose: the id is a random
+  // ObjectId, a brand logo is not a secret, and the route refuses to serve
+  // any content type outside the image allowlist.
+  "/api/assets/",
   // Per-organization gateway webhooks: /api/webhooks/<provider>/<orgSlug>.
   // The deployment-level /api/webhooks/stripe is an exact PUBLIC_PATH above,
   // which does NOT cover sub-paths — without this prefix the proxy would

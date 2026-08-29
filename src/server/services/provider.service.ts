@@ -1,9 +1,5 @@
 import "server-only";
 
-import { promises as fs } from "node:fs";
-import path from "node:path";
-import { randomBytes } from "node:crypto";
-
 import { Types } from "mongoose";
 
 import {
@@ -18,6 +14,11 @@ import {
   ValidationError,
 } from "@/lib/errors";
 import { logger } from "@/lib/logger";
+import {
+  assetIdFromUrl,
+  deleteAsset,
+  putAsset,
+} from "@/server/storage/asset-store";
 import {
   PROVIDER_KEY_REGEX,
   PROVIDER_SEED,
@@ -61,9 +62,6 @@ const ALLOWED_MIME: ReadonlyMap<string, string> = new Map([
   ["image/webp", "webp"],
   ["image/gif", "gif"],
 ]);
-
-const PUBLIC_DIR = path.join(process.cwd(), "public");
-const PROVIDERS_DIR = path.join(PUBLIC_DIR, "providers");
 
 // ─── Mapping ───────────────────────────────────────────────────────────────
 
@@ -128,6 +126,72 @@ export async function ensureSeedProviders(): Promise<void> {
     });
   });
   logger.info("providers.seeded", { count: toInsert.length });
+}
+
+// ─── Current-logo resolution ───────────────────────────────────────────────
+/*
+ * An order stores a SNAPSHOT of its provider, frozen at creation. That is
+ * deliberate for brand IDENTITY (name, colours) — a receipt should show what
+ * the customer actually saw. But a logo is not identity, it is a POINTER,
+ * and freezing a pointer to mutable storage means the image dies the moment
+ * the target moves.
+ *
+ * Which is exactly what happened here. Every logo uploaded before the asset
+ * store existed was written to `public/providers/<key>-<hex>.<ext>` on the
+ * container filesystem, and a later deploy destroyed the bytes. Worse, each
+ * re-upload minted a NEW random suffix and repointed only the provider
+ * document — so the two AVIS orders in production still carry
+ * `/providers/avis-c49d1deb.png`, a path two uploads out of date, while the
+ * Providers page reads the live document and renders fine.
+ *
+ * Resolving the logo live is NOT a new policy. It is already what happens
+ * for the six seeded brands: `resolveProvider` ignores the snapshot's logo
+ * whenever the id is in PROVIDER_SEED and uses the registry path instead,
+ * which is why BUDGET and THRIFTY never broke while AVIS did. This extends
+ * the same rule to DB-backed providers, so behaviour stops depending on
+ * whether a brand happens to be hardcoded.
+ *
+ * Cached in-process: consulted once per order in a list render. Short TTL
+ * plus explicit invalidation on every provider write, so a replaced logo is
+ * visible immediately rather than after a timeout.
+ */
+const LOGO_CACHE_TTL_MS = 30_000;
+let logoCache: { at: number; map: Map<string, string> } | null = null;
+
+/** Drop the cache. Called after any write that can change a logo. */
+export function invalidateProviderLogoCache(): void {
+  logoCache = null;
+}
+
+/** Load current logos keyed by provider key. The catalog is a handful of
+ *  small documents, and the result is cached. */
+export async function warmProviderLogoCache(): Promise<void> {
+  if (logoCache && Date.now() - logoCache.at < LOGO_CACHE_TTL_MS) return;
+  await connectMongo();
+  const rows = await Provider.find({})
+    .select("key logo")
+    .lean<{ key: string; logo: string }[]>();
+  logoCache = {
+    at: Date.now(),
+    map: new Map(rows.map((r) => [r.key, r.logo])),
+  };
+}
+
+/**
+ * The provider's CURRENT logo, or null when the cache is cold or the
+ * provider no longer exists — in which case the caller keeps the snapshot,
+ * so a deleted provider still renders the brand the customer saw.
+ *
+ * Synchronous on purpose: `orderToDTO` is sync and runs in a tight map over
+ * list results, and threading a promise through its call sites is how one
+ * gets forgotten and a single surface silently keeps the dead value.
+ * Callers `await warmProviderLogoCache()` once before mapping.
+ */
+export function currentProviderLogo(
+  key: string | null | undefined,
+): string | null {
+  if (!key || !logoCache) return null;
+  return logoCache.map.get(key) ?? null;
 }
 
 // ─── Listing ───────────────────────────────────────────────────────────────
@@ -212,6 +276,7 @@ export async function createProvider(
     createdBy: new Types.ObjectId(ctx.actor.id),
     updatedBy: new Types.ObjectId(ctx.actor.id),
   });
+  invalidateProviderLogoCache();
 
   await recordAudit({
     action: AuditAction.PROVIDER_CREATED,
@@ -258,6 +323,7 @@ export async function updateProvider(
   }
   doc.updatedBy = new Types.ObjectId(ctx.actor.id);
   await doc.save();
+  invalidateProviderLogoCache();
 
   await recordAudit({
     action: AuditAction.PROVIDER_UPDATED,
@@ -319,12 +385,8 @@ interface SaveLogoInput {
 }
 
 /**
- * Persist a logo file to `public/providers/` and return its public path.
- *
- * Naming: `<key-lowercase>-<random>.<ext>`. The random suffix forces email
- * clients + CDNs to bypass cache for any new upload, and means we can keep
- * the previous file in place so historical order snapshots that reference
- * it keep rendering.
+ * Persist a logo to the durable asset store and return the URL to save on
+ * the provider document.
  */
 export async function saveProviderLogoFile(
   input: SaveLogoInput,
@@ -342,29 +404,36 @@ export async function saveProviderLogoFile(
       `Logo file is larger than ${Math.round(MAX_LOGO_BYTES / 1024)}KB`,
     );
   }
-  // Browser-supplied mime is attacker-controlled; sniff the bytes so
-  // a mislabelled HTML/SVG payload can't reach disk under an image
-  // extension and turn into stored XSS on the public path.
+  // Browser-supplied mime is attacker-controlled; sniff the bytes so a
+  // mislabelled HTML/SVG payload can't be stored under an image content
+  // type and turn into stored XSS when served back from our own origin.
   if (!bytesMatchMime(input.buffer, input.mimeType)) {
     throw new ValidationError(
       "Uploaded file does not match the declared image type",
     );
   }
-  const ext = ALLOWED_MIME.get(input.mimeType)!;
   const safeKey = input.key.toLowerCase().replace(/[^a-z0-9_-]/g, "");
   if (!safeKey) throw new ValidationError("Provider key is required");
-  const suffix = randomBytes(4).toString("hex");
-  const fileName = `${safeKey}-${suffix}.${ext}`;
-  // Resolve + verify the final path is still inside PROVIDERS_DIR. Belt-
-  // and-braces guard against path-traversal via a hostile `key`.
-  const fullPath = path.join(PROVIDERS_DIR, fileName);
-  const resolved = path.resolve(fullPath);
-  if (!resolved.startsWith(path.resolve(PROVIDERS_DIR) + path.sep)) {
-    throw new ValidationError("Invalid file path");
-  }
-  await fs.mkdir(PROVIDERS_DIR, { recursive: true });
-  await fs.writeFile(resolved, input.buffer);
-  return `/providers/${fileName}`;
+
+  // Bytes go to the DURABLE asset store, not to `public/providers/`.
+  //
+  // The filesystem write this replaces produced a path that could never
+  // resolve in production: Next serves `public/` from the build artifact, so
+  // a file written at runtime is not served, and DigitalOcean rebuilds the
+  // container on every deploy so it is destroyed anyway. Confirmed against
+  // this deployment — every repo-committed logo returned 200 while every
+  // uploaded one (avis-ab943ee7.png, ace_rent_a_car-61da56a5.jpg) returned
+  // 404, including one uploaded five hours earlier.
+  //
+  // Size, mime allowlist and magic-byte sniffing above are unchanged; only
+  // the destination moved.
+  const stored = await putAsset({
+    buffer: input.buffer,
+    contentType: input.mimeType,
+    label: safeKey,
+    kind: "provider-logo",
+  });
+  return stored.url;
 }
 
 /**
@@ -391,6 +460,7 @@ export async function replaceProviderLogo(
   doc.logo = nextLogo;
   doc.updatedBy = new Types.ObjectId(ctx.actor.id);
   await doc.save();
+  invalidateProviderLogoCache();
 
   await recordAudit({
     action: AuditAction.PROVIDER_LOGO_REPLACED,
@@ -400,6 +470,17 @@ export async function replaceProviderLogo(
     request: ctx.request ?? null,
     metadata: { previousLogo, nextLogo },
   });
+
+  // Reclaim the superseded asset AFTER the document is safely repointed, so
+  // a failed delete can never leave a provider pointing at bytes that are
+  // gone. Only touches the asset store — a `/providers/*.png` value is a
+  // repo-committed seed logo and must be left exactly where it is.
+  //
+  // Existing ORDERS are unaffected by this delete: `orderToDTO` resolves the
+  // provider's current logo rather than trusting the frozen snapshot, so an
+  // order that still carries the old id renders the new image.
+  const staleId = assetIdFromUrl(previousLogo);
+  if (staleId) await deleteAsset(staleId);
 
   return toDTO(doc.toObject() as ProviderDoc & { _id: Types.ObjectId });
 }

@@ -1,9 +1,5 @@
 import "server-only";
 
-import { promises as fs } from "node:fs";
-import path from "node:path";
-import { randomBytes } from "node:crypto";
-
 import { Types } from "mongoose";
 
 import {
@@ -13,6 +9,11 @@ import {
 } from "@/lib/constants/enums";
 import { ValidationError } from "@/lib/errors";
 import { env } from "@/lib/env";
+import {
+  assetIdFromUrl,
+  deleteAsset,
+  putAsset,
+} from "@/server/storage/asset-store";
 import { Branding, BRANDING_KEY, type BrandingDoc } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 import type { UpdateBrandingInput } from "@/lib/validation";
@@ -37,7 +38,7 @@ interface BrandingContext {
 
 const MAX_LOGO_BYTES = 512 * 1024;
 // SVG intentionally NOT allowed: SVG can carry inline <script> and runs
-// same-origin when fetched directly, turning the public/branding folder
+// same-origin when fetched directly, which would turn the branding upload
 // into a stored-XSS sink. Rasterise to PNG/WebP upstream if needed.
 const ALLOWED_MIME: ReadonlyMap<string, string> = new Map([
   ["image/png", "png"],
@@ -45,9 +46,6 @@ const ALLOWED_MIME: ReadonlyMap<string, string> = new Map([
   ["image/webp", "webp"],
   ["image/gif", "gif"],
 ]);
-
-const PUBLIC_DIR = path.join(process.cwd(), "public");
-const BRANDING_DIR = path.join(PUBLIC_DIR, "branding");
 
 // ─── Mapping ───────────────────────────────────────────────────────────────
 
@@ -196,26 +194,25 @@ async function saveBrandingLogoFile(input: SaveLogoInput): Promise<string> {
     );
   }
   // The browser-supplied `mimeType` is attacker-controlled. Sniff the
-  // bytes and confirm they actually match the declared type before
-  // writing the file — without this, an HTML/SVG payload labelled as
-  // image/png lands on a public path and becomes stored XSS the moment
-  // anyone opens the URL directly.
+  // bytes and confirm they actually match the declared type before storing
+  // them — without this, an HTML/SVG payload labelled as image/png would be
+  // served back from our own origin and become stored XSS.
   if (!bytesMatchMime(input.buffer, input.mimeType)) {
     throw new ValidationError("Uploaded file does not match the declared image type");
   }
-  const ext = ALLOWED_MIME.get(input.mimeType)!;
-  const suffix = randomBytes(4).toString("hex");
-  const fileName = `workspace-${suffix}.${ext}`;
-  const fullPath = path.join(BRANDING_DIR, fileName);
-  const resolved = path.resolve(fullPath);
-  // Defensive: ensure we stay inside BRANDING_DIR even though the file
-  // name we built can't escape today.
-  if (!resolved.startsWith(path.resolve(BRANDING_DIR) + path.sep)) {
-    throw new ValidationError("Invalid file path");
-  }
-  await fs.mkdir(BRANDING_DIR, { recursive: true });
-  await fs.writeFile(resolved, input.buffer);
-  return `/branding/${fileName}`;
+
+  // Bytes go to the DURABLE asset store, for the same reason provider logos
+  // do: `public/branding/` is served from the build artifact and rebuilt on
+  // every deploy, so a runtime write is neither served nor retained. That
+  // directory does not even exist in this repo, so every branding upload
+  // this deployment has ever taken resolved to a 404.
+  const stored = await putAsset({
+    buffer: input.buffer,
+    contentType: input.mimeType,
+    label: "workspace",
+    kind: "branding-logo",
+  });
+  return stored.url;
 }
 
 export async function replaceBrandingLogo(
@@ -243,6 +240,13 @@ export async function replaceBrandingLogo(
     request: ctx.request ?? null,
     metadata: { previousLogo, nextLogo },
   });
+
+  // Reclaim the superseded asset only after the document is repointed, so a
+  // failed delete can never leave branding pointing at bytes that are gone.
+  // Only touches the asset store — a legacy `/branding/*` value refers to a
+  // file that never survived a deploy anyway, and is left alone.
+  const staleId = assetIdFromUrl(previousLogo);
+  if (staleId) await deleteAsset(staleId);
 
   return toDTO(updated);
 }
