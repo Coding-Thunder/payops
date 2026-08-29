@@ -34,6 +34,35 @@ export const createProviderSchema = z.object({
   onPrimaryColor: hexColor,
   tagline: z.string().trim().max(140),
   sortOrder: z.number().int().min(0).max(9_999),
+  /**
+   * Which services this supplier can be attached to.
+   *
+   * Defaults to [CAR_RENTAL], which is what every provider row that existed
+   * before this field is, so an admin who omits it creates exactly the
+   * car-rental supplier they have always created. Without this field being
+   * WRITABLE, no airline or hotel group could ever be marked FLIGHT/HOTEL
+   * and the flight/hotel order forms' required provider dropdown stayed
+   * permanently empty.
+   */
+  serviceTypes: z
+    .array(z.enum(SERVICE_TYPES))
+    .min(1, "Pick at least one service type")
+    // `.optional()`, NOT `.default()`. This file deliberately keeps each
+    // schema's zod Input type identical to its Output type so the generic
+    // react-hook-form Resolver in create-provider-dialog.tsx stays happy;
+    // a `.default()` makes them diverge and breaks that component's
+    // typing. The CAR_RENTAL fallback is applied in createProvider instead.
+    .optional(),
+  /**
+   * Organizations allowed to use this supplier. EMPTY means EVERY
+   * organization — which is how the whole catalog behaves today, so an
+   * omitted value changes nothing for the incumbents. Set it to restrict a
+   * supplier to one brand (e.g. a FlightBizz-only airline).
+   */
+  organizationIds: z
+    .array(z.string().regex(/^[a-f0-9]{24}$/i, "Invalid organization id"))
+    .max(50)
+    .optional(),
 });
 
 export type CreateProviderInput = z.infer<typeof createProviderSchema>;
@@ -45,6 +74,14 @@ export const updateProviderSchema = z.object({
   onPrimaryColor: hexColor.optional(),
   tagline: z.string().trim().max(140).optional(),
   sortOrder: z.number().int().min(0).max(9_999).optional(),
+  serviceTypes: z
+    .array(z.enum(SERVICE_TYPES))
+    .min(1, "Pick at least one service type")
+    .optional(),
+  organizationIds: z
+    .array(z.string().regex(/^[a-f0-9]{24}$/i, "Invalid organization id"))
+    .max(50)
+    .optional(),
 });
 
 export type UpdateProviderInput = z.infer<typeof updateProviderSchema>;

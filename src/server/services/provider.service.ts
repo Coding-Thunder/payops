@@ -266,6 +266,15 @@ export async function createProvider(
     onPrimaryColor: input.onPrimaryColor,
     tagline: input.tagline,
     sortOrder: input.sortOrder,
+    // Default applied HERE rather than in the zod schema, so the schema's
+    // Input and Output types stay identical for react-hook-form. Omitting
+    // the field creates the car-rental supplier it has always created.
+    serviceTypes: input.serviceTypes ?? [ServiceType.CAR_RENTAL],
+    // Empty = available to EVERY organization, matching how every
+    // pre-existing catalog row behaves. A non-empty list restricts.
+    organizationIds: (input.organizationIds ?? []).map(
+      (oid) => new Types.ObjectId(oid),
+    ),
     status: RecordState.ACTIVE,
     createdBy: new Types.ObjectId(ctx.actor.id),
     updatedBy: new Types.ObjectId(ctx.actor.id),
@@ -294,6 +303,29 @@ export async function updateProvider(
   if (!doc) throw new NotFoundError("Provider not found");
 
   const changes: Record<string, unknown> = {};
+
+  // Array fields are compared by VALUE, not by reference — the scalar loop
+  // below uses `!==`, which is always true for two arrays and would mark
+  // every update as a change (and defeat the "No changes to apply" guard).
+  if (input.serviceTypes !== undefined) {
+    const next = [...input.serviceTypes].sort();
+    const prev = [...(doc.serviceTypes ?? [])].sort();
+    if (JSON.stringify(next) !== JSON.stringify(prev)) {
+      doc.serviceTypes = input.serviceTypes;
+      changes.serviceTypes = input.serviceTypes;
+    }
+  }
+  if (input.organizationIds !== undefined) {
+    const next = [...input.organizationIds].sort();
+    const prev = [...(doc.organizationIds ?? [])].map(String).sort();
+    if (JSON.stringify(next) !== JSON.stringify(prev)) {
+      doc.organizationIds = input.organizationIds.map(
+        (oid) => new Types.ObjectId(oid),
+      );
+      changes.organizationIds = input.organizationIds;
+    }
+  }
+
   for (const field of [
     "name",
     "logo",

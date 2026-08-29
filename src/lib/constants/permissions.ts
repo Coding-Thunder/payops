@@ -40,6 +40,12 @@ export const Permission = {
   CAR_LINK_CREATE: "car_link:create",
   CAR_LINK_MANAGE: "car_link:manage",
 
+  /** Hotel catalog. Mirrors CAR_LINK_*: staff may browse and add entries
+   *  inline while creating an order; edits and soft-deletes are admin-only. */
+  HOTEL_VIEW: "hotel:view",
+  HOTEL_CREATE: "hotel:create",
+  HOTEL_MANAGE: "hotel:manage",
+
   EMAIL_TEMPLATE_VIEW: "email_template:view",
   EMAIL_TEMPLATE_MANAGE: "email_template:manage",
 
@@ -69,6 +75,8 @@ const STAFF_PERMISSIONS: readonly Permission[] = [
   // during order creation. Edits and deletes are admin-only.
   Permission.CAR_LINK_VIEW,
   Permission.CAR_LINK_CREATE,
+  Permission.HOTEL_VIEW,
+  Permission.HOTEL_CREATE,
   // Agents need to see whether the customer they're chasing has already
   // acknowledged the request — gates the "ready to charge" call.
   Permission.CONSENT_VIEW,
@@ -99,6 +107,7 @@ const ADMIN_ONLY_PERMISSIONS: readonly Permission[] = [
   Permission.BRANDING_VIEW,
   Permission.BRANDING_MANAGE,
   Permission.CAR_LINK_MANAGE,
+  Permission.HOTEL_MANAGE,
   Permission.EMAIL_TEMPLATE_VIEW,
   Permission.EMAIL_TEMPLATE_MANAGE,
   Permission.AUDIT_VIEW,

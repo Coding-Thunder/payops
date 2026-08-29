@@ -167,6 +167,9 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
           destination: doc.flight.destination,
           departureDate: new Date(doc.flight.departureDate).toISOString(),
           departureTimePreference: doc.flight.departureTimePreference ?? null,
+          arrivalDate: doc.flight.arrivalDate
+            ? new Date(doc.flight.arrivalDate).toISOString()
+            : null,
           returnDate: doc.flight.returnDate
             ? new Date(doc.flight.returnDate).toISOString()
             : null,
@@ -183,6 +186,7 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
       : null,
     hotel: doc.hotel
       ? {
+          hotelId: doc.hotel.hotelId ? String(doc.hotel.hotelId) : null,
           destination: doc.hotel.destination,
           propertyName: doc.hotel.propertyName ?? null,
           checkInDate: new Date(doc.hotel.checkInDate).toISOString(),
@@ -504,6 +508,9 @@ export async function createOrder(
             departureDate: new Date(
               (input as FlightOrderInput).flight.departureDate,
             ),
+            arrivalDate: (input as FlightOrderInput).flight.arrivalDate
+              ? new Date((input as FlightOrderInput).flight.arrivalDate!)
+              : null,
             returnDate: (input as FlightOrderInput).flight.returnDate
               ? new Date((input as FlightOrderInput).flight.returnDate!)
               : null,
@@ -516,6 +523,11 @@ export async function createOrder(
         ? {
             hotel: {
               ...(input as HotelOrderInput).hotel,
+              hotelId: (input as HotelOrderInput).hotel.hotelId
+                ? new Types.ObjectId(
+                    (input as HotelOrderInput).hotel.hotelId!,
+                  )
+                : null,
               checkInDate: new Date(
                 (input as HotelOrderInput).hotel.checkInDate,
               ),
@@ -1969,6 +1981,23 @@ export async function reconcileOrderPayment(
   if (!doc) throw new NotFoundError("Order not found");
 
   if (ctx?.actor) {
+    // TENANCY. This was the ONLY by-id order path without a scope check,
+    // while eight siblings had one. Without it an ADMIN or SUPER_ADMIN who
+    // supplies another tenant's order id gets the full OrderDTO back —
+    // customer name, email, phone, amounts — and can drive that order to
+    // PAID, firing a confirmation email against the other brand's Stripe
+    // account. The ORDER_VIEW_ALL check below is a ROLE check, not a
+    // TENANT check, and grants no cross-brand right.
+    //
+    // Deliberately inside the authenticated branch ONLY. The public
+    // /pay/success caller (src/app/pay/success/page.tsx:121) passes no
+    // `ctx`, carries no session and no organization cookie, so the ambient
+    // scope there resolves to denyAll — running this on that path would
+    // break the payment-success page for all three brands. That caller is
+    // protected instead by the gateway-session-id pairing in the `else`
+    // branch below, which is sound.
+    await assertOrderInScope(doc);
+
     const canSeeAll = roleHasPermission(
       ctx.actor.role,
       Permission.ORDER_VIEW_ALL,

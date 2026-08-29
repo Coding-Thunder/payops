@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { useForm, type Control } from "react-hook-form";
+import { useForm, useWatch, type Control } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { z } from "zod";
 
@@ -47,6 +47,10 @@ import {
 import { hotelOrderSchema, type HotelOrderInput } from "@/lib/validation";
 import type { OrderDTO, ProviderDTO } from "@/types";
 import { ProviderSelector } from "@/components/features/providers";
+import {
+  HotelSelector,
+  type HotelSelection,
+} from "@/components/features/hotels";
 import {
   ChargeLinesFieldset,
   type ChargeLinesFormValues,
@@ -94,6 +98,10 @@ export function CreateHotelOrderForm({
 }: CreateHotelOrderFormProps) {
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
+  /** The catalog row currently backing `hotel.hotelId`. Kept so that
+   *  retyping the property name by hand can drop the now-wrong catalog
+   *  link instead of shipping an id that points at a different hotel. */
+  const [catalogPick, setCatalogPick] = useState<HotelSelection | null>(null);
 
   const form = useForm<HotelOrderFormValues, unknown, HotelOrderInput>({
     resolver: zodResolver(hotelOrderSchema),
@@ -103,6 +111,7 @@ export function CreateHotelOrderForm({
       provider: providers[0]?.key ?? "",
       customer: { name: "", email: "", phone: "" },
       hotel: {
+        hotelId: null,
         destination: "",
         propertyName: "",
         checkInDate: "",
@@ -122,6 +131,18 @@ export function CreateHotelOrderForm({
   });
 
   const isSubmitting = form.formState.isSubmitting;
+
+  // Feeds the catalog selector's trigger label and its "add new" pre-fill.
+  // `useWatch` rather than `form.watch()` so the subscription stays inside
+  // React's render cycle — the same call the charge-lines fieldset uses.
+  const watchedPropertyName = useWatch({
+    control: form.control,
+    name: "hotel.propertyName",
+  });
+  const watchedDestination = useWatch({
+    control: form.control,
+    name: "hotel.destination",
+  });
 
   async function onSubmit(values: HotelOrderInput) {
     // Only the visible tab may post — same rule as the flight tab.
@@ -164,6 +185,51 @@ export function CreateHotelOrderForm({
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
+            {/* Catalog picker. It FILLS the property/destination inputs
+                below and never takes them over — a property that isn't in
+                the catalog is still typed by hand, which is why nothing
+                here disables those fields and why `hotel.hotelId` stays
+                optional in the schema. */}
+            <FormField
+              control={form.control}
+              name="hotel.hotelId"
+              render={({ field, fieldState }) => (
+                <FormItem className="sm:col-span-2">
+                  <FormLabel>Hotel catalog (optional)</FormLabel>
+                  <FormControl>
+                    <HotelSelector
+                      id="hotel-order-catalog"
+                      value={field.value ?? null}
+                      onSelect={(selection) => {
+                        field.onChange(selection.hotelId);
+                        setCatalogPick(selection);
+                        form.setValue(
+                          "hotel.propertyName",
+                          selection.propertyName,
+                          { shouldDirty: true, shouldValidate: true },
+                        );
+                        form.setValue(
+                          "hotel.destination",
+                          selection.destination,
+                          { shouldDirty: true, shouldValidate: true },
+                        );
+                      }}
+                      initialName={watchedPropertyName ?? ""}
+                      initialCity={watchedDestination ?? ""}
+                      disabled={isSubmitting}
+                      invalid={!!fieldState.error}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Picking a property fills the name and destination below.
+                    Both stay editable, and you can skip this for a hotel we
+                    haven&apos;t sold before.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             <FormField
               control={form.control}
               name="bookingType"
@@ -224,6 +290,21 @@ export function CreateHotelOrderForm({
                       disabled={isSubmitting}
                       {...field}
                       value={field.value ?? ""}
+                      onChange={(e) => {
+                        field.onChange(e);
+                        // Typed away from the catalog row we filled from —
+                        // drop the link so the order never carries an id
+                        // for a different property than the one named.
+                        if (
+                          catalogPick &&
+                          e.target.value !== catalogPick.propertyName
+                        ) {
+                          setCatalogPick(null);
+                          form.setValue("hotel.hotelId", null, {
+                            shouldDirty: true,
+                          });
+                        }
+                      }}
                     />
                   </FormControl>
                   <FormMessage />

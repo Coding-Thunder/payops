@@ -46,6 +46,8 @@ export type { AuditLogDoc, AuditLogDocument } from "./audit-log.model";
 export { OrderDraft } from "./order-draft.model";
 export type { OrderDraftDoc, OrderDraftDocument } from "./order-draft.model";
 
+export { Hotel } from "./hotel.model";
+export type { HotelDoc, HotelDocument, HotelImage, HotelLocation } from "./hotel.model";
 export { CarLink } from "./car-link.model";
 export type { CarLinkDoc, CarLinkDocument } from "./car-link.model";
 

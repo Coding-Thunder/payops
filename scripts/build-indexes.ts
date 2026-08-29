@@ -56,6 +56,7 @@ import {
   ProcessedWebhookEvent,
   Provider,
   Quotation,
+  Hotel,
 } from "../src/server/db/models";
 
 const APPLY = process.env.BUILD_INDEXES_APPLY === "true";
@@ -67,6 +68,10 @@ const DEFAULT_TARGETS: Record<string, Model<never>> = {
   Organization: as(Organization),
   OrganizationMember: as(OrganizationMember),
   OrganizationCredential: as(OrganizationCredential),
+  // The hotel catalog is new and starts empty, so building its indexes is
+  // cheap and belongs in the default scope — unlike the populated
+  // collections below, where an index build is a real operation.
+  Hotel: as(Hotel),
 };
 
 /**

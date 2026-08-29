@@ -59,6 +59,14 @@ import {
 
 const APPLY = process.env.SEED_GLOBEVISTA_APPLY === "true";
 
+// Read for the two derived values below. The SECRET key is used ONLY to
+// derive the sandbox flag from its prefix — never logged, never stored,
+// never echoed. The publishable key is safe to persist by definition.
+const SECRET_KEY = (process.env.ORG_GLOBEVISTA_STRIPE_SECRET_KEY ?? "").trim();
+const PUBLISHABLE_KEY = (
+  process.env.ORG_GLOBEVISTA_STRIPE_PUBLISHABLE_KEY ?? ""
+).trim();
+
 /** Internal, operations-facing organization name. Never shown to customers. */
 const ORG_NAME = "GlobeVista";
 /** The ONLY name a GlobeVista customer ever sees. */
@@ -74,6 +82,7 @@ const SLUG = "globevista";
 const EXPECTED_ENV_KEYS = [
   "ORG_GLOBEVISTA_STRIPE_SECRET_KEY",
   "ORG_GLOBEVISTA_STRIPE_WEBHOOK_SECRET",
+  "ORG_GLOBEVISTA_STRIPE_PUBLISHABLE_KEY",
   "ORG_GLOBEVISTA_EMAIL_FROM",
   "ORG_GLOBEVISTA_EMAIL_FROM_NAME",
   "ORG_GLOBEVISTA_EMAIL_REPLY_TO",
@@ -151,8 +160,20 @@ async function main() {
     payments: {
       provider: PaymentGatewayKey.STRIPE,
       enabledProviders: [PaymentGatewayKey.STRIPE],
-      publishableKey: "",
-      sandbox: false,
+      // Stored for operator visibility only — it records WHICH Stripe
+      // account this brand is on. Nothing in the Stripe path reads it:
+      // checkout is gateway-hosted, there is no Stripe.js on the client,
+      // and resolve-gateway only consults this field on the PayPal branch
+      // as a clientId fallback. Safe by definition (publishable keys are
+      // designed to be public), which is why it lives on the document
+      // rather than in the credential vault.
+      publishableKey: PUBLISHABLE_KEY,
+      // Derived from the SECRET key's prefix, the same way
+      // seed-organizations.ts derives it. Hardcoding false would mislead
+      // the admin UI into showing "live" for a test-mode setup — which is
+      // exactly the confusion the flag exists to prevent.
+      sandbox:
+        SECRET_KEY.startsWith("sk_test") || SECRET_KEY.startsWith("rk_test"),
       // THE load-bearing value. Authorize at checkout, capture only once an
       // operator confirms the booking.
       captureMode: CaptureMode.MANUAL,
@@ -212,13 +233,30 @@ async function main() {
     console.log(`  • organization "${SLUG}" would be CREATED`);
   }
 
+  // MEMBERSHIP MODE.
+  //
+  // Default is ALL EXISTING USERS, matching how `seed-organizations.ts`
+  // seeds the default organization: one operations team works every brand
+  // on this deployment, so a new tenant that nobody could see would be
+  // useless. Membership grants VISIBILITY — the ability to switch into
+  // GlobeVista and work its orders.
+  //
+  // What it does NOT grant is the ability to move money: capture and
+  // release are gated on ORDER_CAPTURE_PAYMENT / ORDER_VOID_AUTHORIZATION,
+  // which are ADMIN and above, so a STAFF agent who gains visibility here
+  // still cannot charge or release a FlightBizz authorization.
+  //
+  // Set GLOBEVISTA_MEMBER_EMAILS to a comma-separated list to restrict
+  // membership to specific operators instead.
   const memberEmails = (process.env.GLOBEVISTA_MEMBER_EMAILS ?? "")
     .split(",")
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
-  if (memberEmails.length === 0) {
+  const grantAllUsers = memberEmails.length === 0;
+  if (grantAllUsers) {
+    const userCount = await User.countDocuments({ status: RecordState.ACTIVE });
     console.log(
-      "  ! no GLOBEVISTA_MEMBER_EMAILS set — the organization will have NO members and will not appear in the switcher for anyone (membership is required for every role, including SUPER_ADMIN)",
+      `  • members: ALL ${userCount} active users (no GLOBEVISTA_MEMBER_EMAILS set) — every existing RentalConfirmation / TripReservations operator will be able to switch into FlightBizz`,
     );
   } else {
     console.log(`  • members requested: ${memberEmails.join(", ")}`);
@@ -257,20 +295,34 @@ async function main() {
   const orgId = org._id;
   console.log(`  ✓ organization ready (${String(orgId)})`);
 
-  // EXPLICIT ALLOW-LIST, never `User.find({})`. Handing every existing
-  // operator a GlobeVista membership would be a cross-tenant access grant.
+  // Resolve the target users: every ACTIVE user by default, or just the
+  // named allow-list when GLOBEVISTA_MEMBER_EMAILS is set. Each keeps the
+  // role they already hold — this grants no privilege a user did not
+  // already have, only the ability to see a second tenant.
   let created = 0;
   let already = 0;
   let missing = 0;
-  for (const email of memberEmails) {
-    const user = await User.findOne({ email })
-      .select("_id role")
-      .lean<{ _id: Types.ObjectId; role: string } | null>();
-    if (!user) {
-      console.log(`    – no such user, skipped: ${email}`);
-      missing += 1;
-      continue;
+  const targets: { _id: Types.ObjectId; role: string }[] = grantAllUsers
+    ? await User.find({ status: RecordState.ACTIVE })
+        .select("_id role")
+        .lean<{ _id: Types.ObjectId; role: string }[]>()
+    : [];
+
+  if (!grantAllUsers) {
+    for (const email of memberEmails) {
+      const user = await User.findOne({ email })
+        .select("_id role")
+        .lean<{ _id: Types.ObjectId; role: string } | null>();
+      if (!user) {
+        console.log(`    – no such user, skipped: ${email}`);
+        missing += 1;
+        continue;
+      }
+      targets.push(user);
     }
+  }
+
+  for (const user of targets) {
     const res = await OrganizationMember.updateOne(
       { organizationId: orgId, userId: user._id },
       {

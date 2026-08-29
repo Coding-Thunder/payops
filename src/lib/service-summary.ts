@@ -40,8 +40,12 @@ export interface ServiceSummarySource {
     origin: string;
     destination: string;
     departureDate: DateLike;
+    /** Outbound arrival. Absent until an itinerary is chosen. */
+    arrivalDate?: DateLike | null;
     returnDate?: DateLike | null;
     cabinClass?: string | null;
+    /** Airline record locator, present once the booking is ticketed. */
+    pnr?: string | null;
     passengers?: { adults: number; children: number; infants: number } | null;
   } | null;
   hotel?: {
@@ -191,7 +195,11 @@ export function serviceDetailRows(
       ];
       const carrier = [f.airline, f.flightNumber].filter(Boolean).join(" ");
       if (carrier) rows.push({ label: "Airline", value: carrier });
+      if (f.pnr) rows.push({ label: "PNR", value: f.pnr });
       rows.push({ label: "Departure", value: formatDate(f.departureDate) });
+      if (f.arrivalDate) {
+        rows.push({ label: "Arrival", value: formatDate(f.arrivalDate) });
+      }
       if (f.tripType === "ROUND_TRIP" && f.returnDate) {
         rows.push({ label: "Return", value: formatDate(f.returnDate) });
       } else {

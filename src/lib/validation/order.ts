@@ -199,6 +199,11 @@ export const flightOrderSchema = z
           .max(120),
         departureDate: isoDateString,
         departureTimePreference: z.string().trim().max(40).optional().nullable(),
+        /** Outbound arrival. Optional: a request can be quoted before a
+         *  specific itinerary is chosen. */
+        arrivalDate: z.string().optional().nullable(),
+        /** Airline record locator, entered once the booking is ticketed. */
+        pnr: z.string().trim().max(32).optional().nullable(),
         returnDate: z.string().optional().nullable(),
         returnTimePreference: z.string().trim().max(40).optional().nullable(),
         cabinClass: z.enum([
@@ -236,6 +241,15 @@ export const flightOrderSchema = z
           path: ["destination"],
           message: "Destination must differ from origin",
         },
+      )
+      .refine(
+        (f) =>
+          !f.arrivalDate ||
+          new Date(f.arrivalDate) >= new Date(f.departureDate),
+        {
+          path: ["arrivalDate"],
+          message: "Arrival must not be before departure",
+        },
       ),
     currency: z.enum(CURRENCIES),
     charges: chargesInputSchema,
@@ -257,6 +271,13 @@ export const hotelOrderSchema = z
     customer: customerInputSchema,
     hotel: z
       .object({
+        /** Catalog row the operator picked. Optional — a property that is
+         *  not yet in the catalog can still be typed by hand. */
+        hotelId: z
+          .string()
+          .regex(/^[a-f0-9]{24}$/i, "Invalid hotel id")
+          .optional()
+          .nullable(),
         destination: z
           .string()
           .trim()

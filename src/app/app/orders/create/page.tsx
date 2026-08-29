@@ -69,10 +69,18 @@ export default async function CreateOrderPage() {
       // from the incumbents' dropdown.
       organizationId,
       // A single-service organization only needs that service's suppliers.
-      // CAR_RENTAL is deliberately left UNFILTERED so the two incumbent
-      // brands get the exact list their form has always shown.
-      serviceType:
-        single && single !== ServiceType.CAR_RENTAL ? single : undefined,
+      //
+      // CAR_RENTAL IS NOW FILTERED TOO, and that is a deliberate change:
+      // leaving it unfiltered was safe only while every provider row in the
+      // catalog was a car-rental brand. Now that an airline or hotel group
+      // CAN be created, an unfiltered list would put them in
+      // RentalConfirmation's and TripReservations' dropdowns.
+      //
+      // This does NOT hide anything from the incumbents. listProviders'
+      // CAR_RENTAL branch matches `serviceTypes: CAR_RENTAL` OR a missing
+      // key OR an empty array, so every row that existed before the field
+      // — i.e. their entire catalog — still matches.
+      serviceType: single ?? undefined,
     }),
   ]);
 

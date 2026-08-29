@@ -140,11 +140,13 @@ export function CreateFlightOrderForm({
         destination: "",
         departureDate: "",
         departureTimePreference: "Any time",
+        arrivalDate: "",
         returnDate: "",
         returnTimePreference: "Any time",
         cabinClass: "ECONOMY",
         passengers: { adults: 1, children: 0, infants: 0 },
         passengerNotes: "",
+        pnr: "",
       },
       currency: defaultCurrency,
       charges: [{ name: "Airfare", amount: 0, timing: PaymentTiming.PREPAID }],
@@ -363,6 +365,39 @@ export function CreateFlightOrderForm({
               )}
             />
 
+            {/* Outbound arrival. Optional, because a request is often quoted
+                before a specific itinerary is chosen — and chained off the
+                departure the same way the return leg is, so an arrival can
+                never be picked before the flight leaves. */}
+            <FormField
+              control={form.control}
+              name="flight.arrivalDate"
+              render={({ field, fieldState }) => {
+                const departure = form.watch("flight.departureDate");
+                const min = departure ? new Date(departure) : new Date();
+                return (
+                  <FormItem>
+                    <FormLabel>Arrival date (optional)</FormLabel>
+                    <FormControl>
+                      <DateTimePicker
+                        id="flight-arrival-date"
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                        disabled={isSubmitting}
+                        placeholder="Select arrival"
+                        ariaInvalid={!!fieldState.error}
+                        minDate={min}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Outbound arrival. Fill in once the itinerary is set.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                );
+              }}
+            />
+
             {/* Return leg only exists on a round trip — and the schema only
                 requires it there, so hiding it keeps the form and the
                 validation telling the same story. */}
@@ -429,7 +464,7 @@ export function CreateFlightOrderForm({
               control={form.control}
               name="flight.cabinClass"
               render={({ field }) => (
-                <FormItem className={isRoundTrip ? "sm:col-span-2" : undefined}>
+                <FormItem>
                   <FormLabel>Cabin class</FormLabel>
                   <Select
                     value={field.value}
@@ -707,6 +742,31 @@ export function CreateFlightOrderForm({
                   </FormControl>
                   <FormDescription>
                     Fill in once the fare has been sourced.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="flight.pnr"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>PNR / record locator (optional)</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="e.g. X4T9KP"
+                      maxLength={32}
+                      autoCapitalize="characters"
+                      spellCheck={false}
+                      disabled={isSubmitting}
+                      {...field}
+                      value={field.value ?? ""}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    The airline booking reference, added once ticketed.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

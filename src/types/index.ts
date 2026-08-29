@@ -94,6 +94,8 @@ export interface OrderFlight {
   destination: string;
   departureDate: string;
   departureTimePreference: string | null;
+  /** Outbound arrival. Null until an itinerary is chosen. */
+  arrivalDate: string | null;
   returnDate: string | null;
   returnTimePreference: string | null;
   cabinClass: string;
@@ -104,6 +106,8 @@ export interface OrderFlight {
 
 /** HOTEL service payload. A booking request, not a confirmed reservation. */
 export interface OrderHotel {
+  /** Catalog row this was selected from, if any. */
+  hotelId: string | null;
   destination: string;
   propertyName: string | null;
   checkInDate: string;
@@ -519,6 +523,32 @@ export interface ProviderDTO {
    *  which is how every pre-existing row behaves. */
   organizationIds: string[];
   sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** One image in a hotel catalog entry. Ordered by `sortOrder` ascending. */
+export interface HotelImageDTO {
+  url: string;
+  caption: string | null;
+  sortOrder: number;
+}
+
+export interface HotelDTO {
+  id: string;
+  name: string;
+  description: string | null;
+  location: { city: string; country: string; address: string | null };
+  /** Pre-composed "Name — City" so selectors and order snapshots agree. */
+  label: string;
+  amenities: string[];
+  images: HotelImageDTO[];
+  /** First image by sortOrder, for list thumbnails. Null when none. */
+  primaryImageUrl: string | null;
+  starRating: number | null;
+  notes: string | null;
+  active: boolean;
+  createdBy: { userId: string | null; name: string };
   createdAt: string;
   updatedAt: string;
 }

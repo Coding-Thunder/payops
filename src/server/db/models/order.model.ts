@@ -93,6 +93,10 @@ export interface OrderDoc extends OrganizationScoped {
     destination: string;
     departureDate: Date;
     departureTimePreference?: string | null;
+    /** Scheduled arrival of the OUTBOUND leg. Null until the operator has
+     *  sourced an actual itinerary — a request may be quoted before a
+     *  specific flight is chosen. */
+    arrivalDate?: Date | null;
     returnDate?: Date | null;
     returnTimePreference?: string | null;
     cabinClass: string;
@@ -103,6 +107,12 @@ export interface OrderDoc extends OrganizationScoped {
   /** HOTEL only. A booking REQUEST — no hotel inventory API is involved.
    *  Null on every other service type. */
   hotel?: {
+    /** Catalog row this booking was selected from. Null when the operator
+     *  typed a property that is not in the catalog. The surrounding fields
+     *  stay the source of truth — the order carries its own SNAPSHOT, the
+     *  way `vehicle` does, so editing or deactivating the catalog entry
+     *  never rewrites history. */
+    hotelId?: Types.ObjectId | null;
     destination: string;
     propertyName?: string | null;
     checkInDate: Date;
@@ -341,6 +351,7 @@ const flightSchema = new Schema(
       trim: true,
       maxlength: 40,
     },
+    arrivalDate: { type: Date, default: null },
     returnDate: { type: Date, default: null },
     returnTimePreference: {
       type: String,
@@ -378,6 +389,12 @@ const hotelGuestsSchema = new Schema(
 /** Hotel booking REQUEST. No hotel inventory API is involved. */
 const hotelSchema = new Schema(
   {
+    hotelId: {
+      type: Schema.Types.ObjectId,
+      ref: "Hotel",
+      default: null,
+      index: true,
+    },
     destination: { type: String, required: true, trim: true, maxlength: 120 },
     propertyName: { type: String, default: null, trim: true, maxlength: 160 },
     checkInDate: { type: Date, required: true },
@@ -758,6 +775,14 @@ orderSchema.pre("validate", function () {
   const serviceType = this.serviceType ?? ServiceType.CAR_RENTAL;
 
   if (serviceType === ServiceType.FLIGHT) {
+    // Arrival may equal departure (short hops cross no clock boundary that
+    // matters here) but must never precede it.
+    if (
+      this.flight?.arrivalDate &&
+      this.flight.arrivalDate < this.flight.departureDate
+    ) {
+      throw new Error("Arrival must not be before departure");
+    }
     if (this.flight?.tripType === "ROUND_TRIP") {
       if (!this.flight.returnDate) {
         throw new Error("Return date is required for a round trip");

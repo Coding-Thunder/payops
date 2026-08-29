@@ -12,6 +12,7 @@ export {
   type UpdateDraftInput as UpdateOrderDraftInput,
 } from "./draft";
 export * from "./car-link";
+export * from "./hotel";
 export * from "./payment-request";
 export * from "./email-template";
 export * from "./consent";
