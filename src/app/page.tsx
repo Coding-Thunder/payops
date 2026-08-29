@@ -1,71 +1,30 @@
-import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
-import { GsapController } from "@/components/marketing/gsap-controller";
-import { MarketingFooter } from "@/components/marketing/marketing-footer";
-import { MarketingNav } from "@/components/marketing/marketing-nav";
-import { StructuredData } from "@/components/marketing/seo/structured-data";
-import { EnterpriseChoose } from "@/components/marketing/sections/enterprise-choose";
-import { FightDisputes } from "@/components/marketing/sections/fight-disputes";
-import { Hero } from "@/components/marketing/sections/hero";
-import { Lifecycle } from "@/components/marketing/sections/lifecycle";
-import { MultiGateway } from "@/components/marketing/sections/multi-gateway";
-import { OrgSetups } from "@/components/marketing/sections/org-setups";
-import { QuotationForm } from "@/components/marketing/sections/quotation-form";
-import { env } from "@/lib/env";
+import { getCurrentUser } from "@/server/auth/session";
+
+export const dynamic = "force-dynamic";
 
 /**
- * Landing-page metadata. Overrides the root template defaults with
- * a heavier, more keyword-rich description and pinned canonical so
- * `/` is the authoritative URL even if the page is loaded via
- * tracking params (utm_*, ref=, etc.).
+ * Root entry. No longer the marketing landing page — this deployment is an
+ * internal operations console, so `/` hands straight to the application.
+ *
+ * Deliberately a PAGE-LEVEL redirect and not a proxy/middleware rule. The
+ * middleware is what production Stripe and PayPal webhook deliveries pass
+ * through (or, for `/api/webhooks/stripe`, are explicitly excluded from by
+ * the matcher), and adding routing logic there to solve a marketing-page
+ * problem is how a webhook silently starts receiving a 307 to /login and
+ * payments stop confirming. Nothing about routing, authentication or raw
+ * body handling changes for any API route.
+ *
+ * The marketing components under `src/components/marketing/` are left in
+ * place: they are still used by the quotation form and the SEO routes, and
+ * removing them would be unrelated cleanup.
+ *
+ * Follows the existing auth flow rather than inventing one — signed in goes
+ * to the dashboard, signed out goes to login, which is exactly what the
+ * proxy already does for every other authenticated path.
  */
-export const metadata: Metadata = {
-  title:
-    "Payment Operations Platform · Chargeback Evidence · Multi-Gateway Orchestration",
-  description:
-    "Lifecycle visibility from order creation to chargeback. Hashed evidence chain, hosted consent, multi-gateway orchestration. Reserved for one merchant per instance. Stripe live · Razorpay + Authorize.net next.",
-  alternates: { canonical: "/" },
-};
-
-/**
- * PayOps marketing landing page.
- *
- * Seven chapters, each with its own color theme (CSS variables in
- * `globals.css` driven by `data-theme`):
- *
- *   1. Hero        — obsidian (dark, aurora orbs)
- *   2. Disputes    — orange (sticky scroll, evidence chain)
- *   3. Lifecycle   — sage (React timeline + 12-surface bento)
- *   4. Gateways    — cobalt (logo bento + code interface block)
- *   5. Trust       — cream (animated counters + audit pillars)
- *   6. Deployment  — ultraviolet (steps + included list)
- *   7. Closing     — closing/dark (form + email channel)
- *
- * Free scroll only — snap-mandatory removed. The GSAP controller
- * handles reveal + parallax + count-up + theme-aware nav.
- */
-export default function LandingPage() {
-  return (
-    <div>
-      {/* Structured data (Organization / WebSite / SoftwareApplication
-          / FAQPage) — rendered server-side, picked up by Google +
-          Bing for rich-result eligibility (FAQ accordion, sitelinks
-          search box, product knowledge panel). */}
-      <StructuredData />
-      <MarketingNav />
-      <GsapController />
-      <main>
-        <Hero />
-        <FightDisputes />
-        <Lifecycle />
-        <MultiGateway />
-        <EnterpriseChoose />
-        <OrgSetups />
-        <QuotationForm
-          turnstileSiteKey={env.public.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null}
-        />
-      </main>
-      <MarketingFooter />
-    </div>
-  );
+export default async function RootPage() {
+  const user = await getCurrentUser();
+  redirect(user ? "/app/dashboard" : "/login");
 }
