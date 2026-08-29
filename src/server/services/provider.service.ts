@@ -136,6 +136,69 @@ export async function ensureSeedProviders(): Promise<void> {
   logger.info("providers.seeded", { count: toInsert.length });
 }
 
+// ─── Current-logo resolution ───────────────────────────────────────────────
+/*
+ * An order stores a SNAPSHOT of its provider, frozen at creation. That is
+ * deliberate for brand IDENTITY (name, colours) — a receipt should show what
+ * the customer actually saw. But a logo is not identity, it is a POINTER,
+ * and freezing a pointer to mutable storage means the image dies the moment
+ * the target moves.
+ *
+ * Which is exactly what happened: orders created before the GridFS migration
+ * carry `/providers/<key>-<hex>.<ext>`, whose bytes a later deploy destroyed,
+ * so 19 AVIS orders and 3 SIXT orders render a broken image while the
+ * Providers page — which reads the live document — renders fine.
+ *
+ * Resolving the logo live is NOT a new policy. It is already what happens for
+ * the six seeded brands: `resolveProvider` ignores the snapshot's logo
+ * whenever the id is in PROVIDER_SEED and uses the registry path instead,
+ * which is why BUDGET and HERTZ never broke. This extends the same rule to
+ * DB-backed providers, so behaviour stops depending on whether a brand
+ * happens to be hardcoded.
+ *
+ * Cached in-process: consulted once per order in a list render. Short TTL
+ * plus explicit invalidation on every provider write, so a replaced logo is
+ * visible immediately rather than after a timeout.
+ */
+const LOGO_CACHE_TTL_MS = 30_000;
+let logoCache: { at: number; map: Map<string, string> } | null = null;
+
+/** Drop the cache. Called after any write that can change a logo. */
+export function invalidateProviderLogoCache(): void {
+  logoCache = null;
+}
+
+/** Load current logos keyed by provider key. The catalog is a handful of
+ *  small documents, and the result is cached. */
+export async function warmProviderLogoCache(): Promise<void> {
+  if (logoCache && Date.now() - logoCache.at < LOGO_CACHE_TTL_MS) return;
+  await connectMongo();
+  const rows = await Provider.find({})
+    .select("key logo")
+    .lean<{ key: string; logo: string }[]>();
+  logoCache = {
+    at: Date.now(),
+    map: new Map(rows.map((r) => [r.key, r.logo])),
+  };
+}
+
+/**
+ * The provider's CURRENT logo, or null when the cache is cold or the
+ * provider no longer exists — in which case the caller keeps the snapshot,
+ * so a deleted provider still renders the brand the customer saw.
+ *
+ * Synchronous on purpose: `orderToDTO` is sync and runs in a tight map over
+ * list results, and threading a promise through its 23 call sites is how one
+ * gets forgotten and a single surface silently keeps the dead value.
+ * Callers `await warmProviderLogoCache()` once before mapping.
+ */
+export function currentProviderLogo(
+  key: string | null | undefined,
+): string | null {
+  if (!key || !logoCache) return null;
+  return logoCache.map.get(key) ?? null;
+}
+
 // ─── Listing ───────────────────────────────────────────────────────────────
 
 /**
@@ -279,6 +342,8 @@ export async function createProvider(
     updatedBy: new Types.ObjectId(ctx.actor.id),
   });
 
+  invalidateProviderLogoCache();
+
   await recordAudit({
     action: AuditAction.PROVIDER_CREATED,
     entityType: AuditEntity.PROVIDER,
@@ -347,6 +412,8 @@ export async function updateProvider(
   }
   doc.updatedBy = new Types.ObjectId(ctx.actor.id);
   await doc.save();
+
+  invalidateProviderLogoCache();
 
   await recordAudit({
     action: AuditAction.PROVIDER_UPDATED,
@@ -486,6 +553,8 @@ export async function replaceProviderLogo(
   doc.logo = nextLogo;
   doc.updatedBy = new Types.ObjectId(ctx.actor.id);
   await doc.save();
+
+  invalidateProviderLogoCache();
 
   await recordAudit({
     action: AuditAction.PROVIDER_LOGO_REPLACED,

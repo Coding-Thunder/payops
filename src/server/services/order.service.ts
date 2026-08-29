@@ -69,7 +69,11 @@ import { applyPaymentAuthorized } from "./webhook.service";
 import { captureEvidenceSafe } from "./evidence.service";
 import { getSettings } from "./settings.service";
 import { generateOrderNumber } from "./order-number";
-import { buildProviderSnapshotFromKey } from "./provider.service";
+import {
+  buildProviderSnapshotFromKey,
+  currentProviderLogo,
+  warmProviderLogoCache,
+} from "./provider.service";
 import { getBranding } from "./branding.service";
 import { applyCheckoutPaid } from "./webhook.service";
 import { sendPaymentConfirmationEmail } from "./email.service";
@@ -128,8 +132,24 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
     provider: doc.provider
       ? {
           id: doc.provider.id,
+          // NAME and COLOURS stay snapshotted — they are brand identity and
+          // dispute evidence: a receipt must show what the customer saw.
           name: doc.provider.name,
-          logo: doc.provider.logo,
+          // The LOGO resolves LIVE, falling back to the snapshot.
+          //
+          // A logo is a pointer, not identity, and this order's pointer may
+          // be dead: everything uploaded before the GridFS migration lived
+          // at `/providers/<key>-<hex>.<ext>` and was destroyed by a later
+          // deploy. Preferring the provider's current logo is also what
+          // already happens for the six seeded brands, where
+          // `resolveProvider` overrides the snapshot from PROVIDER_SEED —
+          // this makes the rule uniform instead of depending on whether a
+          // brand is hardcoded.
+          //
+          // Falls back to the snapshot when the cache is cold or the
+          // provider has since been deleted, so a removed brand still
+          // renders what it always did.
+          logo: currentProviderLogo(doc.provider.id) ?? doc.provider.logo,
           primaryColor: doc.provider.primaryColor ?? undefined,
           onPrimaryColor: doc.provider.onPrimaryColor ?? undefined,
         }
@@ -1146,6 +1166,10 @@ export async function listOrders(
   ctx: OrderContext,
 ): Promise<PaginatedResult<OrderDTO>> {
   await connectMongo();
+  // Load current provider logos once before mapping, so `orderToDTO` can
+  // overlay them synchronously. Cached in-process; a cold cache just falls
+  // back to the snapshot rather than failing.
+  await warmProviderLogoCache();
   const scope = await getRequestOrganizationScope();
   const filter: Record<string, unknown> = {};
   filter.state = query.state ?? RecordState.ACTIVE;
@@ -1215,6 +1239,10 @@ export async function getOrderById(
   ctx: OrderContext,
 ): Promise<OrderDTO> {
   await connectMongo();
+  // Load current provider logos once before mapping, so `orderToDTO` can
+  // overlay them synchronously. Cached in-process; a cold cache just falls
+  // back to the snapshot rather than failing.
+  await warmProviderLogoCache();
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
   const doc = await Order.findById(id).lean<OrderDoc & { _id: Types.ObjectId }>();
   if (!doc) throw new NotFoundError("Order not found");
@@ -1305,6 +1333,10 @@ export async function getOrderByNumber(
   orderNumber: string,
 ): Promise<OrderDTO | null> {
   await connectMongo();
+  // Load current provider logos once before mapping, so `orderToDTO` can
+  // overlay them synchronously. Cached in-process; a cold cache just falls
+  // back to the snapshot rather than failing.
+  await warmProviderLogoCache();
   const doc = await Order.findOne({ orderNumber }).lean<
     OrderDoc & { _id: Types.ObjectId }
   >();
@@ -1976,6 +2008,10 @@ export async function reconcileOrderPayment(
   customer?: ReconcileCustomerProof,
 ): Promise<ReconcileResult> {
   await connectMongo();
+  // Load current provider logos once before mapping, so `orderToDTO` can
+  // overlay them synchronously. Cached in-process; a cold cache just falls
+  // back to the snapshot rather than failing.
+  await warmProviderLogoCache();
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
   const doc = await Order.findById(id);
   if (!doc) throw new NotFoundError("Order not found");
@@ -2181,6 +2217,10 @@ export async function reconcileOrderPayment(
 
 export async function listAtRiskOrders(): Promise<OrderDTO[]> {
   await connectMongo();
+  // Load current provider logos once before mapping, so `orderToDTO` can
+  // overlay them synchronously. Cached in-process; a cold cache just falls
+  // back to the snapshot rather than failing.
+  await warmProviderLogoCache();
   // Tenancy: the at-risk dashboard must show the acting organization's own
   // orders. Composed under `$and` because the risk predicate already owns
   // the top-level `$or` — assigning a second one would silently drop

@@ -22,6 +22,10 @@ import {
 } from "@/lib/service-summary";
 import { logger } from "@/lib/logger";
 import {
+  currentProviderLogo,
+  warmProviderLogoCache,
+} from "./provider.service";
+import {
   Order,
   OrderEvidence,
   type OrderEvidenceDoc,
@@ -335,11 +339,17 @@ export async function getEvidenceChain(
 
   const events = docs.map(evidenceToDTO);
   const verification = verifyChainFromDocs(docs, orderId);
+  // Same live-logo resolution the order DTO uses. The evidence chain and its
+  // PDF are the surfaces that matter most here: a dispute pack rendered with
+  // a broken brand mark is exactly the document you cannot afford to have
+  // look wrong. Name and colours stay snapshotted — those ARE the evidence.
+  await warmProviderLogoCache();
   const provider = orderDoc.provider
     ? {
         id: orderDoc.provider.id,
         name: orderDoc.provider.name,
-        logo: orderDoc.provider.logo,
+        logo:
+          currentProviderLogo(orderDoc.provider.id) ?? orderDoc.provider.logo,
         primaryColor: orderDoc.provider.primaryColor ?? undefined,
         onPrimaryColor: orderDoc.provider.onPrimaryColor ?? undefined,
       }
