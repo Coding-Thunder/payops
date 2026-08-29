@@ -2,6 +2,10 @@ import { redirect } from "next/navigation";
 
 import { Suspense } from "react";
 
+import {
+  OrgTransitionOverlay,
+  OrgTransitionProvider,
+} from "@/components/app-shell/org-transition";
 import { OrganizationSelection } from "@/components/app-shell/organization-selection";
 import { Sidebar } from "@/components/app-shell/sidebar";
 import { TelemetryStrip } from "@/components/app-shell/telemetry-strip";
@@ -48,6 +52,7 @@ export default async function AuthenticatedLayout({
   }
 
   return (
+    <OrgTransitionProvider>
     <RealtimeProvider>
       <Suspense fallback={null}>
         <RouteTransitionLoader />
@@ -84,12 +89,19 @@ export default async function AuthenticatedLayout({
               overrides drop overflow and padding so the printed
               evidence page flows naturally onto paper using the
               browser's page margins instead of the app's chrome. */}
-          <main className="flex-1 overflow-y-auto md:px-4 md:py-4 lg:px-5 lg:py-5 xl:px-6 xl:py-6 print:overflow-visible print:p-0">
+          {/* `relative` anchors the organization-switch overlay to the
+              CONTENT region only. Covering the whole viewport would hide the
+              sidebar and topbar and read as a full page reload; keeping the
+              chrome fixed is what makes a switch feel like moving between
+              workspaces, and it is also why nothing shifts at any width. */}
+          <main className="relative flex-1 overflow-y-auto md:px-4 md:py-4 lg:px-5 lg:py-5 xl:px-6 xl:py-6 print:overflow-visible print:p-0">
             {children}
+            <OrgTransitionOverlay />
           </main>
         </div>
         <CommandPalette role={user.role} />
       </div>
     </RealtimeProvider>
+    </OrgTransitionProvider>
   );
 }

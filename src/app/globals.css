@@ -672,3 +672,21 @@
     }
   }
 }
+
+/* Organization-switch overlay: a single sweeping hairline under the brand
+   name. Deliberately understated — the transition should read as the system
+   acknowledging a deliberate move between workspaces, not as a loading
+   animation demanding attention. Cosmetic only: it never gates how long the
+   overlay stays up, which is driven purely by when the destination is ready.
+   Suppressed under prefers-reduced-motion, where the overlay still appears
+   and still blocks stale data, just without movement. */
+@keyframes org-transition-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+.org-transition__sweep {
+  animation: org-transition-sweep 1.1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .org-transition__sweep { animation: none; }
+}

@@ -1,8 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { BuildingIcon, CheckIcon, ChevronsUpDownIcon } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -13,8 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { toast } from "@/components/ui/sonner";
-import { api } from "@/lib/api-client";
+import { useOrgTransition } from "@/components/app-shell/org-transition";
 import type { OrganizationSummary } from "@/types";
 
 interface OrgSwitcherProps {
@@ -32,14 +30,16 @@ interface OrgSwitcherProps {
  *
  * Switching is a POST to a Route Handler rather than a Server Action: the
  * repo uses no Server Actions, and since Next 16 a cookie can only be
- * written in the "action" phase, which a render cannot enter. `router.refresh()`
- * then re-runs the server tree so every page re-resolves against the new
- * selection.
+ * written in the "action" phase, which a render cannot enter.
+ *
+ * The switch ITSELF lives in `OrgTransitionProvider`, not here. It has to:
+ * the overlay that covers the outgoing organization's data must be mounted
+ * above `<main>` in the shell, and it must outlive this dropdown, which
+ * unmounts the moment the menu closes.
  */
 export function OrgSwitcher({ organizations, selectedId }: OrgSwitcherProps) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [pending, startTransition] = useTransition();
+  const { switchTo: beginSwitch, isSwitching } = useOrgTransition();
 
   if (organizations.length === 0) return null;
 
@@ -59,22 +59,12 @@ export function OrgSwitcher({ organizations, selectedId }: OrgSwitcherProps) {
       setOpen(false);
       return;
     }
-    startTransition(async () => {
-      try {
-        await api.post("/api/organizations/switch", {
-          organizationId: org.id,
-        });
-        setOpen(false);
-        toast.success(`Switched to ${org.brandName}`);
-        // Re-render the server tree so every page picks up the new
-        // organization. A push would keep the current route, which may not
-        // exist (or may not be permitted) in the organization just chosen.
-        router.replace("/app/dashboard");
-        router.refresh();
-      } catch {
-        toast.error("Could not switch organization");
-      }
-    });
+    // Close the menu FIRST so the overlay is not competing with a Radix
+    // exit animation, then hand off. No success toast: the transition names
+    // the destination brand, and a toast on top of that is one confirmation
+    // too many.
+    setOpen(false);
+    beginSwitch(org);
   }
 
   return (
@@ -83,7 +73,7 @@ export function OrgSwitcher({ organizations, selectedId }: OrgSwitcherProps) {
         <Button
           variant="ghost"
           size="sm"
-          disabled={pending}
+          disabled={isSwitching}
           className="h-7 gap-1.5 px-2 text-xs font-medium"
         >
           <BuildingIcon className="size-3.5" />
