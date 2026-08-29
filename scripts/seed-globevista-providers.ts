@@ -72,6 +72,10 @@ import {
 } from "../src/lib/constants/providers";
 
 const APPLY = process.env.SEED_GV_PROVIDERS_APPLY === "true";
+/** Opt-in: restrict the seeded suppliers to GlobeVista only. Off by
+ *  default, because the provider catalog is shared reference data. */
+const RESTRICT_TO_GLOBEVISTA =
+  process.env.SEED_GV_PROVIDERS_RESTRICT === "true";
 
 /** The organization these suppliers are restricted to. */
 const SLUG = "globevista";
@@ -327,7 +331,20 @@ async function main() {
           status: RecordState.ACTIVE,
           serviceTypes: seed.serviceTypes,
           // NEVER [] — see the header. Restriction is the whole point.
-          organizationIds: [orgId],
+          // GLOBAL BY DEFAULT. `organizationIds: []` means "available to every
+      // organization", which is the correct model for a shared catalog: a
+      // supplier is reference data about the world, not the property of the
+      // brand that happened to add it. An airline added from FlightBizz
+      // should be reusable by any organization that sells flights.
+      //
+      // Isolation is carried by `serviceTypes`, NOT by this field: the
+      // CAR_RENTAL query branch matches only rows that are CAR_RENTAL,
+      // absent, or empty, so a ["FLIGHT"] row can never surface in
+      // RentalConfirmation's or TripReservations's rental dropdown.
+      //
+      // Set SEED_GV_PROVIDERS_RESTRICT=true to scope these rows to
+      // GlobeVista instead — an explicit opt-in, not the default.
+      organizationIds: RESTRICT_TO_GLOBEVISTA ? [orgId] : [],
           sortOrder: seed.sortOrder,
           createdBy: null,
           updatedBy: null,

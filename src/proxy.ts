@@ -53,6 +53,19 @@ const PUBLIC_PREFIXES = [
   // event signed with the wrong key is rejected exactly like an unsigned
   // one.
   "/api/webhooks/",
+  // Operator-uploaded brand assets (provider logos, branding marks).
+  //
+  // MUST be public: these images render on the customer-facing payment,
+  // consent and acknowledgement pages and inside receipt emails, where the
+  // viewer has NO staff session. Without this the proxy 307s every logo to
+  // /login and the customer sees a broken image on the page where they part
+  // with money — which is the exact failure this asset route was added to
+  // fix, so gating it here would reintroduce it by another route.
+  //
+  // Safe to expose: the id is a random ObjectId, the payload is a brand
+  // logo rather than a secret, and the route refuses to serve any content
+  // type outside the image allowlist (no SVG, so no stored XSS).
+  "/api/assets/",
 ];
 
 /** Admin-only path prefixes (super_admin + admin). */

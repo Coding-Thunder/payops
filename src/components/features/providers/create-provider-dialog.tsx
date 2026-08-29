@@ -27,6 +27,12 @@ import {
 } from "@/lib/validation";
 import type { ProviderDTO } from "@/types";
 
+import {
+  ProviderVisibilityFields,
+  defaultProviderVisibility,
+  type ProviderVisibilityValue,
+} from "./provider-visibility-fields";
+
 const PLACEHOLDER_LOGO = "/providers/_placeholder.svg";
 
 export function CreateProviderDialog() {
@@ -34,6 +40,11 @@ export function CreateProviderDialog() {
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Held outside react-hook-form: both are arrays with their own widgets and
+  // cross-field rules, and RHF's array handling buys nothing here.
+  const [visibility, setVisibility] = useState<ProviderVisibilityValue>(
+    defaultProviderVisibility(),
+  );
 
   const form = useForm<CreateProviderInput>({
     resolver: zodResolver(createProviderSchema),
@@ -51,11 +62,16 @@ export function CreateProviderDialog() {
 
   function reset() {
     form.reset();
+    setVisibility(defaultProviderVisibility());
     setFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   async function onSubmit(values: CreateProviderInput) {
+    if (visibility.serviceTypes.length === 0) {
+      toast.error("Pick at least one service type");
+      return;
+    }
     try {
       // Two-phase: create the catalog row first (with a placeholder logo)
       // so we have an id to upload against. If the file upload fails the
@@ -63,6 +79,10 @@ export function CreateProviderDialog() {
       const created = await api.post<ProviderDTO>("/api/admin/providers", {
         ...values,
         logo: PLACEHOLDER_LOGO,
+        serviceTypes: visibility.serviceTypes,
+        // Empty array = available to EVERY organization. Sent explicitly
+        // rather than omitted so the intent is visible in the request.
+        organizationIds: visibility.organizationIds,
       });
       if (file) {
         const fd = new FormData();
@@ -233,6 +253,13 @@ export function CreateProviderDialog() {
                     <FormMessage />
                   </FormItem>
                 )}
+              />
+            </div>
+
+            <div className="border-t border-border/60 pt-5">
+              <ProviderVisibilityFields
+                value={visibility}
+                onChange={setVisibility}
               />
             </div>
           </div>

@@ -32,6 +32,11 @@ interface EditProviderDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
+import {
+  ProviderVisibilityFields,
+  type ProviderVisibilityValue,
+} from "./provider-visibility-fields";
+
 export function EditProviderDialog({
   provider,
   open,
@@ -53,6 +58,15 @@ export function EditProviderDialog({
     mode: "onTouched",
   });
 
+  // Seeded from the provider's CURRENT values, so opening the dialog and
+  // saving something unrelated never silently re-scopes the supplier.
+  // `organizationIds: []` reads back as "all organizations", which is what
+  // every legacy row is.
+  const [visibility, setVisibility] = useState<ProviderVisibilityValue>({
+    serviceTypes: provider.serviceTypes ?? [],
+    organizationIds: provider.organizationIds ?? [],
+  });
+
   async function onSubmit(values: UpdateProviderInput) {
     try {
       // Only patch fields the admin actually touched so the audit log
@@ -64,6 +78,18 @@ export function EditProviderDialog({
       if (dirty.onPrimaryColor) patch.onPrimaryColor = values.onPrimaryColor;
       if (dirty.tagline) patch.tagline = values.tagline;
       if (dirty.sortOrder) patch.sortOrder = values.sortOrder;
+
+      // Arrays are compared BY VALUE — they live outside react-hook-form so
+      // `dirtyFields` knows nothing about them, and `!==` on two arrays is
+      // always true, which would patch on every save.
+      const sameList = (a: string[], b: string[]) =>
+        JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+      if (!sameList(visibility.serviceTypes, provider.serviceTypes ?? [])) {
+        patch.serviceTypes = visibility.serviceTypes;
+      }
+      if (!sameList(visibility.organizationIds, provider.organizationIds ?? [])) {
+        patch.organizationIds = visibility.organizationIds;
+      }
 
       const hasMetadataChanges = Object.keys(patch).length > 0;
       if (hasMetadataChanges) {
@@ -205,6 +231,13 @@ export function EditProviderDialog({
                   <FormMessage />
                 </FormItem>
               )}
+            />
+          </div>
+
+          <div className="border-t border-border/60 pt-5">
+            <ProviderVisibilityFields
+              value={visibility}
+              onChange={setVisibility}
             />
           </div>
         </div>

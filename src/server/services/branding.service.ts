@@ -1,8 +1,5 @@
 import "server-only";
 
-import { promises as fs } from "node:fs";
-import path from "node:path";
-import { randomBytes } from "node:crypto";
 
 import { Types } from "mongoose";
 
@@ -15,6 +12,11 @@ import { ValidationError } from "@/lib/errors";
 import { env } from "@/lib/env";
 import { Branding, BRANDING_KEY, type BrandingDoc } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
+import {
+  assetIdFromUrl,
+  deleteAsset,
+  putAsset,
+} from "@/server/storage/asset-store";
 import type { UpdateBrandingInput } from "@/lib/validation";
 import type { BrandingDTO } from "@/types";
 
@@ -46,8 +48,6 @@ const ALLOWED_MIME: ReadonlyMap<string, string> = new Map([
   ["image/gif", "gif"],
 ]);
 
-const PUBLIC_DIR = path.join(process.cwd(), "public");
-const BRANDING_DIR = path.join(PUBLIC_DIR, "branding");
 
 // ─── Mapping ───────────────────────────────────────────────────────────────
 
@@ -203,19 +203,18 @@ async function saveBrandingLogoFile(input: SaveLogoInput): Promise<string> {
   if (!bytesMatchMime(input.buffer, input.mimeType)) {
     throw new ValidationError("Uploaded file does not match the declared image type");
   }
-  const ext = ALLOWED_MIME.get(input.mimeType)!;
-  const suffix = randomBytes(4).toString("hex");
-  const fileName = `workspace-${suffix}.${ext}`;
-  const fullPath = path.join(BRANDING_DIR, fileName);
-  const resolved = path.resolve(fullPath);
-  // Defensive: ensure we stay inside BRANDING_DIR even though the file
-  // name we built can't escape today.
-  if (!resolved.startsWith(path.resolve(BRANDING_DIR) + path.sep)) {
-    throw new ValidationError("Invalid file path");
-  }
-  await fs.mkdir(BRANDING_DIR, { recursive: true });
-  await fs.writeFile(resolved, input.buffer);
-  return `/branding/${fileName}`;
+  // Same fix as the provider logo, for the same defect: writing into
+  // `public/branding/` produced a path that 404s in production, because
+  // Next serves `public/` from the build artifact and the container is
+  // rebuilt on every deploy. Validation above is unchanged; only the
+  // destination moved to the durable asset store.
+  const stored = await putAsset({
+    buffer: input.buffer,
+    contentType: input.mimeType,
+    label: "workspace",
+    kind: "branding-logo",
+  });
+  return stored.url;
 }
 
 export async function replaceBrandingLogo(
@@ -243,6 +242,16 @@ export async function replaceBrandingLogo(
     request: ctx.request ?? null,
     metadata: { previousLogo, nextLogo },
   });
+
+  // Reclaim the superseded asset only AFTER the document is safely
+  // repointed, so a failed delete can never leave branding pointing at
+  // bytes that are gone. Mirrors replaceProviderLogo.
+  //
+  // Guarded on `isAssetUrl`: a `/branding/*` value is a legacy filesystem
+  // path from before this migration (already dead in production, but not
+  // ours to touch), and a seeded/default value must be left alone.
+  const staleId = assetIdFromUrl(previousLogo);
+  if (staleId) await deleteAsset(staleId);
 
   return toDTO(updated);
 }

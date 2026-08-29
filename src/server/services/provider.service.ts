@@ -1,8 +1,5 @@
 import "server-only";
 
-import { promises as fs } from "node:fs";
-import path from "node:path";
-import { randomBytes } from "node:crypto";
 
 import { Types } from "mongoose";
 
@@ -19,6 +16,11 @@ import {
   ValidationError,
 } from "@/lib/errors";
 import { logger } from "@/lib/logger";
+import {
+  assetIdFromUrl,
+  deleteAsset,
+  putAsset,
+} from "@/server/storage/asset-store";
 import {
   PROVIDER_KEY_REGEX,
   PROVIDER_SEED,
@@ -62,9 +64,6 @@ const ALLOWED_MIME: ReadonlyMap<string, string> = new Map([
   ["image/webp", "webp"],
   ["image/gif", "gif"],
 ]);
-
-const PUBLIC_DIR = path.join(process.cwd(), "public");
-const PROVIDERS_DIR = path.join(PUBLIC_DIR, "providers");
 
 // ─── Mapping ───────────────────────────────────────────────────────────────
 
@@ -440,21 +439,27 @@ export async function saveProviderLogoFile(
       "Uploaded file does not match the declared image type",
     );
   }
-  const ext = ALLOWED_MIME.get(input.mimeType)!;
   const safeKey = input.key.toLowerCase().replace(/[^a-z0-9_-]/g, "");
   if (!safeKey) throw new ValidationError("Provider key is required");
-  const suffix = randomBytes(4).toString("hex");
-  const fileName = `${safeKey}-${suffix}.${ext}`;
-  // Resolve + verify the final path is still inside PROVIDERS_DIR. Belt-
-  // and-braces guard against path-traversal via a hostile `key`.
-  const fullPath = path.join(PROVIDERS_DIR, fileName);
-  const resolved = path.resolve(fullPath);
-  if (!resolved.startsWith(path.resolve(PROVIDERS_DIR) + path.sep)) {
-    throw new ValidationError("Invalid file path");
-  }
-  await fs.mkdir(PROVIDERS_DIR, { recursive: true });
-  await fs.writeFile(resolved, input.buffer);
-  return `/providers/${fileName}`;
+
+  // Bytes go to the DURABLE asset store, not to `public/providers/`.
+  //
+  // The filesystem write this replaces produced a path that could never
+  // resolve in production: Next serves `public/` from the build artifact, so
+  // a file written at runtime is not served, and DigitalOcean rebuilds the
+  // container on every deploy so it is destroyed anyway. Confirmed against
+  // production — every repo-committed logo returned 200 while every
+  // uploaded one (avis-563c9c0b.jpg, sixt-ace37dd4.jpg) returned 404.
+  //
+  // Size, mime allowlist and magic-byte sniffing above are unchanged; only
+  // the destination moved.
+  const stored = await putAsset({
+    buffer: input.buffer,
+    contentType: input.mimeType,
+    label: safeKey,
+    kind: "provider-logo",
+  });
+  return stored.url;
 }
 
 /**
@@ -490,6 +495,13 @@ export async function replaceProviderLogo(
     request: ctx.request ?? null,
     metadata: { previousLogo, nextLogo },
   });
+
+  // Reclaim the superseded asset AFTER the document is safely repointed, so
+  // a failed delete can never leave a provider pointing at bytes that are
+  // gone. Only touches the asset store — a `/providers/*.png` value is a
+  // repo-committed seed logo and must be left exactly where it is.
+  const staleId = assetIdFromUrl(previousLogo);
+  if (staleId) await deleteAsset(staleId);
 
   return toDTO(doc.toObject() as ProviderDoc & { _id: Types.ObjectId });
 }
