@@ -171,10 +171,15 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
         ? doc.payment.initiatedAt.toISOString()
         : null,
     },
+    // Guarded the same way `policy` is a few lines below. The schema marks
+    // `createdBy` required, but a row written before it existed — or by any
+    // path that bypassed the model — would throw here on `.userId` and take
+    // the whole page down rather than the single row. An order with no
+    // creator is a legitimate thing to show; it reads as "System".
     createdBy: {
-      userId: String(doc.createdBy.userId),
-      name: doc.createdBy.name,
-      email: doc.createdBy.email,
+      userId: doc.createdBy?.userId ? String(doc.createdBy.userId) : "",
+      name: doc.createdBy?.name ?? "",
+      email: doc.createdBy?.email ?? "",
     },
     policy: {
       acceptedAt:

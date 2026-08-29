@@ -142,6 +142,9 @@ export interface OrderPayment {
 }
 
 export interface OrderCreator {
+  /** Empty for an order with no human creator — a row written before the
+   *  snapshot existed, or by a background path. Such an order renders its
+   *  agent as "System"; see `resolveOrderAgent`. */
   userId: string;
   name: string;
   email: string;

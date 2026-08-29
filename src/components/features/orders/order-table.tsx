@@ -33,7 +33,12 @@ import { ProviderBadge } from "@/components/features/providers";
 import { BookingTypeLabel } from "@/lib/constants/labels";
 import { ConsentStatus, OrderStatus } from "@/lib/constants/enums";
 import { api, ApiClientError } from "@/lib/api-client";
-import { formatCurrency, formatDate, formatRelative } from "@/lib/format";
+import {
+  formatCurrency,
+  formatDate,
+  formatRelative,
+  resolveOrderAgent,
+} from "@/lib/format";
 import type { OrderDTO } from "@/types";
 
 interface OrderTableProps {
@@ -154,6 +159,7 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
             ) : null}
             <TableHead className="w-[180px]">Order</TableHead>
             <TableHead>Customer</TableHead>
+            <TableHead className="hidden lg:table-cell">Agent</TableHead>
             <TableHead className="hidden md:table-cell">Type</TableHead>
             <TableHead className="hidden lg:table-cell">Provider</TableHead>
             <TableHead className="hidden xl:table-cell">Vehicle</TableHead>
@@ -199,6 +205,12 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
                   <div className="text-[11.5px] text-muted-foreground leading-tight mt-0.5">
                     {o.customer.email}
                   </div>
+                </TableCell>
+                {/* Who took the booking. Read straight off the order's own
+                    creator snapshot — no user lookup, so no per-row query
+                    and no way to reach another tenant's user. */}
+                <TableCell className="hidden lg:table-cell text-[13px] leading-tight">
+                  {resolveOrderAgent(o.createdBy)}
                 </TableCell>
                 <TableCell className="hidden md:table-cell">
                   <Badge variant="secondary">

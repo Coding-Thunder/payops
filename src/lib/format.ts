@@ -78,3 +78,29 @@ export function initialsFromName(name: string): string {
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
+
+/**
+ * The operator to credit for an order — the "Agent" column on both the
+ * dashboard's recent-orders list and /app/orders.
+ *
+ * Reads the creator SNAPSHOT that `order.createdBy` already carries. That
+ * snapshot is written once, at order creation, from the acting user inside
+ * that order's organization, so resolving an agent needs no user lookup and
+ * offers nowhere for another tenant's user to be reached: there is no
+ * lookup to mis-scope.
+ *
+ * Falls back name → email → "System". "System" covers three real cases that
+ * are indistinguishable to a reader and should be: an order created before
+ * the creator snapshot existed, one written by a background path with no
+ * human actor, and one whose creator was recorded with neither a name nor
+ * an email.
+ */
+export function resolveOrderAgent(
+  creator: { name?: string | null; email?: string | null } | null | undefined,
+): string {
+  const name = creator?.name?.trim();
+  if (name) return name;
+  const email = creator?.email?.trim();
+  if (email) return email;
+  return "System";
+}
