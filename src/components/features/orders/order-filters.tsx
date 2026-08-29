@@ -50,8 +50,8 @@ export function OrderFilters({ canSeeAll }: OrderFiltersProps) {
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-1 p-2 md:flex-row md:items-center">
-      <div className="relative flex-1 max-w-md">
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface-1 p-1.5">
+      <div className="relative min-w-[180px] flex-1 basis-full sm:basis-auto sm:max-w-sm">
         <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
           value={query}
@@ -63,7 +63,7 @@ export function OrderFilters({ canSeeAll }: OrderFiltersProps) {
               commitQuery();
             }
           }}
-          placeholder="Search by order, customer, phone, or vehicle"
+          placeholder="Search orders, customers, vehicles"
           className="h-8 pl-8 bg-background"
         />
       </div>
@@ -71,7 +71,7 @@ export function OrderFilters({ canSeeAll }: OrderFiltersProps) {
         value={params.get("status") ?? ALL}
         onValueChange={(v) => update("status", v)}
       >
-        <SelectTrigger className="w-full md:w-48">
+        <SelectTrigger className="h-8 w-[140px]">
           <SelectValue placeholder="Status" />
         </SelectTrigger>
         <SelectContent>
@@ -87,7 +87,7 @@ export function OrderFilters({ canSeeAll }: OrderFiltersProps) {
         value={params.get("bookingType") ?? ALL}
         onValueChange={(v) => update("bookingType", v)}
       >
-        <SelectTrigger className="w-full md:w-52">
+        <SelectTrigger className="h-8 w-[150px]">
           <SelectValue placeholder="Booking type" />
         </SelectTrigger>
         <SelectContent>
@@ -104,7 +104,7 @@ export function OrderFilters({ canSeeAll }: OrderFiltersProps) {
           value={params.get("mine") === "true" ? "mine" : "all"}
           onValueChange={(v) => update("mine", v === "mine" ? "true" : null)}
         >
-          <SelectTrigger className="w-full md:w-40">
+          <SelectTrigger className="h-8 w-[124px]">
             <SelectValue placeholder="Owner" />
           </SelectTrigger>
           <SelectContent>
