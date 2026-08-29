@@ -16,6 +16,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { api, ApiClientError } from "@/lib/api-client";
 import { loginSchema, type LoginInput } from "@/lib/validation";
@@ -107,8 +108,11 @@ export function LoginForm({ nextPath, turnstileSiteKey }: LoginFormProps) {
             <FormItem>
               <FormLabel>Password</FormLabel>
               <FormControl>
-                <Input
-                  type="password"
+                {/* Masked by default; the eye toggle lives inside the field.
+                    FormControl's Slot merges id/aria-* onto PasswordInput,
+                    which forwards them to the inner <input>, so the label
+                    association and error wiring are unchanged. */}
+                <PasswordInput
                   autoComplete="current-password"
                   placeholder="••••••••"
                   disabled={isSubmitting}

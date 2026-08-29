@@ -42,10 +42,20 @@ export const PasswordInput = React.forwardRef<
         {...props}
       />
       <button
+        // `type="button"` is load-bearing: the default inside a <form> is
+        // "submit", so without it revealing the password would post the
+        // login form.
         type="button"
         onClick={toggle}
-        tabIndex={-1}
+        // Keep the caret where the user left it. A button takes focus on
+        // mousedown, which would pull it out of the field mid-typing;
+        // cancelling the default focus transfer leaves the input focused
+        // while still firing the click.
+        onMouseDown={(e) => e.preventDefault()}
+        // Reachable by keyboard on purpose. This is real functionality, and
+        // functionality that only a mouse can operate fails WCAG 2.1.1.
         aria-label={visible ? "Hide password" : "Show password"}
+        aria-pressed={visible}
         className={cn(
           "absolute right-1 top-1/2 -translate-y-1/2 grid size-6 place-items-center rounded-sm",
           "text-muted-foreground hover:text-foreground",
