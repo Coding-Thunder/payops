@@ -1,12 +1,12 @@
+import Image from "next/image";
 import { redirect } from "next/navigation";
 
-import { Aurora } from "@/components/brand/aurora";
-import { DotGrid } from "@/components/brand/illustrations";
 import { LogoLockup, LogoMark } from "@/components/brand/logo";
 import { env } from "@/lib/env";
 import { getCurrentUser } from "@/server/auth/session";
 
 import { LoginForm } from "./_components/login-form";
+import loginBackground from "./_assets/login-bg.jpg";
 
 export const dynamic = "force-dynamic";
 
@@ -22,9 +22,37 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   return (
     <div className="grid min-h-screen w-full grid-cols-1 lg:grid-cols-[1.05fr_1fr]">
+      {/* `bg-primary` stays as the base layer: it is what the copy was
+          designed to read against, so a failed or still-loading image
+          degrades to the previous panel rather than to unstyled text. */}
       <section className="relative hidden lg:flex flex-col justify-between bg-primary text-primary-foreground p-12 overflow-hidden">
-        <Aurora />
-        <DotGrid className="absolute inset-0 size-full text-primary-foreground opacity-[0.08]" />
+        {/* Statically imported, so Next fingerprints this into
+            /_next/static/media and serves it immutable for a year with an
+            AVIF/WebP srcset — no request-time work on the login path.
+            `sizes` collapses the candidate to ~1px below `lg`, where the
+            panel is display:none, so small viewports pay nothing for it. */}
+        <Image
+          src={loginBackground}
+          alt=""
+          aria-hidden
+          fill
+          priority
+          placeholder="blur"
+          sizes="(min-width: 1024px) 52vw, 1px"
+          className="object-cover object-[68%_center] select-none"
+        />
+        {/* Two-stop scrim. The subject is framed right of centre, so the
+            horizontal pass darkens the left column the copy occupies while
+            leaving the mask legible; the vertical pass seats the footer
+            line. Tuned to keep body text above 4.5:1 on the panel. */}
+        <div
+          aria-hidden
+          className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/60 to-black/15"
+        />
+        <div
+          aria-hidden
+          className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/45"
+        />
         <LogoLockup
           tone="inverted"
           brand={brand}
