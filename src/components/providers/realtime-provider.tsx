@@ -15,6 +15,8 @@ import {
   type DomainEvent,
 } from "@/lib/constants/events";
 import { orderQueryKey } from "@/hooks/use-order-query";
+import { useNotificationSound } from "@/components/providers/notification-sound-provider";
+import type { NotificationTone } from "@/lib/notification-sound";
 
 /**
  * Connection lifecycle exposed to the UI so a small chrome indicator can
@@ -64,6 +66,7 @@ function RealtimeBridge({
   const router = useRouter();
   const queryClient = useQueryClient();
   const { push } = useActivityFeed();
+  const { play } = useNotificationSound();
   const refreshTimer = React.useRef<number | null>(null);
 
   // Latest refs so the EventSource handler doesn't need to be reattached.
@@ -71,11 +74,13 @@ function RealtimeBridge({
   const queryClientRef = React.useRef(queryClient);
   const pushRef = React.useRef(push);
   const statusRef = React.useRef(onStatusChange);
+  const playRef = React.useRef(play);
   React.useEffect(() => {
     routerRef.current = router;
     queryClientRef.current = queryClient;
     pushRef.current = push;
     statusRef.current = onStatusChange;
+    playRef.current = play;
   });
 
   React.useEffect(() => {
@@ -98,6 +103,11 @@ function RealtimeBridge({
       }
       pushRef.current(event);
       notifyForEvent(event);
+      // Same pass as the toast, so a sound can never disagree with what is
+      // on screen. `resolveEventTone` returns null for quiet event types and
+      // for anything it considers a duplicate.
+      const tone = resolveEventTone(event);
+      if (tone) playRef.current(tone);
       // Per-order lifecycle events: invalidate the React Query cache for
       // the specific orderId so any mounted <OrderDetail /> refetches
       // immediately. router.refresh() below covers server components
@@ -164,6 +174,124 @@ function RealtimeBridge({
   }, []);
 
   return null;
+}
+
+/**
+ * Which business events are worth a sound.
+ *
+ * Deliberately a SUBSET of the events that raise a toast. Anything the
+ * operator themselves just did (sending an email, regenerating a link) is
+ * silent — they are looking at the screen and do not need to be told. Sound
+ * is reserved for things that arrive on their own.
+ *
+ * `null` means "notify visually, but stay quiet".
+ */
+const EVENT_TONE: Partial<Record<DomainEventType, NotificationTone | null>> = {
+  [DomainEventType.ORDER_CREATED]: "order",
+  [DomainEventType.ORDER_AUTHORIZED]: "authorized",
+  [DomainEventType.ORDER_PAID]: "paid",
+  [DomainEventType.ORDER_FAILED]: "failed",
+  [DomainEventType.ORDER_REFUNDED]: "refunded",
+  [DomainEventType.ORDER_DISPUTE_CREATED]: "dispute",
+  // Deliberately silent: operator-initiated, mid-life, or purely
+  // informational. They still toast and still update the feed.
+  [DomainEventType.ORDER_EMAIL_SENT]: null,
+  [DomainEventType.ORDER_LINK_REGENERATED]: null,
+  [DomainEventType.ORDER_CONSENT_RECEIVED]: null,
+  [DomainEventType.ORDER_CONFIRMATION_SENT]: null,
+  [DomainEventType.ORDER_DISPUTE_UPDATED]: null,
+  [DomainEventType.ORDER_EXPIRED]: null,
+  [DomainEventType.ORDER_AUTHORIZATION_RELEASED]: null,
+};
+
+/**
+ * A capture produces ORDER_PAID (the shared applyCheckoutPaid transition) and
+ * is conceptually the "captured" moment for a manual-capture order. The
+ * payload carries no capture flag, so the tone is chosen by whether the order
+ * was previously authorized — tracked below.
+ */
+const AUTHORIZED_ORDERS = new Set<string>();
+
+/**
+ * Suppression window for the SAME business event on the SAME order.
+ *
+ * The server already dedupes hard: `tryClaimGatewayEvent` claims each gateway
+ * event id against a unique index, and `publishEvent` only fires inside
+ * `if (outcome.didTransition)`, so a replayed Stripe webhook does not emit a
+ * second domain event. This is the CLIENT-side backstop for the cases that
+ * guard cannot see:
+ *
+ *   - the webhook and the reconcile endpoint racing on one order, which use
+ *     deliberately disjoint dedupe keys (`evt_…` vs `reconcile:…`) so both
+ *     can legitimately claim before one loses the status guard,
+ *   - an EventSource reconnect redelivering recent events,
+ *   - two browser tabs, each with its own connection.
+ *
+ * Keyed on type+orderId rather than event id, because the point is one sound
+ * per BUSINESS event, and those three cases produce different ids for the
+ * same business fact.
+ */
+const SOUND_DEDUPE_MS = 4000;
+const recentSounds = new Map<string, number>();
+
+/** Exact-id dedupe, for a literal redelivery of the same emission. */
+const seenEventIds = new Map<string, number>();
+const ID_DEDUPE_MS = 60_000;
+
+function prune(map: Map<string, number>, ttl: number, now: number) {
+  if (map.size < 64) return;
+  for (const [k, t] of map) if (now - t > ttl) map.delete(k);
+}
+
+/**
+ * Decide whether this event should make a sound, and which. Returns null when
+ * it should be silent — either because the event type is quiet, or because it
+ * is a duplicate of one we just played.
+ */
+export function resolveEventTone(event: DomainEvent): NotificationTone | null {
+  const now = Date.now();
+
+  // 1. Literal redelivery of the same emission.
+  if (seenEventIds.has(event.id)) return null;
+  seenEventIds.set(event.id, now);
+  prune(seenEventIds, ID_DEDUPE_MS, now);
+
+  let tone = EVENT_TONE[event.type];
+  if (tone === undefined || tone === null) return null;
+
+  const orderId =
+    (event.payload as { orderId?: string } | undefined)?.orderId ?? "";
+
+  // 2. A manual-capture order that was authorized first gets the distinct
+  //    "captured" tone when it later becomes PAID, so capture is audibly
+  //    different from a straight-through payment.
+  if (event.type === DomainEventType.ORDER_AUTHORIZED && orderId) {
+    AUTHORIZED_ORDERS.add(orderId);
+  }
+  if (
+    event.type === DomainEventType.ORDER_PAID &&
+    orderId &&
+    AUTHORIZED_ORDERS.has(orderId)
+  ) {
+    tone = "captured";
+    AUTHORIZED_ORDERS.delete(orderId);
+  }
+
+  // 3. Same business event on the same order inside the window.
+  const key = `${event.type}:${orderId}`;
+  const last = recentSounds.get(key);
+  if (last !== undefined && now - last < SOUND_DEDUPE_MS) return null;
+  recentSounds.set(key, now);
+  prune(recentSounds, SOUND_DEDUPE_MS, now);
+
+  return tone;
+}
+
+/** Test seam: clear dedupe state between cases. */
+export function _resetNotificationDedupe(): void {
+  recentSounds.clear();
+  seenEventIds.clear();
+  AUTHORIZED_ORDERS.clear();
 }
 
 function notifyForEvent(event: DomainEvent) {

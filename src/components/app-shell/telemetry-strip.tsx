@@ -2,6 +2,9 @@
 
 import * as React from "react";
 
+import { Volume2Icon, VolumeXIcon } from "lucide-react";
+
+import { useNotificationSound } from "@/components/providers/notification-sound-provider";
 import { useRealtimeStatus } from "@/components/providers/realtime-provider";
 import { cn } from "@/lib/utils";
 
@@ -59,6 +62,60 @@ function detectEnv(): "live" | "test" {
   if (typeof window === "undefined") return "test";
   const k = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
   return k.startsWith("pk_live_") ? "live" : "test";
+}
+
+/**
+ * Global notification-sound control.
+ *
+ * Lives HERE, in the telemetry strip, because the preference is global to the
+ * console: it is not organization-specific, it is not in organization
+ * settings, and it is deliberately not inside the organization switcher. The
+ * strip is rendered by the authenticated layout above <main>, so the control
+ * keeps its exact position and state while switching between
+ * RentalConfirmation, TripReservations and FlightBizz.
+ *
+ * Turning it off silences the very next event — the player reads the
+ * preference from a ref rather than a captured value.
+ *
+ * Visual notifications and the live activity feed are unaffected either way;
+ * this governs audio only.
+ */
+function SoundToggle() {
+  const { enabled, toggle, unlocked } = useNotificationSound();
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      aria-pressed={enabled}
+      aria-label={
+        enabled
+          ? "Notification sound is on. Turn off."
+          : "Notification sound is off. Turn on."
+      }
+      title={
+        enabled && !unlocked
+          ? "Sound on — will start after your first click on the page"
+          : enabled
+            ? "Notification sound on"
+            : "Notification sound off"
+      }
+      className={cn(
+        "inline-flex items-center gap-1 rounded-sm px-1 -mx-1",
+        "transition-colors hover:text-foreground/90",
+        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        enabled ? "text-foreground/85" : "text-muted-foreground/60",
+      )}
+    >
+      {enabled ? (
+        <Volume2Icon className="size-3" aria-hidden />
+      ) : (
+        <VolumeXIcon className="size-3" aria-hidden />
+      )}
+      <span className="tracking-[0.08em]">
+        Sound {enabled ? "on" : "off"}
+      </span>
+    </button>
+  );
 }
 
 export function TelemetryStrip({
@@ -124,6 +181,9 @@ export function TelemetryStrip({
       </Cell>
       <Cell>
         <RealtimeDot status={realtime} />
+      </Cell>
+      <Cell>
+        <SoundToggle />
       </Cell>
 
       <span className="ml-auto flex h-full items-center">
