@@ -42,8 +42,15 @@ export const PasswordInput = React.forwardRef<
         {...props}
       />
       <button
+        // `type="button"` so it can never submit the surrounding form.
         type="button"
         onClick={toggle}
+        // Keep the caret in the input. `tabIndex={-1}` alone only removes
+        // the button from the TAB ORDER — a click would still move focus to
+        // it in Chrome and Safari, so the user would lose their place
+        // mid-typing. Preventing the default on mousedown stops the focus
+        // shift before it happens, while leaving the click itself intact.
+        onMouseDown={(e) => e.preventDefault()}
         tabIndex={-1}
         aria-label={visible ? "Hide password" : "Show password"}
         className={cn(

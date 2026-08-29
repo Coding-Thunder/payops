@@ -11,6 +11,11 @@ import { renderWithUser, screen, waitFor } from "@/tests/utils/render";
  *
  * `next/navigation` is mocked because the form calls
  * router.replace + router.refresh on success.
+ *
+ * NOTE ON QUERIES: the password field is looked up with an ANCHORED
+ * `/^password$/i`. The visibility toggle carries an aria-label of "Show
+ * password" / "Hide password", so an unanchored `/password/i` matches both
+ * the input and the button and throws on ambiguity.
  */
 
 const replace = vi.fn();
@@ -43,7 +48,7 @@ describe("LoginForm", () => {
 
     const { user } = renderWithUser(<LoginForm />);
     await user.type(screen.getByLabelText(/work email/i), "ada@payops.test");
-    await user.type(screen.getByLabelText(/password/i), "short");
+    await user.type(screen.getByLabelText(/^password$/i), "short");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
     expect(
@@ -65,7 +70,7 @@ describe("LoginForm", () => {
 
     const { user } = renderWithUser(<LoginForm nextPath="/orders" />);
     await user.type(screen.getByLabelText(/work email/i), "ada@payops.test");
-    await user.type(screen.getByLabelText(/password/i), "Hunter2!");
+    await user.type(screen.getByLabelText(/^password$/i), "Hunter2!");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
@@ -96,7 +101,7 @@ describe("LoginForm", () => {
       <LoginForm nextPath="//evil.example.com/steal" />,
     );
     await user.type(screen.getByLabelText(/work email/i), "ada@payops.test");
-    await user.type(screen.getByLabelText(/password/i), "Hunter2!");
+    await user.type(screen.getByLabelText(/^password$/i), "Hunter2!");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
     // `safeNext` rejects the protocol-relative path and falls back to the
@@ -118,12 +123,51 @@ describe("LoginForm", () => {
 
     const { user } = renderWithUser(<LoginForm />);
     await user.type(screen.getByLabelText(/work email/i), "ada@payops.test");
-    await user.type(screen.getByLabelText(/password/i), "Hunter2!");
+    await user.type(screen.getByLabelText(/^password$/i), "Hunter2!");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
     expect(
       await screen.findByText(/invalid email or password/i),
     ).toBeInTheDocument();
     expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("toggles the password between masked and visible without submitting", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { user } = renderWithUser(<LoginForm turnstileSiteKey="" />);
+
+    const password = screen.getByLabelText(/^password$/i) as HTMLInputElement;
+    // Masked by default — the property that must never regress.
+    expect(password.type).toBe("password");
+
+    const toggle = screen.getByRole("button", { name: /show password/i });
+    await user.click(toggle);
+    expect(password.type).toBe("text");
+    expect(
+      screen.getByRole("button", { name: /hide password/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /hide password/i }));
+    expect(password.type).toBe("password");
+
+    // The eye is type="button", so toggling must never submit the form.
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps focus in the password field when the eye is clicked", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+    const { user } = renderWithUser(<LoginForm turnstileSiteKey="" />);
+
+    const password = screen.getByLabelText(/^password$/i);
+    await user.click(password);
+    await user.type(password, "secret123");
+    expect(password).toHaveFocus();
+
+    await user.click(screen.getByRole("button", { name: /show password/i }));
+    // Without the mousedown guard the button would take focus here and the
+    // user would lose their place mid-typing.
+    expect(password).toHaveFocus();
+    expect(password).toHaveValue("secret123");
   });
 });

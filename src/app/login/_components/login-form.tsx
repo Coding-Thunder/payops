@@ -16,6 +16,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { api, ApiClientError } from "@/lib/api-client";
 import { loginSchema, type LoginInput } from "@/lib/validation";
@@ -107,8 +108,10 @@ export function LoginForm({ nextPath, turnstileSiteKey }: LoginFormProps) {
             <FormItem>
               <FormLabel>Password</FormLabel>
               <FormControl>
-                <Input
-                  type="password"
+                {/* The shared primitive rather than a second eye-toggle:
+                    reset-password and the admin password dialogs already use
+                    it, so all three behave identically. */}
+                <PasswordInput
                   autoComplete="current-password"
                   placeholder="••••••••"
                   disabled={isSubmitting}
