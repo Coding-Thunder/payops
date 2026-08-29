@@ -32,6 +32,19 @@ interface RecordAuditInput {
   actor?: AuditActor | null;
   request?: RequestContext | null;
   metadata?: Record<string, unknown> | null;
+  /**
+   * Explicit tenant attribution, for callers that have no request context.
+   *
+   * Webhook and outbox paths run with no cookie and no session, so the
+   * ambient scope resolves to null — and a null-organization audit row is
+   * visible ONLY to the default organization. That was invisible while the
+   * default organization was also the only one taking Stripe payments; with
+   * a third tenant it means a brand cannot see its own payment audit trail.
+   *
+   * OPTIONAL and undefined by default, so every existing caller keeps the
+   * exact attribution it had.
+   */
+  organizationId?: string | Types.ObjectId | null;
 }
 
 /**
@@ -46,6 +59,14 @@ interface RecordAuditInput {
  *     atomically. This is the dispute-grade path used by webhook +
  *     order-create flows.
  */
+function toObjectIdOrNull(
+  value: string | Types.ObjectId | null | undefined,
+): Types.ObjectId | null {
+  if (!value) return null;
+  if (value instanceof Types.ObjectId) return value;
+  return Types.ObjectId.isValid(value) ? new Types.ObjectId(value) : null;
+}
+
 export async function recordAudit(
   input: RecordAuditInput,
   session: ClientSession | null = null,
@@ -53,7 +74,10 @@ export async function recordAudit(
   // Attribute the row to the acting organization. Null on webhook, outbox
   // and script paths, which have no organization context and never should —
   // matching how those rows looked before the migration.
-  const organizationId = organizationStamp(await getRequestOrganizationScope());
+  const organizationId =
+    input.organizationId !== undefined
+      ? toObjectIdOrNull(input.organizationId)
+      : organizationStamp(await getRequestOrganizationScope());
 
   if (session) {
     await connectMongo();

@@ -7,6 +7,8 @@ import {
   AlertCircleIcon,
   ArchiveIcon,
   CheckCircle2Icon,
+  ShieldCheckIcon,
+  ShieldOffIcon,
   ClockIcon,
   CreditCardIcon,
   HandshakeIcon,
@@ -76,6 +78,27 @@ const VISUALS: Record<DomainEventType, EventVisual> = {
     icon: CheckCircle2Icon,
     tone: "bg-success-soft text-success ring-success-border/60",
     title: "Payment received",
+    description: (e) =>
+      `${e.payload.orderNumber ?? ""} · ${e.payload.customerName ?? ""}`,
+    href: (e) =>
+      e.payload.orderId ? `/app/orders/${e.payload.orderId}` : null,
+  },
+  [DomainEventType.ORDER_AUTHORIZED]: {
+    icon: ShieldCheckIcon,
+    tone: "bg-info-soft text-info ring-info-border/60",
+    // Wording matters here: the money has NOT moved. An operator reading
+    // "Payment received" on an authorization would confirm a booking
+    // believing they had been paid.
+    title: "Payment authorized",
+    description: (e) =>
+      `${e.payload.orderNumber ?? ""} · ${e.payload.customerName ?? ""}`,
+    href: (e) =>
+      e.payload.orderId ? `/app/orders/${e.payload.orderId}` : null,
+  },
+  [DomainEventType.ORDER_AUTHORIZATION_RELEASED]: {
+    icon: ShieldOffIcon,
+    tone: "bg-warning-soft text-warning-foreground ring-warning-border/60",
+    title: "Authorization released",
     description: (e) =>
       `${e.payload.orderNumber ?? ""} · ${e.payload.customerName ?? ""}`,
     href: (e) =>

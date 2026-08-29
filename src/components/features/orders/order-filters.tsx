@@ -13,19 +13,39 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ORDER_STATUSES, BOOKING_TYPES } from "@/lib/constants/enums";
+import {
+  ORDER_STATUSES,
+  BOOKING_TYPES,
+  type ServiceType,
+} from "@/lib/constants/enums";
 import {
   BookingTypeLabel,
   OrderStatusLabel,
+  ServiceTypeLabel,
 } from "@/lib/constants/labels";
 
 const ALL = "__all__";
 
+/** Today's placeholder, kept verbatim for single-service organizations. */
+const RENTAL_SEARCH_PLACEHOLDER =
+  "Search by order, customer, phone, or vehicle";
+/** Used only once the service filter is on screen, where "vehicle" is
+ *  no longer the only thing an order can be about. */
+const MULTI_SERVICE_SEARCH_PLACEHOLDER = "Search by order, customer, or phone";
+
 interface OrderFiltersProps {
   canSeeAll: boolean;
+  /**
+   * Service types the viewing organization actually sells. Omit — as every
+   * existing caller does — and the service filter is not rendered at all
+   * and the search placeholder is unchanged, so the two incumbent brands
+   * see exactly the filter bar they see today. The control appears only
+   * when there is a genuine choice to make, i.e. more than one type.
+   */
+  serviceTypes?: ServiceType[];
 }
 
-export function OrderFilters({ canSeeAll }: OrderFiltersProps) {
+export function OrderFilters({ canSeeAll, serviceTypes }: OrderFiltersProps) {
   const router = useRouter();
   const params = useSearchParams();
   const [pending, startTransition] = useTransition();
@@ -49,6 +69,9 @@ export function OrderFilters({ canSeeAll }: OrderFiltersProps) {
     update("q", query.trim() || null);
   }
 
+  const serviceOptions = serviceTypes ?? [];
+  const showServiceFilter = serviceOptions.length > 1;
+
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-1 p-2 md:flex-row md:items-center">
       <div className="relative flex-1 max-w-md">
@@ -63,10 +86,32 @@ export function OrderFilters({ canSeeAll }: OrderFiltersProps) {
               commitQuery();
             }
           }}
-          placeholder="Search by order, customer, phone, or vehicle"
+          placeholder={
+            showServiceFilter
+              ? MULTI_SERVICE_SEARCH_PLACEHOLDER
+              : RENTAL_SEARCH_PLACEHOLDER
+          }
           className="h-8 pl-8 bg-background"
         />
       </div>
+      {showServiceFilter ? (
+        <Select
+          value={params.get("serviceType") ?? ALL}
+          onValueChange={(v) => update("serviceType", v)}
+        >
+          <SelectTrigger className="w-full md:w-44">
+            <SelectValue placeholder="Service" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All services</SelectItem>
+            {serviceOptions.map((s) => (
+              <SelectItem key={s} value={s}>
+                {ServiceTypeLabel[s]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : null}
       <Select
         value={params.get("status") ?? ALL}
         onValueChange={(v) => update("status", v)}

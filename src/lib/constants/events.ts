@@ -9,6 +9,10 @@ export const DomainEventType = {
   ORDER_EMAIL_SENT: "order:email_sent",
   ORDER_CONSENT_RECEIVED: "order:consent_received",
   ORDER_PAID: "order:paid",
+  /** Manual capture only: funds held, not taken. */
+  ORDER_AUTHORIZED: "order:authorized",
+  /** Manual capture only: a held authorization was released uncaptured. */
+  ORDER_AUTHORIZATION_RELEASED: "order:authorization_released",
   ORDER_CONFIRMATION_SENT: "order:confirmation_sent",
   ORDER_FAILED: "order:failed",
   ORDER_EXPIRED: "order:expired",

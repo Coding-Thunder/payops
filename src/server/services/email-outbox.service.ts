@@ -13,7 +13,10 @@ import {
 import { connectMongo } from "@/server/db/mongoose";
 import { sessionOpt } from "@/server/db/transaction";
 
-import { sendPaymentConfirmationEmail } from "./email.service";
+import {
+  sendPaymentAuthorizedEmail,
+  sendPaymentConfirmationEmail,
+} from "./email.service";
 import { getOrderById } from "./order.service";
 
 /* ────────────────────────── Enqueue (called in-tx) ──────────────────────── */
@@ -212,6 +215,16 @@ async function processPendingEmail(
       },
       { $set: { "payment.confirmationEmailSentAt": new Date() } },
     );
+    return;
+  }
+  if (doc.kind === EmailKind.PAYMENT_AUTHORIZED) {
+    // Manual capture only: the card was authorized, not charged. Same
+    // render-and-send path as the confirmation, deliberately WITHOUT the
+    // `payment.confirmationEmailSentAt` stamp — that field means "we told
+    // the customer their money was taken", which is precisely what has not
+    // happened yet. Stamping it here would light up the timeline's
+    // "Confirmation sent" step for a booking nobody has confirmed.
+    await sendPaymentAuthorizedEmail(order);
     return;
   }
   throw new Error(`Outbox does not handle email kind: ${doc.kind}`);

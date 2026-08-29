@@ -26,6 +26,7 @@ import { useOrderQuery } from "@/hooks/use-order-query";
 import { ApiClientError } from "@/lib/api-client";
 import { BookingTypeLabel } from "@/lib/constants/labels";
 import { formatCurrency } from "@/lib/format";
+import { describeServiceItem, serviceItemLabel } from "@/lib/service-summary";
 
 interface EmailComposePageContentProps {
   orderId: string;
@@ -147,9 +148,16 @@ export function EmailComposePageContent({
               value={formatCurrency(order.pricing.amount, order.pricing.currency)}
             />
             <SummaryRow label="Provider" value={order.provider?.name ?? "—"} />
+            {/* `vehicle` is null on FLIGHT / HOTEL orders. The CAR_RENTAL
+                branch reproduces the original label and the original
+                " · "-joined value exactly. */}
             <SummaryRow
-              label="Vehicle"
-              value={`${order.vehicle.company} · ${order.vehicle.type}`}
+              label={order.vehicle ? "Vehicle" : serviceItemLabel(order)}
+              value={
+                order.vehicle
+                  ? `${order.vehicle.company} · ${order.vehicle.type}`
+                  : describeServiceItem(order)
+              }
             />
             <SummaryRow label="Order" value={order.orderNumber} mono />
           </dl>

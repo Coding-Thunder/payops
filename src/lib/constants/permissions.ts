@@ -18,6 +18,13 @@ export const Permission = {
   ORDER_ARCHIVE: "order:archive",
   ORDER_DELETE: "order:delete",
   ORDER_REGENERATE_LINK: "order:regenerate_link",
+  /** Turn an authorized hold into a real charge. Money-moving and
+   *  irreversible from the customer's side, so it is admin-only —
+   *  deliberately NOT granted to STAFF alongside ORDER_REGENERATE_LINK. */
+  ORDER_CAPTURE_PAYMENT: "order:capture_payment",
+  /** Release an authorized hold without charging. Also admin-only: it
+   *  terminates the booking's ability to collect. */
+  ORDER_VOID_AUTHORIZATION: "order:void_authorization",
 
   ANALYTICS_VIEW: "analytics:view",
   SETTINGS_VIEW: "settings:view",
@@ -77,6 +84,13 @@ const ADMIN_ONLY_PERMISSIONS: readonly Permission[] = [
   Permission.ORDER_UPDATE,
   Permission.ORDER_ARCHIVE,
   Permission.ORDER_DELETE,
+  // Capture and release move (or free) real money on the customer's card
+  // and cannot be undone by the operator. Kept out of STAFF_PERMISSIONS on
+  // purpose — an agent may generate and resend links all day, but only an
+  // admin decides that a booking is fulfilled and the hold should become
+  // a charge.
+  Permission.ORDER_CAPTURE_PAYMENT,
+  Permission.ORDER_VOID_AUTHORIZATION,
   Permission.ANALYTICS_VIEW,
   Permission.SETTINGS_VIEW,
   Permission.SETTINGS_UPDATE,

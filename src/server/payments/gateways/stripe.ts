@@ -9,11 +9,14 @@ import { DisputeOutcome, DisputeStatus } from "@/lib/constants/enums";
 import { toMinorUnits } from "../currency";
 import { getStripeFor } from "../stripe";
 import type {
+  CancelResult,
+  CaptureResult,
   CreatePaymentSessionInput,
   CreatedPaymentSession,
   PaymentEventType,
   PaymentGateway,
   SessionStatus,
+  VerifiedAuthorizationPayload,
   VerifiedDisputePayload,
   VerifiedPaymentEvent,
   VerifiedRefundPayload,
@@ -38,7 +41,27 @@ function clampStripeExpiry(date: Date): number {
   return Math.floor(clamped / 1000);
 }
 
-function mapStripeEventType(type: string): PaymentEventType {
+/**
+ * Stripe event type → our normalised event type.
+ *
+ * The three manual-capture additions are gated on POSITIVE evidence that
+ * the intent is manual-capture, taken from the payload itself rather than
+ * from any notion of which organization we think this is:
+ *
+ *   - `amount_capturable_updated` fires ONLY under manual capture, so it
+ *     needs no gate.
+ *   - `payment_intent.succeeded` and `payment_intent.canceled` fire for
+ *     AUTOMATIC capture too. Both were previously "unhandled", and they
+ *     must STAY unhandled for automatic-capture orders or the moment an
+ *     order is marked paid would shift for RentalConfirmation — from
+ *     `checkout.session.completed` to whichever of the two Stripe happened
+ *     to deliver first. `capture_method` is a non-optional field on
+ *     PaymentIntent, so `=== "manual"` is exact.
+ */
+function mapStripeEventType(
+  type: string,
+  paymentIntent: Stripe.PaymentIntent | null,
+): PaymentEventType {
   switch (type) {
     case "checkout.session.completed":
     case "checkout.session.async_payment_succeeded":
@@ -49,6 +72,16 @@ function mapStripeEventType(type: string): PaymentEventType {
       return "checkout.failed";
     case "payment_intent.payment_failed":
       return "payment.failed";
+    case "payment_intent.amount_capturable_updated":
+      return "payment.authorized";
+    case "payment_intent.succeeded":
+      return paymentIntent?.capture_method === "manual"
+        ? "payment.captured"
+        : "unhandled";
+    case "payment_intent.canceled":
+      return paymentIntent?.capture_method === "manual"
+        ? "payment.cancelled"
+        : "unhandled";
     case "charge.dispute.created":
       return "dispute.created";
     case "charge.dispute.updated":
@@ -193,6 +226,14 @@ export function createStripeGateway(
             orderId: input.orderId,
             orderNumber: input.orderNumber,
           },
+          // Emitted ONLY on a positive manual request. When
+          // `captureMethod` is undefined — which is every call made on
+          // behalf of RentalConfirmation and TripReservations — this
+          // spreads to nothing and the outgoing payload is byte-identical
+          // to what it was before manual capture existed.
+          ...(input.captureMethod === "manual"
+            ? { capture_method: "manual" as const }
+            : {}),
         },
       },
       {
@@ -200,7 +241,17 @@ export function createStripeGateway(
         // returns the same Stripe session rather than creating a second
         // orphan. The service-layer guard prevents this in practice;
         // belt-and-suspenders.
-        idempotencyKey: `order:${input.orderId}:checkout`,
+        //
+        // Namespaced for manual capture because re-authorizing after a
+        // released hold is a NORMAL operation there, and Stripe honours an
+        // idempotency key for 24h — without the suffix the operator would
+        // silently be handed back the dead session. The automatic key is
+        // left exactly as it was; `stripe-session.characterization.test.ts`
+        // pins it.
+        idempotencyKey:
+          input.captureMethod === "manual"
+            ? `order:${input.orderId}:checkout:manual`
+            : `order:${input.orderId}:checkout`,
       },
     );
 
@@ -267,7 +318,12 @@ export function createStripeGateway(
     })();
 
     const paymentIntent = (() => {
-      if (event.type === "payment_intent.payment_failed") {
+      if (
+        event.type === "payment_intent.payment_failed" ||
+        event.type === "payment_intent.amount_capturable_updated" ||
+        event.type === "payment_intent.succeeded" ||
+        event.type === "payment_intent.canceled"
+      ) {
         return event.data.object as Stripe.PaymentIntent;
       }
       return null;
@@ -383,9 +439,59 @@ export function createStripeGateway(
       };
     })();
 
+    /**
+     * THE MANUAL-CAPTURE GUARD.
+     *
+     * Under `capture_method: manual`, Stripe fires
+     * `checkout.session.completed` the moment the customer authorizes —
+     * with `payment_status: "unpaid"` and the PaymentIntent sitting in
+     * `requires_capture`. Left alone, that event would run straight into
+     * `applyCheckoutPaid` and mark the order PAID, stamp `paidAt`, publish
+     * ORDER_PAID and email a receipt, all for money that has not moved.
+     *
+     * The test is deliberately the POSITIVE `=== "unpaid"`, never
+     * `!== "paid"`. `payment_status` is a non-optional field on the real
+     * Stripe Checkout.Session, so the positive test is exact in
+     * production — while the existing test factory omits the key
+     * entirely, so a negative test would silently reroute every existing
+     * webhook test and change behaviour for both incumbent brands.
+     *
+     * Keyed off the SESSION, not off which organization we think this is:
+     * an automatic-capture session reports "paid" and takes the identical
+     * branch it has always taken.
+     */
+    let type = mapStripeEventType(event.type, paymentIntent);
+    if (type === "checkout.completed" && session?.payment_status === "unpaid") {
+      type = "payment.authorized";
+    }
+
+    const authorizationPayload: VerifiedAuthorizationPayload | null =
+      type === "payment.authorized" ||
+      type === "payment.captured" ||
+      type === "payment.cancelled"
+        ? {
+            paymentIntentId:
+              paymentIntent?.id ??
+              (session && typeof session.payment_intent === "string"
+                ? session.payment_intent
+                : null),
+            captureMethod: paymentIntent?.capture_method ?? null,
+            paymentIntentStatus: paymentIntent?.status ?? null,
+            amountCapturableMinor:
+              typeof paymentIntent?.amount_capturable === "number"
+                ? paymentIntent.amount_capturable
+                : null,
+            amountReceivedMinor:
+              typeof paymentIntent?.amount_received === "number"
+                ? paymentIntent.amount_received
+                : null,
+            cancellationReason: paymentIntent?.cancellation_reason ?? null,
+          }
+        : null;
+
     return {
       eventId: event.id,
-      type: mapStripeEventType(event.type),
+      type,
       sessionId,
       orderId,
       paymentIntentId,
@@ -403,6 +509,7 @@ export function createStripeGateway(
       reason,
       dispute: disputePayload,
       refund: refundPayload,
+      authorization: authorizationPayload,
       raw: event,
     };
   },
@@ -435,7 +542,78 @@ export function createStripeGateway(
         typeof session.payment_intent === "string"
           ? session.payment_intent
           : null,
+      // Derived only from what `checkout.sessions.retrieve` ALREADY
+      // returns. Deliberately no `expand: ["payment_intent"]` — that would
+      // change the outgoing request for the two incumbent brands' reconcile
+      // calls. The ORDER's own pinned `payment.capture.method` is the
+      // authority on capture mode; this is a hint, not the source of truth.
+      captureMethod: null,
+      amountCapturableMinor: null,
+      paymentIntentStatus: null,
     };
+  },
+
+  /**
+   * Stripe genuinely supports authorize-then-capture, so it advertises the
+   * optional capability. PayPal and the unimplemented registry placeholders
+   * do not, and `supportsManualCapture()` narrows them out at the call site.
+   */
+  supportsManualCapture: true,
+
+  /**
+   * Convert an authorized hold into an actual charge.
+   *
+   * Callers pass an idempotency key derived from the order so an operator
+   * double-clicking "Capture payment" cannot charge the customer twice —
+   * Stripe replays the first result rather than issuing a second capture.
+   */
+  async capturePayment(
+    paymentIntentId: string,
+    opts?: { amountMinor?: number | null; idempotencyKey?: string },
+  ): Promise<CaptureResult> {
+    const stripe = getStripeFor(credentials().secretKey);
+    const params: Stripe.PaymentIntentCaptureParams =
+      typeof opts?.amountMinor === "number"
+        ? { amount_to_capture: opts.amountMinor, final_capture: true }
+        : {};
+    const intent = await stripe.paymentIntents.capture(
+      paymentIntentId,
+      params,
+      opts?.idempotencyKey ? { idempotencyKey: opts.idempotencyKey } : undefined,
+    );
+    return {
+      paymentIntentId: intent.id,
+      status: intent.status,
+      amountReceivedMinor:
+        typeof intent.amount_received === "number"
+          ? intent.amount_received
+          : null,
+    };
+  },
+
+  /**
+   * Release an authorization without charging. This is what happens when
+   * the operator cannot fulfil the booking — the customer's held funds go
+   * back rather than being taken and refunded, which is both faster for
+   * them and cheaper for the merchant.
+   */
+  async cancelPayment(
+    paymentIntentId: string,
+    opts?: {
+      reason?: "abandoned" | "duplicate" | "fraudulent" | "requested_by_customer";
+      idempotencyKey?: string;
+    },
+  ): Promise<CancelResult> {
+    const stripe = getStripeFor(credentials().secretKey);
+    const params: Stripe.PaymentIntentCancelParams = opts?.reason
+      ? { cancellation_reason: opts.reason }
+      : {};
+    const intent = await stripe.paymentIntents.cancel(
+      paymentIntentId,
+      params,
+      opts?.idempotencyKey ? { idempotencyKey: opts.idempotencyKey } : undefined,
+    );
+    return { paymentIntentId: intent.id, status: intent.status };
   },
   };
 }

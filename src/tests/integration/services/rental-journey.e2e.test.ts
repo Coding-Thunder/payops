@@ -52,8 +52,10 @@ describe("rental journey (end-to-end)", () => {
     // pricing.amount == prepaid total (the ONLY figure billed online)
     expect(draft.pricing.amount).toBe(150);
     expect(draft.charges).toHaveLength(2);
-    expect(draft.trip.pickupLocation).toBe("LAX Airport — Terminal 1");
-    expect(draft.trip.dropoffLocation).toBe("San Diego Downtown");
+    // `trip` is non-null on a car rental — it only became nullable for the
+    // FLIGHT / HOTEL service types. Assertions unchanged.
+    expect(draft.trip!.pickupLocation).toBe("LAX Airport — Terminal 1");
+    expect(draft.trip!.dropoffLocation).toBe("San Diego Downtown");
 
     // Single source of truth derivations
     const sum = summarizeCharges(draft.charges);

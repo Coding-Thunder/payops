@@ -12,7 +12,10 @@ import {
 import {
   OrderEvidenceActorLabel,
   OrderEvidenceEventLabel,
+  ServiceItemLabel,
+  ServiceTypeLabel,
 } from "@/lib/constants/labels";
+import { ServiceType } from "@/lib/constants/enums";
 import { formatCurrency, formatIp } from "@/lib/format";
 import type { OrderEvidenceChainDTO, OrderEvidenceEventDTO } from "@/types";
 
@@ -156,6 +159,14 @@ export function EvidenceDocument({
   generatedAt,
 }: EvidenceDocumentProps) {
   const { order, events, verification } = chain;
+  // A snapshot taken before `serviceType` existed has no such field, and
+  // every order that predates it is a car rental.
+  const serviceType = order.serviceType ?? ServiceType.CAR_RENTAL;
+  const isCarRental = serviceType === ServiceType.CAR_RENTAL;
+  // `vehicle` is null on a flight or hotel; `item` carries the equivalent
+  // ("LHR → JFK", "Hilton • Paris"). Never drop the line — this is the
+  // packet a chargeback is defended with.
+  const vehicle = order.vehicle;
   return (
     <Document
       title={`Evidence — ${order.orderNumber}`}
@@ -193,10 +204,17 @@ export function EvidenceDocument({
           value={formatCurrency(order.pricing.amount, order.pricing.currency)}
         />
         <Row label="Provider" value={order.provider?.name ?? "—"} />
-        <Row
-          label="Vehicle"
-          value={`${order.vehicle.company} · ${order.vehicle.type}`}
-        />
+        {isCarRental ? null : (
+          <Row label="Service" value={ServiceTypeLabel[serviceType]} />
+        )}
+        {vehicle ? (
+          <Row
+            label="Vehicle"
+            value={`${vehicle.company} · ${vehicle.type}`}
+          />
+        ) : (
+          <Row label={ServiceItemLabel[serviceType]} value={order.item} />
+        )}
         <Row label="Created" value={order.createdAt} />
 
         <View style={styles.imagesRow}>
@@ -210,15 +228,15 @@ export function EvidenceDocument({
               <Text style={styles.imageTileCaption}>{order.provider.name}</Text>
             </View>
           ) : null}
-          {order.vehicle.imageUrl ? (
+          {vehicle?.imageUrl ? (
             <View style={styles.imageTile}>
               <Text style={styles.imageTileLabel}>Vehicle</Text>
               <Image
-                src={order.vehicle.imageUrl}
+                src={vehicle.imageUrl}
                 style={styles.imageTileImg}
               />
               <Text style={styles.imageTileCaption}>
-                {order.vehicle.company} · {order.vehicle.type}
+                {vehicle.company} · {vehicle.type}
               </Text>
             </View>
           ) : null}

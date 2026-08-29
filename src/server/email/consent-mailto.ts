@@ -1,8 +1,38 @@
 import "server-only";
 
+import { ServiceType } from "@/lib/constants/enums";
+import { serviceDetailRows, serviceTypeOf } from "@/lib/service-summary";
 import type { OrderDTO } from "@/types";
 
 import { formatEmailDay } from "./format";
+
+/**
+ * The order-facts block: what was booked, in the booking's own vocabulary.
+ *
+ * CAR_RENTAL reproduces the three lines this function emitted inline before
+ * service types existed — "Vehicle: Company • Type" then the bare pick-up
+ * and drop-off days, no locations. `serviceDetailRows()` renders the rental
+ * case slightly differently (a space instead of "•"), so the rental branch
+ * deliberately keeps its own literals rather than routing through it; a
+ * flight or hotel has no vehicle and no pick-up at all and takes the shared
+ * helper, which is the whole point of that module.
+ */
+function serviceLines(order: OrderDTO): string[] {
+  if (serviceTypeOf(order) === ServiceType.CAR_RENTAL) {
+    const lines: string[] = [];
+    if (order.vehicle) {
+      lines.push(`Vehicle: ${order.vehicle.company} • ${order.vehicle.type}`);
+    }
+    if (order.trip) {
+      lines.push(`Pick-up: ${formatEmailDay(order.trip.pickupDate)}`);
+      lines.push(`Drop-off: ${formatEmailDay(order.trip.dropoffDate)}`);
+    }
+    return lines;
+  }
+  return serviceDetailRows(order, formatEmailDay).map(
+    (row) => `${row.label}: ${row.value}`,
+  );
+}
 
 /**
  * Build the mailto: URL used by the "Email us instead" fallback link in
@@ -33,9 +63,7 @@ export function buildConsentMailto(args: {
     `Customer: ${order.customer.name}`,
     `Order: ${order.orderNumber}`,
     `Provider: ${order.provider?.name ?? "—"}`,
-    `Vehicle: ${order.vehicle.company} • ${order.vehicle.type}`,
-    `Pick-up: ${formatEmailDay(order.trip.pickupDate)}`,
-    `Drop-off: ${formatEmailDay(order.trip.dropoffDate)}`,
+    ...serviceLines(order),
     `Amount: ${order.pricing.amount.toFixed(2)} ${order.pricing.currency}`,
     order.payment.paymentUrl
       ? `Payment link: ${order.payment.paymentUrl}`

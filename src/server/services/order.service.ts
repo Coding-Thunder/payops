@@ -7,14 +7,18 @@ import { sessionOpt, withTx } from "@/server/db/transaction";
 import {
   AuditAction,
   AuditEntity,
+  BookingStatus,
   BookingType,
+  CaptureMode,
   ConsentMethod,
   ConsentStatus,
   OrderEvidenceActorType,
   OrderEvidenceEventType,
   OrderStatus,
+  PaymentCaptureStatus,
   PaymentGatewayKey,
   RecordState,
+  ServiceType,
   UserRole,
 } from "@/lib/constants/enums";
 import {
@@ -28,9 +32,14 @@ import { roleHasPermission, Permission } from "@/lib/constants/permissions";
 import { DomainEventType } from "@/lib/constants/events";
 import { resolveProvider } from "@/lib/constants/providers";
 import { summarizeCharges } from "@/lib/charges";
+import {
+  describeServiceDates,
+  describeServiceItem,
+  serviceTypeOf,
+} from "@/lib/service-summary";
 import { logger } from "@/lib/logger";
 import { publishEvent } from "@/server/events/bus";
-import { Order, type OrderDoc } from "@/server/db/models";
+import { Order, type OrderDoc, Organization } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 import {
   belongsToScope,
@@ -42,6 +51,9 @@ import { resolvePublicBrand } from "@/server/email/identity";
 import type {
   ArchiveOrderInput,
   CreateOrderInput,
+  CreateOrderRequestInput,
+  FlightOrderInput,
+  HotelOrderInput,
   ListOrdersQuery,
 } from "@/lib/validation";
 import type { OrderDTO, PaginatedResult } from "@/types";
@@ -53,6 +65,7 @@ import type {
 } from "@/server/payments/gateway";
 import { getGatewayForOrganization } from "@/server/payments/resolve-gateway";
 import { recordAudit } from "./audit.service";
+import { applyPaymentAuthorized } from "./webhook.service";
 import { captureEvidenceSafe } from "./evidence.service";
 import { getSettings } from "./settings.service";
 import { generateOrderNumber } from "./order-number";
@@ -87,7 +100,7 @@ interface OrderActor {
   role: UserRole;
 }
 
-interface OrderContext {
+export interface OrderContext {
   actor: OrderActor;
   request?: RequestContext | null;
 }
@@ -104,8 +117,13 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
     id: String(doc._id),
     orderNumber: doc.orderNumber,
     bookingType: doc.bookingType as BookingType,
+    // `?? CAR_RENTAL` is load-bearing, not defensive noise: `.lean()` does
+    // NOT apply Mongoose defaults, so every order stored before this field
+    // existed arrives here with no `serviceType` key at all.
+    serviceType: (doc.serviceType ?? ServiceType.CAR_RENTAL) as ServiceType,
     status: doc.status as OrderStatus,
     state: doc.state as RecordState,
+    bookingStatus: (doc.bookingStatus ?? null) as BookingStatus | null,
     customer: { ...doc.customer },
     provider: doc.provider
       ? {
@@ -125,13 +143,60 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
             onPrimaryColor: fallback.onPrimaryColor,
           };
         })(),
-    vehicle: { ...doc.vehicle },
-    trip: {
-      pickupDate: doc.trip.pickupDate.toISOString(),
-      dropoffDate: doc.trip.dropoffDate.toISOString(),
-      pickupLocation: doc.trip.pickupLocation ?? null,
-      dropoffLocation: doc.trip.dropoffLocation ?? null,
-    },
+    vehicle: doc.vehicle
+      ? {
+          company: doc.vehicle.company,
+          type: doc.vehicle.type,
+          imageUrl: doc.vehicle.imageUrl ?? null,
+        }
+      : null,
+    trip: doc.trip
+      ? {
+          pickupDate: new Date(doc.trip.pickupDate).toISOString(),
+          dropoffDate: new Date(doc.trip.dropoffDate).toISOString(),
+          pickupLocation: doc.trip.pickupLocation ?? null,
+          dropoffLocation: doc.trip.dropoffLocation ?? null,
+        }
+      : null,
+    flight: doc.flight
+      ? {
+          tripType: doc.flight.tripType,
+          airline: doc.flight.airline ?? null,
+          flightNumber: doc.flight.flightNumber ?? null,
+          origin: doc.flight.origin,
+          destination: doc.flight.destination,
+          departureDate: new Date(doc.flight.departureDate).toISOString(),
+          departureTimePreference: doc.flight.departureTimePreference ?? null,
+          returnDate: doc.flight.returnDate
+            ? new Date(doc.flight.returnDate).toISOString()
+            : null,
+          returnTimePreference: doc.flight.returnTimePreference ?? null,
+          cabinClass: doc.flight.cabinClass,
+          passengers: {
+            adults: doc.flight.passengers?.adults ?? 1,
+            children: doc.flight.passengers?.children ?? 0,
+            infants: doc.flight.passengers?.infants ?? 0,
+          },
+          passengerNotes: doc.flight.passengerNotes ?? null,
+          pnr: doc.flight.pnr ?? null,
+        }
+      : null,
+    hotel: doc.hotel
+      ? {
+          destination: doc.hotel.destination,
+          propertyName: doc.hotel.propertyName ?? null,
+          checkInDate: new Date(doc.hotel.checkInDate).toISOString(),
+          checkOutDate: new Date(doc.hotel.checkOutDate).toISOString(),
+          rooms: doc.hotel.rooms,
+          guests: {
+            adults: doc.hotel.guests?.adults ?? 1,
+            children: doc.hotel.guests?.children ?? 0,
+          },
+          roomPreference: doc.hotel.roomPreference ?? null,
+          guestNotes: doc.hotel.guestNotes ?? null,
+          confirmationCode: doc.hotel.confirmationCode ?? null,
+        }
+      : null,
     pricing: { amount: doc.pricing.amount, currency: doc.pricing.currency },
     // Charges are the source of truth; legacy orders (no `charges[]`) get a
     // single synthesised prepaid line from `pricing.amount`.
@@ -169,6 +234,31 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
         : null,
       initiatedAt: doc.payment.initiatedAt
         ? doc.payment.initiatedAt.toISOString()
+        : null,
+      // Null for every automatic-capture order, i.e. every order both
+      // incumbent brands have. The UI keys its Capture / Release controls
+      // off this, so those controls are unreachable for them.
+      capture: doc.payment.capture
+        ? {
+            method: doc.payment.capture.method,
+            status: doc.payment.capture.status,
+            authorizedAt: doc.payment.capture.authorizedAt
+              ? new Date(doc.payment.capture.authorizedAt).toISOString()
+              : null,
+            amountAuthorized: doc.payment.capture.amountAuthorized ?? null,
+            captureExpiresAt: doc.payment.capture.captureExpiresAt
+              ? new Date(doc.payment.capture.captureExpiresAt).toISOString()
+              : null,
+            capturedAt: doc.payment.capture.capturedAt
+              ? new Date(doc.payment.capture.capturedAt).toISOString()
+              : null,
+            amountCaptured: doc.payment.capture.amountCaptured ?? null,
+            cancelledAt: doc.payment.capture.cancelledAt
+              ? new Date(doc.payment.capture.cancelledAt).toISOString()
+              : null,
+            cancelReason: doc.payment.capture.cancelReason ?? null,
+            lastError: doc.payment.capture.lastError ?? null,
+          }
         : null,
     },
     createdBy: {
@@ -269,8 +359,88 @@ interface CreateOrderResult {
  *   - edit booking details before payment kicks off
  *   - keep Stripe rate-limit + idempotency surface tight
  */
+/**
+ * Whether an organization's payments authorize-then-capture.
+ *
+ * `?? AUTOMATIC` is load-bearing: the resolvers read organizations with
+ * `.lean()`, which does NOT apply Mongoose defaults, so a document stored
+ * before `captureMode` existed — i.e. both incumbent brands' rows — arrives
+ * with no such key and must read as AUTOMATIC.
+ *
+ * A null organizationId also means AUTOMATIC. Manual capture is only ever
+ * enabled by an explicit, stored, per-organization decision.
+ */
+export async function getOrganizationCaptureMode(
+  organizationId: string | null,
+): Promise<CaptureMode> {
+  if (!organizationId || !Types.ObjectId.isValid(organizationId)) {
+    return CaptureMode.AUTOMATIC;
+  }
+  const org = await Organization.findById(organizationId)
+    .select("payments.captureMode")
+    .lean<{ payments?: { captureMode?: CaptureMode } } | null>();
+  return org?.payments?.captureMode ?? CaptureMode.AUTOMATIC;
+}
+
+interface ResolvedLegal {
+  termsAndConditions: string;
+  termsVersion: string;
+  cancellationPolicy: string;
+  cancellationPolicyVersion: string;
+}
+
+/**
+ * The Terms & cancellation policy frozen onto a new order.
+ *
+ * These strings end up in the customer's receipt, on the consent page, and
+ * in the dispute evidence chain, so they must describe what the customer
+ * actually bought — a brand selling flights cannot be freezing car-rental
+ * terms onto its orders.
+ *
+ * The organization's own text WINS; an empty value falls through to the
+ * deployment Settings singleton. Both incumbent brands have no per-org
+ * legal text, so every field falls through and their orders are frozen
+ * with exactly the terms they are frozen with today.
+ */
+async function resolveOrderLegal(
+  organizationId: Types.ObjectId | null,
+  settings: {
+    termsAndConditions: string;
+    termsVersion: string;
+    cancellationPolicy: string;
+    cancellationPolicyVersion: string;
+  },
+): Promise<ResolvedLegal> {
+  const fallback: ResolvedLegal = {
+    termsAndConditions: settings.termsAndConditions,
+    termsVersion: settings.termsVersion,
+    cancellationPolicy: settings.cancellationPolicy,
+    cancellationPolicyVersion: settings.cancellationPolicyVersion,
+  };
+  if (!organizationId) return fallback;
+
+  const org = await Organization.findById(organizationId)
+    .select("legal")
+    .lean<{ legal?: Partial<ResolvedLegal> | null } | null>();
+  const legal = org?.legal;
+  if (!legal) return fallback;
+
+  // Field by field, so an organization can override only its T&Cs and
+  // still inherit the deployment cancellation policy.
+  return {
+    termsAndConditions:
+      legal.termsAndConditions?.trim() || fallback.termsAndConditions,
+    termsVersion: legal.termsVersion?.trim() || fallback.termsVersion,
+    cancellationPolicy:
+      legal.cancellationPolicy?.trim() || fallback.cancellationPolicy,
+    cancellationPolicyVersion:
+      legal.cancellationPolicyVersion?.trim() ||
+      fallback.cancellationPolicyVersion,
+  };
+}
+
 export async function createOrder(
-  input: CreateOrderInput,
+  input: CreateOrderRequestInput | CreateOrderInput,
   ctx: OrderContext,
 ): Promise<CreateOrderResult> {
   await connectMongo();
@@ -281,6 +451,12 @@ export async function createOrder(
       "This booking type is currently disabled. Update operational settings to enable it.",
     );
   }
+
+  // A payload with no `serviceType` is a pre-multi-service client — i.e.
+  // the existing car-rental form — and is exactly what it always was.
+  const serviceType =
+    ("serviceType" in input ? input.serviceType : undefined) ??
+    ServiceType.CAR_RENTAL;
 
   const currency = input.currency ?? settings.defaultCurrency;
   const orderId = new Types.ObjectId();
@@ -300,6 +476,72 @@ export async function createOrder(
   // consistent in both worlds.
   const organizationId = organizationStamp(await getRequestOrganizationScope());
 
+  // GUARD: a non-CAR_RENTAL order must be OWNED.
+  //
+  // An unowned order (organizationId null) is read as belonging to the
+  // DEFAULT organization and, critically, its payment resolves to the
+  // DEPLOYMENT Stripe account. For a car rental that is the historic
+  // pre-migration behaviour and is left alone. For a flight or a hotel it
+  // would mean FlightBizz money landing in RentalConfirmation's merchant
+  // account, so it is refused outright rather than quietly mis-charged.
+  if (serviceType !== ServiceType.CAR_RENTAL && !organizationId) {
+    throw new ValidationError(
+      "Select an organization before creating this order.",
+    );
+  }
+
+  // Legal text frozen onto the order. The organization's own text wins;
+  // an organization that has none — which is both incumbent brands —
+  // falls back to the deployment settings singleton, so their orders carry
+  // exactly the terms they have always carried.
+  const legal = await resolveOrderLegal(organizationId, settings);
+
+  const serviceFields =
+    serviceType === ServiceType.FLIGHT
+      ? {
+          flight: {
+            ...(input as FlightOrderInput).flight,
+            departureDate: new Date(
+              (input as FlightOrderInput).flight.departureDate,
+            ),
+            returnDate: (input as FlightOrderInput).flight.returnDate
+              ? new Date((input as FlightOrderInput).flight.returnDate!)
+              : null,
+          },
+          vehicle: null,
+          trip: null,
+          hotel: null,
+        }
+      : serviceType === ServiceType.HOTEL
+        ? {
+            hotel: {
+              ...(input as HotelOrderInput).hotel,
+              checkInDate: new Date(
+                (input as HotelOrderInput).hotel.checkInDate,
+              ),
+              checkOutDate: new Date(
+                (input as HotelOrderInput).hotel.checkOutDate,
+              ),
+            },
+            vehicle: null,
+            trip: null,
+            flight: null,
+          }
+        : {
+            // Unchanged car-rental write path.
+            vehicle: (input as CreateOrderInput).vehicle,
+            trip: {
+              pickupDate: new Date((input as CreateOrderInput).trip.pickupDate),
+              dropoffDate: new Date(
+                (input as CreateOrderInput).trip.dropoffDate,
+              ),
+              pickupLocation: (input as CreateOrderInput).trip.pickupLocation,
+              dropoffLocation: (input as CreateOrderInput).trip.dropoffLocation,
+            },
+            flight: null,
+            hotel: null,
+          };
+
   const created = await withTx(async (session) => {
     const inserted = await Order.create(
       [
@@ -308,22 +550,17 @@ export async function createOrder(
           organizationId,
           orderNumber,
           bookingType: input.bookingType,
+          serviceType,
           status: OrderStatus.NOT_INITIATED,
           state: RecordState.ACTIVE,
           customer: input.customer,
           provider: providerSnapshot,
-          vehicle: input.vehicle,
-          trip: {
-            pickupDate: new Date(input.trip.pickupDate),
-            dropoffDate: new Date(input.trip.dropoffDate),
-            pickupLocation: input.trip.pickupLocation,
-            dropoffLocation: input.trip.dropoffLocation,
-          },
+          ...serviceFields,
           pricing: { amount: chargeSummary.prepaid, currency },
           charges: chargeSummary.charges,
           terms: {
-            text: settings.termsAndConditions,
-            version: settings.termsVersion,
+            text: legal.termsAndConditions,
+            version: legal.termsVersion,
           },
           payment: {
             status: OrderStatus.NOT_INITIATED,
@@ -336,8 +573,8 @@ export async function createOrder(
           },
           policy: {
             acceptedAt: new Date(),
-            version: settings.cancellationPolicyVersion,
-            text: settings.cancellationPolicy,
+            version: legal.cancellationPolicyVersion,
+            text: legal.cancellationPolicy,
           },
           risk: { flagged: false },
           consent: { status: ConsentStatus.NOT_REQUESTED },
@@ -363,6 +600,7 @@ export async function createOrder(
           total: chargeSummary.total,
           currency: orderDoc.pricing.currency,
           bookingType: orderDoc.bookingType,
+          serviceType,
         },
       },
       session,
@@ -399,17 +637,56 @@ export async function createOrder(
                 onPrimaryColor: orderDoc.provider.onPrimaryColor ?? null,
               }
             : null,
-          vehicle: {
-            company: orderDoc.vehicle.company,
-            type: orderDoc.vehicle.type,
-            imageUrl: orderDoc.vehicle.imageUrl ?? null,
-          },
-          trip: {
-            pickupDate: orderDoc.trip.pickupDate.toISOString(),
-            dropoffDate: orderDoc.trip.dropoffDate.toISOString(),
-            pickupLocation: orderDoc.trip.pickupLocation ?? null,
-            dropoffLocation: orderDoc.trip.dropoffLocation ?? null,
-          },
+          serviceType: serviceTypeOf(orderDoc),
+          // The rental keys keep their exact historic shape when present, so
+          // a CAR_RENTAL evidence row is byte-identical to what it was; the
+          // flight/hotel keys are simply absent for those orders.
+          vehicle: orderDoc.vehicle
+            ? {
+                company: orderDoc.vehicle.company,
+                type: orderDoc.vehicle.type,
+                imageUrl: orderDoc.vehicle.imageUrl ?? null,
+              }
+            : null,
+          trip: orderDoc.trip
+            ? {
+                pickupDate: new Date(orderDoc.trip.pickupDate).toISOString(),
+                dropoffDate: new Date(orderDoc.trip.dropoffDate).toISOString(),
+                pickupLocation: orderDoc.trip.pickupLocation ?? null,
+                dropoffLocation: orderDoc.trip.dropoffLocation ?? null,
+              }
+            : null,
+          flight: orderDoc.flight
+            ? {
+                tripType: orderDoc.flight.tripType,
+                airline: orderDoc.flight.airline ?? null,
+                flightNumber: orderDoc.flight.flightNumber ?? null,
+                origin: orderDoc.flight.origin,
+                destination: orderDoc.flight.destination,
+                departureDate: new Date(
+                  orderDoc.flight.departureDate,
+                ).toISOString(),
+                returnDate: orderDoc.flight.returnDate
+                  ? new Date(orderDoc.flight.returnDate).toISOString()
+                  : null,
+                cabinClass: orderDoc.flight.cabinClass,
+                passengers: orderDoc.flight.passengers,
+              }
+            : null,
+          hotel: orderDoc.hotel
+            ? {
+                destination: orderDoc.hotel.destination,
+                propertyName: orderDoc.hotel.propertyName ?? null,
+                checkInDate: new Date(
+                  orderDoc.hotel.checkInDate,
+                ).toISOString(),
+                checkOutDate: new Date(
+                  orderDoc.hotel.checkOutDate,
+                ).toISOString(),
+                rooms: orderDoc.hotel.rooms,
+                guests: orderDoc.hotel.guests,
+              }
+            : null,
           pricing: {
             amount: orderDoc.pricing.amount,
             currency: orderDoc.pricing.currency,
@@ -584,19 +861,18 @@ export async function initiatePayment(
     doc.organizationId ? String(doc.organizationId) : null,
     branding,
   );
-  const productName = describeProductName({
-    bookingType: doc.bookingType,
-    provider: doc.provider?.id ?? resolveProvider(undefined).id,
-    vehicle: { company: doc.vehicle.company, type: doc.vehicle.type },
-  });
-  const description = describeProductDescription({
-    trip: {
-      pickupDate: doc.trip.pickupDate.toISOString(),
-      dropoffDate: doc.trip.dropoffDate.toISOString(),
-      pickupLocation: doc.trip.pickupLocation ?? null,
-      dropoffLocation: doc.trip.dropoffLocation ?? null,
-    },
-  });
+  const productName = describeProductName(doc);
+  const description = describeProductDescription(doc);
+
+  // Capture mode comes from the ORDER'S organization, for the same reason
+  // the gateway does: an operator who has switched tenants in another tab
+  // must not change how this order's money is taken.
+  const captureMode = await getOrganizationCaptureMode(
+    doc.organizationId ? String(doc.organizationId) : null,
+  );
+  const isManualCapture =
+    captureMode === CaptureMode.MANUAL &&
+    gatewayKey === PaymentGatewayKey.STRIPE;
 
   let session: CreatedPaymentSession;
   try {
@@ -608,7 +884,10 @@ export async function initiatePayment(
       customer: doc.customer,
       productName,
       description,
-      imageUrls: doc.vehicle.imageUrl ? [doc.vehicle.imageUrl] : undefined,
+      // Undefined for an automatic-capture organization, which makes the
+      // outgoing Stripe payload byte-identical to what it has always been.
+      ...(isManualCapture ? { captureMethod: "manual" as const } : {}),
+      imageUrls: doc.vehicle?.imageUrl ? [doc.vehicle.imageUrl] : undefined,
       successUrl: settings.successRedirectUrl,
       cancelUrl: settings.cancelRedirectUrl,
       expiresAt,
@@ -656,6 +935,18 @@ export async function initiatePayment(
           "payment.expiresAt": session.expiresAt,
           "payment.paymentIntentId": session.paymentIntentId,
           "payment.initiatedAt": initiatedAt,
+          // Written ONLY for a manual-capture order. For every other order
+          // this key is absent from the $set entirely, so `payment.capture`
+          // stays null and the stored document is unchanged in shape.
+          ...(isManualCapture
+            ? {
+                "payment.capture": {
+                  method: CaptureMode.MANUAL,
+                  status: PaymentCaptureStatus.PENDING_AUTHORIZATION,
+                },
+                bookingStatus: BookingStatus.PENDING,
+              }
+            : {}),
         },
       },
       { ...sessionOpt(txSession), returnDocument: "after" },
@@ -700,6 +991,7 @@ export async function initiatePayment(
           gateway: gatewayKey,
           gatewayLabel: gateway.label,
           orderNumber: updated.orderNumber,
+          captureMode,
         },
       },
       txSession,
@@ -781,44 +1073,58 @@ export async function initiatePayment(
   };
 }
 
-interface ProductNameInput {
-  bookingType: BookingType;
-  provider: string;
-  vehicle: { company: string; type: string };
-}
+/**
+ * The line-item name on the gateway-hosted checkout page.
+ *
+ * THE CAR_RENTAL OUTPUT IS UNCHANGED. The three `bookingType` cases below
+ * are the original strings verbatim; only the noun they interpolate is now
+ * sourced from `describeServiceItem`, which returns
+ * `${company} ${type}` for a rental exactly as the old
+ * `${input.vehicle.company} ${input.vehicle.type}` did.
+ *
+ * Without this a FlightBizz customer would read "Delta • Boeing 737 rental"
+ * on the page where they authorise the charge.
+ */
+function describeProductName(order: OrderDoc): string {
+  const providerName = resolveProvider({
+    id: order.provider?.id ?? resolveProvider(undefined).id,
+  }).name;
+  const item = describeServiceItem(order);
+  const serviceType = serviceTypeOf(order);
 
-function describeProductName(input: ProductNameInput): string {
-  const providerName = resolveProvider({ id: input.provider }).name;
-  const vehicle = `${input.vehicle.company} ${input.vehicle.type}`;
-  switch (input.bookingType) {
+  if (serviceType === ServiceType.CAR_RENTAL) {
+    switch (order.bookingType) {
+      case BookingType.NEW_BOOKING:
+        return `${providerName} • ${item} rental`;
+      case BookingType.MODIFICATION:
+        return `${providerName} booking modification • ${item}`;
+      case BookingType.CANCELLATION_CHARGE:
+        return `${providerName} cancellation charge • ${item}`;
+      default:
+        return `${providerName} • ${item}`;
+    }
+  }
+
+  const noun = serviceType === ServiceType.FLIGHT ? "flight" : "hotel";
+  switch (order.bookingType) {
     case BookingType.NEW_BOOKING:
-      return `${providerName} • ${vehicle} rental`;
+      return `${providerName} • ${item} ${noun}`;
     case BookingType.MODIFICATION:
-      return `${providerName} booking modification • ${vehicle}`;
+      return `${providerName} booking modification • ${item}`;
     case BookingType.CANCELLATION_CHARGE:
-      return `${providerName} cancellation charge • ${vehicle}`;
+      return `${providerName} cancellation charge • ${item}`;
     default:
-      return `${providerName} • ${vehicle}`;
+      return `${providerName} • ${item}`;
   }
 }
 
-interface ProductDescriptionInput {
-  trip: {
-    pickupDate: string;
-    dropoffDate: string;
-    pickupLocation?: string | null;
-    dropoffLocation?: string | null;
-  };
-}
-
-function describeProductDescription(input: ProductDescriptionInput): string {
-  const pickup = new Date(input.trip.pickupDate).toISOString().slice(0, 10);
-  const drop = new Date(input.trip.dropoffDate).toISOString().slice(0, 10);
-  const pickupLoc = input.trip.pickupLocation?.trim();
-  const dropLoc = input.trip.dropoffLocation?.trim();
-  const pickupPart = pickupLoc ? `${pickup} (${pickupLoc})` : pickup;
-  const dropPart = dropLoc ? `${drop} (${dropLoc})` : drop;
-  return `Pick-up: ${pickupPart} • Drop-off: ${dropPart}`;
+/**
+ * The line-item description on the gateway-hosted checkout page.
+ * `describeServiceDates` reproduces the rental "Pick-up: … • Drop-off: …"
+ * string byte-for-byte.
+ */
+function describeProductDescription(order: OrderDoc): string {
+  return describeServiceDates(order);
 }
 
 // ---------- Listing / fetching ----------
@@ -833,6 +1139,15 @@ export async function listOrders(
   filter.state = query.state ?? RecordState.ACTIVE;
   if (query.status) filter.status = query.status;
   if (query.bookingType) filter.bookingType = query.bookingType;
+  if (query.serviceType) {
+    // CAR_RENTAL must also match rows written before `serviceType` existed.
+    // Until the backfill has run they carry no such key, and a bare equality
+    // filter would hide every historical order from both incumbent brands.
+    filter.serviceType =
+      query.serviceType === ServiceType.CAR_RENTAL
+        ? { $in: [ServiceType.CAR_RENTAL, null] }
+        : query.serviceType;
+  }
 
   // STAFF can only see their own orders unless explicitly granted ORDER_VIEW_ALL.
   const canSeeAll = roleHasPermission(ctx.actor.role, Permission.ORDER_VIEW_ALL);
@@ -914,7 +1229,7 @@ export async function getOrderById(
  * order created before organizations existed this is null, which resolves
  * to the deployment default — i.e. exactly today's behaviour.
  */
-async function resolveGatewayForOrder(
+export async function resolveGatewayForOrder(
   doc: { organizationId?: Types.ObjectId | null; payment: { gateway?: string | null } },
   override: PaymentGatewayKey | null,
 ) {
@@ -949,7 +1264,7 @@ async function resolveGatewayForOrder(
  * that "not found" and "not yours" flow through one place instead of being
  * re-derived at every fetch site.
  */
-async function assertOrderInScope(doc: {
+export async function assertOrderInScope(doc: {
   organizationId?: Types.ObjectId | null;
 }): Promise<void> {
   const scope = await getRequestOrganizationScope();
@@ -958,6 +1273,22 @@ async function assertOrderInScope(doc: {
   }
 }
 
+/**
+ * DELIBERATELY UNSCOPED BY ORGANIZATION. Do not "fix" this.
+ *
+ * The only caller is the PUBLIC /pay/success page, which the customer
+ * reaches by being redirected back from Stripe or PayPal. That request
+ * carries no session and no organization cookie, so a tenancy filter here
+ * resolves to `denyAll` → match-nothing and the payment-success page breaks
+ * for EVERY brand.
+ *
+ * The protection is at the call site and is sound: the page requires the
+ * gateway session id as well as the order number and refuses to render
+ * unless the pair matches the stored order (src/app/pay/success/page.tsx).
+ * Knowing an order number alone buys an attacker nothing.
+ *
+ * Any future ADMIN caller must use `getOrderById`, which does scope.
+ */
 export async function getOrderByNumber(
   orderNumber: string,
 ): Promise<OrderDTO | null> {
@@ -1041,6 +1372,26 @@ export async function regeneratePaymentLink(
   if (doc.state === RecordState.ARCHIVED) {
     throw new ConflictError("Cannot regenerate link on an archived order");
   }
+  // A LIVE authorization must not be orphaned.
+  //
+  // Regenerating repoints `payment.paymentIntentId` at a brand-new intent.
+  // If the old one is still holding the customer's funds, that hold becomes
+  // unreachable — Capture and Release would both act on the NEW intent, the
+  // customer stays out of pocket until Stripe expires the old hold ~7 days
+  // later, and a second successful payment would charge them twice.
+  //
+  // Release the authorization first, then regenerate. `payment.capture` is
+  // null on every automatic-capture order, so neither incumbent brand can
+  // reach this branch.
+  const liveCapture = doc.payment?.capture?.status;
+  if (
+    liveCapture === PaymentCaptureStatus.AUTHORIZED ||
+    liveCapture === PaymentCaptureStatus.CAPTURE_PENDING
+  ) {
+    throw new ConflictError(
+      "This order has a live authorization. Release the authorization before generating a new payment link.",
+    );
+  }
 
   const settings = await getSettings();
   // The merchant account that HOLDS the original session — resolved through
@@ -1081,11 +1432,33 @@ export async function regeneratePaymentLink(
     }
   }
 
+  // THE CAPTURE MODE MUST BE CARRIED OVER.
+  //
+  // `initiatePayment` resolves this from the order's organization and pins
+  // `payment.capture`. Regeneration has to resolve it again, or the
+  // replacement session is created with AUTOMATIC capture while the order
+  // still says MANUAL — Stripe would charge the customer at checkout while
+  // the webhook path recorded it as a mere authorization, leaving an order
+  // that took real money and never became PAID.
+  //
+  // Resolved from the ORDER's organization for the same reason the gateway
+  // is: an operator who has switched tenants in another tab must not change
+  // how this order's money is taken.
+  const regenCaptureMode = await getOrganizationCaptureMode(
+    doc.organizationId ? String(doc.organizationId) : null,
+  );
+  const regenIsManual =
+    regenCaptureMode === CaptureMode.MANUAL &&
+    gateway.key === PaymentGatewayKey.STRIPE;
+
   let session: CreatedPaymentSession;
   try {
     session = await gateway.createSession({
       orderId: String(doc._id),
       orderNumber: doc.orderNumber,
+      // Undefined for an automatic-capture organization, so the outgoing
+      // payload for both incumbent brands is byte-identical to today's.
+      ...(regenIsManual ? { captureMethod: "manual" as const } : {}),
       // Regeneration reuses the snapshot already attached to the order —
       // never re-validates against the live catalog so disabled providers
       // can still have outstanding payment links refreshed. `pricing.amount`
@@ -1094,20 +1467,9 @@ export async function regeneratePaymentLink(
       amount: doc.pricing.amount,
       currency: doc.pricing.currency,
       customer: doc.customer,
-      productName: describeProductName({
-        bookingType: doc.bookingType,
-        provider: doc.provider?.id ?? resolveProvider(undefined).id,
-        vehicle: { company: doc.vehicle.company, type: doc.vehicle.type },
-      }),
-      description: describeProductDescription({
-        trip: {
-          pickupDate: doc.trip.pickupDate.toISOString(),
-          dropoffDate: doc.trip.dropoffDate.toISOString(),
-          pickupLocation: doc.trip.pickupLocation ?? null,
-          dropoffLocation: doc.trip.dropoffLocation ?? null,
-        },
-      }),
-      imageUrls: doc.vehicle.imageUrl ? [doc.vehicle.imageUrl] : undefined,
+      productName: describeProductName(doc),
+      description: describeProductDescription(doc),
+      imageUrls: doc.vehicle?.imageUrl ? [doc.vehicle.imageUrl] : undefined,
       successUrl: settings.successRedirectUrl,
       cancelUrl: settings.cancelRedirectUrl,
       expiresAt,
@@ -1143,6 +1505,26 @@ export async function regeneratePaymentLink(
   doc.payment.gateway = gateway.key;
   doc.status = OrderStatus.PAYMENT_PENDING;
   doc.payment.status = OrderStatus.PAYMENT_PENDING;
+  // Re-arm the authorization record against the NEW intent. Without this a
+  // regenerated manual-capture order carries stale capture state — e.g. a
+  // CANCELLED or AUTHORIZATION_EXPIRED status that would make the incoming
+  // authorization for the new session fail its `PENDING_AUTHORIZATION`
+  // filter and be silently dropped.
+  if (regenIsManual) {
+    doc.payment.capture = {
+      method: CaptureMode.MANUAL,
+      status: PaymentCaptureStatus.PENDING_AUTHORIZATION,
+      authorizedAt: null,
+      amountAuthorized: null,
+      captureExpiresAt: null,
+      capturedAt: null,
+      amountCaptured: null,
+      cancelledAt: null,
+      cancelReason: null,
+      lastError: null,
+    };
+    doc.bookingStatus = BookingStatus.PENDING;
+  }
 
   // Transactional: order save + audit + evidence. The Stripe session
   // is already created above — if the tx aborts we don't roll it back
@@ -1236,7 +1618,17 @@ export async function deleteOrders(
   if (valid.length === 0) return { deleted: 0, blockedPaidIds: [] };
 
   const objectIds = valid.map((id) => new Types.ObjectId(id));
-  const docs = await Order.find({ _id: { $in: objectIds } })
+  // Tenancy: an operator may only delete orders belonging to the
+  // organization they are acting as. This only ever RESTRICTS — the default
+  // organization's clause still matches its own rows plus the unattributed
+  // pre-migration ones, so RentalConfirmation deletes exactly what it could
+  // delete before. What it stops is a third tenant reaching another brand's
+  // records by id.
+  const deleteScope = withOrganizationScope(
+    { _id: { $in: objectIds } },
+    await getRequestOrganizationScope(),
+  );
+  const docs = await Order.find(deleteScope)
     .select({ _id: 1, orderNumber: 1, status: 1 })
     .lean<{ _id: Types.ObjectId; orderNumber: string; status: OrderStatus }[]>();
 
@@ -1659,7 +2051,50 @@ export async function reconcileOrderPayment(
   // is disjoint from gateway event ids (`evt_...`) so a real webhook
   // claim and a reconcile claim race independently; whichever wins flips
   // the order, the other lands as duplicate inside `applyCheckoutPaid`.
-  if (status.paymentStatus === "paid" || status.status === "complete") {
+  // THE MANUAL-CAPTURE CARVE-OUT.
+  //
+  // For an automatic-capture order `manual` is false and this expression
+  // reduces to the ORIGINAL `paymentStatus === "paid" || status === "complete"`
+  // exactly — `payment.capture` is null on every order both incumbent brands
+  // have, so their reconcile behaviour is untouched.
+  //
+  // For a manual-capture order `status === "complete"` is true the instant
+  // the customer authorizes, while no money has moved. Accepting it would
+  // reintroduce, via reconcile, precisely the bug the webhook guard exists
+  // to prevent — so only a gateway-reported "paid" counts.
+  const manual = doc.payment?.capture?.method === CaptureMode.MANUAL;
+  const gatewaySaysPaid = manual
+    ? status.paymentStatus === "paid"
+    : status.paymentStatus === "paid" || status.status === "complete";
+
+  if (
+    manual &&
+    !gatewaySaysPaid &&
+    status.status === "complete" &&
+    status.paymentStatus === "unpaid"
+  ) {
+    // Authorized but uncaptured. Record it idempotently under a namespace
+    // disjoint from both real Stripe event ids and the reconcile key, then
+    // report the authorization rather than a payment.
+    await applyPaymentAuthorized(doc, {
+      eventId: `authorize:${doc.payment.stripeSessionId}`,
+      paymentIntentId: status.paymentIntentId,
+      amountAuthorizedMinor: status.amountTotalMinor,
+      authorizedAtMs: Date.now(),
+      source: "reconcile",
+    });
+    const refreshedAuth = await Order.findById(id).lean<
+      OrderDoc & { _id: Types.ObjectId }
+    >();
+    if (!refreshedAuth) throw new NotFoundError("Order not found");
+    return {
+      order: orderToDTO(refreshedAuth),
+      changed: wasPending,
+      stripeStatus: "unpaid",
+    };
+  }
+
+  if (gatewaySaysPaid) {
     const eventId = `reconcile:${doc.payment.stripeSessionId}`;
     await applyCheckoutPaid(doc, {
       eventId,
@@ -1717,15 +2152,23 @@ export async function reconcileOrderPayment(
 
 export async function listAtRiskOrders(): Promise<OrderDTO[]> {
   await connectMongo();
-  const docs = await Order.find({
-    $or: [
-      { "risk.flagged": true },
-      {
-        state: RecordState.ACTIVE,
-        status: { $in: [OrderStatus.FAILED, OrderStatus.EXPIRED] },
-      },
-    ],
-  })
+  // Tenancy: the at-risk dashboard must show the acting organization's own
+  // orders. Composed under `$and` because the risk predicate already owns
+  // the top-level `$or` — assigning a second one would silently drop
+  // whichever lost the key collision.
+  const scoped = withOrganizationScope(
+    {
+      $or: [
+        { "risk.flagged": true },
+        {
+          state: RecordState.ACTIVE,
+          status: { $in: [OrderStatus.FAILED, OrderStatus.EXPIRED] },
+        },
+      ],
+    },
+    await getRequestOrganizationScope(),
+  );
+  const docs = await Order.find(scoped)
     .sort({ "risk.flagged": -1, updatedAt: -1 })
     .limit(100)
     .lean<(OrderDoc & { _id: Types.ObjectId })[]>();

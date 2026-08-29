@@ -3,7 +3,11 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 
 import { api } from "@/lib/api-client";
-import { ConsentStatus, OrderStatus } from "@/lib/constants/enums";
+import {
+  ConsentStatus,
+  OrderStatus,
+  PaymentCaptureStatus,
+} from "@/lib/constants/enums";
 import type { OrderDTO } from "@/types";
 
 export const orderQueryKey = (orderId: string) =>
@@ -35,6 +39,23 @@ export function useOrderQuery(orderId: string): UseQueryResult<OrderDTO> {
       const order = query.state.data;
       if (!order) return false;
       const status = order.status;
+      // MANUAL CAPTURE: an authorization, an in-flight capture and the
+      // moment a hold lands are all webhook-driven, and none of them moves
+      // `order.status` (which stays PAYMENT_PENDING until the capture
+      // settles). Poll while the authorization is still live so the badge
+      // and the Capture / Release controls appear without a reload.
+      //
+      // Guarded on `payment.capture`, which is NULL on every
+      // automatic-capture order — so both incumbent brands never reach this
+      // branch and their polling cadence is exactly what it is today.
+      const captureStatus = order.payment.capture?.status;
+      if (
+        captureStatus === PaymentCaptureStatus.PENDING_AUTHORIZATION ||
+        captureStatus === PaymentCaptureStatus.AUTHORIZED ||
+        captureStatus === PaymentCaptureStatus.CAPTURE_PENDING
+      ) {
+        return NON_TERMINAL_POLL_MS;
+      }
       // Any non-terminal status with a customer in the loop deserves a
       // polling backstop.
       if (

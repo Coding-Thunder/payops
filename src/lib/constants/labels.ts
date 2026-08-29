@@ -1,14 +1,18 @@
 import {
+  BookingStatus,
   BookingType,
+  CaptureMode,
   ConsentMethod,
   ConsentMode,
   ConsentStatus,
   OrderEvidenceActorType,
   OrderEvidenceEventType,
   OrderStatus,
+  PaymentCaptureStatus,
   PaymentGatewayKey,
   PaymentTiming,
   RecordState,
+  ServiceType,
   UserRole,
 } from "./enums";
 
@@ -122,7 +126,13 @@ export const OrderEvidenceEventLabel: Record<OrderEvidenceEventType, string> = {
   CONSENT_RECEIVED: "Consent received",
   CONSENT_VERIFIED: "Consent verified",
   PAYMENT_STARTED: "Payment started",
+  PAYMENT_AUTHORIZED: "Payment authorized",
   PAYMENT_COMPLETED: "Payment completed",
+  PAYMENT_CAPTURED: "Payment captured",
+  PAYMENT_CAPTURE_FAILED: "Payment capture failed",
+  AUTHORIZATION_RELEASED: "Authorization released",
+  BOOKING_CONFIRMED: "Booking confirmed",
+  BOOKING_CANCELLED: "Booking cancelled",
   CONFIRMATION_EMAIL_SENT: "Confirmation email sent",
   TERMS_ACKNOWLEDGED: "Terms acknowledged",
   PAYMENT_FAILED: "Payment failed",
@@ -136,4 +146,64 @@ export const OrderEvidenceActorLabel: Record<OrderEvidenceActorType, string> = {
   CUSTOMER: "Customer",
   SYSTEM: "System",
   GATEWAY: "Payment gateway",
+};
+
+/**
+ * Customer-facing noun for each service type. Used in operator lists and
+ * in the service-aware email/checkout copy helpers.
+ */
+export const ServiceTypeLabel: Record<ServiceType, string> = {
+  CAR_RENTAL: "Car rental",
+  FLIGHT: "Flight",
+  HOTEL: "Hotel",
+};
+
+/** Column header for the "what was bought" cell, per service type. */
+export const ServiceItemLabel: Record<ServiceType, string> = {
+  CAR_RENTAL: "Vehicle",
+  FLIGHT: "Route",
+  HOTEL: "Property",
+};
+
+export const BookingStatusLabel: Record<BookingStatus, string> = {
+  PENDING: "Awaiting confirmation",
+  CONFIRMED: "Confirmed",
+  CANCELLED: "Cancelled",
+};
+
+export const BookingStatusBadgeVariant: Record<
+  BookingStatus,
+  "warning" | "success" | "destructive" | "muted" | "info"
+> = {
+  PENDING: "warning",
+  CONFIRMED: "success",
+  CANCELLED: "destructive",
+};
+
+export const CaptureModeLabel: Record<CaptureMode, string> = {
+  AUTOMATIC: "Charge at checkout",
+  MANUAL: "Authorize, capture on confirmation",
+};
+
+export const PaymentCaptureStatusLabel: Record<PaymentCaptureStatus, string> = {
+  PENDING_AUTHORIZATION: "Awaiting authorization",
+  AUTHORIZED: "Authorized — not yet charged",
+  CAPTURE_PENDING: "Capture in progress",
+  CAPTURED: "Captured",
+  CANCELLED: "Authorization released",
+  CAPTURE_FAILED: "Capture failed",
+  AUTHORIZATION_EXPIRED: "Authorization expired",
+};
+
+export const PaymentCaptureStatusBadgeVariant: Record<
+  PaymentCaptureStatus,
+  "warning" | "success" | "destructive" | "muted" | "info"
+> = {
+  PENDING_AUTHORIZATION: "muted",
+  AUTHORIZED: "info",
+  CAPTURE_PENDING: "warning",
+  CAPTURED: "success",
+  CANCELLED: "muted",
+  CAPTURE_FAILED: "destructive",
+  AUTHORIZATION_EXPIRED: "muted",
 };

@@ -2,13 +2,30 @@ import { PublicBrandChrome } from "@/components/public/public-brand-chrome";
 import { resolvePublicBrandForOrderNumber } from "@/server/email/identity";
 import { getBranding } from "@/server/services/branding.service";
 
-export const metadata = { title: "Payment cancelled" };
 export const dynamic = "force-dynamic";
 
 interface PaymentCancelledPageProps {
   /** Both gateway adapters append `?order=<orderNumber>` to their cancel
    *  URL, so the brand is resolvable even though nothing else is. */
   searchParams: Promise<{ order?: string }>;
+}
+
+/**
+ * PER-BRAND TAB TITLE. `title.absolute` opts out of the root layout's
+ * `"%s • <deployment name>"` template, which would otherwise print the
+ * deployment's brand in a FlightBizz customer's browser tab. The default
+ * organization resolves to that same deployment name, so the incumbent's
+ * tab is unchanged.
+ */
+export async function generateMetadata({
+  searchParams,
+}: PaymentCancelledPageProps) {
+  const { order } = await searchParams;
+  const brand = await resolvePublicBrandForOrderNumber(
+    order,
+    await getBranding(),
+  );
+  return { title: { absolute: `Payment cancelled • ${brand.brandName}` } };
 }
 
 export default async function PaymentCancelledPage({

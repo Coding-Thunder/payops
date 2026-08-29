@@ -31,9 +31,14 @@ import {
 import { EmptyState } from "@/components/common/empty-state";
 import { ProviderBadge } from "@/components/features/providers";
 import { BookingTypeLabel } from "@/lib/constants/labels";
-import { ConsentStatus, OrderStatus } from "@/lib/constants/enums";
+import { ConsentStatus, OrderStatus, ServiceType } from "@/lib/constants/enums";
 import { api, ApiClientError } from "@/lib/api-client";
 import { formatCurrency, formatDate, formatRelative } from "@/lib/format";
+import {
+  describeServiceItem,
+  serviceItemLabel,
+  serviceTypeOf,
+} from "@/lib/service-summary";
 import type { OrderDTO } from "@/types";
 
 interface OrderTableProps {
@@ -54,6 +59,18 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
     () => items.filter((o) => o.status !== OrderStatus.PAID),
     [items],
   );
+
+  /**
+   * Header for the "what was bought" column. A list that is entirely one
+   * service names it — "Vehicle" for the car-rental-only lists both
+   * incumbent brands see, so their table header is unchanged — while a
+   * mixed list falls back to the neutral "Item".
+   */
+  const itemColumnLabel = useMemo(() => {
+    if (items.length === 0) return "Vehicle";
+    const labels = new Set(items.map((o) => serviceItemLabel(o)));
+    return labels.size === 1 ? [...labels][0] : "Item";
+  }, [items]);
   const allSelected =
     selectableItems.length > 0 &&
     selectableItems.every((i) => selected.has(i.id));
@@ -156,7 +173,9 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
             <TableHead>Customer</TableHead>
             <TableHead className="hidden md:table-cell">Type</TableHead>
             <TableHead className="hidden lg:table-cell">Provider</TableHead>
-            <TableHead className="hidden xl:table-cell">Vehicle</TableHead>
+            <TableHead className="hidden xl:table-cell">
+              {itemColumnLabel}
+            </TableHead>
             <TableHead className="text-right">Amount</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="hidden md:table-cell">Created</TableHead>
@@ -209,12 +228,20 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
                   <ProviderBadge provider={o.provider} size="sm" />
                 </TableCell>
                 <TableCell className="hidden xl:table-cell">
-                  <div className="text-[13px] font-medium leading-tight">
-                    {o.vehicle.company}
-                  </div>
-                  <div className="text-[11.5px] text-muted-foreground leading-tight mt-0.5">
-                    {o.vehicle.type}
-                  </div>
+                  {serviceTypeOf(o) === ServiceType.CAR_RENTAL && o.vehicle ? (
+                    <>
+                      <div className="text-[13px] font-medium leading-tight">
+                        {o.vehicle.company}
+                      </div>
+                      <div className="text-[11.5px] text-muted-foreground leading-tight mt-0.5">
+                        {o.vehicle.type}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-[13px] font-medium leading-tight">
+                      {describeServiceItem(o)}
+                    </div>
+                  )}
                 </TableCell>
                 <TableCell className="text-right font-medium tabular-nums">
                   {formatCurrency(o.pricing.amount, o.pricing.currency)}

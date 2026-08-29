@@ -29,6 +29,89 @@ export type BookingType = (typeof BookingType)[keyof typeof BookingType];
 export const BOOKING_TYPES = Object.values(BookingType) as BookingType[];
 
 /**
+ * WHAT the customer is buying. Orthogonal to `BookingType`, which is WHY
+ * they are being charged (new booking / modification / cancellation fee).
+ *
+ * Added for the GlobeVista tenant, which sells flights and hotels alongside
+ * car rental. CAR_RENTAL is the default on both the schema and the read
+ * path so every order written before this enum existed — i.e. every
+ * RentalConfirmation and TripReservations order — reads back as exactly
+ * what it has always been. Nothing about those two brands changes.
+ */
+export const ServiceType = {
+  CAR_RENTAL: "CAR_RENTAL",
+  FLIGHT: "FLIGHT",
+  HOTEL: "HOTEL",
+} as const;
+export type ServiceType = (typeof ServiceType)[keyof typeof ServiceType];
+export const SERVICE_TYPES = Object.values(ServiceType) as ServiceType[];
+
+/**
+ * The BOOKING lifecycle, which is NOT the payment lifecycle.
+ *
+ * Under manual capture an operator confirms the booking with the supplier
+ * and only then is the customer's card actually charged, so "we have the
+ * money" and "the trip is confirmed" are genuinely different facts and are
+ * stored in different fields. `OrderStatus` remains the payment field.
+ *
+ * NULL for every automatic-capture order — which is every order both
+ * incumbent brands have ever created — so their documents and their UI are
+ * untouched.
+ */
+export const BookingStatus = {
+  PENDING: "PENDING",
+  CONFIRMED: "CONFIRMED",
+  CANCELLED: "CANCELLED",
+} as const;
+export type BookingStatus = (typeof BookingStatus)[keyof typeof BookingStatus];
+export const BOOKING_STATUSES = Object.values(BookingStatus) as BookingStatus[];
+
+/**
+ * Whether the gateway takes the money at checkout or merely places a hold.
+ *
+ * AUTOMATIC is the default everywhere and is what both incumbent brands run
+ * on; it is also what an organization document with no stored value reads
+ * back as. MANUAL is opt-in per organization.
+ */
+export const CaptureMode = {
+  AUTOMATIC: "AUTOMATIC",
+  MANUAL: "MANUAL",
+} as const;
+export type CaptureMode = (typeof CaptureMode)[keyof typeof CaptureMode];
+export const CAPTURE_MODES = Object.values(CaptureMode) as CaptureMode[];
+
+/**
+ * State of the AUTHORIZATION on a manual-capture order. Deliberately a
+ * separate enum from `OrderStatus` rather than six more values on it:
+ * widening OrderStatus would change the meaning of `status: PAID` filters
+ * in analytics, the archive guard, and the exhaustive label maps that both
+ * incumbent brands depend on.
+ *
+ *  PENDING_AUTHORIZATION  link generated on a manual-capture order; the
+ *                         customer has not authorized yet
+ *  AUTHORIZED             hold placed, money not taken (Stripe requires_capture)
+ *  CAPTURE_PENDING        capture call in flight — guards against double-capture
+ *  CAPTURED               money taken; the order also becomes PAID
+ *  CANCELLED              hold deliberately released by an operator
+ *  CAPTURE_FAILED         capture attempt rejected; the hold may still stand
+ *  AUTHORIZATION_EXPIRED  gateway released the hold on its own (~7 days)
+ */
+export const PaymentCaptureStatus = {
+  PENDING_AUTHORIZATION: "PENDING_AUTHORIZATION",
+  AUTHORIZED: "AUTHORIZED",
+  CAPTURE_PENDING: "CAPTURE_PENDING",
+  CAPTURED: "CAPTURED",
+  CANCELLED: "CANCELLED",
+  CAPTURE_FAILED: "CAPTURE_FAILED",
+  AUTHORIZATION_EXPIRED: "AUTHORIZATION_EXPIRED",
+} as const;
+export type PaymentCaptureStatus =
+  (typeof PaymentCaptureStatus)[keyof typeof PaymentCaptureStatus];
+export const PAYMENT_CAPTURE_STATUSES = Object.values(
+  PaymentCaptureStatus,
+) as PaymentCaptureStatus[];
+
+/**
  * When a single charge line is collected from the customer.
  *
  *  PREPAID        — collected now, online, via the initial payment link.
@@ -114,6 +197,12 @@ export const AuditAction = {
   ORDER_PAYMENT_LINK_REGENERATED: "ORDER_PAYMENT_LINK_REGENERATED",
 
   PAYMENT_SUCCEEDED: "PAYMENT_SUCCEEDED",
+  PAYMENT_AUTHORIZED: "PAYMENT_AUTHORIZED",
+  PAYMENT_CAPTURED: "PAYMENT_CAPTURED",
+  PAYMENT_CAPTURE_FAILED: "PAYMENT_CAPTURE_FAILED",
+  AUTHORIZATION_RELEASED: "AUTHORIZATION_RELEASED",
+  BOOKING_CONFIRMED: "BOOKING_CONFIRMED",
+  BOOKING_CANCELLED: "BOOKING_CANCELLED",
   PAYMENT_FAILED: "PAYMENT_FAILED",
   PAYMENT_EXPIRED: "PAYMENT_EXPIRED",
 
@@ -198,7 +287,13 @@ export const OrderEvidenceEventType = {
   CONSENT_RECEIVED: "CONSENT_RECEIVED",
   CONSENT_VERIFIED: "CONSENT_VERIFIED",
   PAYMENT_STARTED: "PAYMENT_STARTED",
+  PAYMENT_AUTHORIZED: "PAYMENT_AUTHORIZED",
   PAYMENT_COMPLETED: "PAYMENT_COMPLETED",
+  PAYMENT_CAPTURED: "PAYMENT_CAPTURED",
+  PAYMENT_CAPTURE_FAILED: "PAYMENT_CAPTURE_FAILED",
+  AUTHORIZATION_RELEASED: "AUTHORIZATION_RELEASED",
+  BOOKING_CONFIRMED: "BOOKING_CONFIRMED",
+  BOOKING_CANCELLED: "BOOKING_CANCELLED",
   CONFIRMATION_EMAIL_SENT: "CONFIRMATION_EMAIL_SENT",
   TERMS_ACKNOWLEDGED: "TERMS_ACKNOWLEDGED",
   PAYMENT_FAILED: "PAYMENT_FAILED",
@@ -227,6 +322,9 @@ export const ORDER_EVIDENCE_ACTOR_TYPES = Object.values(
 export const EmailKind = {
   PAYMENT_CONFIRMATION: "PAYMENT_CONFIRMATION",
   PAYMENT_LINK: "PAYMENT_LINK",
+  /** Manual-capture only: the card was authorized, not charged. Never
+   *  enqueued for an automatic-capture order. */
+  PAYMENT_AUTHORIZED: "PAYMENT_AUTHORIZED",
 } as const;
 export type EmailKind = (typeof EmailKind)[keyof typeof EmailKind];
 

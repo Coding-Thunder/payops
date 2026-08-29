@@ -7,6 +7,7 @@ import {
   OrderStatus,
   PaymentTiming,
   RecordState,
+  ServiceType,
 } from "@/lib/constants/enums";
 import {
   buildProviderSnapshot,
@@ -22,6 +23,14 @@ import { Order, type OrderDoc, type OrderDocument } from "@/server/db/models";
  * Trip dates are anchored to "tomorrow" / "two days from now" so they
  * pass the model's pre-validate hook (`dropoff > pickup`) without being
  * fragile to time-of-day.
+ *
+ * SERVICE TYPE. A seed with no `serviceType` builds exactly the car rental
+ * this factory has always built — same vehicle, same trip, same strings —
+ * with `flight` / `hotel` / `bookingStatus` / `payment.capture` sitting at
+ * the null the schema defaults them to. FLIGHT and HOTEL seeds swap the
+ * car-rental payload for their own (and drop `vehicle` / `trip` to null,
+ * which is what the model requires of them) without touching the rental
+ * path above.
  */
 
 interface CreatorSeed {
@@ -45,28 +54,82 @@ export function buildOrder(seed: OrderSeed = {}): OrderDoc & { _id: Types.Object
   const now = new Date();
   const pickup = new Date(now.getTime() + 24 * 60 * 60 * 1000);
   const dropoff = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
+  const serviceType = seed.serviceType ?? ServiceType.CAR_RENTAL;
+  // A payload is built when its service type owns it, or when the caller
+  // seeded one explicitly (`vehicle: null` stays null either way).
+  const wants = (owner: ServiceType, seeded: unknown): boolean =>
+    seeded === null ? false : Boolean(seeded) || serviceType === owner;
   return {
     _id: new Types.ObjectId(),
     orderNumber: seed.orderNumber ?? `TST-${suffix.toUpperCase()}`.slice(0, 32),
     bookingType: seed.bookingType ?? BookingType.NEW_BOOKING,
+    serviceType,
     status: seed.status ?? OrderStatus.PAYMENT_PENDING,
     state: seed.state ?? RecordState.ACTIVE,
+    /** Null on every automatic-capture order, which is every order the two
+     *  incumbent brands have ever created. */
+    bookingStatus: seed.bookingStatus ?? null,
     provider: seed.provider ?? buildProviderSnapshot(ProviderId.BUDGET),
     customer: {
       name: seed.customer?.name ?? "Test Customer",
       email: (seed.customer?.email ?? "customer@payops.test").toLowerCase(),
       phone: seed.customer?.phone ?? "+15555550100",
     },
-    vehicle: {
-      company: seed.vehicle?.company ?? "Toyota",
-      type: seed.vehicle?.type ?? "Corolla",
-    },
-    trip: {
-      pickupDate: seed.trip?.pickupDate ?? pickup,
-      dropoffDate: seed.trip?.dropoffDate ?? dropoff,
-      pickupLocation: seed.trip?.pickupLocation ?? "LAX Airport — Terminal 1",
-      dropoffLocation: seed.trip?.dropoffLocation ?? "San Diego Downtown",
-    },
+    vehicle: wants(ServiceType.CAR_RENTAL, seed.vehicle)
+      ? {
+          company: seed.vehicle?.company ?? "Toyota",
+          type: seed.vehicle?.type ?? "Corolla",
+        }
+      : null,
+    trip: wants(ServiceType.CAR_RENTAL, seed.trip)
+      ? {
+          pickupDate: seed.trip?.pickupDate ?? pickup,
+          dropoffDate: seed.trip?.dropoffDate ?? dropoff,
+          pickupLocation: seed.trip?.pickupLocation ?? "LAX Airport — Terminal 1",
+          dropoffLocation: seed.trip?.dropoffLocation ?? "San Diego Downtown",
+        }
+      : null,
+    flight: wants(ServiceType.FLIGHT, seed.flight)
+      ? {
+          tripType: seed.flight?.tripType ?? "ONE_WAY",
+          airline: seed.flight?.airline ?? "Test Airways",
+          flightNumber: seed.flight?.flightNumber ?? "TA123",
+          origin: seed.flight?.origin ?? "LHR",
+          destination: seed.flight?.destination ?? "JFK",
+          departureDate: seed.flight?.departureDate ?? pickup,
+          departureTimePreference: seed.flight?.departureTimePreference ?? null,
+          // A round trip has to carry a return leg or the model's
+          // pre-validate hook rejects it, so seed one by default.
+          returnDate:
+            seed.flight?.returnDate ??
+            (seed.flight?.tripType === "ROUND_TRIP" ? dropoff : null),
+          returnTimePreference: seed.flight?.returnTimePreference ?? null,
+          cabinClass: seed.flight?.cabinClass ?? "ECONOMY",
+          passengers: {
+            adults: seed.flight?.passengers?.adults ?? 1,
+            children: seed.flight?.passengers?.children ?? 0,
+            infants: seed.flight?.passengers?.infants ?? 0,
+          },
+          passengerNotes: seed.flight?.passengerNotes ?? null,
+          pnr: seed.flight?.pnr ?? null,
+        }
+      : null,
+    hotel: wants(ServiceType.HOTEL, seed.hotel)
+      ? {
+          destination: seed.hotel?.destination ?? "Paris",
+          propertyName: seed.hotel?.propertyName ?? "Hilton",
+          checkInDate: seed.hotel?.checkInDate ?? pickup,
+          checkOutDate: seed.hotel?.checkOutDate ?? dropoff,
+          rooms: seed.hotel?.rooms ?? 1,
+          guests: {
+            adults: seed.hotel?.guests?.adults ?? 2,
+            children: seed.hotel?.guests?.children ?? 0,
+          },
+          roomPreference: seed.hotel?.roomPreference ?? null,
+          guestNotes: seed.hotel?.guestNotes ?? null,
+          confirmationCode: seed.hotel?.confirmationCode ?? null,
+        }
+      : null,
     pricing: {
       amount: seed.pricing?.amount ?? 199.5,
       currency: (seed.pricing?.currency ?? Currency.USD) as Currency,
@@ -94,6 +157,9 @@ export function buildOrder(seed: OrderSeed = {}): OrderDoc & { _id: Types.Object
       failureReason: seed.payment?.failureReason ?? null,
       confirmationEmailSentAt: seed.payment?.confirmationEmailSentAt ?? null,
       processedWebhookEventIds: seed.payment?.processedWebhookEventIds ?? [],
+      /** Manual-capture bookkeeping. Null means "automatic capture, not
+       *  applicable" — the state of every incumbent order. */
+      capture: seed.payment?.capture ?? null,
     },
     createdBy: {
       userId:
@@ -121,6 +187,21 @@ export function buildOrder(seed: OrderSeed = {}): OrderDoc & { _id: Types.Object
       method: seed.consent?.method ?? null,
     },
     notes: seed.notes ?? null,
+    /**
+     * TENANCY. Null by default — which is what every order written before
+     * the organization migration carries, and what the pre-existing tests
+     * that call this factory with no seed expect.
+     *
+     * It has to be built HERE rather than left to the caller: `createOrder`
+     * spreads this object into `Order.create`, so a field absent from the
+     * returned document is simply never written. A test that passed
+     * `organizationId` and got an unowned order back would then "prove" a
+     * cross-tenant guard was working when it was really just refusing an
+     * orphan.
+     */
+    organizationId: toObjectId(
+      seed.organizationId as Types.ObjectId | string | undefined,
+    ),
     createdAt: seed.createdAt ?? now,
     updatedAt: seed.updatedAt ?? now,
   };
@@ -139,28 +220,15 @@ function toObjectId(
 
 export async function createOrder(seed: OrderSeed = {}): Promise<OrderDocument> {
   const data = buildOrder(seed);
-  return (await Order.create({
-    _id: data._id,
-    orderNumber: data.orderNumber,
-    bookingType: data.bookingType,
-    status: data.status,
-    state: data.state,
-    provider: data.provider,
-    customer: data.customer,
-    vehicle: data.vehicle,
-    trip: data.trip,
-    pricing: data.pricing,
-    charges: data.charges,
-    confirmationNumber: data.confirmationNumber,
-    terms: data.terms,
-    termsAcknowledgement: data.termsAcknowledgement,
-    payment: data.payment,
-    createdBy: data.createdBy,
-    policy: data.policy,
-    risk: data.risk,
-    consent: data.consent,
-    notes: data.notes,
-  })) as OrderDocument;
+  // Spread rather than re-enumerate. The previous version listed every
+  // field by hand, so a field added to `buildOrder` — `serviceType`,
+  // `flight`, `hotel`, `bookingStatus`, `payment.capture` — was built and
+  // then silently dropped on the way to the database. `createdAt` /
+  // `updatedAt` stay out, exactly as before: Mongoose's timestamps own them.
+  const doc: Partial<OrderDoc> & { _id: Types.ObjectId } = { ...data };
+  delete doc.createdAt;
+  delete doc.updatedAt;
+  return (await Order.create(doc)) as OrderDocument;
 }
 
 export async function createPaidOrder(seed: OrderSeed = {}): Promise<OrderDocument> {

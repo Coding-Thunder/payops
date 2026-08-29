@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import { RECORD_STATES, RecordState } from "@/lib/constants/enums";
+import {
+  RECORD_STATES,
+  RecordState,
+  SERVICE_TYPES,
+} from "@/lib/constants/enums";
 import { PROVIDER_KEY_REGEX } from "@/lib/constants/providers";
 
 const hexColor = z
@@ -60,6 +64,10 @@ export const listProvidersQuerySchema = z.object({
     .union([z.string(), z.boolean()])
     .transform((v) => (typeof v === "boolean" ? v : v === "true"))
     .optional(),
+  /** Narrow to suppliers serving one service type. Omitted = all. */
+  serviceType: z.enum(SERVICE_TYPES).optional(),
+  /** Narrow to suppliers available to one organization. Omitted = all. */
+  organizationId: z.string().optional(),
 });
 
 export type ListProvidersQuery = z.infer<typeof listProvidersQuerySchema>;

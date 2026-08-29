@@ -6,10 +6,14 @@ import {
 } from "mongoose";
 
 import {
+  CAPTURE_MODES,
+  CaptureMode,
   PAYMENT_GATEWAY_KEYS,
   PaymentGatewayKey,
   RECORD_STATES,
   RecordState,
+  SERVICE_TYPES,
+  ServiceType,
 } from "@/lib/constants/enums";
 
 /**
@@ -98,6 +102,34 @@ export interface OrganizationPayments {
   /** Best-effort indicator that the configured credentials are test-mode.
    *  Surfaced in admin UIs so an operator never confuses live and sandbox. */
   sandbox: boolean;
+  /**
+   * Whether checkout takes the money or merely places a hold.
+   *
+   * AUTOMATIC is the default and is what a stored document with no such key
+   * reads back as — so both incumbent brands keep charging at checkout with
+   * no migration. MANUAL is opt-in and is what GlobeVista runs on.
+   *
+   * Every consumer must read this as `payments?.captureMode ?? AUTOMATIC`:
+   * the resolvers use `.lean()`, which does NOT apply Mongoose defaults to
+   * keys absent from the stored document.
+   */
+  captureMode: CaptureMode;
+}
+
+/**
+ * Legal text frozen onto each of this organization's orders at creation.
+ *
+ * Empty strings mean "inherit the deployment Settings singleton", which is
+ * what both incumbent brands do and will keep doing — their orders carry
+ * exactly the terms they carry today. A brand selling flights should not be
+ * showing its customers car-rental terms in the receipt and the dispute
+ * evidence chain, which is the only reason this block exists.
+ */
+export interface OrganizationLegal {
+  termsAndConditions: string;
+  termsVersion: string;
+  cancellationPolicy: string;
+  cancellationPolicyVersion: string;
 }
 
 export interface OrganizationDoc {
@@ -120,6 +152,13 @@ export interface OrganizationDoc {
   support: OrganizationSupport;
   email: OrganizationEmail;
   payments: OrganizationPayments;
+  /**
+   * Which service types this organization may create orders for. Defaults
+   * to `[CAR_RENTAL]`, which is what both incumbent brands sell — so their
+   * create-order page renders exactly as it does today, with no tab strip.
+   */
+  serviceTypes: ServiceType[];
+  legal: OrganizationLegal;
   createdBy?: Types.ObjectId | null;
   updatedBy?: Types.ObjectId | null;
   createdAt: Date;
@@ -215,6 +254,27 @@ const paymentsSubSchema = new Schema<OrganizationPayments>(
     },
     publishableKey: { type: String, default: "", trim: true, maxlength: 255 },
     sandbox: { type: Boolean, default: false },
+    captureMode: {
+      type: String,
+      enum: CAPTURE_MODES,
+      required: true,
+      default: CaptureMode.AUTOMATIC,
+    },
+  },
+  { _id: false },
+);
+
+const legalSubSchema = new Schema<OrganizationLegal>(
+  {
+    termsAndConditions: { type: String, default: "", maxlength: 8000 },
+    termsVersion: { type: String, default: "", maxlength: 16, trim: true },
+    cancellationPolicy: { type: String, default: "", maxlength: 4000 },
+    cancellationPolicyVersion: {
+      type: String,
+      default: "",
+      maxlength: 16,
+      trim: true,
+    },
   },
   { _id: false },
 );
@@ -249,6 +309,14 @@ const organizationSchema = new Schema<OrganizationDoc>(
     support: { type: supportSubSchema, required: true, default: () => ({}) },
     email: { type: emailSubSchema, required: true, default: () => ({}) },
     payments: { type: paymentsSubSchema, required: true, default: () => ({}) },
+    serviceTypes: {
+      type: [String],
+      enum: SERVICE_TYPES,
+      required: true,
+      // Thunk: a shared array literal would be mutated across documents.
+      default: () => [ServiceType.CAR_RENTAL],
+    },
+    legal: { type: legalSubSchema, required: true, default: () => ({}) },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     updatedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
   },

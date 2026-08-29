@@ -28,6 +28,7 @@ import { useActivityFeed } from "@/hooks/use-activity-feed";
 import { orderQueryKey } from "@/hooks/use-order-query";
 import { api, ApiClientError } from "@/lib/api-client";
 import { DomainEventType } from "@/lib/constants/events";
+import { describeServiceItem, serviceItemLabel } from "@/lib/service-summary";
 import { cn } from "@/lib/utils";
 import type { OrderDTO } from "@/types";
 
@@ -590,9 +591,16 @@ function PaymentSummaryCard({
           <Meta label="Customer" value={order.customer.name} />
           <Meta label="Amount" value={formatAmount(order)} />
           <Meta label="Provider" value={order.provider?.name ?? "—"} />
+          {/* `vehicle` is null on FLIGHT / HOTEL orders. The CAR_RENTAL
+              branch reproduces the original label and the original
+              " · "-joined value exactly. */}
           <Meta
-            label="Vehicle"
-            value={`${order.vehicle.company} · ${order.vehicle.type}`}
+            label={order.vehicle ? "Vehicle" : serviceItemLabel(order)}
+            value={
+              order.vehicle
+                ? `${order.vehicle.company} · ${order.vehicle.type}`
+                : describeServiceItem(order)
+            }
           />
         </dl>
         {order.payment.paymentUrl ? (

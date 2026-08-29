@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/common/page-header";
+import { ServiceItemLabel, ServiceTypeLabel } from "@/lib/constants/labels";
+import { ServiceType } from "@/lib/constants/enums";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import type { OrderEvidenceChainDTO } from "@/types";
 
@@ -45,6 +47,14 @@ export function EvidenceChainView({
   canExport,
 }: EvidenceChainViewProps) {
   const { events, verification, order } = chain;
+  // A snapshot taken before `serviceType` existed has no such field, and
+  // every order that predates it is a car rental.
+  const serviceType = order.serviceType ?? ServiceType.CAR_RENTAL;
+  const isCarRental = serviceType === ServiceType.CAR_RENTAL;
+  // Null on a flight or hotel — there is no car. `order.item` carries the
+  // service-agnostic equivalent ("LHR → JFK", "Hilton • Paris"), so the
+  // header never loses the "what was bought" line.
+  const vehicle = order.vehicle;
   // Authed app surfaces live under `/app/*` (the route folder is `app`,
   // not the `(app)` route-group that would have been URL-transparent).
   // Anchor + back-to-order link must carry the same prefix or every
@@ -107,6 +117,9 @@ export function EvidenceChainView({
               value={formatDateTime(order.createdAt)}
             />
             <Row label="Events recorded" value={String(events.length)} />
+            {isCarRental ? null : (
+              <Row label="Service" value={ServiceTypeLabel[serviceType]} />
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -130,33 +143,44 @@ export function EvidenceChainView({
             </div>
           </div>
 
-          <div className="space-y-1">
-            <h4 className="text-[12.5px] font-semibold text-foreground">
-              Car make
-            </h4>
-            <p className="text-[13px]">{order.vehicle.company}</p>
-          </div>
+          {vehicle ? (
+            <>
+              <div className="space-y-1">
+                <h4 className="text-[12.5px] font-semibold text-foreground">
+                  Car make
+                </h4>
+                <p className="text-[13px]">{vehicle.company}</p>
+              </div>
 
-          <div className="space-y-1">
-            <h4 className="text-[12.5px] font-semibold text-foreground">
-              Car model
-            </h4>
-            <p className="text-[13px]">{order.vehicle.type}</p>
-          </div>
+              <div className="space-y-1">
+                <h4 className="text-[12.5px] font-semibold text-foreground">
+                  Car model
+                </h4>
+                <p className="text-[13px]">{vehicle.type}</p>
+              </div>
 
-          {order.vehicle.imageUrl ? (
-            <div className="space-y-1.5">
+              {vehicle.imageUrl ? (
+                <div className="space-y-1.5">
+                  <h4 className="text-[12.5px] font-semibold text-foreground">
+                    Car image
+                  </h4>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={vehicle.imageUrl}
+                    alt={`${vehicle.company} ${vehicle.type}`}
+                    className="max-h-64 w-auto rounded-md border border-border object-cover"
+                  />
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="space-y-1">
               <h4 className="text-[12.5px] font-semibold text-foreground">
-                Car image
+                {ServiceItemLabel[serviceType]}
               </h4>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={order.vehicle.imageUrl}
-                alt={`${order.vehicle.company} ${order.vehicle.type}`}
-                className="max-h-64 w-auto rounded-md border border-border object-cover"
-              />
+              <p className="text-[13px]">{order.item}</p>
             </div>
-          ) : null}
+          )}
         </CardContent>
       </Card>
 

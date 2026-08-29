@@ -50,6 +50,16 @@ export interface CreatePaymentSessionInput {
    *  webhook. Used to recover the order id when client_reference_id
    *  isn't enough. */
   metadata: Record<string, string>;
+  /**
+   * Whether the gateway should TAKE the money at checkout or merely place
+   * a hold to be captured later.
+   *
+   * OPTIONAL and undefined by default. When it is undefined an
+   * implementation must emit exactly the request it emitted before this
+   * field existed — that is what keeps the two incumbent brands'
+   * outgoing Stripe payloads byte-identical.
+   */
+  captureMethod?: "automatic" | "manual";
 }
 
 export interface CreatedPaymentSession {
@@ -74,6 +84,13 @@ export type PaymentEventType =
   | "checkout.expired"
   | "checkout.failed"
   | "payment.failed"
+  /** Funds held, NOT taken. Manual capture only — an automatic-capture
+   *  gateway never emits this. */
+  | "payment.authorized"
+  /** A previously authorized hold has been converted into a charge. */
+  | "payment.captured"
+  /** An authorization was released without ever being captured. */
+  | "payment.cancelled"
   | "dispute.created"
   | "dispute.updated"
   | "dispute.closed"
@@ -127,6 +144,25 @@ export interface VerifiedRefundPayload {
   reason: string | null;
 }
 
+/**
+ * Authorization-specific payload, normalised across gateways. Populated
+ * only for the three manual-capture event types.
+ */
+export interface VerifiedAuthorizationPayload {
+  paymentIntentId: string | null;
+  /** Gateway's own capture-method string, e.g. Stripe's "manual". */
+  captureMethod: string | null;
+  /** Gateway's own intent status, e.g. Stripe's "requires_capture". */
+  paymentIntentStatus: string | null;
+  /** Minor units still available to capture. */
+  amountCapturableMinor: number | null;
+  /** Minor units actually collected so far. */
+  amountReceivedMinor: number | null;
+  /** Why the authorization was released, when the gateway says. Stripe's
+   *  "automatic" means IT released the hold, not an operator. */
+  cancellationReason: string | null;
+}
+
 export interface VerifiedPaymentEvent {
   /** Gateway's event id — used for the order's
    *  `processedWebhookEventIds` idempotency list. */
@@ -148,6 +184,10 @@ export interface VerifiedPaymentEvent {
   dispute?: VerifiedDisputePayload | null;
   /** Populated when `type === "refund.created"`. */
   refund?: VerifiedRefundPayload | null;
+  /** Populated for `payment.authorized` / `payment.captured` /
+   *  `payment.cancelled`. Null on every other event type, and therefore on
+   *  every event either incumbent brand produces. */
+  authorization?: VerifiedAuthorizationPayload | null;
   /** Underlying provider payload — kept around for audit. */
   raw: unknown;
 }
@@ -160,6 +200,13 @@ export interface SessionStatus {
   paymentStatus: "paid" | "unpaid" | "no_payment_required" | "unknown";
   amountTotalMinor: number | null;
   paymentIntentId: string | null;
+  /** Gateway's capture method for this session, when it exposes one.
+   *  Optional so no existing consumer changes. */
+  captureMethod?: "automatic" | "automatic_async" | "manual" | null;
+  /** Minor units still capturable. Null unless the gateway reports it. */
+  amountCapturableMinor?: number | null;
+  /** Gateway's own payment-intent status string. */
+  paymentIntentStatus?: string | null;
 }
 
 export interface PaymentGateway {
@@ -202,6 +249,71 @@ export interface PaymentGateway {
     headers: WebhookHeaders,
   ): VerifiedPaymentEvent | Promise<VerifiedPaymentEvent>;
   getSessionStatus(sessionId: string): Promise<SessionStatus>;
+  /**
+   * Whether this gateway can authorize-now / capture-later.
+   *
+   * OPTIONAL, and absent on every implementation that cannot — exactly the
+   * way PayPal's `captureOrder` is kept off the shared contract (see
+   * `supportsCapture` in ./gateways/paypal.ts). Putting `capturePayment`
+   * on the required surface would force a method onto PayPal and the four
+   * unimplemented registry placeholders that none of them can honour.
+   */
+  readonly supportsManualCapture?: boolean;
+  capturePayment?(
+    paymentIntentId: string,
+    opts?: { amountMinor?: number | null; idempotencyKey?: string },
+  ): Promise<CaptureResult>;
+  cancelPayment?(
+    paymentIntentId: string,
+    opts?: {
+      reason?: "abandoned" | "duplicate" | "fraudulent" | "requested_by_customer";
+      idempotencyKey?: string;
+    },
+  ): Promise<CancelResult>;
+}
+
+export interface CaptureResult {
+  paymentIntentId: string;
+  /** Gateway's own terminal status, e.g. Stripe's "succeeded". */
+  status: string;
+  amountReceivedMinor: number | null;
+}
+
+export interface CancelResult {
+  paymentIntentId: string;
+  /** Gateway's own status, e.g. Stripe's "canceled". */
+  status: string;
+}
+
+/** A gateway that genuinely implements authorize-then-capture. */
+export interface ManualCaptureGateway extends PaymentGateway {
+  capturePayment(
+    paymentIntentId: string,
+    opts?: { amountMinor?: number | null; idempotencyKey?: string },
+  ): Promise<CaptureResult>;
+  cancelPayment(
+    paymentIntentId: string,
+    opts?: {
+      reason?: "abandoned" | "duplicate" | "fraudulent" | "requested_by_customer";
+      idempotencyKey?: string;
+    },
+  ): Promise<CancelResult>;
+}
+
+/**
+ * Type guard for the optional manual-capture capability. Mirrors
+ * `supportsCapture` in ./gateways/paypal.ts so the codebase gains no new
+ * pattern for "this gateway can do more than the base contract".
+ */
+export function supportsManualCapture(
+  gateway: PaymentGateway,
+): gateway is ManualCaptureGateway {
+  const g = gateway as Partial<ManualCaptureGateway>;
+  return (
+    g.supportsManualCapture === true &&
+    typeof g.capturePayment === "function" &&
+    typeof g.cancelPayment === "function"
+  );
 }
 
 /**

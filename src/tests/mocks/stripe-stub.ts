@@ -13,6 +13,9 @@
  *     endpoint so smoke tests can finish the flow with an HTTP GET.
  *   - checkout.sessions.expire  → records the call; returns the recorded
  *     session marked expired.
+ *   - paymentIntents.capture / .cancel / .retrieve → operate on the
+ *     registry of intents minted alongside each checkout session, so an
+ *     authorize-then-capture flow can be driven end-to-end offline.
  *   - webhooks.constructEvent   → verifies the HMAC signature using the
  *     same scheme Stripe uses (t=<unix>,v1=<sig>) against the supplied
  *     secret, then parses the JSON body.
@@ -30,6 +33,24 @@ export interface RecordedSessionCreate {
   params: Stripe.Checkout.SessionCreateParams;
   options?: Stripe.RequestOptions;
   result: Stripe.Checkout.Session;
+  /**
+   * Whether the caller asked for `capture_method: "manual"`. Recorded
+   * rather than re-derived so a test can assert on the request that was
+   * made, not on the stub's interpretation of it.
+   */
+  manualCapture: boolean;
+}
+
+export interface RecordedCapture {
+  id: string;
+  params?: Stripe.PaymentIntentCaptureParams;
+  options?: Stripe.RequestOptions;
+}
+
+export interface RecordedCancel {
+  id: string;
+  params?: Stripe.PaymentIntentCancelParams;
+  options?: Stripe.RequestOptions;
 }
 
 export interface StripeStubOptions {
@@ -40,9 +61,19 @@ export interface StripeStubOptions {
 export interface StripeStub {
   readonly sessionsCreated: RecordedSessionCreate[];
   readonly sessionsExpired: string[];
+  /** Every `paymentIntents.capture` call, in order — id, params and
+   *  request options, so tests can assert on `amount_to_capture` and on
+   *  the idempotency key that guards a double-click. */
+  readonly capturesRequested: RecordedCapture[];
+  /** Every `paymentIntents.cancel` call, in order. */
+  readonly cancelsRequested: RecordedCancel[];
 
   /** Forces the next `checkout.sessions.create` to throw. */
   failNextCreate(err: { code: string; message: string }): void;
+
+  /** Forces the next `paymentIntents.capture` to throw. Mirrors
+   *  {@link StripeStub.failNextCreate}. */
+  failNextCapture(err: { code: string; message: string }): void;
 
   /** Clears recorded calls. */
   reset(): void;
@@ -54,8 +85,45 @@ export interface StripeStub {
 export function createStripeStub(opts: StripeStubOptions = {}): StripeStub {
   const sessionsCreated: RecordedSessionCreate[] = [];
   const sessionsExpired: string[] = [];
+  const capturesRequested: RecordedCapture[] = [];
+  const cancelsRequested: RecordedCancel[] = [];
+  /**
+   * The PaymentIntents this stub knows about, keyed by id. One is minted
+   * alongside every checkout session, which is what the real Stripe does —
+   * so a manual-capture flow can go create → authorize → capture/cancel
+   * without any pre-staging.
+   */
+  const intents = new Map<string, Stripe.PaymentIntent>();
   let nextFailure = opts.failOnNextCreate ?? null;
+  let nextCaptureFailure: { code: string; message: string } | null = null;
   let sessionCounter = 0;
+
+  /**
+   * Look up an intent, minting a plausible manual-capture one if the id is
+   * unknown. Tests routinely capture an order whose intent id came from a
+   * factory rather than from `checkout.sessions.create`; failing there
+   * would be pedantry, not signal. `paymentIntents.retrieve` still throws
+   * on an unknown id, so a genuine typo surfaces.
+   */
+  function ensureIntent(id: string): Stripe.PaymentIntent {
+    const found = intents.get(id);
+    if (found) return found;
+    const created = {
+      id,
+      object: "payment_intent",
+      status: "requires_capture",
+      capture_method: "manual",
+      amount: 0,
+      amount_capturable: 0,
+      amount_received: 0,
+      currency: null,
+      cancellation_reason: null,
+      metadata: {},
+      created: Math.floor(Date.now() / 1000),
+    } as unknown as Stripe.PaymentIntent;
+    intents.set(id, created);
+    return created;
+  }
 
   const successBaseUrl = opts.successBaseUrl ?? "http://127.0.0.1:3100";
 
@@ -75,6 +143,15 @@ export function createStripeStub(opts: StripeStubOptions = {}): StripeStub {
           sessionCounter += 1;
           const id = `cs_test_stub_${Date.now()}_${sessionCounter}`;
           const paymentIntentId = `pi_test_stub_${Date.now()}_${sessionCounter}`;
+          /**
+           * Recorded so a test can assert what was REQUESTED. It must not
+           * change the freshly created session's `payment_status` — see
+           * below.
+           */
+          const manualCapture =
+            params.payment_intent_data?.capture_method === "manual";
+          const amountTotal =
+            params.line_items?.[0]?.price_data?.unit_amount ?? null;
           const orderId =
             params.client_reference_id ??
             (typeof params.metadata?.orderId === "string"
@@ -91,8 +168,25 @@ export function createStripeStub(opts: StripeStubOptions = {}): StripeStub {
             client_reference_id: params.client_reference_id ?? null,
             customer_email: params.customer_email ?? null,
             payment_intent: paymentIntentId,
-            amount_total:
-              params.line_items?.[0]?.price_data?.unit_amount ?? null,
+            /**
+             * DELIBERATELY ABSENT on a freshly created session, in BOTH
+             * capture modes — which is how this stub has always behaved,
+             * and what `getSessionStatus` maps to `paymentStatus:
+             * "unknown"`. reconcile.test.ts asserts on exactly that.
+             *
+             * The paid-vs-authorized distinction only exists once a
+             * session COMPLETES, and every test that needs it sets the
+             * field explicitly on the recorded session (the established
+             * pattern in reconcile.test.ts) or builds a webhook event with
+             * `buildCheckoutCompleted({ paymentStatus })`.
+             *
+             * Two earlier attempts set it at creation — "paid" for
+             * automatic capture, then "unpaid" for both. Each changed what
+             * `getSessionStatus` reports for a brand-new session and broke
+             * reconcile for the two incumbent brands. Do not reintroduce
+             * either.
+             */
+            amount_total: amountTotal,
             currency:
               params.line_items?.[0]?.price_data?.currency?.toLowerCase() ??
               null,
@@ -102,7 +196,27 @@ export function createStripeStub(opts: StripeStubOptions = {}): StripeStub {
             created: Math.floor(Date.now() / 1000),
           } as unknown as Stripe.Checkout.Session;
 
-          sessionsCreated.push({ params, options, result: session });
+          // The intent Stripe would have created behind the session. A
+          // manual-capture intent sits in `requires_capture` holding the
+          // funds; an automatic one has already succeeded.
+          intents.set(paymentIntentId, {
+            id: paymentIntentId,
+            object: "payment_intent",
+            status: manualCapture ? "requires_capture" : "succeeded",
+            capture_method: manualCapture ? "manual" : "automatic",
+            amount: amountTotal ?? 0,
+            amount_capturable: manualCapture ? (amountTotal ?? 0) : 0,
+            amount_received: manualCapture ? 0 : (amountTotal ?? 0),
+            currency:
+              params.line_items?.[0]?.price_data?.currency?.toLowerCase() ??
+              null,
+            cancellation_reason: null,
+            metadata: params.payment_intent_data?.metadata ??
+              params.metadata ?? {},
+            created: Math.floor(Date.now() / 1000),
+          } as unknown as Stripe.PaymentIntent);
+
+          sessionsCreated.push({ params, options, result: session, manualCapture });
           return session;
         },
         expire: async (sessionId: string) => {
@@ -114,6 +228,63 @@ export function createStripeStub(opts: StripeStubOptions = {}): StripeStub {
           if (!found) throw new Error(`No stubbed session ${sessionId}`);
           return found.result;
         },
+      },
+    },
+    paymentIntents: {
+      /**
+       * Turn an authorized hold into a charge: status "succeeded" with
+       * `amount_received` set. A partial `amount_to_capture` is honoured —
+       * that is the figure the adapter sends and the one tests assert on.
+       */
+      capture: async (
+        id: string,
+        params?: Stripe.PaymentIntentCaptureParams,
+        options?: Stripe.RequestOptions,
+      ): Promise<Stripe.PaymentIntent> => {
+        // Recorded BEFORE the staged failure fires, so a test can assert on
+        // the idempotency key of an attempt that Stripe rejected.
+        capturesRequested.push({ id, params, options });
+        if (nextCaptureFailure) {
+          const err = new Error(nextCaptureFailure.message);
+          (err as Error & { code?: string }).code = nextCaptureFailure.code;
+          nextCaptureFailure = null;
+          throw err;
+        }
+        const intent = ensureIntent(id);
+        const captured =
+          typeof params?.amount_to_capture === "number"
+            ? params.amount_to_capture
+            : (intent.amount_capturable || intent.amount || 0);
+        const next = {
+          ...intent,
+          status: "succeeded",
+          amount_capturable: 0,
+          amount_received: captured,
+        } as unknown as Stripe.PaymentIntent;
+        intents.set(id, next);
+        return next;
+      },
+      /** Release the hold without charging: status "canceled". */
+      cancel: async (
+        id: string,
+        params?: Stripe.PaymentIntentCancelParams,
+        options?: Stripe.RequestOptions,
+      ): Promise<Stripe.PaymentIntent> => {
+        cancelsRequested.push({ id, params, options });
+        const intent = ensureIntent(id);
+        const next = {
+          ...intent,
+          status: "canceled",
+          amount_capturable: 0,
+          cancellation_reason: params?.cancellation_reason ?? null,
+        } as unknown as Stripe.PaymentIntent;
+        intents.set(id, next);
+        return next;
+      },
+      retrieve: async (id: string): Promise<Stripe.PaymentIntent> => {
+        const found = intents.get(id);
+        if (!found) throw new Error(`No stubbed payment intent ${id}`);
+        return found;
       },
     },
     webhooks: {
@@ -174,13 +345,22 @@ export function createStripeStub(opts: StripeStubOptions = {}): StripeStub {
   return {
     sessionsCreated,
     sessionsExpired,
+    capturesRequested,
+    cancelsRequested,
     failNextCreate(err) {
       nextFailure = err;
+    },
+    failNextCapture(err) {
+      nextCaptureFailure = err;
     },
     reset() {
       sessionsCreated.length = 0;
       sessionsExpired.length = 0;
+      capturesRequested.length = 0;
+      cancelsRequested.length = 0;
+      intents.clear();
       nextFailure = null;
+      nextCaptureFailure = null;
       sessionCounter = 0;
     },
     asStripe() {

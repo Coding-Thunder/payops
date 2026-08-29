@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit",
     "seed": "tsx --env-file=.env.payops.local scripts/seed.ts",
     "seed:orgs": "tsx --env-file=.env.payops.local scripts/seed-organizations.ts",
+    "seed:globevista": "tsx --env-file=.env.payops.local scripts/seed-globevista.ts",
+    "backfill:service-type": "tsx --env-file=.env.payops.local scripts/backfill-order-service-type.ts",
     "indexes:audit": "tsx --env-file=.env.payops.local scripts/build-indexes.ts",
     "indexes:drop-obsolete": "tsx --env-file=.env.payops.local scripts/drop-obsolete-indexes.ts",
     "seed:prod": "tsx scripts/seed.ts",

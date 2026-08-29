@@ -54,6 +54,7 @@ import {
   PaymentConsent,
   PendingEmail,
   ProcessedWebhookEvent,
+  Provider,
   Quotation,
 } from "../src/server/db/models";
 
@@ -91,6 +92,11 @@ const SCOPED_TARGETS: Record<string, Model<never>> = {
   EmailTemplate: as(EmailTemplate),
   PendingEmail: as(PendingEmail),
   ProcessedWebhookEvent: as(ProcessedWebhookEvent),
+  // Not organization-scoped via the plugin — the provider catalog carries an
+  // `organizationIds` ALLOW-LIST instead (empty = available to every
+  // organization). Listed here so its two new indexes can be selected by
+  // name; the collection is small, so building them is cheap.
+  Provider: as(Provider),
 };
 
 const ALL_TARGETS = { ...DEFAULT_TARGETS, ...SCOPED_TARGETS };

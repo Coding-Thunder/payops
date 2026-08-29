@@ -12,14 +12,47 @@ import {
   PaymentGatewayLabel as PAYMENT_GATEWAY_LABELS,
 } from "@/lib/constants/labels";
 import { resolveProvider } from "@/lib/constants/providers";
-import { OrderStatus, PaymentGatewayKey } from "@/lib/constants/enums";
+import {
+  OrderStatus,
+  PaymentCaptureStatus,
+  PaymentGatewayKey,
+  ServiceType,
+} from "@/lib/constants/enums";
 import { summarizeCharges } from "@/lib/charges";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { logger } from "@/lib/logger";
+import {
+  serviceDetailRows,
+  serviceNoun,
+  serviceTypeOf,
+} from "@/lib/service-summary";
+import type { OrderDTO } from "@/types";
 
 import { PaymentSuccessAutoRefresh } from "./auto-refresh";
 
-export const metadata = { title: "Payment received" };
+/**
+ * PER-BRAND TAB TITLE, and honest about whether money actually moved.
+ *
+ * `title.absolute` opts out of the root layout's `"%s • <deployment name>"`
+ * template so a FlightBizz customer's tab never reads another brand's name.
+ * And an order sitting on an AUTHORIZATION has not been paid — telling that
+ * customer "Payment received" in the tab title contradicts the page itself.
+ */
+export async function generateMetadata({
+  searchParams,
+}: SuccessPageProps) {
+  const { order: orderNumber } = await searchParams;
+  const brand = await resolvePublicBrandForOrderNumber(
+    orderNumber,
+    await getBranding(),
+  );
+  const order = orderNumber ? await getOrderByNumber(orderNumber) : null;
+  const authorized =
+    order?.payment.capture?.status === PaymentCaptureStatus.AUTHORIZED &&
+    order.status !== OrderStatus.PAID;
+  const headline = authorized ? "Card authorized" : "Payment received";
+  return { title: { absolute: `${headline} • ${brand.brandName}` } };
+}
 export const dynamic = "force-dynamic";
 
 interface SuccessPageProps {
@@ -70,9 +103,17 @@ export default async function PaymentSuccessPage({
   // works for both. Note PayPal's APPROVED (buyer agreed, nothing captured)
   // correctly maps to "open", so a PayPal order that is only approved stays
   // pending here and the auto-refresh waits for the webhook to capture.
+  //
+  // An order sitting on a manual-capture AUTHORIZATION is deliberately
+  // excluded: the hold is already the gateway's truth, there is nothing
+  // half-finished to self-heal, and re-reconciling it would only risk
+  // reading an authorized session as a completed one. `payment.capture` is
+  // null on every automatic-capture order — i.e. every order both incumbent
+  // brands have — so this guard never fires for them.
   if (
     order &&
     order.status === OrderStatus.PAYMENT_PENDING &&
+    order.payment.capture?.status !== PaymentCaptureStatus.AUTHORIZED &&
     order.payment.paymentSessionId &&
     returnedSessionId
   ) {
@@ -88,9 +129,20 @@ export default async function PaymentSuccessPage({
       });
     }
   }
+  // Manual capture: the card was authorized and the money is being HELD,
+  // not taken. The customer must not be told the payment succeeded, and the
+  // "we're still confirming" spinner is wrong too — nothing is in flight.
+  // `capture` is null on every automatic-capture order, so `isAuthorized`
+  // is false for both incumbent brands and this page renders exactly as it
+  // does today for them.
+  const capture = order?.payment.capture ?? null;
+  const isAuthorized =
+    capture?.status === PaymentCaptureStatus.AUTHORIZED &&
+    order?.status === OrderStatus.PAYMENT_PENDING;
   const stillPending =
     order?.status === OrderStatus.PAYMENT_PENDING &&
-    Boolean(order?.payment.paymentSessionId);
+    Boolean(order?.payment.paymentSessionId) &&
+    !isAuthorized;
   // Brand from the ORDER's organization — resolved from the order number even
   // when the pairing check nulled `order`, because the header, the hero copy
   // and the support footer all render outside that guard.
@@ -107,17 +159,30 @@ export default async function PaymentSuccessPage({
   const providerMeta = order ? resolveProvider(order.provider) : null;
   const amount = order
     ? formatCurrency(
-        order.payment.amountReceived ?? order.pricing.amount,
+        isAuthorized
+          ? (capture?.amountAuthorized ?? order.pricing.amount)
+          : (order.payment.amountReceived ?? order.pricing.amount),
         order.pricing.currency,
       )
     : null;
   const paidOn = order?.payment.paidAt
     ? formatDateTime(order.payment.paidAt)
     : null;
+  const authorizedOn =
+    isAuthorized && capture?.authorizedAt
+      ? formatDateTime(capture.authorizedAt)
+      : null;
+  // Same value as before whenever `capture` is null.
+  const settledOn = authorizedOn ?? paidOn;
   const breakdown = order
     ? summarizeCharges(order.charges, order.pricing.amount)
     : null;
   const hasCounterDue = (breakdown?.dueAtCounter ?? 0) > 0;
+  // "rental" for a car, so "Total rental cost" below is reproduced exactly.
+  const noun = order ? serviceNoun(order) : "rental";
+  const counterDueLabel = order
+    ? balanceDueLabel(order)
+    : "Remaining balance due at rental counter";
 
   return (
     <PublicBrandChrome brand={publicBrand}>
@@ -126,12 +191,28 @@ export default async function PaymentSuccessPage({
         <div className="bg-gradient-to-br from-emerald-50 via-white to-white px-8 pt-10 pb-8 text-center">
           <div
             className={
-              stillPending
-                ? "mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700"
-                : "mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"
+              isAuthorized
+                ? "mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-sky-100 text-sky-700"
+                : stillPending
+                  ? "mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700"
+                  : "mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"
             }
           >
-            {stillPending ? (
+            {isAuthorized ? (
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-7 w-7"
+                aria-hidden
+              >
+                <rect x="2" y="5" width="20" height="14" rx="2" />
+                <path d="M2 10h20" />
+              </svg>
+            ) : stillPending ? (
               <svg
                 viewBox="0 0 24 24"
                 fill="none"
@@ -161,24 +242,32 @@ export default async function PaymentSuccessPage({
           </div>
           <p
             className={
-              stillPending
-                ? "mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700"
-                : "mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700"
+              isAuthorized
+                ? "mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-sky-700"
+                : stillPending
+                  ? "mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700"
+                  : "mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700"
             }
           >
-            {stillPending
-              ? `Confirming with ${gatewayLabel ?? "your bank"}`
-              : "Payment confirmed"}
+            {isAuthorized
+              ? "Card authorized"
+              : stillPending
+                ? `Confirming with ${gatewayLabel ?? "your bank"}`
+                : "Payment confirmed"}
           </p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
-            {stillPending
-              ? "We’re confirming your payment"
-              : "Payment received"}
+            {isAuthorized
+              ? "Your card has been authorized"
+              : stillPending
+                ? "We’re confirming your payment"
+                : "Payment received"}
           </h1>
           <p className="mt-2 text-sm text-slate-600">
-            {stillPending
-              ? `${brand} is waiting for ${gatewayLabel ?? "the payment provider"} to finalise this charge. This page refreshes automatically.`
-              : `Thank you. ${brand} has confirmed your payment and a receipt is on its way to your inbox.`}
+            {isAuthorized
+              ? `${brand} has placed a hold on your card${amount ? ` for ${amount}` : ""}. You have not been charged yet — the amount is released to us only once your ${noun} is confirmed, and you’ll get a receipt then.`
+              : stillPending
+                ? `${brand} is waiting for ${gatewayLabel ?? "the payment provider"} to finalise this charge. This page refreshes automatically.`
+                : `Thank you. ${brand} has confirmed your payment and a receipt is on its way to your inbox.`}
           </p>
           {stillPending ? <PaymentSuccessAutoRefresh /> : null}
         </div>
@@ -189,7 +278,7 @@ export default async function PaymentSuccessPage({
             <div className="grid grid-cols-2 gap-4 border-t border-slate-100 px-8 py-6">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.10em] text-slate-500">
-                  Amount paid
+                  {isAuthorized ? "Amount on hold" : "Amount paid"}
                 </p>
                 <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums text-slate-900">
                   {amount}
@@ -202,8 +291,8 @@ export default async function PaymentSuccessPage({
                 <p className="mt-1 font-mono text-sm font-semibold text-slate-900">
                   {order.orderNumber}
                 </p>
-                {paidOn ? (
-                  <p className="mt-1 text-xs text-slate-500">{paidOn}</p>
+                {settledOn ? (
+                  <p className="mt-1 text-xs text-slate-500">{settledOn}</p>
                 ) : null}
               </div>
             </div>
@@ -216,7 +305,11 @@ export default async function PaymentSuccessPage({
                 </p>
                 <dl className="mt-3 space-y-1.5 text-sm">
                   <div className="flex items-center justify-between">
-                    <dt className="text-slate-500">Paid online today</dt>
+                    <dt className="text-slate-500">
+                      {isAuthorized
+                        ? "Authorized online today"
+                        : "Paid online today"}
+                    </dt>
                     <dd className="tabular-nums text-slate-900">
                       {formatCurrency(
                         breakdown.prepaid,
@@ -225,9 +318,7 @@ export default async function PaymentSuccessPage({
                     </dd>
                   </div>
                   <div className="flex items-center justify-between">
-                    <dt className="text-slate-500">
-                      Remaining balance due at rental counter
-                    </dt>
+                    <dt className="text-slate-500">{counterDueLabel}</dt>
                     <dd className="tabular-nums text-slate-900">
                       {formatCurrency(
                         breakdown.dueAtCounter,
@@ -236,7 +327,7 @@ export default async function PaymentSuccessPage({
                     </dd>
                   </div>
                   <div className="flex items-center justify-between border-t border-slate-100 pt-1.5 font-medium">
-                    <dt className="text-slate-700">Total rental cost</dt>
+                    <dt className="text-slate-700">{`Total ${noun} cost`}</dt>
                     <dd className="tabular-nums text-slate-900">
                       {formatCurrency(breakdown.total, order.pricing.currency)}
                     </dd>
@@ -279,26 +370,13 @@ export default async function PaymentSuccessPage({
                   value={BookingTypeLabel[order.bookingType]}
                 />
                 <DetailRow label="Provider" value={providerMeta.name} />
-                <DetailRow
-                  label="Vehicle"
-                  value={`${order.vehicle.company} · ${order.vehicle.type}`}
-                />
-                <DetailRow
-                  label="Pick-up"
-                  value={
-                    order.trip.pickupLocation
-                      ? `${formatDateTime(order.trip.pickupDate)} · ${order.trip.pickupLocation}`
-                      : formatDateTime(order.trip.pickupDate)
-                  }
-                />
-                <DetailRow
-                  label="Drop-off"
-                  value={
-                    order.trip.dropoffLocation
-                      ? `${formatDateTime(order.trip.dropoffDate)} · ${order.trip.dropoffLocation}`
-                      : formatDateTime(order.trip.dropoffDate)
-                  }
-                />
+                <ServiceDetailRows order={order} />
+                {isAuthorized && capture?.captureExpiresAt ? (
+                  <DetailRow
+                    label="Authorization expires"
+                    value={formatDateTime(capture.captureExpiresAt)}
+                  />
+                ) : null}
                 {order.confirmationNumber ? (
                   <DetailRow
                     label="Confirmation #"
@@ -325,9 +403,13 @@ export default async function PaymentSuccessPage({
 
             {/* ─── Processor trust line ─── */}
             <div className="border-t border-slate-100 px-8 py-4 text-center text-[11px] text-slate-500">
-              {gatewayLabel
-                ? `Payment processed securely by ${gatewayLabel} — PCI-DSS Level 1 certified.`
-                : "Payment processed securely."}
+              {isAuthorized
+                ? gatewayLabel
+                  ? `Card authorized securely by ${gatewayLabel} — PCI-DSS Level 1 certified.`
+                  : "Card authorized securely."
+                : gatewayLabel
+                  ? `Payment processed securely by ${gatewayLabel} — PCI-DSS Level 1 certified.`
+                  : "Payment processed securely."}
             </div>
           </>
         ) : null}
@@ -350,6 +432,79 @@ export default async function PaymentSuccessPage({
         </div>
       </div>
     </PublicBrandChrome>
+  );
+}
+
+/**
+ * Where the remaining (not-collected-online) balance is settled. The
+ * CAR_RENTAL string is the literal this page has always rendered.
+ */
+function balanceDueLabel(order: OrderDTO): string {
+  switch (serviceTypeOf(order)) {
+    case ServiceType.FLIGHT:
+      return "Remaining balance due at check-in";
+    case ServiceType.HOTEL:
+      return "Remaining balance due at the property";
+    case ServiceType.CAR_RENTAL:
+    default:
+      return "Remaining balance due at rental counter";
+  }
+}
+
+/**
+ * The service rows of the booking-details list.
+ *
+ * CAR_RENTAL renders the original Vehicle / Pick-up / Drop-off triple
+ * verbatim — same labels, same `·`-joined values, same order — because
+ * every order both incumbent brands have is a car rental and this receipt
+ * must not shift by a character for them. It is now null-guarded only
+ * because the DTO fields became nullable; on a real rental both are
+ * present, so nothing disappears. FLIGHT and HOTEL fall through to the
+ * shared `serviceDetailRows` helper, so this page, the order detail card
+ * and the emails all describe a flight or a hotel identically.
+ */
+function ServiceDetailRows({ order }: { order: OrderDTO }) {
+  if (serviceTypeOf(order) === ServiceType.CAR_RENTAL) {
+    const vehicle = order.vehicle;
+    const trip = order.trip;
+    return (
+      <>
+        {vehicle ? (
+          <DetailRow
+            label="Vehicle"
+            value={`${vehicle.company} · ${vehicle.type}`}
+          />
+        ) : null}
+        {trip ? (
+          <>
+            <DetailRow
+              label="Pick-up"
+              value={
+                trip.pickupLocation
+                  ? `${formatDateTime(trip.pickupDate)} · ${trip.pickupLocation}`
+                  : formatDateTime(trip.pickupDate)
+              }
+            />
+            <DetailRow
+              label="Drop-off"
+              value={
+                trip.dropoffLocation
+                  ? `${formatDateTime(trip.dropoffDate)} · ${trip.dropoffLocation}`
+                  : formatDateTime(trip.dropoffDate)
+              }
+            />
+          </>
+        ) : null}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {serviceDetailRows(order, formatDateTime).map((row) => (
+        <DetailRow key={row.label} label={row.label} value={row.value} />
+      ))}
+    </>
   );
 }
 

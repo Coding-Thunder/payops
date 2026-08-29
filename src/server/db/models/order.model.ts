@@ -6,8 +6,12 @@ import {
 } from "mongoose";
 
 import {
+  BOOKING_STATUSES,
   BOOKING_TYPES,
+  BookingStatus,
   BookingType,
+  CAPTURE_MODES,
+  CaptureMode,
   CONSENT_STATUSES,
   ConsentStatus,
   CURRENCIES,
@@ -22,16 +26,28 @@ import {
   PaymentGatewayKey,
   PAYMENT_TIMINGS,
   PaymentTiming,
+  PAYMENT_CAPTURE_STATUSES,
+  PaymentCaptureStatus,
   RECORD_STATES,
   RecordState,
+  SERVICE_TYPES,
+  ServiceType,
 } from "@/lib/constants/enums";
 import { PROVIDER_KEY_REGEX } from "@/lib/constants/providers";
 
 export interface OrderDoc extends OrganizationScoped {
   orderNumber: string;
   bookingType: BookingType;
+  /** WHAT was bought. Defaults to CAR_RENTAL on both write and hydration,
+   *  so every order written before this field existed reads back as the
+   *  car rental it has always been. */
+  serviceType: ServiceType;
   status: OrderStatus;
   state: RecordState;
+  /** BOOKING lifecycle, distinct from the payment lifecycle in `status`.
+   *  NULL on every automatic-capture order — i.e. on every order both
+   *  incumbent brands have ever created. */
+  bookingStatus?: BookingStatus | null;
 
   customer: {
     name: string;
@@ -48,7 +64,8 @@ export interface OrderDoc extends OrganizationScoped {
     primaryColor?: string | null;
     onPrimaryColor?: string | null;
   };
-  vehicle: {
+  /** CAR_RENTAL only. Null on FLIGHT / HOTEL orders. */
+  vehicle?: {
     company: string;
     type: string;
     /** Optional public URL the operator provides at creation time so the
@@ -56,15 +73,46 @@ export interface OrderDoc extends OrganizationScoped {
      *  checkout summary, and the payment-confirmation email. Stored
      *  verbatim — we don't proxy, resize, or rehost it. */
     imageUrl?: string | null;
-  };
-  trip: {
+  } | null;
+  /** CAR_RENTAL only. Null on FLIGHT / HOTEL orders. */
+  trip?: {
     pickupDate: Date;
     dropoffDate: Date;
     /** Free-text rental pick-up / drop-off locations. Optional so orders
      *  created before this field keep validating. */
     pickupLocation?: string | null;
     dropoffLocation?: string | null;
-  };
+  } | null;
+  /** FLIGHT only. A booking REQUEST — this platform holds no airline
+   *  inventory and talks to no GDS. Null on every other service type. */
+  flight?: {
+    tripType: "ONE_WAY" | "ROUND_TRIP";
+    airline?: string | null;
+    flightNumber?: string | null;
+    origin: string;
+    destination: string;
+    departureDate: Date;
+    departureTimePreference?: string | null;
+    returnDate?: Date | null;
+    returnTimePreference?: string | null;
+    cabinClass: string;
+    passengers: { adults: number; children: number; infants: number };
+    passengerNotes?: string | null;
+    pnr?: string | null;
+  } | null;
+  /** HOTEL only. A booking REQUEST — no hotel inventory API is involved.
+   *  Null on every other service type. */
+  hotel?: {
+    destination: string;
+    propertyName?: string | null;
+    checkInDate: Date;
+    checkOutDate: Date;
+    rooms: number;
+    guests: { adults: number; children: number };
+    roomPreference?: string | null;
+    guestNotes?: string | null;
+    confirmationCode?: string | null;
+  } | null;
   pricing: {
     /** Stored in MAJOR units (e.g. dollars), 2-decimal precision.
      *  Equals the sum of PREPAID `charges` — i.e. the amount the gateway is
@@ -120,6 +168,27 @@ export interface OrderDoc extends OrganizationScoped {
     failureReason?: string | null;
     confirmationEmailSentAt?: Date | null;
     processedWebhookEventIds: string[];
+    /**
+     * Manual-capture state. NULL means "automatic capture, not
+     * applicable" — which is the state of every order both incumbent
+     * brands have ever created, and needs no backfill. Populated only
+     * when the owning organization runs `captureMode: MANUAL`.
+     */
+    capture?: {
+      method: CaptureMode;
+      status: PaymentCaptureStatus;
+      authorizedAt?: Date | null;
+      /** Major units, mirroring `pricing.amount`. */
+      amountAuthorized?: number | null;
+      /** When the gateway will release the hold on its own if we never
+       *  capture. Stripe is ~7 days. */
+      captureExpiresAt?: Date | null;
+      capturedAt?: Date | null;
+      amountCaptured?: number | null;
+      cancelledAt?: Date | null;
+      cancelReason?: string | null;
+      lastError?: string | null;
+    } | null;
   };
   createdBy: {
     userId: Types.ObjectId;
@@ -239,6 +308,121 @@ const tripSchema = new Schema(
   { _id: false },
 );
 
+const flightPassengersSchema = new Schema(
+  {
+    adults: { type: Number, required: true, min: 1, max: 9, default: 1 },
+    children: { type: Number, required: true, min: 0, max: 9, default: 0 },
+    infants: { type: Number, required: true, min: 0, max: 9, default: 0 },
+  },
+  { _id: false },
+);
+
+/**
+ * Flight booking REQUEST. Deliberately not an airline/GDS integration —
+ * this platform holds no inventory. It captures enough for an operator to
+ * source the fare manually and quote it back.
+ */
+const flightSchema = new Schema(
+  {
+    tripType: {
+      type: String,
+      enum: ["ONE_WAY", "ROUND_TRIP"],
+      required: true,
+      default: "ONE_WAY",
+    },
+    airline: { type: String, default: null, trim: true, maxlength: 80 },
+    flightNumber: { type: String, default: null, trim: true, maxlength: 16 },
+    origin: { type: String, required: true, trim: true, maxlength: 120 },
+    destination: { type: String, required: true, trim: true, maxlength: 120 },
+    departureDate: { type: Date, required: true },
+    departureTimePreference: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 40,
+    },
+    returnDate: { type: Date, default: null },
+    returnTimePreference: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 40,
+    },
+    cabinClass: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 40,
+      default: "ECONOMY",
+    },
+    passengers: {
+      type: flightPassengersSchema,
+      required: true,
+      default: () => ({ adults: 1, children: 0, infants: 0 }),
+    },
+    passengerNotes: { type: String, default: null, maxlength: 2000 },
+    /** Airline record locator, pasted by the operator once ticketed. */
+    pnr: { type: String, default: null, trim: true, maxlength: 32 },
+  },
+  { _id: false },
+);
+
+const hotelGuestsSchema = new Schema(
+  {
+    adults: { type: Number, required: true, min: 1, max: 20, default: 1 },
+    children: { type: Number, required: true, min: 0, max: 20, default: 0 },
+  },
+  { _id: false },
+);
+
+/** Hotel booking REQUEST. No hotel inventory API is involved. */
+const hotelSchema = new Schema(
+  {
+    destination: { type: String, required: true, trim: true, maxlength: 120 },
+    propertyName: { type: String, default: null, trim: true, maxlength: 160 },
+    checkInDate: { type: Date, required: true },
+    checkOutDate: { type: Date, required: true },
+    rooms: { type: Number, required: true, min: 1, max: 20, default: 1 },
+    guests: {
+      type: hotelGuestsSchema,
+      required: true,
+      default: () => ({ adults: 1, children: 0 }),
+    },
+    roomPreference: { type: String, default: null, trim: true, maxlength: 200 },
+    guestNotes: { type: String, default: null, maxlength: 2000 },
+    confirmationCode: { type: String, default: null, trim: true, maxlength: 64 },
+  },
+  { _id: false },
+);
+
+/**
+ * Authorization bookkeeping for manual capture.
+ *
+ * Attached at the root of `payment` with `default: null`, exactly the way
+ * `dispute` hangs off the order — so an automatic-capture order carries no
+ * such sub-document and every query, projection and DTO for the two
+ * incumbent brands is byte-identical to what it was.
+ */
+const paymentCaptureSchema = new Schema(
+  {
+    method: { type: String, enum: CAPTURE_MODES, required: true },
+    status: {
+      type: String,
+      enum: PAYMENT_CAPTURE_STATUSES,
+      required: true,
+    },
+    authorizedAt: { type: Date, default: null },
+    amountAuthorized: { type: Number, default: null, min: 0 },
+    captureExpiresAt: { type: Date, default: null },
+    capturedAt: { type: Date, default: null },
+    amountCaptured: { type: Number, default: null, min: 0 },
+    cancelledAt: { type: Date, default: null },
+    cancelReason: { type: String, default: null, maxlength: 200 },
+    lastError: { type: String, default: null, maxlength: 512 },
+  },
+  { _id: false },
+);
+
 const pricingSchema = new Schema(
   {
     amount: {
@@ -313,6 +497,7 @@ const paymentSchema = new Schema(
     failureReason: { type: String, default: null },
     confirmationEmailSentAt: { type: Date, default: null },
     processedWebhookEventIds: { type: [String], default: [] },
+    capture: { type: paymentCaptureSchema, default: null },
   },
   { _id: false },
 );
@@ -418,6 +603,21 @@ const orderSchema = new Schema<OrderDoc>(
       required: true,
       index: true,
     },
+    /**
+     * REQUIRED-WITH-DEFAULT is deliberate. Mongoose applies the default when
+     * hydrating a stored document that has no such key, so every order
+     * written before this field existed validates and re-saves as
+     * CAR_RENTAL — which is exactly what it is. The backfill script then
+     * writes the value to disk so QUERIES match too; correctness does not
+     * depend on the backfill having run, only query completeness does.
+     */
+    serviceType: {
+      type: String,
+      enum: SERVICE_TYPES,
+      required: true,
+      default: ServiceType.CAR_RENTAL,
+      index: true,
+    },
     status: {
       type: String,
       enum: ORDER_STATUSES,
@@ -432,10 +632,51 @@ const orderSchema = new Schema<OrderDoc>(
       default: "ACTIVE",
       index: true,
     },
+    /** Booking lifecycle. Null unless the order runs on manual capture. */
+    bookingStatus: {
+      type: String,
+      enum: BOOKING_STATUSES,
+      default: null,
+      index: true,
+    },
     customer: { type: customerSchema, required: true },
     provider: { type: providerSchema, required: true },
-    vehicle: { type: vehicleSchema, required: true },
-    trip: { type: tripSchema, required: true },
+    /**
+     * Car-rental payload. The predicate is TRUE for every document that
+     * existed before `serviceType` was introduced (they hydrate as
+     * CAR_RENTAL), so this validates identically to the previous
+     * `required: true` for both incumbent brands.
+     */
+    vehicle: {
+      type: vehicleSchema,
+      default: null,
+      required: function (this: OrderDoc) {
+        return (this.serviceType ?? ServiceType.CAR_RENTAL) ===
+          ServiceType.CAR_RENTAL;
+      },
+    },
+    trip: {
+      type: tripSchema,
+      default: null,
+      required: function (this: OrderDoc) {
+        return (this.serviceType ?? ServiceType.CAR_RENTAL) ===
+          ServiceType.CAR_RENTAL;
+      },
+    },
+    flight: {
+      type: flightSchema,
+      default: null,
+      required: function (this: OrderDoc) {
+        return this.serviceType === ServiceType.FLIGHT;
+      },
+    },
+    hotel: {
+      type: hotelSchema,
+      default: null,
+      required: function (this: OrderDoc) {
+        return this.serviceType === ServiceType.HOTEL;
+      },
+    },
     pricing: { type: pricingSchema, required: true },
     charges: { type: [chargeSchema], default: [] },
     confirmationNumber: {
@@ -492,11 +733,51 @@ orderSchema.index({ state: 1, createdAt: -1 });
 orderSchema.index({ "provider.id": 1, createdAt: -1 });
 orderSchema.index({ "consent.status": 1, createdAt: -1 });
 orderSchema.index({ "dispute.status": 1, "dispute.openedAt": -1 });
+orderSchema.index({ organizationId: 1, serviceType: 1, createdAt: -1 });
+// Powers "which authorizations are about to lapse". Sparse because
+// `payment.capture` is null on every automatic-capture order, so this index
+// costs nothing for the two incumbent brands.
+orderSchema.index(
+  { "payment.capture.status": 1, "payment.capture.captureExpiresAt": 1 },
+  { sparse: true },
+);
 // `payment.stripeSessionId` already has `index: true, sparse: true` on the
 // field definition — declaring it again here triggers a duplicate-index
 // warning at startup. Keep it on the field, drop the schema-level call.
 
+/**
+ * Cross-field date ordering, per service type.
+ *
+ * The CAR_RENTAL branch is the ORIGINAL rule, unchanged and still reached
+ * by every document that has no `serviceType` stored. FLIGHT and HOTEL get
+ * their own rules because the rental rule is wrong for them: a one-way
+ * flight has no return leg at all, and a same-day return is legitimate,
+ * whereas `dropoff > pickup` would reject both.
+ */
 orderSchema.pre("validate", function () {
+  const serviceType = this.serviceType ?? ServiceType.CAR_RENTAL;
+
+  if (serviceType === ServiceType.FLIGHT) {
+    if (this.flight?.tripType === "ROUND_TRIP") {
+      if (!this.flight.returnDate) {
+        throw new Error("Return date is required for a round trip");
+      }
+      if (this.flight.returnDate < this.flight.departureDate) {
+        throw new Error("Return date must not be before the departure date");
+      }
+    }
+    return;
+  }
+
+  if (serviceType === ServiceType.HOTEL) {
+    if (this.hotel?.checkInDate && this.hotel?.checkOutDate) {
+      if (this.hotel.checkInDate >= this.hotel.checkOutDate) {
+        throw new Error("Check-out date must be after check-in date");
+      }
+    }
+    return;
+  }
+
   if (this.trip?.pickupDate && this.trip?.dropoffDate) {
     if (this.trip.pickupDate >= this.trip.dropoffDate) {
       throw new Error("Drop-off date must be after pick-up date");

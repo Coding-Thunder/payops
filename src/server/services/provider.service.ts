@@ -10,6 +10,7 @@ import {
   AuditAction,
   AuditEntity,
   RecordState,
+  ServiceType,
   UserRole,
 } from "@/lib/constants/enums";
 import {
@@ -77,6 +78,12 @@ function toDTO(doc: ProviderDoc & { _id: Types.ObjectId | string }): ProviderDTO
     onPrimaryColor: doc.onPrimaryColor,
     tagline: doc.tagline ?? "",
     status: doc.status,
+    // `?? [CAR_RENTAL]` and `?? []` are load-bearing: `.lean()` does not
+    // apply Mongoose defaults, so every provider row stored before these
+    // fields existed arrives with no such keys. `[]` means "available to
+    // every organization", which is exactly how the catalog behaved before.
+    serviceTypes: doc.serviceTypes ?? [ServiceType.CAR_RENTAL],
+    organizationIds: (doc.organizationIds ?? []).map(String),
     sortOrder: doc.sortOrder,
     createdAt: doc.createdAt.toISOString(),
     updatedAt: doc.updatedAt.toISOString(),
@@ -132,6 +139,27 @@ export async function ensureSeedProviders(): Promise<void> {
 
 // ─── Listing ───────────────────────────────────────────────────────────────
 
+/**
+ * The provider catalog, optionally narrowed to one service type and one
+ * organization.
+ *
+ * BOTH FILTERS ARE OPT-IN AND BACKWARD-COMPATIBLE.
+ *
+ *   serviceType  — a row with no `serviceTypes` key predates the field and
+ *                  is a car-rental supplier, so the CAR_RENTAL filter must
+ *                  also match `$exists: false`. Without that, every
+ *                  existing provider would vanish from the rental form the
+ *                  moment this shipped.
+ *
+ *   organizationId — `organizationIds: []` means "available to every
+ *                  organization", which is how the whole catalog behaves
+ *                  today. Only a row with a NON-EMPTY list is restricted,
+ *                  so an airline added for FlightBizz stays out of the
+ *                  other two brands' dropdowns while every pre-existing
+ *                  row keeps appearing for everyone. No backfill needed.
+ *
+ * Callers that pass neither get exactly the list they got before.
+ */
 export async function listProviders(
   query: ListProvidersQuery = {},
 ): Promise<ProviderDTO[]> {
@@ -142,14 +170,44 @@ export async function listProviders(
   } else if (!query.includeAll) {
     filter.status = RecordState.ACTIVE;
   }
+  const and: Record<string, unknown>[] = [];
+  if (query.serviceType) {
+    and.push(
+      query.serviceType === ServiceType.CAR_RENTAL
+        ? {
+            $or: [
+              { serviceTypes: ServiceType.CAR_RENTAL },
+              { serviceTypes: { $exists: false } },
+              { serviceTypes: { $size: 0 } },
+            ],
+          }
+        : { serviceTypes: query.serviceType },
+    );
+  }
+  if (query.organizationId && Types.ObjectId.isValid(query.organizationId)) {
+    and.push({
+      $or: [
+        { organizationIds: { $size: 0 } },
+        { organizationIds: { $exists: false } },
+        { organizationIds: new Types.ObjectId(query.organizationId) },
+      ],
+    });
+  }
+  if (and.length > 0) filter.$and = and;
   const docs = await Provider.find(filter)
     .sort({ sortOrder: 1, name: 1 })
     .lean<(ProviderDoc & { _id: Types.ObjectId })[]>();
   return docs.map(toDTO);
 }
 
-export async function listActiveProviders(): Promise<ProviderDTO[]> {
-  return listProviders({ status: RecordState.ACTIVE });
+export async function listActiveProviders(
+  opts: { serviceType?: ServiceType; organizationId?: string | null } = {},
+): Promise<ProviderDTO[]> {
+  return listProviders({
+    status: RecordState.ACTIVE,
+    serviceType: opts.serviceType,
+    organizationId: opts.organizationId ?? undefined,
+  });
 }
 
 export async function getProviderById(id: string): Promise<ProviderDTO> {

@@ -1,7 +1,7 @@
 import { Column, Row, Text } from "@react-email/components";
 import * as React from "react";
 
-import { PaymentTiming } from "@/lib/constants/enums";
+import { PaymentTiming, ServiceType } from "@/lib/constants/enums";
 
 import { MetadataRow } from "./metadata-row";
 import { SummaryCard } from "./summary-card";
@@ -26,7 +26,66 @@ export interface EmailChargeBreakdown {
   total: string;
 }
 
-interface ChargeBreakdownProps {
+/**
+ * The four wording slots that used to be hardcoded rental copy.
+ *
+ * Every one of them DEFAULTS to the exact string this component emitted
+ * before service types existed, so a caller that passes none renders
+ * byte-identically — which is what both incumbent brands do.
+ */
+export interface ChargeWording {
+  /** Label on the prepaid total row. */
+  prepaidLabel?: string;
+  /** Label on the due-later total row. */
+  dueLabel?: string;
+  /** Label on the grand-total row. */
+  totalLabel?: string;
+  /** Parenthetical appended to a DUE_AT_COUNTER line item. */
+  dueSuffix?: string;
+}
+
+/** The literals this component shipped with. Named so the defaults are
+ *  visible at a glance and can never drift apart from the prop defaults. */
+export const RENTAL_CHARGE_WORDING: Required<ChargeWording> = {
+  prepaidLabel: "Amount paid online",
+  dueLabel: "Amount due at counter",
+  totalLabel: "Total rental cost",
+  dueSuffix: "(due at counter)",
+};
+
+/**
+ * Service-appropriate wording for the charge block.
+ *
+ * CAR_RENTAL returns `RENTAL_CHARGE_WORDING` — the incumbents' strings,
+ * unchanged. A flight has no counter and a hotel has no counter either;
+ * saying "due at counter" to a FlightBizz customer is the kind of copy bug
+ * that gets read as a different company's email.
+ */
+export function chargeWordingFor(
+  serviceType: ServiceType,
+): Required<ChargeWording> {
+  switch (serviceType) {
+    case ServiceType.FLIGHT:
+      return {
+        prepaidLabel: "Amount paid online",
+        dueLabel: "Amount due at the airport",
+        totalLabel: "Total flight cost",
+        dueSuffix: "(due at the airport)",
+      };
+    case ServiceType.HOTEL:
+      return {
+        prepaidLabel: "Amount paid online",
+        dueLabel: "Amount due at the property",
+        totalLabel: "Total hotel cost",
+        dueSuffix: "(due at the property)",
+      };
+    case ServiceType.CAR_RENTAL:
+    default:
+      return RENTAL_CHARGE_WORDING;
+  }
+}
+
+interface ChargeBreakdownProps extends ChargeWording {
   breakdown: EmailChargeBreakdown;
   title?: string;
   topPadding?: number;
@@ -43,6 +102,10 @@ export function ChargeBreakdown({
   title = "Charge summary",
   topPadding = SPACE.xl,
   bottomPadding = SPACE.xs,
+  prepaidLabel = RENTAL_CHARGE_WORDING.prepaidLabel,
+  dueLabel = RENTAL_CHARGE_WORDING.dueLabel,
+  totalLabel = RENTAL_CHARGE_WORDING.totalLabel,
+  dueSuffix = RENTAL_CHARGE_WORDING.dueSuffix,
 }: ChargeBreakdownProps) {
   const showLines = breakdown.lines.length > 0;
   return (
@@ -57,7 +120,7 @@ export function ChargeBreakdown({
               key={idx}
               label={
                 line.timing === PaymentTiming.DUE_AT_COUNTER
-                  ? `${line.name} (due at counter)`
+                  ? `${line.name} ${dueSuffix}`
                   : line.name
               }
               value={line.amount}
@@ -65,14 +128,11 @@ export function ChargeBreakdown({
           ))
         : null}
 
-      <TotalRow label="Amount paid online" value={breakdown.prepaid} />
+      <TotalRow label={prepaidLabel} value={breakdown.prepaid} />
       {breakdown.dueAtCounter ? (
-        <TotalRow
-          label="Amount due at counter"
-          value={breakdown.dueAtCounter}
-        />
+        <TotalRow label={dueLabel} value={breakdown.dueAtCounter} />
       ) : null}
-      <TotalRow label="Total rental cost" value={breakdown.total} emphasise isLast />
+      <TotalRow label={totalLabel} value={breakdown.total} emphasise isLast />
     </SummaryCard>
   );
 }

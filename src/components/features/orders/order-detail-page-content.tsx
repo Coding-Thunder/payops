@@ -126,6 +126,16 @@ export function OrderDetailPageContent({
     order.state === RecordState.ACTIVE &&
     order.status !== OrderStatus.PAID;
   const canFlagRisk = roleHasPermission(role, Permission.ORDER_UPDATE);
+  // Role half of the manual-capture affordances. The other half — whether
+  // this ORDER has an authorization at all — is decided inside the payment
+  // card from `order.payment.capture`, a per-order server-derived fact, so
+  // switching organizations can never surface a Capture button on an
+  // automatic-capture order.
+  const canCapture = roleHasPermission(role, Permission.ORDER_CAPTURE_PAYMENT);
+  const canRelease = roleHasPermission(
+    role,
+    Permission.ORDER_VOID_AUTHORIZATION,
+  );
 
   const needsPaymentLink = order.status === OrderStatus.NOT_INITIATED;
   const inFlight =
@@ -218,7 +228,12 @@ export function OrderDetailPageContent({
           <ConfirmationNumberCard order={order} />
         </div>
         <div className="space-y-6">
-          <OrderPaymentCard order={order} canRegenerate={canRegenerate} />
+          <OrderPaymentCard
+            order={order}
+            canRegenerate={canRegenerate}
+            canCapture={canCapture}
+            canRelease={canRelease}
+          />
           <OrderEvidenceCard orderId={order.id} role={role} />
           <OrderConsentCard order={order} role={role} />
         </div>

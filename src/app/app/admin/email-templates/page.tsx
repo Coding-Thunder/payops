@@ -50,6 +50,11 @@ const TEMPLATE_META: Record<
     purpose:
       "Sent automatically after Stripe confirms a payment. The customer's receipt and booking summary.",
   },
+  "payment-authorized": {
+    label: "Payment authorized",
+    purpose:
+      "Sent when a card is authorized but not yet charged. Only organizations on manual capture ever send this.",
+  },
 };
 
 /**

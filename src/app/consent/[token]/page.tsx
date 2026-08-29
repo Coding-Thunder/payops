@@ -15,6 +15,31 @@ interface ConsentPageProps {
 }
 
 /**
+ * PER-BRAND TAB TITLE.
+ *
+ * The root layout sets `title.template = "%s • <deployment name>"`, so a
+ * plain string title here would render as "Confirm your booking • PayOps"
+ * (or "• Rental Confirmation") in a FlightBizz customer's browser tab and
+ * in anything that scrapes the page. `title.absolute` opts out of the
+ * parent template entirely.
+ *
+ * The default organization resolves to the deployment brand name, so the
+ * incumbent's tab reads exactly what it read before.
+ */
+export async function generateMetadata({ params }: ConsentPageProps) {
+  const { token } = await params;
+  const branding = await getBranding();
+  try {
+    const view = await getPublicConsentView(token, branding);
+    const brand = await resolvePublicBrand(view.organizationId, branding);
+    return { title: { absolute: `Confirm your booking • ${brand.brandName}` } };
+  } catch {
+    // An expired or unknown token must not leak which brands exist here.
+    return { title: { absolute: "Confirm your booking" } };
+  }
+}
+
+/**
  * Public hosted consent page. Customer arrives here from the "I Agree"
  * button in the payment-request email. Renders an order summary + a
  * single-button confirm form. On submit the form hits POST

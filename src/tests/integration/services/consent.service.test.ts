@@ -50,9 +50,12 @@ async function seedRequestedConsent() {
       snapshot: {
         bookingType: order.bookingType,
         provider: order.provider.name,
-        vehicle: `${order.vehicle.company} • ${order.vehicle.type}`,
-        pickupDate: order.trip.pickupDate.toISOString(),
-        dropoffDate: order.trip.dropoffDate.toISOString(),
+        // Non-null assertions, not fallbacks: this helper seeds a CAR_RENTAL
+        // order, where `vehicle` / `trip` are required by the model. The
+        // fields only became nullable for FLIGHT / HOTEL.
+        vehicle: `${order.vehicle!.company} • ${order.vehicle!.type}`,
+        pickupDate: order.trip!.pickupDate.toISOString(),
+        dropoffDate: order.trip!.dropoffDate.toISOString(),
         amount: order.pricing.amount,
         currency: order.pricing.currency,
         paymentLinkRef: order.payment.checkoutUrl ?? null,

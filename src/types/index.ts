@@ -1,7 +1,9 @@
 import type {
   AuditAction,
   AuditEntity,
+  BookingStatus,
   BookingType,
+  CaptureMode,
   ConsentMethod,
   ConsentMode,
   ConsentStatus,
@@ -11,11 +13,14 @@ import type {
   OrderEvidenceActorType,
   OrderEvidenceEventType,
   OrderStatus,
+  PaymentCaptureStatus,
   PaymentGatewayKey,
   PaymentTiming,
   RecordState,
+  ServiceType,
   UserRole,
 } from "@/lib/constants/enums";
+import type { EmailTemplateKey } from "@/lib/constants/email-templates";
 import type { ProviderSnapshot } from "@/lib/constants/providers";
 
 /** Public user shape used by the UI and API responses (never includes passwordHash). */
@@ -80,6 +85,55 @@ export interface OrderTrip {
  * `timing` decides whether it is collected online now (PREPAID — the only
  * thing the gateway charges) or by the counter at pick-up (DUE_AT_COUNTER).
  */
+/** FLIGHT service payload. A booking request, not a ticketed itinerary. */
+export interface OrderFlight {
+  tripType: "ONE_WAY" | "ROUND_TRIP";
+  airline: string | null;
+  flightNumber: string | null;
+  origin: string;
+  destination: string;
+  departureDate: string;
+  departureTimePreference: string | null;
+  returnDate: string | null;
+  returnTimePreference: string | null;
+  cabinClass: string;
+  passengers: { adults: number; children: number; infants: number };
+  passengerNotes: string | null;
+  pnr: string | null;
+}
+
+/** HOTEL service payload. A booking request, not a confirmed reservation. */
+export interface OrderHotel {
+  destination: string;
+  propertyName: string | null;
+  checkInDate: string;
+  checkOutDate: string;
+  rooms: number;
+  guests: { adults: number; children: number };
+  roomPreference: string | null;
+  guestNotes: string | null;
+  confirmationCode: string | null;
+}
+
+/**
+ * Manual-capture authorization state. NULL on every automatic-capture
+ * order, which is every order both incumbent brands have. The UI keys the
+ * Capture / Release affordances off this being non-null, so those controls
+ * are structurally unreachable for them.
+ */
+export interface OrderPaymentCapture {
+  method: CaptureMode;
+  status: PaymentCaptureStatus;
+  authorizedAt: string | null;
+  amountAuthorized: number | null;
+  captureExpiresAt: string | null;
+  capturedAt: string | null;
+  amountCaptured: number | null;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  lastError: string | null;
+}
+
 export interface OrderCharge {
   name: string;
   amount: number;
@@ -136,6 +190,9 @@ export interface OrderPayment {
   /** When the gateway session was generated (NOT_INITIATED →
    *  LINK_GENERATED). Null while the order is still in draft. */
   initiatedAt: string | null;
+  /** Manual-capture bookkeeping. Null unless the owning organization runs
+   *  `captureMode: MANUAL`. */
+  capture: OrderPaymentCapture | null;
 }
 
 export interface OrderCreator {
@@ -184,12 +241,23 @@ export interface OrderDTO {
   id: string;
   orderNumber: string;
   bookingType: BookingType;
+  /** WHAT was bought. Always emitted; legacy orders surface as CAR_RENTAL. */
+  serviceType: ServiceType;
   status: OrderStatus;
   state: RecordState;
+  /** Booking lifecycle, separate from the payment lifecycle in `status`.
+   *  Null unless the order runs on manual capture. */
+  bookingStatus: BookingStatus | null;
   customer: OrderCustomer;
   provider: ProviderSnapshot;
-  vehicle: OrderVehicle;
-  trip: OrderTrip;
+  /** CAR_RENTAL only — null on FLIGHT / HOTEL. */
+  vehicle: OrderVehicle | null;
+  /** CAR_RENTAL only — null on FLIGHT / HOTEL. */
+  trip: OrderTrip | null;
+  /** FLIGHT only. */
+  flight: OrderFlight | null;
+  /** HOTEL only. */
+  hotel: OrderHotel | null;
   pricing: OrderPricing;
   /** Rental charge breakdown — source of truth for prepaid / due-at-counter
    *  / total. Empty for legacy orders (treat `pricing.amount` as one prepaid
@@ -248,9 +316,25 @@ export interface DisputeDTO {
 
 export interface PaymentConsentSnapshot {
   bookingType: BookingType;
+  /**
+   * What was booked.
+   *
+   * The three fields below keep their rental NAMES because the consent
+   * chain is append-only and one shape — a flight folds its route into
+   * `vehicle` and its departure/return into the two dates. This field is
+   * what lets the customer-facing page LABEL them honestly, so a flight
+   * passenger is never asked to confirm a "Vehicle" and a "Drop-off".
+   *
+   * Optional: absent on every consent record written before it existed,
+   * which readers resolve to CAR_RENTAL.
+   */
+  serviceType?: ServiceType;
   provider: string;
+  /** The booked item: the car, the route, or the property. */
   vehicle: string;
+  /** Start of the booking: pick-up, departure, or check-in. */
   pickupDate: string;
+  /** End of the booking: drop-off, return, or check-out. */
   dropoffDate: string;
   /** Optional rental locations — absent on consent records predating them. */
   pickupLocation?: string | null;
@@ -396,10 +480,15 @@ export interface OrderEvidenceChainDTO {
     status: OrderStatus;
     state: RecordState;
     provider: ProviderSnapshot;
+    serviceType: ServiceType;
     /** Vehicle snapshot lifted to the chain order so the evidence
      *  page + PDF can render the operator-captured car image
-     *  alongside the provider logo. */
-    vehicle: OrderVehicle;
+     *  alongside the provider logo. NULL on a flight or hotel, where
+     *  `item` carries the human-readable equivalent. */
+    vehicle: OrderVehicle | null;
+    /** Service-agnostic "what was bought" label: the vehicle, the route,
+     *  or the property. Always present. */
+    item: string;
     createdAt: string;
   };
 }
@@ -424,6 +513,11 @@ export interface ProviderDTO {
   onPrimaryColor: string;
   tagline: string;
   status: RecordState;
+  /** Service types this supplier serves. Legacy rows read `[CAR_RENTAL]`. */
+  serviceTypes: ServiceType[];
+  /** Organizations allowed to use it. EMPTY means every organization,
+   *  which is how every pre-existing row behaves. */
+  organizationIds: string[];
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
@@ -456,7 +550,10 @@ export interface BrandingDTO {
 
 export interface EmailTemplateVersionDTO {
   id: string;
-  templateKey: "payment-confirmation" | "payment-request";
+  // Sourced from the single registry rather than re-spelled here — this
+  // was a hand-written duplicate of the union and drifted the moment a
+  // third template key was added.
+  templateKey: EmailTemplateKey;
   version: number;
   active: boolean;
 

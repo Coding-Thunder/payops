@@ -10,9 +10,16 @@ import {
   EmailKind,
   OrderEvidenceActorType,
   OrderEvidenceEventType,
+  ServiceType,
   type PaymentGatewayKey,
   type UserRole,
 } from "@/lib/constants/enums";
+import {
+  describeServiceItem,
+  serviceDetailRows,
+  serviceTypeOf,
+  type ServiceRow,
+} from "@/lib/service-summary";
 import { PaymentGatewayLabel as PAYMENT_GATEWAY_LABELS } from "@/lib/constants/labels";
 import { env } from "@/lib/env";
 import { DomainEventType } from "@/lib/constants/events";
@@ -37,6 +44,10 @@ import {
   PaymentConfirmationEmail,
   type PaymentConfirmationEmailProps,
 } from "@/server/email/templates/payment-confirmation";
+import {
+  PaymentAuthorizedEmail,
+  type PaymentAuthorizedEmailProps,
+} from "@/server/email/templates/payment-authorized";
 import { formatEmailDate, formatEmailDay, formatMoney } from "@/server/email/format";
 import { buildConsentMailto } from "@/server/email/consent-mailto";
 import { summarizeCharges } from "@/lib/charges";
@@ -68,6 +79,115 @@ function buildEmailChargeBreakdown(order: OrderDTO): EmailChargeBreakdown {
     prepaid: formatMoney(s.prepaid, currency),
     dueAtCounter: s.dueAtCounter > 0 ? formatMoney(s.dueAtCounter, currency) : null,
     total: formatMoney(s.total, currency),
+  };
+}
+
+/* ─────────────────── Service-aware email prop builders ─────────────────── */
+
+/**
+ * The CAR_RENTAL trip block the templates have always received, or null.
+ *
+ * `order.trip` is nullable now that an order can be a flight or a hotel.
+ * Returning null (rather than a zero-valued object) is what lets the
+ * templates skip the rental rows entirely instead of printing "Pick-up: "
+ * with nothing after it.
+ */
+function rentalTripProps(
+  order: OrderDTO,
+): PaymentConfirmationEmailProps["trip"] {
+  const t = order.trip;
+  if (!t) return null;
+  return {
+    pickupDate: formatEmailDay(t.pickupDate),
+    dropoffDate: formatEmailDay(t.dropoffDate),
+    pickupLocation: t.pickupLocation ?? null,
+    dropoffLocation: t.dropoffLocation ?? null,
+  };
+}
+
+/**
+ * The "what was booked" rows for a customer email.
+ *
+ * CAR_RENTAL returns undefined ON PURPOSE: the templates then take their
+ * original, untouched Vehicle / Pick-up / Drop-off path, built from the
+ * `vehicle` / `trip` props. That path composes strings `serviceDetailRows`
+ * does not reproduce (a "•" between company and type, a " · location"
+ * suffix on each date), so routing rentals through the shared helper would
+ * silently reword every RentalConfirmation and Trip Reservations email.
+ *
+ * FLIGHT and HOTEL — which have no vehicle and no trip at all — take the
+ * shared helper, formatted with the same long UTC stamp the rental dates
+ * use so the two services read consistently inside one email.
+ */
+function emailServiceRows(order: OrderDTO): ServiceRow[] | undefined {
+  if (serviceTypeOf(order) === ServiceType.CAR_RENTAL) return undefined;
+  return serviceDetailRows(order, formatEmailDay);
+}
+
+/**
+ * The item + date-range fields of a PaymentConsentSnapshot.
+ *
+ * The snapshot schema predates service types and has exactly three slots
+ * for "what and when": `vehicle`, `pickupDate`, `dropoffDate`, all
+ * required. CAR_RENTAL fills them from the trip verbatim — same string,
+ * same ISO stamps, so an existing consent record is byte-identical.
+ * FLIGHT and HOTEL map their own item and their own start/end dates into
+ * the same slots; a one-way flight has no return, so its end date repeats
+ * the departure rather than being left blank.
+ */
+function consentSnapshotService(order: OrderDTO): {
+  serviceType: ServiceType;
+  vehicle: string;
+  pickupDate: string;
+  dropoffDate: string;
+  pickupLocation: string | null;
+  dropoffLocation: string | null;
+} {
+  const t = order.trip;
+  if (t) {
+    return {
+      serviceType: serviceTypeOf(order),
+      vehicle: order.vehicle
+        ? `${order.vehicle.company} • ${order.vehicle.type}`
+        : describeServiceItem(order),
+      pickupDate: t.pickupDate,
+      dropoffDate: t.dropoffDate,
+      pickupLocation: t.pickupLocation ?? null,
+      dropoffLocation: t.dropoffLocation ?? null,
+    };
+  }
+  const f = order.flight;
+  if (f) {
+    return {
+      serviceType: serviceTypeOf(order),
+      vehicle: describeServiceItem(order),
+      pickupDate: f.departureDate,
+      dropoffDate: f.returnDate ?? f.departureDate,
+      pickupLocation: f.origin,
+      dropoffLocation: f.destination,
+    };
+  }
+  const h = order.hotel;
+  if (h) {
+    return {
+      serviceType: serviceTypeOf(order),
+      vehicle: describeServiceItem(order),
+      pickupDate: h.checkInDate,
+      dropoffDate: h.checkOutDate,
+      pickupLocation: h.destination,
+      dropoffLocation: h.destination,
+    };
+  }
+  // No service payload at all — a malformed row. Store the readable noun
+  // and today's stamp rather than throwing on the customer's send path.
+  const now = new Date().toISOString();
+  return {
+    serviceType: serviceTypeOf(order),
+    vehicle: describeServiceItem(order),
+    pickupDate: now,
+    dropoffDate: now,
+    pickupLocation: null,
+    dropoffLocation: null,
   };
 }
 
@@ -260,13 +380,10 @@ export async function sendPaymentConfirmationEmail(
       ? formatEmailDate(order.payment.paidAt)
       : formatEmailDate(new Date()),
     provider: providerForEmail,
+    serviceType: serviceTypeOf(order),
     vehicle: order.vehicle,
-    trip: {
-      pickupDate: formatEmailDay(order.trip.pickupDate),
-      dropoffDate: formatEmailDay(order.trip.dropoffDate),
-      pickupLocation: order.trip.pickupLocation ?? null,
-      dropoffLocation: order.trip.dropoffLocation ?? null,
-    },
+    trip: rentalTripProps(order),
+    serviceRows: emailServiceRows(order),
     confirmationNumber: order.confirmationNumber ?? null,
     chargeBreakdown: buildEmailChargeBreakdown(order),
     termsText: order.terms?.text || null,
@@ -335,6 +452,136 @@ export async function sendPaymentConfirmationEmail(
     },
   });
   return sent;
+}
+
+/* ─────────────────── Payment authorized (manual capture) ────────────── */
+
+/**
+ * Tell the customer their card has been AUTHORIZED — held, not charged.
+ *
+ * Structurally a twin of `sendPaymentConfirmationEmail`: same brand and
+ * identity resolution, same inlined provider logo, same template-copy
+ * override lookup, same evidence capture of the exact bytes sent. What
+ * differs is the moment it describes, and that difference is the whole
+ * point of the email — see the doc comment on the template.
+ *
+ * Only an organization running `captureMode: MANUAL` ever enqueues this
+ * kind, so neither incumbent brand can produce a send through this path.
+ */
+export async function sendPaymentAuthorizedEmail(
+  order: OrderDTO,
+): Promise<{ id: string | null }> {
+  const orgId = await organizationIdForOrder(order.id);
+  const [branding, tpl] = await Promise.all([
+    getBranding(),
+    getActiveTemplateContent("payment-authorized", orgId),
+  ]);
+  const identity = await resolveEmailIdentity(orgId, branding);
+  const brandName = identity.brandName;
+  const providerLogoInline = order.provider
+    ? await inlinePublicImage(order.provider.logo)
+    : null;
+  const providerForEmail = order.provider
+    ? { ...order.provider, logo: providerLogoInline ?? order.provider.logo }
+    : order.provider;
+  const capture = order.payment.capture;
+  const props: PaymentAuthorizedEmailProps = {
+    brandName,
+    appUrl: env.server.APP_URL,
+    supportEmail: identity.supportEmail,
+    supportPhone: identity.supportPhone,
+    customerName: order.customer.name,
+    orderNumber: order.orderNumber,
+    bookingType: order.bookingType,
+    // The HELD figure, which is what the customer's bank shows as pending.
+    // Falls back to the order total when the gateway reported no explicit
+    // authorized amount — never to `amountReceived`, which is money we do
+    // not have.
+    amount: formatMoney(
+      capture?.amountAuthorized ?? order.pricing.amount,
+      order.pricing.currency,
+    ),
+    authorizedOn: capture?.authorizedAt
+      ? formatEmailDate(capture.authorizedAt)
+      : formatEmailDate(new Date()),
+    // Stated only when the gateway actually gave us a deadline. A made-up
+    // expiry on a hold is worse than none.
+    holdExpiresOn: capture?.captureExpiresAt
+      ? formatEmailDate(capture.captureExpiresAt)
+      : null,
+    provider: providerForEmail,
+    serviceType: serviceTypeOf(order),
+    vehicle: order.vehicle,
+    trip: rentalTripProps(order),
+    serviceRows: emailServiceRows(order),
+    chargeBreakdown: buildEmailChargeBreakdown(order),
+    termsText: order.terms?.text || null,
+    termsVersion: order.terms?.version ?? null,
+    acknowledgeUrl: order.terms?.text
+      ? buildAckUrl(env.server.APP_URL, generateAckToken(order.id))
+      : null,
+    cancellationPolicy: order.policy?.text ?? "",
+    cancellationPolicyVersion: order.policy?.version ?? undefined,
+    gatewayLabel: order.payment.gateway
+      ? PAYMENT_GATEWAY_LABELS[order.payment.gateway as PaymentGatewayKey]
+      : null,
+  };
+  const html = await render(<PaymentAuthorizedEmail {...props} />);
+  const text = await render(<PaymentAuthorizedEmail {...props} />, {
+    plainText: true,
+  });
+  const finalSubject =
+    tpl?.subject?.trim() || subjectForAuthorization(order, brandName);
+  const recipient = order.customer.email;
+  const sent = await sendEmail({
+    identity,
+    to: recipient,
+    subject: finalSubject,
+    html,
+    text,
+    kind: EmailKind.PAYMENT_AUTHORIZED,
+    orderId: order.id,
+  });
+  // This email IS the disclosure that the money was held rather than
+  // taken. Capturing its exact bytes is what lets us answer a "they
+  // charged me for a booking I never got" dispute with the message the
+  // customer actually received.
+  await captureEvidenceSafe({
+    orderId: order.id,
+    orderNumber: order.orderNumber,
+    eventType: OrderEvidenceEventType.PAYMENT_AUTHORIZED,
+    actor: { type: OrderEvidenceActorType.SYSTEM, name: "Payment webhook" },
+    payload: {
+      kind: EmailKind.PAYMENT_AUTHORIZED,
+      subject: finalSubject,
+      from: sent.from,
+      replyTo: sent.replyTo,
+      to: recipient,
+      messageId: sent.id,
+      brand: {
+        name: brandName,
+        supportEmail: identity.supportEmail,
+        supportPhone: identity.supportPhone,
+      },
+      amountAuthorized: props.amount,
+      authorizedOn: props.authorizedOn,
+      holdExpiresOn: props.holdExpiresOn ?? null,
+      html,
+      text,
+    },
+    refs: {
+      messageId: sent.id ?? null,
+      customerEmail: recipient,
+    },
+  });
+  return sent;
+}
+
+function subjectForAuthorization(order: OrderDTO, brand: string): string {
+  const providerName = order.provider?.name ?? brand;
+  // "authorized" and never "confirmed" — the subject line is the part most
+  // likely to be read on its own, from a lock screen.
+  return `${providerName} card authorized — not yet charged • ${order.orderNumber}`;
 }
 
 /* ───────────────────────── Payment request ─────────────────────────── */
@@ -483,13 +730,10 @@ export async function composePaymentRequestProps(
       ? formatEmailDate(order.payment.expiresAt)
       : null,
     provider: providerForEmail,
+    serviceType: serviceTypeOf(order),
     vehicle: order.vehicle,
-    trip: {
-      pickupDate: formatEmailDay(order.trip.pickupDate),
-      dropoffDate: formatEmailDay(order.trip.dropoffDate),
-      pickupLocation: order.trip.pickupLocation ?? null,
-      dropoffLocation: order.trip.dropoffLocation ?? null,
-    },
+    trip: rentalTripProps(order),
+    serviceRows: emailServiceRows(order),
     chargeBreakdown: buildEmailChargeBreakdown(order),
     paymentUrl: checkoutUrl,
     gatewayLabel,
@@ -587,11 +831,13 @@ export async function sendPaymentRequestEmail(
             return {
               bookingType: order.bookingType,
               provider: order.provider?.name ?? "",
-              vehicle: `${order.vehicle.company} • ${order.vehicle.type}`,
-              pickupDate: order.trip.pickupDate,
-              dropoffDate: order.trip.dropoffDate,
-              pickupLocation: order.trip.pickupLocation ?? null,
-              dropoffLocation: order.trip.dropoffLocation ?? null,
+              // `PaymentConsentSnapshot` still models one booking shape —
+              // an item plus a start and an end date. A rental keeps the
+              // exact string it has always stored ("Company • Type"); a
+              // flight or hotel folds its route / property and its own two
+              // dates into the same three fields rather than storing an
+              // empty consent record.
+              ...consentSnapshotService(order),
               amount: order.pricing.amount,
               currency: order.pricing.currency,
               charges: s.charges,

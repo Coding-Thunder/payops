@@ -5,7 +5,12 @@ import {
   type Types,
 } from "mongoose";
 
-import { RECORD_STATES, RecordState } from "@/lib/constants/enums";
+import {
+  RECORD_STATES,
+  RecordState,
+  SERVICE_TYPES,
+  ServiceType,
+} from "@/lib/constants/enums";
 import { PROVIDER_KEY_REGEX } from "@/lib/constants/providers";
 
 /**
@@ -30,6 +35,21 @@ export interface ProviderDoc {
   onPrimaryColor: string;
   tagline: string;
   status: RecordState;
+  /**
+   * Which service types this supplier can be attached to. Defaults to
+   * `[CAR_RENTAL]`, so every provider row that existed before this field
+   * keeps appearing exactly where it appears today — the car-rental form —
+   * and an airline added for FlightBizz never surfaces on a rental form.
+   */
+  serviceTypes: ServiceType[];
+  /**
+   * Organizations allowed to use this supplier. EMPTY MEANS "EVERY
+   * ORGANIZATION", which is precisely how the catalog behaves today, so no
+   * existing row needs a backfill and no incumbent brand loses a provider.
+   * A non-empty list restricts — that is how FlightBizz-only airlines stay
+   * out of the other two brands' catalogs.
+   */
+  organizationIds: Types.ObjectId[];
   sortOrder: number;
   createdBy?: Types.ObjectId | null;
   updatedBy?: Types.ObjectId | null;
@@ -72,6 +92,19 @@ const providerCatalogSchema = new Schema<ProviderDoc>(
       default: RecordState.ACTIVE,
       index: true,
     },
+    serviceTypes: {
+      type: [String],
+      enum: SERVICE_TYPES,
+      required: true,
+      // Thunk: a shared array literal would be mutated across documents.
+      default: () => [ServiceType.CAR_RENTAL],
+    },
+    organizationIds: {
+      type: [Schema.Types.ObjectId],
+      ref: "Organization",
+      required: true,
+      default: () => [],
+    },
     sortOrder: { type: Number, required: true, default: 0, index: true },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     updatedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
@@ -92,6 +125,8 @@ const providerCatalogSchema = new Schema<ProviderDoc>(
 );
 
 providerCatalogSchema.index({ status: 1, sortOrder: 1, name: 1 });
+providerCatalogSchema.index({ serviceTypes: 1, status: 1, sortOrder: 1 });
+providerCatalogSchema.index({ organizationIds: 1 }, { sparse: true });
 
 import { registerModel } from "./register";
 export const Provider: Model<ProviderDoc> = registerModel<ProviderDoc>(

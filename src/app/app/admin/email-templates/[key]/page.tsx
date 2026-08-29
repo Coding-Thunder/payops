@@ -32,12 +32,15 @@ interface PageProps {
 const TEMPLATE_LABELS: Record<EmailTemplateKey, string> = {
   "payment-confirmation": "Payment confirmation",
   "payment-request": "Payment request",
+  "payment-authorized": "Payment authorized",
 };
 const TEMPLATE_DESCRIPTIONS: Record<EmailTemplateKey, string> = {
   "payment-confirmation":
     "Sent automatically by the system once Stripe confirms a successful payment.",
   "payment-request":
     "Sent by an agent from the composer right after order creation. Includes the Stripe payment CTA.",
+  "payment-authorized":
+    "Sent automatically when a card is authorized but NOT yet charged. Only organizations on manual capture ever send this.",
 };
 
 export default async function AdminTemplateEditorPage({ params }: PageProps) {

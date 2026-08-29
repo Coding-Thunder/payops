@@ -16,7 +16,21 @@ interface EmailFooterProps {
    * attribution in the legal footer of every PayPal brand's email.
    */
   gatewayLabel?: string | null;
+  /**
+   * The automated-mail disclosure sentence.
+   *
+   * Defaults to the exact literal this footer has always printed, so every
+   * existing email — both incumbent brands, every template — is byte-
+   * identical. The authorization email overrides it, because calling a
+   * hold a "receipt" tells the customer money moved when it has not.
+   */
+  disclosure?: string;
 }
+
+/** What this footer has always said. Kept as a named constant so the
+ *  default is impossible to drift from accidentally. */
+const DEFAULT_DISCLOSURE =
+  "Automated payment receipt — replies route to our support team.";
 
 /**
  * Bottom-of-email legal block. Muted, single column, no marketing
@@ -28,6 +42,7 @@ export function EmailFooter({
   legalAddress,
   supportEmail,
   gatewayLabel,
+  disclosure = DEFAULT_DISCLOSURE,
 }: EmailFooterProps) {
   const year = new Date().getUTCFullYear();
   return (
@@ -54,8 +69,8 @@ export function EmailFooter({
           color: COLOR.textMuted,
         }}
       >
-        © {year} {brandName}. Automated payment receipt — replies route to
-        our support team.{gatewayLabel ? ` Powered by ${gatewayLabel}.` : ""}
+        © {year} {brandName}. {disclosure}
+        {gatewayLabel ? ` Powered by ${gatewayLabel}.` : ""}
       </Text>
       {supportEmail || legalAddress ? (
         <Text

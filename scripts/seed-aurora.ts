@@ -212,6 +212,7 @@ async function main() {
     EmailKind,
     OrderEvidenceActorType,
     OrderEvidenceEventType,
+    ServiceType,
     OrderStatus,
     PaymentGatewayKey,
     RecordState,
@@ -354,6 +355,10 @@ async function main() {
     _id: orderId,
     orderNumber: FIXTURE_ORDER_NUMBER,
     bookingType: BookingType.NEW_BOOKING,
+    // The raw driver bypasses Mongoose defaults, so this has to be written
+    // explicitly or the staging fixture would be shaped like a
+    // pre-migration row rather than like production data.
+    serviceType: ServiceType.CAR_RENTAL,
     status: OrderStatus.PAID,
     state: RecordState.ACTIVE,
     customer: { ...SCENARIO.order.customer },

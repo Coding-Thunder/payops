@@ -16,6 +16,8 @@ import {
   Currency,
   PAYMENT_TIMINGS,
   PaymentTiming,
+  SERVICE_TYPES,
+  ServiceType,
 } from "@/lib/constants/enums";
 
 /**
@@ -68,6 +70,9 @@ export interface PaymentConsentDoc extends OrganizationScoped {
    *  shows what the customer saw when they confirmed. */
   snapshot: {
     bookingType: BookingType;
+    /** Null on records written before this field existed — read as
+     *  CAR_RENTAL, which is what they are. */
+    serviceType?: ServiceType | null;
     provider: string;
     vehicle: string;
     pickupDate: Date;
@@ -121,7 +126,19 @@ const snapshotChargeSchema = new Schema(
 
 const snapshotSchema = new Schema(
   {
-    bookingType: { type: String, enum: BOOKING_TYPES, required: true },
+        /**
+     * What was booked. OPTIONAL and null on every consent record written
+     * before this field existed — readers default to CAR_RENTAL, which is
+     * what those records are.
+     *
+     * The three rental-shaped fields below (`vehicle`, `pickupDate`,
+     * `dropoffDate`) stay REQUIRED and are synthesised for a flight or
+     * hotel, so the append-only consent chain keeps one shape. This field
+     * is what lets the customer-facing page LABEL them correctly instead of
+     * telling a flight passenger about a "Vehicle" and a "Drop-off".
+     */
+    serviceType: { type: String, enum: SERVICE_TYPES, default: null },
+bookingType: { type: String, enum: BOOKING_TYPES, required: true },
     provider: { type: String, required: true, trim: true, maxlength: 120 },
     vehicle: { type: String, required: true, trim: true, maxlength: 160 },
     pickupDate: { type: Date, required: true },

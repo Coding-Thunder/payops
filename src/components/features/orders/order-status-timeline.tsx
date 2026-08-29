@@ -7,10 +7,14 @@ import {
   XCircleIcon,
 } from "lucide-react";
 
-import { ConsentStatus, OrderStatus } from "@/lib/constants/enums";
+import {
+  ConsentStatus,
+  OrderStatus,
+  PaymentCaptureStatus,
+} from "@/lib/constants/enums";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { OrderDTO } from "@/types";
+import type { OrderDTO, OrderPaymentCapture } from "@/types";
 
 interface OrderStatusTimelineProps {
   order: OrderDTO;
@@ -27,9 +31,10 @@ interface Step {
 
 /**
  * Five-step horizontal-on-desktop / vertical-on-mobile timeline of the
- * payment lifecycle. Reads exclusively from the order DTO — no extra
- * fetches — so it renders instantly and stays in lockstep with the
- * polled / SSE-invalidated cache.
+ * payment lifecycle — six on a manual-capture order, which inserts
+ * "Authorized" between consent and payment. Reads exclusively from the
+ * order DTO — no extra fetches — so it renders instantly and stays in
+ * lockstep with the polled / SSE-invalidated cache.
  *
  * Step rules:
  *   Created:           always done at order.createdAt
@@ -37,6 +42,9 @@ interface Step {
  *                      atomically with the payment-request email send)
  *   Consent received:  consent.receivedAt (skipped when status is
  *                      NOT_REQUESTED — applies to admin-skipped flows)
+ *   Authorized:        payment.capture.authorizedAt — ONLY present when
+ *                      payment.capture is non-null, i.e. never for the
+ *                      automatic-capture orders both incumbent brands run
  *   Paid:              payment.paidAt (failed / expired surfaces a
  *                      destructive marker instead of a pending one)
  *   Confirmation sent: payment.confirmationEmailSentAt
@@ -44,7 +52,15 @@ interface Step {
 export function OrderStatusTimeline({ order }: OrderStatusTimelineProps) {
   const steps = buildSteps(order);
   return (
-    <ol className="grid gap-3 md:grid-cols-5 md:gap-1.5">
+    <ol
+      className={
+        // Written as two whole literals rather than a composed string so
+        // the five-step class attribute is byte-for-byte what it is today.
+        steps.length === 6
+          ? "grid gap-3 md:grid-cols-6 md:gap-1.5"
+          : "grid gap-3 md:grid-cols-5 md:gap-1.5"
+      }
+    >
       {steps.map((step, i) => (
         <li
           key={step.key}
@@ -182,6 +198,14 @@ function buildSteps(order: OrderDTO): Step[] {
     };
   }
 
+  // Manual capture only. Null — and therefore absent from the timeline —
+  // for every automatic-capture order, which is every order both incumbent
+  // brands have ever created.
+  const capture = order.payment.capture;
+  const authorized: Step | null = capture
+    ? buildAuthorizedStep(capture, emailSent, consentReceived)
+    : null;
+
   let paid: Step;
   if (order.status === OrderStatus.PAID && order.payment.paidAt) {
     paid = {
@@ -259,5 +283,75 @@ function buildSteps(order: OrderDTO): Step[] {
     };
   }
 
-  return [created, emailSent, consentReceived, paid, confirmation];
+  // The automatic-capture branch returns the identical five-element array
+  // it has always returned, in the identical order.
+  return authorized
+    ? [created, emailSent, consentReceived, authorized, paid, confirmation]
+    : [created, emailSent, consentReceived, paid, confirmation];
+}
+
+/**
+ * The "money is on hold" step, shown only on manual-capture orders.
+ *
+ * Under manual capture the customer authorizes at checkout and the card is
+ * only charged when an operator confirms the booking, so "Paid" alone hides
+ * a state the operator has to act on. `AUTHORIZED` therefore reads as done
+ * — the hold really is in place — while the release / expiry outcomes are
+ * terminal states that never become "Paid".
+ */
+function buildAuthorizedStep(
+  capture: OrderPaymentCapture,
+  emailSent: Step,
+  consentReceived: Step,
+): Step {
+  const key = "authorized";
+  switch (capture.status) {
+    case PaymentCaptureStatus.CANCELLED:
+      return {
+        key,
+        label: "Authorization released",
+        when: capture.cancelledAt,
+        state: "skipped",
+        helperText: capture.cancelReason ?? "Hold released",
+      };
+    case PaymentCaptureStatus.AUTHORIZATION_EXPIRED:
+      return {
+        key,
+        label: "Authorization expired",
+        when: null,
+        state: "failed",
+        helperText: "The gateway released the hold",
+      };
+    case PaymentCaptureStatus.CAPTURE_FAILED:
+      // `when` stays null so the reason renders in place of a timestamp —
+      // the operator needs the gateway's message, not the authorize time.
+      return {
+        key,
+        label: "Capture failed",
+        when: null,
+        state: "failed",
+        helperText: capture.lastError ?? "The hold may still stand",
+      };
+    case PaymentCaptureStatus.AUTHORIZED:
+    case PaymentCaptureStatus.CAPTURE_PENDING:
+    case PaymentCaptureStatus.CAPTURED:
+      return {
+        key,
+        label: "Authorized",
+        when: capture.authorizedAt,
+        state: "done",
+        helperText: capture.authorizedAt ? undefined : "Hold placed",
+      };
+    case PaymentCaptureStatus.PENDING_AUTHORIZATION:
+    default:
+      return emailSent.state === "done" || consentReceived.state === "done"
+        ? {
+            key,
+            label: "Authorized",
+            when: null,
+            state: "active",
+            helperText: "Awaiting authorization",
+          }
+        : { key, label: "Authorized", when: null, state: "pending" };
+  }
 }

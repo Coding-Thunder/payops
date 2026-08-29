@@ -11,6 +11,7 @@ import {
   type Currency,
   OrderEvidenceActorType,
   OrderEvidenceEventType,
+  ServiceType,
   type UserRole,
 } from "@/lib/constants/enums";
 import {
@@ -74,6 +75,7 @@ function consentToDTO(doc: PaymentConsentDoc & { _id: Types.ObjectId | string })
     snapshot: {
       bookingType: doc.snapshot.bookingType as BookingType,
       provider: doc.snapshot.provider,
+      serviceType: doc.snapshot.serviceType ?? ServiceType.CAR_RENTAL,
       vehicle: doc.snapshot.vehicle,
       pickupDate: doc.snapshot.pickupDate.toISOString(),
       dropoffDate: doc.snapshot.dropoffDate.toISOString(),
@@ -163,6 +165,7 @@ export async function requestConsent(
   const persistedSnapshot = {
     bookingType: input.snapshot.bookingType,
     provider: input.snapshot.provider,
+    serviceType: input.snapshot.serviceType ?? ServiceType.CAR_RENTAL,
     vehicle: input.snapshot.vehicle,
     pickupDate: new Date(input.snapshot.pickupDate),
     dropoffDate: new Date(input.snapshot.dropoffDate),
@@ -272,7 +275,8 @@ export async function requestConsent(
       snapshot: {
         bookingType: input.snapshot.bookingType,
         provider: input.snapshot.provider,
-        vehicle: input.snapshot.vehicle,
+        serviceType: input.snapshot.serviceType ?? ServiceType.CAR_RENTAL,
+    vehicle: input.snapshot.vehicle,
         pickupDate: new Date(input.snapshot.pickupDate).toISOString(),
         dropoffDate: new Date(input.snapshot.dropoffDate).toISOString(),
         amount: input.snapshot.amount,
@@ -334,6 +338,7 @@ export async function getPublicConsentView(
     snapshot: {
       bookingType: doc.snapshot.bookingType as BookingType,
       provider: doc.snapshot.provider,
+      serviceType: doc.snapshot.serviceType ?? ServiceType.CAR_RENTAL,
       vehicle: doc.snapshot.vehicle,
       pickupDate: doc.snapshot.pickupDate.toISOString(),
       dropoffDate: doc.snapshot.dropoffDate.toISOString(),
@@ -474,7 +479,8 @@ export async function recordConsentFromToken(
       snapshot: {
         bookingType: doc.snapshot.bookingType,
         provider: doc.snapshot.provider,
-        vehicle: doc.snapshot.vehicle,
+        serviceType: doc.snapshot.serviceType ?? ServiceType.CAR_RENTAL,
+      vehicle: doc.snapshot.vehicle,
         pickupDate: doc.snapshot.pickupDate.toISOString(),
         dropoffDate: doc.snapshot.dropoffDate.toISOString(),
         amount: doc.snapshot.amount,

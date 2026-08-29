@@ -10,9 +10,12 @@ import {
 import * as React from "react";
 
 import { BookingTypeLabel } from "@/lib/constants/labels";
-import type { BookingType } from "@/lib/constants/enums";
+import { ServiceType, type BookingType } from "@/lib/constants/enums";
 import type { ProviderSnapshot } from "@/lib/constants/providers";
+import type { ServiceRow } from "@/lib/service-summary";
 
+import { chargeWordingFor } from "../components/charge-breakdown";
+import { rentalBookingRows } from "./payment-confirmation";
 import {
   ChargeBreakdown,
   COLOR,
@@ -45,17 +48,32 @@ export interface PaymentRequestEmailProps {
   dueBy?: string | null;
 
   provider: ProviderSnapshot;
-  /** Image is rendered as a hero strip below the provider badge when
-   *  set — same treatment the post-payment confirmation email uses,
-   *  so the customer recognises the car they reserved as soon as they
-   *  open either email. */
-  vehicle: { company: string; type: string; imageUrl?: string | null };
-  trip: {
+  /**
+   * WHAT is being booked. Optional and defaulting to CAR_RENTAL so the
+   * previews and the admin template editor render exactly the rental email
+   * they rendered before service types existed.
+   */
+  serviceType?: ServiceType;
+  /** CAR_RENTAL payload; null on a FLIGHT / HOTEL order. Its image is
+   *  rendered as a hero strip below the provider badge when set — same
+   *  treatment the post-payment confirmation email uses, so the customer
+   *  recognises the car they reserved as soon as they open either email.
+   *  A flight or hotel has no such image and gets no strip. */
+  vehicle?: { company: string; type: string; imageUrl?: string | null } | null;
+  /** CAR_RENTAL payload; null on a FLIGHT / HOTEL order. */
+  trip?: {
     pickupDate: string;
     dropoffDate: string;
     pickupLocation?: string | null;
     dropoffLocation?: string | null;
-  };
+  } | null;
+  /**
+   * Pre-formatted "what was booked" rows. Supplied by email.service from
+   * the shared `serviceDetailRows()` for FLIGHT / HOTEL; omitted for
+   * CAR_RENTAL, where the template falls back to the Vehicle / Pick-up /
+   * Drop-off triple it has always rendered from `vehicle` / `trip`.
+   */
+  serviceRows?: ServiceRow[] | null;
   /** Pre-formatted charge breakdown — shows what the customer pays online
    *  today vs what's due at the counter. */
   chargeBreakdown?: EmailChargeBreakdown;
@@ -130,8 +148,10 @@ export function PaymentRequestEmail({
   amount,
   dueBy,
   provider,
+  serviceType = ServiceType.CAR_RENTAL,
   vehicle,
   trip,
+  serviceRows,
   chargeBreakdown,
   greeting,
   intro,
@@ -149,12 +169,10 @@ export function PaymentRequestEmail({
   const policyParagraphs = cancellationPolicy
     ? cancellationPolicy.split(/\n+/).filter((p) => p.trim().length > 0)
     : [];
-  const pickupValue = trip.pickupLocation
-    ? `${trip.pickupDate} · ${trip.pickupLocation}`
-    : trip.pickupDate;
-  const dropoffValue = trip.dropoffLocation
-    ? `${trip.dropoffDate} · ${trip.dropoffLocation}`
-    : trip.dropoffDate;
+  const bookingRows = serviceRows?.length
+    ? serviceRows
+    : rentalBookingRows(vehicle, trip);
+  const wording = chargeWordingFor(serviceType);
 
   const greetingLine =
     greeting && greeting.trim().length > 0
@@ -362,8 +380,9 @@ export function PaymentRequestEmail({
 
       {/* Car hero — same treatment the confirmation email uses, so the
           customer immediately recognises the vehicle they reserved. Only
-          renders when the agent supplied an image URL at creation. */}
-      {vehicle.imageUrl ? (
+          renders when there IS a vehicle AND the agent supplied an image
+          URL at creation; a flight or hotel order has no vehicle at all. */}
+      {vehicle?.imageUrl ? (
         <Section style={{ padding: 0 }}>
           <Img
             src={vehicle.imageUrl}
@@ -388,13 +407,21 @@ export function PaymentRequestEmail({
         bottomPadding={SPACE.xs}
       >
         <MetadataRow label="Type" value={BookingTypeLabel[bookingType]} />
-        <MetadataRow label="Provider" value={provider.name} />
         <MetadataRow
-          label="Vehicle"
-          value={`${vehicle.company} • ${vehicle.type}`}
+          label="Provider"
+          value={provider.name}
+          isLast={bookingRows.length === 0}
         />
-        <MetadataRow label="Pick-up" value={pickupValue} />
-        <MetadataRow label="Drop-off" value={dropoffValue} isLast />
+        {/* Vehicle / Pick-up / Drop-off for a rental; Route / Airline /
+            Departure … for a flight; Property / Check-in … for a hotel. */}
+        {bookingRows.map((row, idx) => (
+          <MetadataRow
+            key={`${row.label}-${idx}`}
+            label={row.label}
+            value={row.value}
+            isLast={idx === bookingRows.length - 1}
+          />
+        ))}
       </SummaryCard>
 
       {chargeBreakdown ? (
@@ -402,6 +429,7 @@ export function PaymentRequestEmail({
           breakdown={chargeBreakdown}
           title="What you're paying"
           topPadding={SPACE.md}
+          {...(serviceType === ServiceType.CAR_RENTAL ? {} : wording)}
         />
       ) : null}
 

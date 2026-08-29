@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { useFieldArray, useForm } from "react-hook-form";
+import { useForm, type Control } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { z } from "zod";
 
@@ -37,24 +37,23 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
 import { api, ApiClientError } from "@/lib/api-client";
-import {
-  BookingTypeLabel,
-  PaymentTimingLabel,
-} from "@/lib/constants/labels";
+import { BookingTypeLabel } from "@/lib/constants/labels";
 import {
   BookingType,
   type BookingType as BookingTypeT,
   type Currency,
-  PAYMENT_TIMINGS,
   PaymentTiming,
+  ServiceType,
 } from "@/lib/constants/enums";
 import {
   createOrderSchema,
   type CreateOrderInput,
 } from "@/lib/validation";
-import { summarizeCharges } from "@/lib/charges";
-import { formatCurrency } from "@/lib/format";
 import type { OrderDTO, ProviderDTO } from "@/types";
+import {
+  ChargeLinesFieldset,
+  type ChargeLinesFormValues,
+} from "./charge-lines-fieldset";
 import { ProviderSelector } from "@/components/features/providers";
 import {
   CarLinkSelector,
@@ -76,6 +75,11 @@ interface CreateOrderFormProps {
   /** Active provider catalog. Empty array renders the selector with a
    *  "configure providers first" prompt. */
   providers: ProviderDTO[];
+  /** Only meaningful on a multi-service create page, where this form is one
+   *  of several mounted at once. `false` hides the actions row and refuses
+   *  the submit handler, so a hidden tab can never post an order. Defaults
+   *  to `true`, which is exactly how the single-service page behaves. */
+  active?: boolean;
 }
 
 interface CreateOrderApiResponse {
@@ -88,6 +92,7 @@ export function CreateOrderForm({
   defaultCurrency,
   allowedCurrencies,
   providers,
+  active = true,
 }: CreateOrderFormProps) {
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
@@ -112,29 +117,23 @@ export function CreateOrderForm({
     mode: "onTouched",
   });
 
-  const chargeFields = useFieldArray({ control: form.control, name: "charges" });
-
-  // Live breakdown for the summary box — recomputed from the same helper the
-  // server uses, so what the agent sees here is exactly what gets charged.
-  const watchedCharges = form.watch("charges");
-  const watchedCurrency = form.watch("currency") ?? defaultCurrency;
-  const chargeSummary = summarizeCharges(
-    (watchedCharges ?? []).map((c) => ({
-      name: c?.name ?? "",
-      amount: typeof c?.amount === "number" ? c.amount : Number(c?.amount) || 0,
-      timing: (c?.timing as PaymentTiming) ?? PaymentTiming.PREPAID,
-    })),
-  );
-
   const isSubmitting = form.formState.isSubmitting;
 
   async function onSubmit(values: CreateOrderInput) {
+    // Belt-and-braces against the multi-service page: each tab owns its own
+    // <form>, so a hidden tab cannot be submitted by the browser anyway, but
+    // this makes "only the active tab posts" true regardless of how the
+    // caller renders us.
+    if (!active) return;
     setServerError(null);
     try {
-      const result = await api.post<CreateOrderApiResponse>(
-        "/api/orders",
-        values,
-      );
+      const result = await api.post<CreateOrderApiResponse>("/api/orders", {
+        ...values,
+        // The route injects CAR_RENTAL when the field is absent, so sending
+        // it explicitly is a no-op for the existing brands — it just makes
+        // the payload self-describing alongside the flight/hotel forms.
+        serviceType: ServiceType.CAR_RENTAL,
+      });
       toast.success("Order created. Send the payment request next.");
       // Sequential workflow: step 2 is sending the request email.
       router.replace(`/app/orders/${result.order.id}/email`);
@@ -490,177 +489,17 @@ export function CreateOrderForm({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <FormField
-              control={form.control}
-              name="currency"
-              render={({ field }) => (
-                <FormItem className="max-w-[200px]">
-                  <FormLabel>Currency</FormLabel>
-                  <Select
-                    value={field.value ?? defaultCurrency}
-                    onValueChange={field.onChange}
-                    disabled={isSubmitting}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Currency" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {allowedCurrencies.map((c) => (
-                        <SelectItem key={c} value={c}>
-                          {c}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
+            {/* Extracted verbatim — same markup, same strings, same
+                defaults. `control` is cast to the shared charge/currency
+                slice: those two paths are identical in all three branch
+                schemas, and the cast keeps every `field.value` inside the
+                fieldset concretely typed instead of `unknown`. */}
+            <ChargeLinesFieldset
+              control={form.control as unknown as Control<ChargeLinesFormValues>}
+              allowedCurrencies={allowedCurrencies}
+              defaultCurrency={defaultCurrency}
+              disabled={isSubmitting}
             />
-
-            <div className="space-y-3">
-              {chargeFields.fields.map((row, index) => (
-                <div
-                  key={row.id}
-                  className="grid gap-3 sm:grid-cols-[1fr_140px_170px_auto] sm:items-end"
-                >
-                  <FormField
-                    control={form.control}
-                    name={`charges.${index}.name`}
-                    render={({ field }) => (
-                      <FormItem>
-                        {index === 0 ? <FormLabel>Charge name</FormLabel> : null}
-                        <FormControl>
-                          <Input
-                            placeholder="e.g. Rental cost"
-                            disabled={isSubmitting}
-                            {...field}
-                            value={field.value ?? ""}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name={`charges.${index}.amount`}
-                    render={({ field }) => (
-                      <FormItem>
-                        {index === 0 ? <FormLabel>Amount</FormLabel> : null}
-                        <FormControl>
-                          <Input
-                            type="number"
-                            min={0}
-                            step="0.01"
-                            inputMode="decimal"
-                            placeholder="0.00"
-                            disabled={isSubmitting}
-                            {...field}
-                            value={field.value ?? ""}
-                            onChange={(e) =>
-                              field.onChange(
-                                e.target.value === ""
-                                  ? ""
-                                  : Number(e.target.value),
-                              )
-                            }
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name={`charges.${index}.timing`}
-                    render={({ field }) => (
-                      <FormItem>
-                        {index === 0 ? <FormLabel>Payment timing</FormLabel> : null}
-                        <Select
-                          value={field.value ?? PaymentTiming.PREPAID}
-                          onValueChange={field.onChange}
-                          disabled={isSubmitting}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Timing" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {PAYMENT_TIMINGS.map((t) => (
-                              <SelectItem key={t} value={t}>
-                                {PaymentTimingLabel[t]}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => chargeFields.remove(index)}
-                    disabled={isSubmitting || chargeFields.fields.length <= 1}
-                    aria-label="Remove charge"
-                  >
-                    Remove
-                  </Button>
-                </div>
-              ))}
-
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  chargeFields.append({
-                    name: "",
-                    amount: 0,
-                    timing: PaymentTiming.PREPAID,
-                  })
-                }
-                disabled={isSubmitting}
-              >
-                + Add charge
-              </Button>
-            </div>
-
-            {/* Live breakdown — uses the same helper the server uses, so the
-                agent sees exactly what will be charged online. */}
-            <div className="space-y-1.5 rounded-md border bg-muted/30 p-4 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">
-                  Amount paid online (today)
-                </span>
-                <span className="font-medium tabular-nums">
-                  {formatCurrency(chargeSummary.prepaid, watchedCurrency)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Amount due at counter</span>
-                <span className="font-medium tabular-nums">
-                  {formatCurrency(chargeSummary.dueAtCounter, watchedCurrency)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between border-t pt-1.5">
-                <span className="font-medium">Total rental cost</span>
-                <span className="font-semibold tabular-nums">
-                  {formatCurrency(chargeSummary.total, watchedCurrency)}
-                </span>
-              </div>
-              <p className="pt-1 text-xs text-muted-foreground">
-                The payment link charges only the {" "}
-                <strong>{formatCurrency(chargeSummary.prepaid, watchedCurrency)}</strong>{" "}
-                prepaid amount.
-              </p>
-            </div>
 
             <FormField
               control={form.control}
@@ -683,23 +522,27 @@ export function CreateOrderForm({
           </CardContent>
         </Card>
 
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => router.back()}
-            disabled={isSubmitting}
-          >
-            Cancel
-          </Button>
-          <LoadingButton
-            type="submit"
-            loading={isSubmitting}
-            loadingText="Creating order"
-          >
-            Create order & generate link
-          </LoadingButton>
-        </div>
+        {/* `active` defaults to true, so the single-service page renders
+            this row exactly as it always has. */}
+        {active ? (
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => router.back()}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <LoadingButton
+              type="submit"
+              loading={isSubmitting}
+              loadingText="Creating order"
+            >
+              Create order & generate link
+            </LoadingButton>
+          </div>
+        ) : null}
       </form>
     </Form>
   );
