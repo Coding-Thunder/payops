@@ -84,8 +84,55 @@ export const listMemberOrganizations = cache(
     if (!user) return [];
 
     await connectMongo();
+
+    /**
+     * GLOBAL ROLES SEE EVERY ORGANIZATION.
+     *
+     * This deliberately reverses the rule stated in the header above, which
+     * required a membership row for every role including SUPER_ADMIN. That
+     * rule was chosen so a compromised global credential could not reach
+     * every tenant; it is being traded away on an explicit product
+     * decision, because this deployment is run by one operations team that
+     * works all three brands and having to hand-insert a membership per
+     * organization was making the global roles less useful than the role
+     * name implies.
+     *
+     * THE TRADE, recorded plainly: an ADMIN or SUPER_ADMIN credential now
+     * reaches all three brands, including FlightBizz's live Stripe account.
+     * Narrow the blast radius by keeping the number of such accounts small.
+     *
+     * This is ADDITIVE for the incumbents — a global role gains
+     * organizations, never loses one — and normal users are untouched: they
+     * still resolve strictly through their own ACTIVE membership rows, so
+     * every existing STAFF user's access is byte-identical.
+     *
+     * Enforced HERE rather than in the UI on purpose. Everything downstream
+     * funnels through this one function: `getSelectedOrganization` re-checks
+     * the cookie against it, `assertOrganizationAccess` validates
+     * client-supplied ids against it, and `getRequestOrganizationScope`
+     * derives the Mongo scope clause from that. A client cannot opt out of
+     * it.
+     */
+    const isGlobalRole =
+      user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN;
+
+    if (isGlobalRole) {
+      const all = await Organization.find({ status: RecordState.ACTIVE })
+        .sort({ name: 1 })
+        .select("slug name brandName")
+        .lean<
+          (Pick<OrganizationDoc, "slug" | "name" | "brandName"> & {
+            _id: Types.ObjectId;
+          })[]
+        >();
+      return all.map(toSummary);
+    }
+
     const memberships = await OrganizationMember.find({
       userId: new Types.ObjectId(user.id),
+      // ACTIVE only — this is what makes revocation immediate. Removing an
+      // organization sets the membership to DISABLED rather than deleting
+      // it, and the very next request stops resolving that organization.
       status: RecordState.ACTIVE,
     })
       .select("organizationId")

@@ -23,6 +23,10 @@ export const GET = withApi(async (req: NextRequest) => {
 export const POST = withApi(async (req: NextRequest) => {
   const actor = await requirePermission(Permission.USER_CREATE);
   const body = await req.json();
+  // `createUserSchema` declares `organizationIds`, so it survives parsing
+  // (zod strips UNKNOWN keys only) and reaches `createUser`, which creates
+  // the membership rows. Global roles need none and the service ignores it
+  // for them.
   const input = createUserSchema.parse(body);
   const ctx = await getRequestContext();
   const data = await createUser(input, { actor, request: ctx });

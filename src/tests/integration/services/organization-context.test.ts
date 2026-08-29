@@ -86,7 +86,7 @@ describe("listMemberOrganizations", () => {
   });
 
   it("returns only organizations the user is a member of", async () => {
-    const actor = actorFor(UserRole.ADMIN);
+    const actor = actorFor(UserRole.STAFF);
     const mine = await makeOrg("rentalconfirmation", true);
     await makeOrg("tripreservations");
     await join(mine, actor.id);
@@ -97,7 +97,7 @@ describe("listMemberOrganizations", () => {
   });
 
   it("excludes memberships that have been revoked", async () => {
-    const actor = actorFor(UserRole.ADMIN);
+    const actor = actorFor(UserRole.STAFF);
     const org = await makeOrg("rentalconfirmation", true);
     await join(org, actor.id, UserRole.ADMIN, RecordState.DISABLED);
     sessionMock = await mockSession(actor);
@@ -116,15 +116,29 @@ describe("listMemberOrganizations", () => {
     expect(await listMemberOrganizations()).toEqual([]);
   });
 
-  it("does not grant SUPER_ADMIN implicit access to every organization", async () => {
-    // A global role is not a membership. Letting SUPER_ADMIN bypass the
-    // check would make "no cross-organization access" false for exactly the
-    // account most likely to be automated against.
+  it("GRANTS ADMIN and SUPER_ADMIN access to every ACTIVE organization", async () => {
+    // BEHAVIOUR REVERSAL, recorded deliberately.
+    //
+    // This test previously asserted the opposite: that a global role is not
+    // a membership, and that letting SUPER_ADMIN bypass the check would make
+    // "no cross-organization access" false for exactly the account most
+    // likely to be automated against. That reasoning still holds as a
+    // security observation — it was traded away on an explicit product
+    // decision, because one operations team works all three brands and
+    // hand-inserting a membership per organization made the global roles
+    // less useful than their names imply.
+    //
+    // The trade: an ADMIN or SUPER_ADMIN credential now reaches all three
+    // brands, including FlightBizz's live Stripe account.
+    //
+    // Scoping for every OTHER role is unchanged, and the tests around this
+    // one (now using STAFF) are what prove it.
     const actor = actorFor(UserRole.SUPER_ADMIN);
     await makeOrg("rentalconfirmation", true);
     await makeOrg("tripreservations");
     sessionMock = await mockSession(actor);
-    expect(await listMemberOrganizations()).toEqual([]);
+    const slugs = (await listMemberOrganizations()).map((o) => o.slug).sort();
+    expect(slugs).toEqual(["rentalconfirmation", "tripreservations"]);
   });
 });
 
@@ -149,7 +163,7 @@ describe("getSelectedOrganization — the cookie is only a hint", () => {
   });
 
   it("REFUSES a forged cookie naming someone else's organization", async () => {
-    const actor = actorFor(UserRole.ADMIN);
+    const actor = actorFor(UserRole.STAFF);
     const mine = await makeOrg("rentalconfirmation", true);
     const theirs = await makeOrg("tripreservations");
     await join(mine, actor.id);
@@ -171,7 +185,7 @@ describe("getSelectedOrganization — the cookie is only a hint", () => {
   });
 
   it("stops resolving once the membership is revoked", async () => {
-    const actor = actorFor(UserRole.ADMIN);
+    const actor = actorFor(UserRole.STAFF);
     const org = await makeOrg("rentalconfirmation", true);
     await join(org, actor.id, UserRole.ADMIN, RecordState.DISABLED);
     sessionMock = await mockSession(actor);
@@ -194,7 +208,7 @@ describe("assertOrganizationAccess", () => {
   it("refuses a non-member organization and a non-existent one identically", async () => {
     // Same message either way — otherwise this is an oracle for probing
     // which organization ids exist.
-    const actor = actorFor(UserRole.ADMIN);
+    const actor = actorFor(UserRole.STAFF);
     const mine = await makeOrg("rentalconfirmation", true);
     const theirs = await makeOrg("tripreservations");
     await join(mine, actor.id);
@@ -248,7 +262,7 @@ describe("POST /api/organizations/switch", () => {
   });
 
   it("REFUSES another organization and leaves the cookie untouched", async () => {
-    const actor = actorFor(UserRole.ADMIN);
+    const actor = actorFor(UserRole.STAFF);
     const mine = await makeOrg("rentalconfirmation", true);
     const theirs = await makeOrg("tripreservations");
     await join(mine, actor.id);
@@ -297,7 +311,7 @@ describe("POST /api/organizations/switch", () => {
 
 describe("GET /api/organizations", () => {
   it("lists only the caller's organizations and never other tenants", async () => {
-    const actor = actorFor(UserRole.ADMIN);
+    const actor = actorFor(UserRole.STAFF);
     const mine = await makeOrg("rentalconfirmation", true);
     await makeOrg("tripreservations");
     await join(mine, actor.id);

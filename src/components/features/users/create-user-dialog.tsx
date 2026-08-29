@@ -33,6 +33,12 @@ import { UserRole } from "@/lib/constants/enums";
 import { createUserSchema, type CreateUserInput } from "@/lib/validation";
 import type { PublicUser, SessionUser } from "@/types";
 
+import {
+  OrganizationAccessField,
+  roleHasGlobalOrgAccess,
+  useOrganizationOptions,
+} from "./organization-access-field";
+
 interface CreateUserDialogProps {
   actorRole: SessionUser["role"];
 }
@@ -48,15 +54,47 @@ export function CreateUserDialog({ actorRole }: CreateUserDialogProps) {
       email: "",
       role: UserRole.STAFF,
       password: "",
+      organizationIds: [],
     },
     mode: "onTouched",
   });
 
   const canCreateSuperAdmin = actorRole === UserRole.SUPER_ADMIN;
 
+  // Options are only fetched while the dialog is open — this component is
+  // mounted on the users page whether or not anyone is adding a member.
+  const {
+    organizations,
+    loading: orgsLoading,
+    ready: orgsReady,
+  } = useOrganizationOptions(open);
+  const selectedRole = form.watch("role");
+  const isGlobalRole = roleHasGlobalOrgAccess(selectedRole);
+  // A deployment with no organizations is the pre-migration world: the
+  // server skips the membership requirement there, so the form must not
+  // invent one.
+  const orgsInPlay = orgsReady && organizations.length > 0;
+
   async function onSubmit(values: CreateUserInput) {
+    const { organizationIds, ...rest } = values;
+
+    // Global roles reach every organization regardless, so no list is sent
+    // for them — a list would imply a restriction nothing enforces.
+    let payload: CreateUserInput = rest;
+    if (orgsInPlay && !isGlobalRole) {
+      if (!organizationIds || organizationIds.length === 0) {
+        form.setError("organizationIds", {
+          type: "manual",
+          message:
+            "Select at least one organization — this user would otherwise be able to sign in and see nothing.",
+        });
+        return;
+      }
+      payload = { ...rest, organizationIds };
+    }
+
     try {
-      await api.post<PublicUser>("/api/admin/users", values);
+      await api.post<PublicUser>("/api/admin/users", payload);
       toast.success("Team member added");
       setOpen(false);
       form.reset();
@@ -160,6 +198,22 @@ export function CreateUserDialog({ actorRole }: CreateUserDialogProps) {
                 </FormItem>
               )}
             />
+
+            {orgsLoading || organizations.length > 0 ? (
+              <FormField
+                control={form.control}
+                name="organizationIds"
+                render={({ field }) => (
+                  <OrganizationAccessField
+                    organizations={organizations}
+                    value={field.value ?? []}
+                    onChange={field.onChange}
+                    role={selectedRole}
+                    loading={orgsLoading}
+                  />
+                )}
+              />
+            ) : null}
 
             <FormField
               control={form.control}
