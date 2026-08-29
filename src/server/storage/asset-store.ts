@@ -42,6 +42,10 @@ import { connectMongo } from "@/server/db/mongoose";
 
 const BUCKET_NAME = "uploads";
 
+/** Stable name for the login backdrop, so it can be located without an
+ *  environment-specific id in configuration. */
+export const LOGIN_BACKGROUND_LABEL = "login-background";
+
 /**
  * Image types accepted for upload.
  *
@@ -159,6 +163,30 @@ export async function getAsset(id: string): Promise<FetchedAsset | null> {
   if (!ASSET_ALLOWED_MIME.has(contentType)) return null;
 
   return { buffer: Buffer.concat(chunks), contentType };
+}
+
+/**
+ * Find an asset by its metadata label, newest first.
+ *
+ * Exists so a STATIC, singular asset — the login backdrop — can be referenced
+ * by a stable name rather than by an id that differs per environment. An id
+ * would have to be carried in configuration, which is exactly the step that
+ * left production falling back to the placeholder while local development
+ * looked correct.
+ *
+ * Returns null when absent, so every caller must have a visual fallback.
+ */
+export async function findAssetIdByLabel(
+  label: string,
+): Promise<string | null> {
+  const b = await bucket();
+  const rows = await b
+    .find({ "metadata.label": label })
+    .sort({ uploadDate: -1 })
+    .limit(1)
+    .toArray();
+  const first = rows[0];
+  return first ? String(first._id) : null;
 }
 
 /** Best-effort delete. Missing ids are not an error — the caller has already

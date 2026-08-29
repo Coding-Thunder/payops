@@ -6,6 +6,10 @@ import { LogoLockup, LogoMark } from "@/components/brand/logo";
 import Image from "next/image";
 
 import { env } from "@/lib/env";
+import {
+  findAssetIdByLabel,
+  LOGIN_BACKGROUND_LABEL,
+} from "@/server/storage/asset-store";
 import { getCurrentUser } from "@/server/auth/session";
 
 import { LoginForm } from "./_components/login-form";
@@ -21,11 +25,21 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   if (user) redirect("/app/dashboard");
   const { next } = await searchParams;
   const brand = env.server.APP_NAME;
-  // Optional. Set to the asset id returned when the backdrop was uploaded to
-  // the asset store; unset simply keeps the previous gradient panel.
-  const bgId = process.env.LOGIN_BACKGROUND_ASSET_ID?.trim();
-  const loginBackgroundUrl =
-    bgId && /^[a-f0-9]{24}$/i.test(bgId) ? `/api/assets/${bgId}` : null;
+  // Resolved by LABEL, not by a configured id.
+  //
+  // The asset store mints a different ObjectId in every environment, so
+  // referencing it by id meant carrying that id in configuration — and a
+  // config step I could not perform in production is precisely why the live
+  // login page kept rendering the fallback while local development looked
+  // right. Looking it up by name needs no configuration at all: upload the
+  // asset with this label and the page finds it.
+  //
+  // Still fails soft: null keeps the previous gradient panel, so a missing
+  // asset or an unreachable database can never block sign-in.
+  const bgId = await findAssetIdByLabel(LOGIN_BACKGROUND_LABEL).catch(
+    () => null,
+  );
+  const loginBackgroundUrl = bgId ? `/api/assets/${bgId}` : null;
 
   return (
     <div className="grid min-h-screen w-full grid-cols-1 lg:grid-cols-[1.05fr_1fr]">
@@ -34,9 +48,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             Served from the durable asset store (GridFS) rather than a
             `public/` runtime write, with the immutable cache header the
             /api/assets route sets — so it is fetched once per browser, not
-            on every login. `LOGIN_BACKGROUND_ASSET_ID` is optional: when it
-            is unset the panel falls back to the existing Aurora/DotGrid
-            treatment, so a missing asset can never break sign-in.
+            on every login. Falls back to the existing Aurora/DotGrid panel
+            when the asset is absent, so sign-in can never be blocked by it.
             `priority` because this is the LCP element on the page. */}
         {loginBackgroundUrl ? (
           <>
