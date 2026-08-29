@@ -30,10 +30,16 @@ import {
 } from "@/components/common/status-badges";
 import { EmptyState } from "@/components/common/empty-state";
 import { ProviderBadge } from "@/components/features/providers";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { resolveProvider } from "@/lib/constants/providers";
 import { BookingTypeLabel } from "@/lib/constants/labels";
 import { ConsentStatus, OrderStatus, ServiceType } from "@/lib/constants/enums";
 import { api, ApiClientError } from "@/lib/api-client";
-import { formatCurrency, formatDate, formatRelative } from "@/lib/format";
+import { formatCurrency, formatDate, formatRelative, formatDateTime} from "@/lib/format";
 import {
   describeServiceItem,
   serviceItemLabel,
@@ -154,7 +160,11 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
           </div>
         </div>
       ) : null}
-      <Table>
+      {/* Density is applied HERE rather than in components/ui/table.tsx,
+          which is shared by the users, providers, audit and car-link tables —
+          editing the primitive would silently restyle all of them.
+          `[&_td]` / `[&_th]` scope the tightened padding to this table only. */}
+      <Table className="[&_td]:px-2.5 [&_td]:py-1.5 [&_th]:px-2.5 [&_th]:pb-1.5 [&_th]:h-8">
         <TableHeader>
           <TableRow>
             {canDelete ? (
@@ -169,17 +179,24 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
                 />
               </TableHead>
             ) : null}
-            <TableHead className="w-[180px]">Order</TableHead>
-            <TableHead>Customer</TableHead>
-            <TableHead className="hidden md:table-cell">Type</TableHead>
-            <TableHead className="hidden lg:table-cell">Provider</TableHead>
-            <TableHead className="hidden xl:table-cell">
+            <TableHead className="w-[124px]">Order</TableHead>
+            <TableHead className="min-w-[150px]">Customer</TableHead>
+            {/* Type is the first thing to go as width tightens: it is a
+                low-cardinality badge and the value is repeated on the detail
+                page. Promoted back at 2xl where there is room again. */}
+            <TableHead className="hidden 2xl:table-cell w-[120px]">Type</TableHead>
+            {/* Provider becomes a logo-only column, so it needs far less
+                width and can appear EARLIER than before (md, was lg). */}
+            <TableHead className="hidden md:table-cell w-[52px]">
+              <span className="sr-only">Provider</span>
+            </TableHead>
+            <TableHead className="hidden xl:table-cell min-w-[120px]">
               {itemColumnLabel}
             </TableHead>
-            <TableHead className="text-right">Amount</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="hidden md:table-cell">Created</TableHead>
-            <TableHead className="w-[72px]" />
+            <TableHead className="text-right w-[104px]">Amount</TableHead>
+            <TableHead className="w-[150px]">Status</TableHead>
+            <TableHead className="hidden lg:table-cell w-[92px]">Created</TableHead>
+            <TableHead className="w-[56px]" />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -199,46 +216,90 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
                   </TableCell>
                 ) : null}
                 <TableCell>
-                  <Link
-                    href={`/app/orders/${o.id}`}
-                    className="font-mono text-[12px] font-medium text-foreground hover:underline"
-                  >
-                    {o.orderNumber}
-                  </Link>
+                  {/* Order numbers are long and monospaced. Truncating with
+                      the full value in a tooltip keeps the column narrow
+                      without losing the identifier — it stays selectable in
+                      the tooltip and is the link target either way. */}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Link
+                        href={`/app/orders/${o.id}`}
+                        className="block max-w-[112px] truncate font-mono text-[12px] font-medium text-foreground hover:underline"
+                      >
+                        {o.orderNumber}
+                      </Link>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="font-mono">
+                      {o.orderNumber}
+                    </TooltipContent>
+                  </Tooltip>
                   {o.state !== "ACTIVE" ? (
-                    <div className="mt-1">
-                      <Badge variant="muted">{o.state}</Badge>
-                    </div>
+                    <Badge variant="muted" className="mt-1">
+                      {o.state}
+                    </Badge>
                   ) : null}
                 </TableCell>
-                <TableCell>
-                  <div className="font-medium text-foreground text-[13px] leading-tight">
+                <TableCell className="max-w-[220px]">
+                  <div
+                    className="truncate font-medium text-foreground text-[13px] leading-tight"
+                    title={o.customer.name}
+                  >
                     {o.customer.name}
                   </div>
-                  <div className="text-[11.5px] text-muted-foreground leading-tight mt-0.5">
+                  <div
+                    className="truncate text-[11.5px] text-muted-foreground leading-tight"
+                    title={o.customer.email}
+                  >
                     {o.customer.email}
                   </div>
                 </TableCell>
-                <TableCell className="hidden md:table-cell">
+                <TableCell className="hidden 2xl:table-cell">
                   <Badge variant="secondary">
                     {BookingTypeLabel[o.bookingType]}
                   </Badge>
                 </TableCell>
-                <TableCell className="hidden lg:table-cell">
-                  <ProviderBadge provider={o.provider} size="sm" />
+                <TableCell className="hidden md:table-cell">
+                  {/* Logo only. The name beside a recognisable brand mark was
+                      pure duplication and the widest thing in the row; the
+                      tooltip and the img alt keep it available and
+                      accessible. Dropping it is what lets this column appear
+                      at md instead of lg. */}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex">
+                        <ProviderBadge
+                          provider={o.provider}
+                          showName={false}
+                          size="sm"
+                        />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      {resolveProvider(o.provider).name}
+                    </TooltipContent>
+                  </Tooltip>
                 </TableCell>
-                <TableCell className="hidden xl:table-cell">
+                <TableCell className="hidden xl:table-cell max-w-[180px]">
                   {serviceTypeOf(o) === ServiceType.CAR_RENTAL && o.vehicle ? (
                     <>
-                      <div className="text-[13px] font-medium leading-tight">
+                      <div
+                        className="truncate text-[13px] font-medium leading-tight"
+                        title={o.vehicle.company}
+                      >
                         {o.vehicle.company}
                       </div>
-                      <div className="text-[11.5px] text-muted-foreground leading-tight mt-0.5">
+                      <div
+                        className="truncate text-[11.5px] text-muted-foreground leading-tight"
+                        title={o.vehicle.type}
+                      >
                         {o.vehicle.type}
                       </div>
                     </>
                   ) : (
-                    <div className="text-[13px] font-medium leading-tight">
+                    <div
+                      className="truncate text-[13px] font-medium leading-tight"
+                      title={describeServiceItem(o)}
+                    >
                       {describeServiceItem(o)}
                     </div>
                   )}
@@ -255,9 +316,21 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
                     ) : null}
                   </div>
                 </TableCell>
-                <TableCell className="hidden md:table-cell text-[11.5px] text-muted-foreground">
-                  <div>{formatDate(o.createdAt)}</div>
-                  <div>{formatRelative(o.createdAt)}</div>
+                <TableCell className="hidden lg:table-cell text-[11.5px] text-muted-foreground">
+                  {/* One line instead of two — the two-line stack was the
+                      single biggest contributor to row height. The relative
+                      time and the exact timestamp both live in the tooltip,
+                      so nothing is lost. */}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="whitespace-nowrap tabular-nums">
+                        {formatDate(o.createdAt, { year: undefined })}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      {formatDateTime(o.createdAt)} · {formatRelative(o.createdAt)}
+                    </TooltipContent>
+                  </Tooltip>
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-1">

@@ -72,9 +72,13 @@ export function OrderFilters({ canSeeAll, serviceTypes }: OrderFiltersProps) {
   const serviceOptions = serviceTypes ?? [];
   const showServiceFilter = serviceOptions.length > 1;
 
-  return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-1 p-2 md:flex-row md:items-center">
-      <div className="relative flex-1 max-w-md">
+// `flex-wrap` rather than a hard md:flex-row: at ~1100px the controls wrap
+  // onto a second line gracefully instead of squeezing the search field down
+  // to nothing. Trigger heights match the table's h-8 header so the whole
+  // view reads at one density.
+    return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-1 p-2 md:flex-row md:flex-wrap md:items-center">
+      <div className="relative min-w-[180px] flex-1 md:max-w-xs">
         <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
           value={query}
@@ -99,7 +103,7 @@ export function OrderFilters({ canSeeAll, serviceTypes }: OrderFiltersProps) {
           value={params.get("serviceType") ?? ALL}
           onValueChange={(v) => update("serviceType", v)}
         >
-          <SelectTrigger className="w-full md:w-44">
+          <SelectTrigger className="h-8 w-full md:w-[132px]">
             <SelectValue placeholder="Service" />
           </SelectTrigger>
           <SelectContent>
@@ -116,7 +120,7 @@ export function OrderFilters({ canSeeAll, serviceTypes }: OrderFiltersProps) {
         value={params.get("status") ?? ALL}
         onValueChange={(v) => update("status", v)}
       >
-        <SelectTrigger className="w-full md:w-48">
+        <SelectTrigger className="h-8 w-full md:w-[136px]">
           <SelectValue placeholder="Status" />
         </SelectTrigger>
         <SelectContent>
@@ -132,7 +136,7 @@ export function OrderFilters({ canSeeAll, serviceTypes }: OrderFiltersProps) {
         value={params.get("bookingType") ?? ALL}
         onValueChange={(v) => update("bookingType", v)}
       >
-        <SelectTrigger className="w-full md:w-52">
+        <SelectTrigger className="h-8 w-full md:w-[148px]">
           <SelectValue placeholder="Booking type" />
         </SelectTrigger>
         <SelectContent>
@@ -149,7 +153,7 @@ export function OrderFilters({ canSeeAll, serviceTypes }: OrderFiltersProps) {
           value={params.get("mine") === "true" ? "mine" : "all"}
           onValueChange={(v) => update("mine", v === "mine" ? "true" : null)}
         >
-          <SelectTrigger className="w-full md:w-40">
+          <SelectTrigger className="h-8 w-full md:w-[118px]">
             <SelectValue placeholder="Owner" />
           </SelectTrigger>
           <SelectContent>
