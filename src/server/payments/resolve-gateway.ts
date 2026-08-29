@@ -374,9 +374,23 @@ export async function getGatewayForOrganization(
     const webhookId = fromEnv(org.slug, "PAYPAL_WEBHOOK_ID") ?? "";
 
     if (clientId && clientSecret && webhookId) {
-      const sandbox =
-        fromEnv(org.slug, "PAYPAL_SANDBOX") === "true" ||
-        Boolean(org.payments?.sandbox);
+      // PayPal's environment comes from PayPal's own configuration, and from
+      // nothing else.
+      //
+      // This used to be OR'd with `org.payments.sandbox`, which the seed
+      // derives from whether the STRIPE key starts with `sk_test`
+      // (seed-organizations.ts). Two consequences, both bad: a Stripe test
+      // key silently moved PayPal to api-m.sandbox.paypal.com, and because
+      // it was an OR, `ORG_<SLUG>_PAYPAL_SANDBOX=false` could not move it
+      // back. Live PayPal credentials pointed at the sandbox host fail
+      // authentication, so the symptom would have been "PayPal suddenly
+      // stopped working" with nothing in the PayPal configuration changed.
+      //
+      // Absent means live. That is the safe default here in the sense that
+      // matters: a live credential sent to the sandbox host cannot charge
+      // anyone, but it also cannot work, and silently degrading a working
+      // payment provider is worse than requiring the flag to be explicit.
+      const sandbox = fromEnv(org.slug, "PAYPAL_SANDBOX") === "true";
       return createPayPalGateway(() => ({
         clientId,
         clientSecret,

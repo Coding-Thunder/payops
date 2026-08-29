@@ -30,8 +30,17 @@ interface CreatorSeed {
   email?: string;
 }
 
-export interface OrderSeed extends Partial<Omit<OrderDoc, "createdBy">> {
+export interface OrderSeed
+  extends Partial<Omit<OrderDoc, "createdBy" | "payment">> {
   createdBy?: CreatorSeed;
+  /**
+   * Shallow-partial on purpose. `Partial<OrderDoc>` only makes `payment`
+   * itself optional, so supplying it demanded all twelve sub-fields — while
+   * the builder below already defaults every one it is not given. A test
+   * that cares about the session id had to restate the whole payment block
+   * to say so.
+   */
+  payment?: Partial<OrderDoc["payment"]>;
 }
 
 let counter = 0;
@@ -82,6 +91,11 @@ export function buildOrder(seed: OrderSeed = {}): OrderDoc & { _id: Types.Object
     terms: seed.terms ?? { text: "Standard test terms.", version: "v1" },
     termsAcknowledgement: seed.termsAcknowledgement ?? null,
     payment: {
+      // Stamped at LINK_GENERATED in production, never by the webhook — and
+      // `applyCheckoutPaid` reads it to label the dedupe row, so a fixture
+      // that leaves it null makes a PayPal settlement record itself as
+      // Stripe. Seedable so a non-Stripe order can be built truthfully.
+      gateway: seed.payment?.gateway ?? null,
       stripeSessionId: seed.payment?.stripeSessionId ?? null,
       paymentIntentId: seed.payment?.paymentIntentId ?? null,
       checkoutUrl: seed.payment?.checkoutUrl ?? null,
