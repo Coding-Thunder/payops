@@ -195,6 +195,15 @@ order flow continues normally. Check `/app/admin/audit` for the error.
 - [ ] Set `NEXT_PUBLIC_APP_URL` to the production HTTPS URL
 - [ ] Configure Cloudflare Turnstile (login + quotation bot-check) — set
       both `NEXT_PUBLIC_TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY`
+- [ ] Set `NEXT_PUBLIC_CLARITY_PROJECT_ID` if session analytics is wanted;
+      it loads on the public marketing pages only (see
+      `src/lib/analytics/clarity.ts`). Leave the Clarity project on its
+      default **Balanced** masking mode: the tracked pages carry no
+      customer data, and the one PII form is masked by
+      `data-clarity-mask` attributes, which override the dashboard
+      setting — so Balanced keeps heatmaps and replays readable without
+      weakening anything. Choose **Strict** only if you want the extra
+      margin and can accept unreadable replays
 - [ ] Verify the at-rest backup policy on the production MongoDB cluster
 - [ ] Set up Stripe Connect / per-org webhook endpoints for any tenants
       onboarding with their own Stripe account

@@ -2,6 +2,13 @@ import { execSync } from "node:child_process";
 
 import type { NextConfig } from "next";
 
+// The single source of truth for where Clarity is allowed. Imported (not
+// duplicated) so the CSP below and the runtime gate in
+// `src/components/analytics/clarity-analytics.tsx` can never drift apart.
+// The module is dependency-free, which is what makes it safe to pull into
+// the config's module graph.
+import { CLARITY_TRACKED_PATHS } from "./src/lib/analytics/clarity";
+
 /**
  * Resolve the deployed commit SHA at BUILD time so `/api/health` can echo it
  * — answering "is my latest push actually live?" with a single curl. Prefer a
@@ -101,46 +108,92 @@ const nextConfig: NextConfig = {
     // `'unsafe-eval'` is dev-only: React uses eval() for debug helpers
     // (callstack reconstruction). Production builds never eval.
     const isDev = process.env.NODE_ENV !== "production";
-    const scriptSrc = [
-      "script-src",
-      "'self'",
-      "'unsafe-inline'",
-      isDev ? "'unsafe-eval'" : null,
-      "https://challenges.cloudflare.com",
-      "https://apis.google.com",
-      "https://www.gstatic.com",
-      "https://accounts.google.com",
-    ]
-      .filter(Boolean)
-      .join(" ");
-    const csp = [
-      "default-src 'self'",
-      "base-uri 'self'",
-      "object-src 'none'",
-      "frame-ancestors 'none'",
-      "img-src 'self' data: https:",
-      "font-src 'self' data:",
-      "style-src 'self' 'unsafe-inline'",
-      scriptSrc,
+
+    // ── Microsoft Clarity ─────────────────────────────────────────────
+    // Verified against the bytes Microsoft actually serves, not the docs
+    // (which are wrong in both directions here).
+    //
+    // script-src needs TWO hosts:
+    //   www.clarity.ms     — serves /tag/<id>, the loader, and /s/<ver>/…
+    //   scripts.clarity.ms — serves the library that loader injects.
+    // The second is absent from Microsoft's own CSP page and is the usual
+    // cause of "Clarity installed, no sessions" (microsoft/clarity#913).
+    //
+    // connect-src needs the WILDCARD, not an enumerated host: the /collect
+    // upload endpoint is a RANDOMLY CHOSEN letter shard baked into each tag
+    // response (a…z.clarity.ms — ten distinct shards over twelve fetches of
+    // the same URL), and diagnostics POST to report.clarity.ms, which is not
+    // a letter shard at all. Pinning one host breaks on the first page load.
+    //
+    // Nothing else is required, and the widely copy-pasted extras are wrong:
+    //   - NO 'unsafe-eval'  — the bundle contains no eval/new Function/
+    //     document.write. Production stays eval-free.
+    //   - NO worker-src / blob: — it creates no workers and no blob URLs.
+    //   - NO frame-src — it serialises iframes, it never creates one.
+    //   - NO img-src change — the c.clarity.ms → c.bing.com MUID pixel is
+    //     already covered by the existing `img-src 'self' data: https:`.
+    const CLARITY_SCRIPT_SRC = [
+      "https://www.clarity.ms",
+      "https://scripts.clarity.ms",
+    ];
+    const CLARITY_CONNECT_SRC = ["https://*.clarity.ms"];
+
+    /**
+     * Build the policy. `clarity` is opt-IN so the default is the tight
+     * policy: the previous code derived the console's CSP by SUBTRACTING
+     * hosts from the app's, which meant every future addition silently
+     * widened `/admin/**` unless someone remembered a matching `.replace()`.
+     * Only the marketing pages that actually load the tag pass `true`.
+     */
+    const buildCsp = ({ clarity }: { clarity: boolean }) =>
       [
-        "connect-src 'self'",
-        "https://api.stripe.com",
-        "https://challenges.cloudflare.com",
-        "https://identitytoolkit.googleapis.com",
-        "https://securetoken.googleapis.com",
-        "https://www.googleapis.com",
-        "https://*.firebaseapp.com",
-        "https://accounts.google.com",
-      ].join(" "),
-      "form-action 'self' https://*.stripe.com",
-      [
-        "frame-src 'self'",
-        "https://*.stripe.com",
-        "https://challenges.cloudflare.com",
-        "https://*.firebaseapp.com",
-        "https://accounts.google.com",
-      ].join(" "),
-    ].join("; ");
+        "default-src 'self'",
+        "base-uri 'self'",
+        "object-src 'none'",
+        "frame-ancestors 'none'",
+        "img-src 'self' data: https:",
+        "font-src 'self' data:",
+        "style-src 'self' 'unsafe-inline'",
+        [
+          "script-src",
+          "'self'",
+          "'unsafe-inline'",
+          isDev ? "'unsafe-eval'" : null,
+          "https://challenges.cloudflare.com",
+          "https://apis.google.com",
+          "https://www.gstatic.com",
+          "https://accounts.google.com",
+          ...(clarity ? CLARITY_SCRIPT_SRC : []),
+        ]
+          .filter(Boolean)
+          .join(" "),
+        [
+          "connect-src 'self'",
+          "https://api.stripe.com",
+          "https://challenges.cloudflare.com",
+          "https://identitytoolkit.googleapis.com",
+          "https://securetoken.googleapis.com",
+          "https://www.googleapis.com",
+          "https://*.firebaseapp.com",
+          "https://accounts.google.com",
+          ...(clarity ? CLARITY_CONNECT_SRC : []),
+        ].join(" "),
+        "form-action 'self' https://*.stripe.com",
+        [
+          "frame-src 'self'",
+          "https://*.stripe.com",
+          "https://challenges.cloudflare.com",
+          "https://*.firebaseapp.com",
+          "https://accounts.google.com",
+        ].join(" "),
+      ].join("; ");
+
+    // The default for every path: no Clarity hosts at all. A direct load of
+    // /login, /pay/**, /consent/**, /app/** or /admin/** therefore cannot
+    // execute the tag even if the runtime gate were bypassed.
+    const csp = buildCsp({ clarity: false });
+    // Only the public marketing routes in the allow-list.
+    const marketingCsp = buildCsp({ clarity: true });
 
     // The platform super-admin console (`/admin/**`) shipped its own,
     // deliberately tighter CSP when it was a separate app: no Stripe, no
@@ -156,6 +209,22 @@ const nextConfig: NextConfig = {
       .replace(/ https:\/\/api\.stripe\.com/g, "")
       .replace(/ https:\/\/\*\.stripe\.com/g, "")
       .replace(/ https:\/\/challenges\.cloudflare\.com/g, "");
+
+    // Belt and braces on the two policies that must never carry Clarity.
+    // `csp` and `consoleCsp` are now Clarity-free by construction rather
+    // than by subtraction, and this fails the build the moment that stops
+    // being true — a wrong analytics scope is not something to discover
+    // from a CSP report after it has already shipped.
+    for (const [name, policy] of [
+      ["app", csp],
+      ["console", consoleCsp],
+    ] as const) {
+      if (policy.includes("clarity.ms")) {
+        throw new Error(
+          `The ${name} CSP must not allow Clarity hosts — analytics is scoped to ${CLARITY_TRACKED_PATHS.length} public marketing routes only.`,
+        );
+      }
+    }
 
     return [
       {
@@ -189,6 +258,20 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      // ── Public marketing pages ────────────────────────────────────────
+      // The ONLY paths permitted to reach Clarity, and the same list the
+      // runtime gate uses. Placed after the catch-all so its
+      // Content-Security-Policy wins (duplicate header keys are last-wins);
+      // every other header from the catch-all block still applies.
+      //
+      // This is a second, independent gate. The runtime gate decides whether
+      // to render the <Script>; this decides whether the browser would even
+      // execute it. A regression in the component alone cannot start
+      // recording an authenticated page on a direct load.
+      ...CLARITY_TRACKED_PATHS.map((source) => ({
+        source,
+        headers: [{ key: "Content-Security-Policy", value: marketingCsp }],
+      })),
       // ── Platform super-admin console ──────────────────────────────────
       // Must come AFTER the catch-all: for a duplicate header key, the last
       // matching entry wins. Two sources because `/admin/:path*` does not

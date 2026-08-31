@@ -2,6 +2,12 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * Session-recording privacy: see the note on `data-clarity-mask` in
+ * `@/components/ui/input`. Free-text areas carry the least predictable
+ * content in the product — client notes, internal ops notes, dispute
+ * commentary — so they are masked at the primitive too.
+ */
 const Textarea = React.forwardRef<
   HTMLTextAreaElement,
   React.TextareaHTMLAttributes<HTMLTextAreaElement>
@@ -19,6 +25,8 @@ const Textarea = React.forwardRef<
       className,
     )}
     {...props}
+    // After the spread, so a call site cannot override it — see `@/components/ui/input`.
+    data-clarity-mask="true"
   />
 ));
 Textarea.displayName = "Textarea";

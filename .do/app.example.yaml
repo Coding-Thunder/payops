@@ -206,3 +206,13 @@ services:
         scope: RUN_AND_BUILD_TIME
         type: SECRET
         value: "0x4AAAAAA…"
+
+      # ──── OPTIONAL — Microsoft Clarity ──────────────────────────────
+      # Public marketing pages only. Not a secret (no `type: SECRET`) —
+      # the browser must receive it. RUN_AND_BUILD_TIME because
+      # NEXT_PUBLIC_* is inlined into the client bundle at BUILD time:
+      # adding it after a build has no effect until the next deploy.
+      # Blank disables Clarity entirely.
+      - key: NEXT_PUBLIC_CLARITY_PROJECT_ID
+        scope: RUN_AND_BUILD_TIME
+        value: ""

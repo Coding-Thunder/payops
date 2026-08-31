@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Sans, Geist, Geist_Mono } from "next/font/google";
 
+import { ClarityAnalytics } from "@/components/analytics/clarity-analytics";
 import { AppProviders } from "@/components/providers/app-providers";
+import { env } from "@/lib/env";
 import {
   DESCRIPTION,
   HEADLINE,
@@ -170,6 +172,17 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <AppProviders>{children}</AppProviders>
+        {/* Microsoft Clarity. Mounted once here so there is a single
+            injection site, but it loads on the public marketing routes
+            ONLY — see the allow-list and the reasoning in
+            `@/lib/analytics/clarity`. Renders null when
+            NEXT_PUBLIC_CLARITY_PROJECT_ID is unset, so an environment
+            that has not configured it loads no third-party script. The
+            id is read here, on the server, and threaded down as a prop,
+            matching how the Turnstile site key is handled. */}
+        <ClarityAnalytics
+          projectId={env.public.NEXT_PUBLIC_CLARITY_PROJECT_ID ?? null}
+        />
       </body>
     </html>
   );

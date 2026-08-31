@@ -14,6 +14,26 @@ import { cn } from "@/lib/utils";
  *     for a refined "intent" look (vs the default 4px solid ring).
  *   - Letter-spacing matches body so the input doesn't read as a
  *     foreign typeface inside the rest of the page.
+ *
+ * Session-recording privacy: `data-clarity-mask="true"` tells Microsoft
+ * Clarity to mask this node and every descendant, and masked content is
+ * never uploaded. It is set here, on the shared primitive, so all ~150 call
+ * sites are covered by one line instead of by remembering at each form —
+ * including `PasswordInput`, which renders through this component and would
+ * otherwise expose the plaintext once the eye-toggle flips it to
+ * `type="text"`.
+ *
+ * The attribute is an unconditional literal on purpose. Clarity's shipped
+ * implementation tests for attribute PRESENCE and ignores the value, so a
+ * React boolean (`data-clarity-mask={sensitive}`) renders
+ * `data-clarity-mask="false"` and still masks — while the mirror-image
+ * `data-clarity-unmask="false"` would UNMASK. Never make either conditional.
+ *
+ * Belt and braces: Clarity is only loaded on the public marketing routes
+ * (`@/lib/analytics/clarity`), so on nearly every form here there is no
+ * recorder running at all. This covers the window where a visitor who was
+ * recorded on the marketing site follows a client-side link into a form
+ * before the document reloads.
  */
 const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
   ({ className, type, ...props }, ref) => {
@@ -36,6 +56,11 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
           className,
         )}
         {...props}
+        // AFTER the spread on purpose: masking is not a default a call site
+        // may override. Placed above `{...props}`, a stray
+        // `data-clarity-mask={false}` — or a `data-clarity-unmask`, which
+        // fails OPEN — would silently expose the field.
+        data-clarity-mask="true"
       />
     );
   },

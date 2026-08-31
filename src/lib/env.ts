@@ -174,6 +174,14 @@ const clientSchema = z.object({
    *  the API. Server verification lives behind TURNSTILE_SECRET_KEY. */
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().optional(),
 
+  /** Microsoft Clarity project id. Public by necessity — the browser
+   *  must receive it to load the tag — and non-secret: it authorises
+   *  nothing, it only names the project recordings are filed under.
+   *  Optional, and that is the kill switch: when unset no script is
+   *  injected and nothing leaves the browser. The tag is scoped to the
+   *  public marketing routes listed in `@/lib/analytics/clarity`. */
+  NEXT_PUBLIC_CLARITY_PROJECT_ID: z.string().optional(),
+
   /** Firebase Web SDK config, public values, safe to ship to the
    *  browser. All five must be set together; if any is missing the
    *  Firebase auth UI falls back to "feature unavailable" and the
@@ -213,6 +221,7 @@ function parseClient(): ClientEnv {
     NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:
       process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
     NEXT_PUBLIC_TURNSTILE_SITE_KEY: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
+    NEXT_PUBLIC_CLARITY_PROJECT_ID: process.env.NEXT_PUBLIC_CLARITY_PROJECT_ID,
     NEXT_PUBLIC_FIREBASE_API_KEY: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
     NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:
       process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,

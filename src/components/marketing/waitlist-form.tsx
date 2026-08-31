@@ -85,7 +85,16 @@ export function WaitlistForm({ turnstileSiteKey }: WaitlistFormProps) {
 
   if (done) {
     return (
-      <div className="rounded-2xl border border-border bg-white p-8 text-center shadow-sm">
+      <div
+        /* Masked because this branch echoes the SUBMITTED EMAIL back into a
+           plain text node (below). Clarity's "input values are always masked"
+           rule does not reach a <span>, and this is an early return, so the
+           mask on the <form> further down never applies here. Without this
+           attribute the address uploads verbatim under Clarity's Relaxed mode
+           and relies on an undocumented heuristic under Balanced. */
+        data-clarity-mask="true"
+        className="rounded-2xl border border-border bg-white p-8 text-center shadow-sm"
+      >
         <span
           className="mx-auto inline-flex size-12 items-center justify-center rounded-full"
           style={{
@@ -111,6 +120,15 @@ export function WaitlistForm({ turnstileSiteKey }: WaitlistFormProps) {
     <form
       onSubmit={handleSubmit}
       noValidate
+      /* /waitlist is the one Clarity-tracked route that collects personal
+         data (name, work email, business, free-text answer). The shared
+         Input/Textarea primitives already carry `data-clarity-mask`; masking
+         the region as a unit additionally covers the two raw <select>s and
+         any field added here later.
+         NOTE: this does NOT cover the submitted email — that is echoed by the
+         `done` branch above, which returns before this element exists and
+         carries its own mask. */
+      data-clarity-mask="true"
       className="space-y-5 rounded-2xl border border-border bg-white p-7 shadow-sm"
     >
       <div className="space-y-1.5">
