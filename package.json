@@ -19,6 +19,8 @@
     "migrate:client-profiles:prod": "tsx scripts/migrate-orders-to-customers.ts",
     "capture:marketing": "tsx --env-file=.env.local scripts/capture-marketing-screenshots.ts",
     "ensure-indexes:prod": "tsx --env-file=.env.prod scripts/ensure-prod-indexes.ts",
+    "migrate:firebase-passwords": "tsx --env-file=.env.local --require ./scripts/shim-server-only.cjs scripts/migrate-firebase-passwords.ts",
+    "migrate:firebase-passwords:prod": "tsx --require ./scripts/shim-server-only.cjs scripts/migrate-firebase-passwords.ts",
     "test": "vitest run --no-file-parallelism",
     "test:watch": "vitest",
     "test:unit": "vitest run --config ./vitest.unit.config.mts",

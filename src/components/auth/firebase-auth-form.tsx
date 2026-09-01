@@ -334,7 +334,17 @@ function safeStringify(value: unknown): string {
   }
 }
 
-function humanizeAuthError(err: unknown, mode: "signin" | "signup"): string {
+/**
+ * Map a caught sign-in/sign-up failure to something a visitor can act on.
+ *
+ * Exported for tests: the credential branch below is a security boundary
+ * (it must not reveal whether an account exists) AND a recovery path for a
+ * real migration population, and those two pull in opposite directions.
+ */
+export function humanizeAuthError(
+  err: unknown,
+  mode: "signin" | "signup",
+): string {
   // Log the full error to the console so DevTools shows everything -
   // stack, message, code, customData. The on-screen string is a
   // summary; the console is the source of truth.
@@ -352,10 +362,26 @@ function humanizeAuthError(err: unknown, mode: "signin" | "signup"): string {
   switch (code) {
     case "auth/invalid-email":
       return "Please enter a valid email address.";
+    // ONE message for all three, deliberately. Firebase collapses
+    // "no such user" into auth/invalid-credential when Email Enumeration
+    // Protection is on, and we must not undo that by branching here — a
+    // different string per code would turn this form into an account
+    // oracle. The recovery hint is therefore shown to everyone who fails,
+    // and reveals nothing about any specific address.
+    //
+    // It earns its place because two real populations land here with a
+    // password they believe is correct, and the bare "Incorrect email or
+    // password" sends them back to retype it forever:
+    //   - users who predate the Firebase migration and have no Firebase
+    //     account yet (`syncFirebasePassword` backfills one the first time
+    //     they complete a reset, so "Forgot password" is the fix);
+    //   - users who signed up with Google and so have no password at all.
     case "auth/user-not-found":
     case "auth/wrong-password":
     case "auth/invalid-credential":
-      return "Incorrect email or password.";
+      return mode === "signup"
+        ? "Incorrect email or password."
+        : "Incorrect email or password. If you haven't signed in for a while, use \u201cForgot password\u201d to set a new one \u2014 or continue with Google if that\u2019s how you signed up.";
     case "auth/email-already-in-use":
       return "An account with that email already exists. Sign in instead.";
     case "auth/weak-password":
