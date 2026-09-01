@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import {
+  ExternalLink,
   H3,
   LegalDoc,
   Mail,
@@ -94,9 +95,32 @@ export const metadata: Metadata = pageMetadata({
  *     policy error): /pricing and /waitlist still advertise paid tiers
  *     ($39/$99/$249) even though billing is not wired up. Do not assert
  *     live paid plans anywhere until that is reconciled.
- * 12. AI / ANALYTICS — Confirmed: NO AI/LLM integration; NO third-party
- *     analytics/advertising/trackers; only a first-party session cookie.
- *     Re-confirm if any analytics/AI is added.
+ * 12. AI / ANALYTICS — NO AI/LLM integration. Third-party analytics is
+ *     now DISCLOSED (§ "Website analytics"): Microsoft Clarity, scoped to
+ *     the public marketing routes in `@/lib/analytics/clarity`, never on
+ *     auth / payment / consent / /app/** / /admin/**. The disclosure is
+ *     written to stay true whether or not the tag is switched on, so it
+ *     does not need editing at activation time.
+ *
+ *     ⚠️  ACTIVATION IS GATED — NEEDS-LEGAL-REVIEW. Clarity is DORMANT:
+ *     NEXT_PUBLIC_CLARITY_PROJECT_ID is unset in production, so no script
+ *     loads and nothing is collected. Two questions are unresolved and are
+ *     NOT settled by this page:
+ *       (a) Clarity Terms of Use v5 §1(b)(ii) — "You will not use the
+ *           Offering in connection with content which may contain
+ *           sensitive user materials, such as health care, financial
+ *           services or government-related information." The phrase is
+ *           undefined and Microsoft publishes no guidance on whether a
+ *           marketing-pages-only deployment falls inside it.
+ *       (b) EEA/UK/CH consent. ToU §4.4(d) requires obtaining consent for
+ *           cookies/local storage, retaining records of it, and offering
+ *           revocation. There is NO consent-management mechanism in this
+ *           codebase. Clarity's own Consent Mode suppresses EU cookies by
+ *           default but does NOT discharge §4.4(d), and Microsoft states
+ *           the tag "loads immediately, that is before your user can
+ *           indicate whether they consent to your use of cookies."
+ *     Do not set the env var until both are resolved. See README
+ *     "Microsoft Clarity" for the full activation checklist.
  * 13. CHANGE NOTICE PERIOD — The prior "at least 14 days" commitment was
  *     softened (see §12). Restore a specific period only if TraceTxn
  *     intends to honour it.
@@ -270,9 +294,16 @@ const SECTIONS: LegalSection[] = [
           in (a session cookie that holds your authentication token). We
           rely on strict same-site and origin checks rather than a separate
           anti-CSRF cookie. Our bot-protection provider (Cloudflare) may
-          set its own cookies when its challenge widget loads. We do not
-          use advertising cookies, cross-site trackers, or third-party
-          analytics.
+          set its own cookies when its challenge widget loads.
+        </P>
+        <P>
+          The signed-in application sets no advertising or cross-site
+          tracking cookies. On our public marketing pages, where website
+          analytics is enabled, Microsoft Clarity sets its own first-party
+          and third-party cookies, including identifiers Microsoft also
+          uses for advertising. See{" "}
+          <PageLink href="#website-analytics">Website analytics</PageLink>{" "}
+          below for what that involves.
         </P>
       </>
     ),
@@ -403,9 +434,80 @@ const SECTIONS: LegalSection[] = [
         </UL>
         <P>
           We do <strong>not</strong> sell personal information. We do not
-          share personal information with advertising networks. We do not
           send your data to any AI provider, and we do not use personal
           information to train AI or machine-learning models.
+        </P>
+        <P>
+          One exception applies to our public marketing pages only. Where
+          website analytics is enabled there, Microsoft receives
+          information about visits to those pages and may use it for its
+          own purposes, including advertising. That processing is
+          described in{" "}
+          <PageLink href="#website-analytics">Website analytics</PageLink>.
+          It does not apply to the signed-in application, to Client Data,
+          or to payment and consent pages.
+        </P>
+      </>
+    ),
+  },
+  {
+    id: "website-analytics",
+    title: "Website analytics",
+    children: (
+      <>
+        <P>
+          Third parties such as Microsoft may collect personal information
+          from visitors to our public website. Where website analytics is
+          enabled, we use <strong>Microsoft Clarity</strong> to understand
+          how people use our public marketing pages, which pages are
+          viewed, where visitors click and scroll, and replays of those
+          page visits.
+        </P>
+
+        <H3>Where it runs, and where it does not</H3>
+        <P>
+          Clarity runs on our public marketing pages only. It is not
+          loaded on sign-in, sign-up, password reset, invitation or
+          activation pages, on payment or consent pages, in the signed-in
+          application, or in the administration console. Form fields on
+          the pages where it does run are masked before anything is sent,
+          so what you type into them is not transmitted to Microsoft. We
+          do not send Microsoft a user identifier, an email address, a
+          name, or any custom identifier or event of our own.
+        </P>
+
+        <H3>Microsoft&apos;s role and Microsoft Advertising</H3>
+        <P>
+          Microsoft collects or receives personal information from us to
+          provide <strong>Microsoft Advertising</strong>, and may use it
+          for its own purposes, including creating user profiles for
+          advertising. Microsoft&apos;s handling of that information is
+          governed by the{" "}
+          <ExternalLink href="https://privacy.microsoft.com/en-us/privacystatement">
+            Microsoft Privacy Statement
+          </ExternalLink>
+          .
+        </P>
+        <Note>
+          For this processing, Microsoft and TraceTxn each act as an{" "}
+          <strong>independent controller</strong>. Microsoft is not acting
+          as our processor, service provider, or sub-processor, and it is
+          not listed in the sub-processor table below. We do not direct or
+          control what Microsoft does with the information it collects
+          through Clarity, and we cannot delete an individual
+          visitor&apos;s Clarity data on request, Microsoft retains and
+          deletes it on its own schedule. Requests about that information
+          should be directed to Microsoft using the Microsoft Privacy
+          Statement linked above.
+        </Note>
+
+        <H3>Opting out</H3>
+        <P>
+          You can prevent Clarity from loading by blocking{" "}
+          <code className="font-mono text-[12.5px]">clarity.ms</code> in
+          your browser or an extension, or by using a browser setting that
+          blocks third-party cookies. Blocking it does not affect your use
+          of the marketing pages or the application.
         </P>
       </>
     ),
@@ -419,7 +521,10 @@ const SECTIONS: LegalSection[] = [
           We rely on the following service providers (sub-processors) to
           run the Service. They process personal information only under our
           instructions and equivalent confidentiality and security
-          obligations.
+          obligations. Microsoft Clarity is deliberately not in this table,
+          it is not a sub-processor, see{" "}
+          <PageLink href="#website-analytics">Website analytics</PageLink>{" "}
+          above.
         </P>
         <div className="mb-4 overflow-x-auto rounded-xl border border-border">
           <table className="w-full text-[13px]">

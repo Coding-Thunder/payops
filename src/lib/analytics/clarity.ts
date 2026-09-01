@@ -34,6 +34,45 @@
  * This module has NO imports on purpose: `next.config.ts` imports it to scope
  * the Content-Security-Policy to the same set of paths, so the allow-list and
  * the CSP can never drift apart.
+ *
+ * ── ACTIVATION IS BLOCKED — NEEDS-LEGAL-REVIEW ───────────────────────────
+ *
+ * Everything here is inert until NEXT_PUBLIC_CLARITY_PROJECT_ID is set, and
+ * it is deliberately UNSET in production. Two questions must be answered
+ * before it is set, and neither is a coding task:
+ *
+ *  1. CONTRACT SCOPE. Clarity Terms of Use v5 §1(b)(ii): "You will not use
+ *     the Offering in connection with content which may contain sensitive
+ *     user materials, such as health care, financial services or
+ *     government-related information." The phrase "sensitive user materials"
+ *     is lowercase, undefined, and distinct from the defined term "Sensitive
+ *     Data" in §4.1(f) (which is GDPR Art. 9 categories and excludes
+ *     financial data). Microsoft publishes no guidance on whether a
+ *     marketing-pages-only deployment falls inside §1(b)(ii). It is a
+ *     warranty backed by an uncapped indemnity (§11) against a liability cap
+ *     of US $5.00 (§17). UNRESOLVED — do not assume either reading.
+ *
+ *  2. EEA / UK / CH CONSENT. ToU §4.4(d) requires the customer to obtain
+ *     consent for cookies or other local storage, retain records of consent,
+ *     and provide a clear means to revoke it. THIS CODEBASE HAS NO
+ *     CONSENT-MANAGEMENT MECHANISM — there is no cookie banner, no CMP, and
+ *     no stored consent state. (The "consent" features elsewhere in this
+ *     product are payment consent from a tenant's client; they are unrelated
+ *     and must not be reused for this.)
+ *
+ *     Clarity's own Consent Mode is ON by default for EEA/UK/CH visitors and
+ *     defaults to denied, so it suppresses Clarity's cookies there — but it
+ *     does NOT discharge §4.4(d), because obtaining, recording and allowing
+ *     revocation of consent are our obligations, not Microsoft's. Microsoft
+ *     also states plainly that the tag "loads immediately, that is before
+ *     your user can indicate whether they consent to your use of cookies",
+ *     and its own verification steps confirm /collect calls continue with
+ *     consent denied. Do not read Consent Mode as compliance.
+ *
+ * If the chosen posture is to serve EEA/UK/CH traffic, a real consent
+ * mechanism has to be built and wired to gate this component before the env
+ * var is set. Deliberately not stubbed here: a fake or always-granted
+ * consent signal would be worse than none.
  */
 
 /**

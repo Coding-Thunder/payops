@@ -195,18 +195,75 @@ order flow continues normally. Check `/app/admin/audit` for the error.
 - [ ] Set `NEXT_PUBLIC_APP_URL` to the production HTTPS URL
 - [ ] Configure Cloudflare Turnstile (login + quotation bot-check) — set
       both `NEXT_PUBLIC_TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY`
-- [ ] Set `NEXT_PUBLIC_CLARITY_PROJECT_ID` if session analytics is wanted;
-      it loads on the public marketing pages only (see
-      `src/lib/analytics/clarity.ts`). Leave the Clarity project on its
-      default **Balanced** masking mode: the tracked pages carry no
-      customer data, and the one PII form is masked by
-      `data-clarity-mask` attributes, which override the dashboard
-      setting — so Balanced keeps heatmaps and replays readable without
-      weakening anything. Choose **Strict** only if you want the extra
-      margin and can accept unreadable replays
+- [ ] **Do NOT set `NEXT_PUBLIC_CLARITY_PROJECT_ID` yet** — Microsoft
+      Clarity is implemented but deliberately dormant pending legal
+      review. See "Microsoft Clarity (dormant)" below for the blocking
+      questions and the activation checklist
 - [ ] Verify the at-rest backup policy on the production MongoDB cluster
 - [ ] Set up Stripe Connect / per-org webhook endpoints for any tenants
       onboarding with their own Stripe account
+
+## Microsoft Clarity (dormant)
+
+Clarity is integrated but **switched off**: `NEXT_PUBLIC_CLARITY_PROJECT_ID`
+is unset in production, so no script loads and nothing is collected. The code
+is in `src/lib/analytics/clarity.ts` and
+`src/components/analytics/clarity-analytics.tsx`.
+
+**Scope, when it is switched on.** Ten public marketing routes only (`/`,
+`/features`, `/pricing`, `/security`, `/contact`, `/terms`, `/privacy`,
+`/refunds`, `/dpa`, `/waitlist`). It never loads on sign-in, sign-up,
+password reset, invitation/activation, payment, consent, `/app/**`, or
+`/admin/**`. The allow-list is deny-by-default and is imported by
+`next.config.ts`, so the per-route CSP and the runtime gate cannot drift.
+Inputs and textareas are masked at the shared primitives, and no
+`identify()` / `setTag()` / `event()` / `upgrade()` call is ever made.
+
+### Two blockers — NEEDS-LEGAL-REVIEW
+
+Neither is a coding task, and neither is settled by the disclosures now on
+`/privacy`:
+
+1. **Terms of Use scope.** Clarity ToU v5 §1(b)(ii) has the customer *warrant*
+   not to use Clarity "in connection with content which may contain sensitive
+   user materials, such as health care, financial services or
+   government-related information". "sensitive user materials" is undefined,
+   is distinct from the defined term "Sensitive Data" in §4.1(f) (GDPR Art. 9
+   categories, which exclude financial data), and Microsoft publishes no
+   guidance on marketing-pages-only deployments. The warranty is backed by an
+   uncapped indemnity (§11) against a $5.00 liability cap (§17).
+2. **EEA/UK/CH consent.** ToU §4.4(d) requires us to obtain consent for
+   cookies/local storage, keep records of it, and offer revocation. **There is
+   no consent-management mechanism in this codebase.** Clarity's Consent Mode
+   defaults to denied for those regions and so suppresses its cookies, but it
+   does not discharge §4.4(d) — and Microsoft states the tag "loads
+   immediately, that is before your user can indicate whether they consent to
+   your use of cookies". Do not treat Consent Mode as compliance.
+
+### Activation checklist
+
+Only once both blockers are resolved:
+
+- [ ] Legal sign-off on §1(b)(ii) for this deployment, and on the industry
+      declared at project creation (selecting *Financial Services &
+      Insurance*, *Government* or *Health & Wellness* forces acceptance of
+      Microsoft's in-product "Additional Terms", which expand "Sensitive
+      Data" to include Gramm-Leach-Bliley Act Nonpublic Personal Information
+      and add a second uncapped indemnity)
+- [ ] If EEA/UK/CH traffic is in scope: build a real consent mechanism and
+      gate `<ClarityAnalytics />` on it
+- [ ] Confirm `/privacy` § "Website analytics" still matches reality
+- [ ] Set `NEXT_PUBLIC_CLARITY_PROJECT_ID` in the DigitalOcean env panel,
+      scope `RUN_AND_BUILD_TIME`, not encrypted, then **redeploy** —
+      `NEXT_PUBLIC_*` is inlined at build time, so a restart is not enough
+- [ ] Leave the Clarity project on its default **Balanced** masking mode: the
+      tracked pages carry no customer data, and the one PII form is masked by
+      `data-clarity-mask` attributes, which override the dashboard setting.
+      Choose **Strict** only if you want extra margin and can accept
+      unreadable replays
+- [ ] Verify on production: tag + `clarity.js` load on `/`, no `TypeError`, no
+      CSP violations, `/collect` requests appear — and **zero** Clarity
+      requests on `/login` and `/app/dashboard`
 
 ## Platform super-admin console (`/admin`)
 

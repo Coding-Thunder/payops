@@ -227,6 +227,31 @@ export function Note({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Link out of the legal pages. Separate from `PageLink` (a Next `<Link>` for
+ * in-app routes) because an external destination needs `rel="noreferrer"` and
+ * should not be prefetched by the router. Added for the Microsoft Privacy
+ * Statement link that the Clarity Terms of Use require us to publish.
+ */
+export function ExternalLink({
+  href,
+  children,
+}: {
+  href: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="font-medium text-[color:var(--brand-emerald-strong)] underline decoration-[color:var(--brand-emerald)]/40 underline-offset-4 transition-colors hover:decoration-[color:var(--brand-emerald)]"
+    >
+      {children}
+    </a>
+  );
+}
+
 export function Mail({ address }: { address: string }) {
   return (
     <a

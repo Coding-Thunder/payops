@@ -159,7 +159,15 @@ const SECTIONS: LegalSection[] = [
             service providers to help operate the Service. The current
             list is maintained in our{" "}
             <PageLink href="/privacy">Privacy Policy</PageLink>, with a
-            mechanism to notify you of changes.
+            mechanism to notify you of changes. Website analytics on our
+            public marketing pages is not part of this, the provider acts
+            as an independent controller rather than as our sub-processor,
+            it does not touch Client Data, and it is therefore outside the
+            scope of a DPA. See{" "}
+            <PageLink href="/privacy#website-analytics">
+              Website analytics
+            </PageLink>
+            .
           </li>
           <li>
             <strong>Security.</strong> The technical and organisational

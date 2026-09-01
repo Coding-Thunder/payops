@@ -207,12 +207,16 @@ services:
         type: SECRET
         value: "0x4AAAAAA…"
 
-      # ──── OPTIONAL — Microsoft Clarity ──────────────────────────────
+      # ──── OPTIONAL — Microsoft Clarity (DORMANT, leave blank) ───────
       # Public marketing pages only. Not a secret (no `type: SECRET`) —
       # the browser must receive it. RUN_AND_BUILD_TIME because
       # NEXT_PUBLIC_* is inlined into the client bundle at BUILD time:
       # adding it after a build has no effect until the next deploy.
       # Blank disables Clarity entirely.
+      #
+      # LEAVE BLANK until legal review clears Clarity ToU §1(b)(ii) and an
+      # EEA/UK/CH consent mechanism exists (§4.4(d)). There is no CMP in
+      # this codebase. See README.md "Microsoft Clarity (dormant)".
       - key: NEXT_PUBLIC_CLARITY_PROJECT_ID
         scope: RUN_AND_BUILD_TIME
         value: ""
