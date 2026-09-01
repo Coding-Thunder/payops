@@ -4,6 +4,7 @@ import {
   AuditAction,
   ConsentMethod,
   ConsentStatus,
+  ServiceType,
   UserRole,
 } from "@/lib/constants/enums";
 import { BadRequestError, NotFoundError } from "@/lib/errors";
@@ -49,10 +50,11 @@ async function seedRequestedConsent() {
       consentEmailSubject: "Test subject",
       snapshot: {
         bookingType: order.bookingType,
+        serviceType: ServiceType.CAR_RENTAL,
         provider: order.provider.name,
-        vehicle: `${order.vehicle.company} • ${order.vehicle.type}`,
-        pickupDate: order.trip.pickupDate.toISOString(),
-        dropoffDate: order.trip.dropoffDate.toISOString(),
+        vehicle: `${order.vehicle!.company} • ${order.vehicle!.type}`,
+        pickupDate: order.trip!.pickupDate.toISOString(),
+        dropoffDate: order.trip!.dropoffDate.toISOString(),
         amount: order.pricing.amount,
         currency: order.pricing.currency,
         paymentLinkRef: order.payment.checkoutUrl ?? null,

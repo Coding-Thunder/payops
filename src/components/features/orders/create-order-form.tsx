@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { useFieldArray, useForm } from "react-hook-form";
+import { useForm, type Control } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { z } from "zod";
 
@@ -37,23 +37,18 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
 import { api, ApiClientError } from "@/lib/api-client";
-import {
-  BookingTypeLabel,
-  PaymentTimingLabel,
-} from "@/lib/constants/labels";
+import { BookingTypeLabel } from "@/lib/constants/labels";
 import {
   BookingType,
   type BookingType as BookingTypeT,
   type Currency,
-  PAYMENT_TIMINGS,
   PaymentTiming,
+  ServiceType,
 } from "@/lib/constants/enums";
 import {
-  createOrderSchema,
-  type CreateOrderInput,
+  carRentalOrderSchema,
+  type CarRentalOrderInput,
 } from "@/lib/validation";
-import { summarizeCharges } from "@/lib/charges";
-import { formatCurrency } from "@/lib/format";
 import type { OrderDTO, ProviderDTO } from "@/types";
 import { ProviderSelector } from "@/components/features/providers";
 import {
@@ -61,21 +56,31 @@ import {
   type CarLinkSelection,
 } from "@/components/features/car-links";
 import { ImageUrlPreview } from "@/components/common/image-url-preview";
+import {
+  ChargeLinesFieldset,
+  type ChargeLinesFormValues,
+} from "./charge-lines-fieldset";
 
 // See note in create-car-link-dialog: the zod schema for vehicle.imageUrl
 // is `.optional().nullable().transform()`, so input ≠ output. We type
 // `useForm` with the schema's *input* shape for the field state and the
 // *output* shape for what `handleSubmit` produces — matching the
 // resolver's signature in RHF v7.
-type CreateOrderFormValues = z.input<typeof createOrderSchema>;
+type CreateOrderFormValues = z.input<typeof carRentalOrderSchema>;
 
 interface CreateOrderFormProps {
   allowedBookingTypes: readonly BookingTypeT[];
   defaultCurrency: Currency;
   allowedCurrencies: readonly string[];
-  /** Active provider catalog. Empty array renders the selector with a
-   *  "configure providers first" prompt. */
+  /** Active provider catalog, already narrowed to CAR_RENTAL suppliers by
+   *  the caller. Empty array renders the selector with a "configure
+   *  providers first" prompt. */
   providers: ProviderDTO[];
+  /** `false` while this tab is not the visible one — hides the actions row
+   *  and refuses the submit handler. Defaults to true so a single-service
+   *  deployment, which renders this form directly with no tab strip, is
+   *  unaffected. */
+  active?: boolean;
 }
 
 interface CreateOrderApiResponse {
@@ -88,13 +93,15 @@ export function CreateOrderForm({
   defaultCurrency,
   allowedCurrencies,
   providers,
+  active = true,
 }: CreateOrderFormProps) {
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
 
-  const form = useForm<CreateOrderFormValues, unknown, CreateOrderInput>({
-    resolver: zodResolver(createOrderSchema),
+  const form = useForm<CreateOrderFormValues, unknown, CarRentalOrderInput>({
+    resolver: zodResolver(carRentalOrderSchema),
     defaultValues: {
+      serviceType: ServiceType.CAR_RENTAL,
       bookingType: allowedBookingTypes[0] ?? BookingType.NEW_BOOKING,
       provider: providers[0]?.key ?? "",
       customer: { name: "", email: "", phone: "" },
@@ -112,23 +119,17 @@ export function CreateOrderForm({
     mode: "onTouched",
   });
 
-  const chargeFields = useFieldArray({ control: form.control, name: "charges" });
-
-  // Live breakdown for the summary box — recomputed from the same helper the
-  // server uses, so what the agent sees here is exactly what gets charged.
-  const watchedCharges = form.watch("charges");
-  const watchedCurrency = form.watch("currency") ?? defaultCurrency;
-  const chargeSummary = summarizeCharges(
-    (watchedCharges ?? []).map((c) => ({
-      name: c?.name ?? "",
-      amount: typeof c?.amount === "number" ? c.amount : Number(c?.amount) || 0,
-      timing: (c?.timing as PaymentTiming) ?? PaymentTiming.PREPAID,
-    })),
-  );
+  // The charge lines, their currency and the live breakdown all moved into
+  // `ChargeLinesFieldset`, which owns the field array and the summary maths
+  // for all three service forms.
 
   const isSubmitting = form.formState.isSubmitting;
 
-  async function onSubmit(values: CreateOrderInput) {
+  async function onSubmit(values: CarRentalOrderInput) {
+    // Only the visible tab may post. Each tab owns its own <form>, so the
+    // browser already scopes a submit to one of them; this guard makes the
+    // rule explicit rather than emergent.
+    if (!active) return;
     setServerError(null);
     try {
       const result = await api.post<CreateOrderApiResponse>(
@@ -490,177 +491,14 @@ export function CreateOrderForm({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <FormField
-              control={form.control}
-              name="currency"
-              render={({ field }) => (
-                <FormItem className="max-w-[200px]">
-                  <FormLabel>Currency</FormLabel>
-                  <Select
-                    value={field.value ?? defaultCurrency}
-                    onValueChange={field.onChange}
-                    disabled={isSubmitting}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Currency" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {allowedCurrencies.map((c) => (
-                        <SelectItem key={c} value={c}>
-                          {c}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
+            <ChargeLinesFieldset
+              control={
+                form.control as unknown as Control<ChargeLinesFormValues>
+              }
+              allowedCurrencies={allowedCurrencies}
+              defaultCurrency={defaultCurrency}
+              disabled={isSubmitting}
             />
-
-            <div className="space-y-3">
-              {chargeFields.fields.map((row, index) => (
-                <div
-                  key={row.id}
-                  className="grid gap-3 sm:grid-cols-[1fr_140px_170px_auto] sm:items-end"
-                >
-                  <FormField
-                    control={form.control}
-                    name={`charges.${index}.name`}
-                    render={({ field }) => (
-                      <FormItem>
-                        {index === 0 ? <FormLabel>Charge name</FormLabel> : null}
-                        <FormControl>
-                          <Input
-                            placeholder="e.g. Rental cost"
-                            disabled={isSubmitting}
-                            {...field}
-                            value={field.value ?? ""}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name={`charges.${index}.amount`}
-                    render={({ field }) => (
-                      <FormItem>
-                        {index === 0 ? <FormLabel>Amount</FormLabel> : null}
-                        <FormControl>
-                          <Input
-                            type="number"
-                            min={0}
-                            step="0.01"
-                            inputMode="decimal"
-                            placeholder="0.00"
-                            disabled={isSubmitting}
-                            {...field}
-                            value={field.value ?? ""}
-                            onChange={(e) =>
-                              field.onChange(
-                                e.target.value === ""
-                                  ? ""
-                                  : Number(e.target.value),
-                              )
-                            }
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name={`charges.${index}.timing`}
-                    render={({ field }) => (
-                      <FormItem>
-                        {index === 0 ? <FormLabel>Payment timing</FormLabel> : null}
-                        <Select
-                          value={field.value ?? PaymentTiming.PREPAID}
-                          onValueChange={field.onChange}
-                          disabled={isSubmitting}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Timing" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {PAYMENT_TIMINGS.map((t) => (
-                              <SelectItem key={t} value={t}>
-                                {PaymentTimingLabel[t]}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => chargeFields.remove(index)}
-                    disabled={isSubmitting || chargeFields.fields.length <= 1}
-                    aria-label="Remove charge"
-                  >
-                    Remove
-                  </Button>
-                </div>
-              ))}
-
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  chargeFields.append({
-                    name: "",
-                    amount: 0,
-                    timing: PaymentTiming.PREPAID,
-                  })
-                }
-                disabled={isSubmitting}
-              >
-                + Add charge
-              </Button>
-            </div>
-
-            {/* Live breakdown — uses the same helper the server uses, so the
-                agent sees exactly what will be charged online. */}
-            <div className="space-y-1.5 rounded-md border bg-muted/30 p-4 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">
-                  Amount paid online (today)
-                </span>
-                <span className="font-medium tabular-nums">
-                  {formatCurrency(chargeSummary.prepaid, watchedCurrency)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Amount due at counter</span>
-                <span className="font-medium tabular-nums">
-                  {formatCurrency(chargeSummary.dueAtCounter, watchedCurrency)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between border-t pt-1.5">
-                <span className="font-medium">Total rental cost</span>
-                <span className="font-semibold tabular-nums">
-                  {formatCurrency(chargeSummary.total, watchedCurrency)}
-                </span>
-              </div>
-              <p className="pt-1 text-xs text-muted-foreground">
-                The payment link charges only the {" "}
-                <strong>{formatCurrency(chargeSummary.prepaid, watchedCurrency)}</strong>{" "}
-                prepaid amount.
-              </p>
-            </div>
 
             <FormField
               control={form.control}
@@ -683,23 +521,25 @@ export function CreateOrderForm({
           </CardContent>
         </Card>
 
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => router.back()}
-            disabled={isSubmitting}
-          >
-            Cancel
-          </Button>
-          <LoadingButton
-            type="submit"
-            loading={isSubmitting}
-            loadingText="Creating order"
-          >
-            Create order & generate link
-          </LoadingButton>
-        </div>
+        {active ? (
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => router.back()}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <LoadingButton
+              type="submit"
+              loading={isSubmitting}
+              loadingText="Creating order"
+            >
+              Create order & generate link
+            </LoadingButton>
+          </div>
+        ) : null}
       </form>
     </Form>
   );

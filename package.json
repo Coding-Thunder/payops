@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit",
     "seed": "node scripts/with-env.mjs npx tsx scripts/seed.ts",
     "seed:orgs": "node scripts/with-env.mjs npx tsx scripts/seed-organizations.ts",
+    "seed:rcr-providers": "node scripts/with-env.mjs npx tsx scripts/seed-rcr-providers.ts",
+    "backfill:service-type": "node scripts/with-env.mjs npx tsx scripts/backfill-order-service-type.ts",
     "indexes:audit": "node scripts/with-env.mjs npx tsx scripts/build-indexes.ts",
     "indexes:drop-obsolete": "node scripts/with-env.mjs npx tsx scripts/drop-obsolete-indexes.ts",
     "seed:prod": "tsx scripts/seed.ts",

@@ -34,8 +34,9 @@ import {
   resolveProvider,
   UNKNOWN_PROVIDER,
 } from "@/lib/constants/providers";
-import { BookingTypeLabel } from "@/lib/constants/labels";
+import { BookingTypeLabel, ServiceItemLabel } from "@/lib/constants/labels";
 import { ConsentStatus, OrderStatus } from "@/lib/constants/enums";
+import { describeServiceItem, serviceTypeOf } from "@/lib/service-summary";
 import { api, ApiClientError } from "@/lib/api-client";
 import {
   formatCurrency,
@@ -83,6 +84,23 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
     () => items.filter((o) => o.status !== OrderStatus.PAID),
     [items],
   );
+
+  /**
+   * Header for the "what was bought" column.
+   *
+   * One header serves rows of mixed service types, so it can only be
+   * specific when the page IS specific: a listing that is entirely flights
+   * says "Route", one that is entirely cruises says "Sailing", and a mixed
+   * or empty listing falls back to the neutral "Booking". Saying "Vehicle"
+   * above a column of flight routes was the failure this avoids.
+   */
+  const itemColumnLabel = useMemo(() => {
+    if (items.length === 0) return "Booking";
+    const first = serviceTypeOf(items[0]!);
+    return items.every((o) => serviceTypeOf(o) === first)
+      ? ServiceItemLabel[first]
+      : "Booking";
+  }, [items]);
   const allSelected =
     selectableItems.length > 0 &&
     selectableItems.every((i) => selected.has(i.id));
@@ -190,7 +208,9 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
             <TableHead className="h-8 hidden lg:table-cell w-[48px]">
               Provider
             </TableHead>
-            <TableHead className="h-8 hidden 2xl:table-cell">Vehicle</TableHead>
+            <TableHead className="h-8 hidden 2xl:table-cell">
+              {itemColumnLabel}
+            </TableHead>
             <TableHead className="h-8 text-right w-[92px]">Amount</TableHead>
             <TableHead className="h-8">Status</TableHead>
             <TableHead className="h-8 hidden md:table-cell w-[84px]">
@@ -275,13 +295,28 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
                     />
                   </span>
                 </TableCell>
+                {/* Two lines for a rental (make over model), which is what
+                    this column has always shown. A flight or a cruise has no
+                    such split, so it gets the one-line service summary —
+                    "BA117 • LHR → JFK" — under the same header. */}
                 <TableCell className={`hidden 2xl:table-cell ${CELL}`}>
-                  <div className="max-w-[140px] truncate text-[13px] font-medium leading-tight">
-                    {o.vehicle.company}
-                  </div>
-                  <div className="max-w-[140px] truncate text-[11.5px] text-muted-foreground leading-tight">
-                    {o.vehicle.type}
-                  </div>
+                  {o.vehicle ? (
+                    <>
+                      <div className="max-w-[140px] truncate text-[13px] font-medium leading-tight">
+                        {o.vehicle.company}
+                      </div>
+                      <div className="max-w-[140px] truncate text-[11.5px] text-muted-foreground leading-tight">
+                        {o.vehicle.type}
+                      </div>
+                    </>
+                  ) : (
+                    <div
+                      className="max-w-[140px] truncate text-[13px] font-medium leading-tight"
+                      title={describeServiceItem(o)}
+                    >
+                      {describeServiceItem(o)}
+                    </div>
+                  )}
                 </TableCell>
                 <TableCell
                   className={`text-right font-medium tabular-nums ${CELL}`}

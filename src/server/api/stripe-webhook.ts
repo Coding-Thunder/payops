@@ -50,6 +50,10 @@ export async function handleStripeWebhook(
   /** Included in audit rows so a failure can be traced to one tenant's
    *  endpoint. Null for the deployment-level endpoint. */
   organizationSlug: string | null = null,
+  /** Whether that organization is the compatibility anchor. Defaults TRUE
+   *  so the deployment-level endpoint keeps settling unattributed
+   *  pre-migration orders exactly as it does today. */
+  organizationIsDefault = true,
 ): Promise<NextResponse> {
   const signature = req.headers.get("stripe-signature");
   if (!signature) return bad(400, "BAD_REQUEST", "Missing signature");
@@ -89,7 +93,11 @@ export async function handleStripeWebhook(
   }
 
   try {
-    const result = await processGatewayEvent(event, organizationId);
+    const result = await processGatewayEvent(
+      event,
+      organizationId,
+      organizationIsDefault,
+    );
     kickPostCommitDrain();
     return NextResponse.json({ ok: true, data: { received: true, ...result } });
   } catch (err) {

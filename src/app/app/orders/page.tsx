@@ -8,6 +8,7 @@ import { Pagination } from "@/components/features/orders/pagination";
 import { PageHeader } from "@/components/common/page-header";
 import { Permission, roleHasPermission } from "@/lib/constants/permissions";
 import { listOrdersQuerySchema } from "@/lib/validation";
+import { getOrganization } from "@/server/auth/organization";
 import { requirePermission } from "@/server/auth/session";
 import { listOrders } from "@/server/services/order.service";
 
@@ -25,7 +26,10 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
 
   const sp = await searchParams;
   const params = listOrdersQuerySchema.parse(flatten(sp));
-  const data = await listOrders(params, { actor: user });
+  const [data, organization] = await Promise.all([
+    listOrders(params, { actor: user }),
+    getOrganization(),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -46,7 +50,10 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
         }
       />
 
-      <OrderFilters canSeeAll={canSeeAll} />
+      <OrderFilters
+        canSeeAll={canSeeAll}
+        serviceTypes={organization.serviceTypes}
+      />
       <OrderTable
         items={data.items}
         canDelete={canDelete}

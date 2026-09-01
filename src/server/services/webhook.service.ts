@@ -59,6 +59,10 @@ export async function processGatewayEvent(
   /** Organization whose endpoint received this delivery. Null for the
    *  deployment-level Stripe endpoint. Enforced against the order. */
   organizationId: string | null = null,
+  /** Whether that organization is the compatibility anchor. Defaults TRUE
+   *  so the deployment-level endpoint and every existing caller keep their
+   *  current behaviour; the per-organization routes pass the real value. */
+  endpointIsDefault = true,
 ): Promise<ProcessEventResult> {
   await connectMongo();
   logger.info("payments.event", { id: event.eventId, type: event.type });
@@ -74,13 +78,13 @@ export async function processGatewayEvent(
 
   switch (event.type) {
     case "checkout.completed":
-      return handleCheckoutCompleted(event, organizationId);
+      return handleCheckoutCompleted(event, organizationId, endpointIsDefault);
     case "checkout.expired":
-      return handleCheckoutExpired(event, organizationId);
+      return handleCheckoutExpired(event, organizationId, endpointIsDefault);
     case "checkout.failed":
-      return handleCheckoutFailed(event, organizationId);
+      return handleCheckoutFailed(event, organizationId, endpointIsDefault);
     case "payment.failed":
-      return handlePaymentFailed(event, organizationId);
+      return handlePaymentFailed(event, organizationId, endpointIsDefault);
     case "dispute.created":
       return handleDisputeCreated(event);
     case "dispute.updated":
@@ -119,15 +123,21 @@ export const processStripeEvent = processGatewayEvent;
 function orderBelongsToEndpoint(
   order: OrderDocument,
   endpointOrganizationId: string | null,
+  endpointIsDefault: boolean,
 ): boolean {
   const orderOrg = order.organizationId ? String(order.organizationId) : null;
 
-  // Unattributed rows belong to this deployment. On a single-organization
-  // deployment that is simply true; it is also what the scope clause already
-  // assumes for the default organization, so refusing them here would make
-  // the webhook stricter than every read path and quietly strand any order
-  // written before the column was stamped everywhere.
-  if (orderOrg === null) return true;
+  if (orderOrg === null) {
+    // Unattributed rows belong to the DEFAULT organization ONLY — the same
+    // rule `belongsToScope` applies on every read path.
+    //
+    // The default endpoint must accept them or every pre-migration order
+    // becomes unsettleable. A NON-default endpoint must refuse them: on a
+    // deployment serving two brands, letting the newer tenant's endpoint
+    // settle an unattributed row would let it mark the incumbent's history
+    // paid from its own merchant account.
+    return endpointIsDefault;
+  }
 
   if (endpointOrganizationId) return orderOrg === endpointOrganizationId;
   return true;
@@ -165,10 +175,15 @@ async function findOrderForEvent(
 async function findOrderForEndpoint(
   endpointOrganizationId: string | null,
   event: VerifiedPaymentEvent,
+  /** Whether the receiving endpoint's organization is the compatibility
+   *  anchor. Defaults TRUE so the deployment-level endpoint and every
+   *  existing caller behave exactly as they do today. */
+  endpointIsDefault = true,
 ): Promise<OrderDocument | null> {
   const order = await findOrderForEvent(event);
   if (!order) return null;
-  if (orderBelongsToEndpoint(order, endpointOrganizationId)) return order;
+  if (orderBelongsToEndpoint(order, endpointOrganizationId, endpointIsDefault))
+    return order;
 
   logger.error("payments.cross_organization_event", {
     eventId: event.eventId,
@@ -204,8 +219,11 @@ async function handleCheckoutCompleted(
    *  than held in module state: two concurrent deliveries in one process
    *  would clobber a shared variable between the write and the read. */
   organizationId: string | null,
+  /** Whether that organization is the compatibility anchor — decides
+   *  whether unattributed rows may be settled by this endpoint. */
+  endpointIsDefault = true,
 ): Promise<ProcessEventResult> {
-  const order = await findOrderForEndpoint(organizationId, event);
+  const order = await findOrderForEndpoint(organizationId, event, endpointIsDefault);
   if (!order) {
     logger.warn("payments.order_not_found_for_session", {
       sessionId: event.sessionId,
@@ -478,8 +496,11 @@ async function handleCheckoutExpired(
    *  than held in module state: two concurrent deliveries in one process
    *  would clobber a shared variable between the write and the read. */
   organizationId: string | null,
+  /** Whether that organization is the compatibility anchor — decides
+   *  whether unattributed rows may be settled by this endpoint. */
+  endpointIsDefault = true,
 ): Promise<ProcessEventResult> {
-  const order = await findOrderForEndpoint(organizationId, event);
+  const order = await findOrderForEndpoint(organizationId, event, endpointIsDefault);
   if (!order) {
     return { handled: false, duplicate: false, reason: "order_not_found" };
   }
@@ -601,8 +622,11 @@ async function handleCheckoutFailed(
    *  than held in module state: two concurrent deliveries in one process
    *  would clobber a shared variable between the write and the read. */
   organizationId: string | null,
+  /** Whether that organization is the compatibility anchor — decides
+   *  whether unattributed rows may be settled by this endpoint. */
+  endpointIsDefault = true,
 ): Promise<ProcessEventResult> {
-  const order = await findOrderForEndpoint(organizationId, event);
+  const order = await findOrderForEndpoint(organizationId, event, endpointIsDefault);
   if (!order) {
     return { handled: false, duplicate: false, reason: "order_not_found" };
   }
@@ -619,8 +643,11 @@ async function handlePaymentFailed(
    *  than held in module state: two concurrent deliveries in one process
    *  would clobber a shared variable between the write and the read. */
   organizationId: string | null,
+  /** Whether that organization is the compatibility anchor — decides
+   *  whether unattributed rows may be settled by this endpoint. */
+  endpointIsDefault = true,
 ): Promise<ProcessEventResult> {
-  const order = await findOrderForEndpoint(organizationId, event);
+  const order = await findOrderForEndpoint(organizationId, event, endpointIsDefault);
   if (!order) {
     return { handled: false, duplicate: false, reason: "order_not_found" };
   }

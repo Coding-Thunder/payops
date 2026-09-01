@@ -22,13 +22,21 @@ import {
   Permission,
   roleHasAnyPermission,
 } from "@/lib/constants/permissions";
-import type { UserRole } from "@/lib/constants/enums";
+import { ServiceType, type UserRole } from "@/lib/constants/enums";
 
 interface NavItem {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   permissions?: readonly Permission[];
+  /**
+   * Service types this entry is relevant to. Omitted means "always shown",
+   * which is what every entry but one is. Listed, the entry appears only
+   * when the organization actually sells one of them — a deployment selling
+   * flights and cruises has no use for a car library, and an admin link to
+   * a feature the brand cannot use is a support ticket waiting to happen.
+   */
+  serviceTypes?: readonly ServiceType[];
 }
 
 interface NavSection {
@@ -75,6 +83,9 @@ const SECTIONS: NavSection[] = [
         label: "Car library",
         icon: CarIcon,
         permissions: [Permission.CAR_LINK_MANAGE],
+        // The library stores car make/model/photo, which only the rental
+        // form consumes.
+        serviceTypes: [ServiceType.CAR_RENTAL],
       },
       {
         href: "/app/admin/branding",
@@ -120,15 +131,26 @@ interface SidebarProps {
   role: UserRole;
   brand: string;
   variant?: "full" | "embedded";
+  /** What this organization sells. Defaults to `[CAR_RENTAL]` so a caller
+   *  that has not been updated renders exactly the nav it rendered before. */
+  serviceTypes?: readonly ServiceType[];
 }
 
-export function Sidebar({ role, brand, variant = "full" }: SidebarProps) {
+export function Sidebar({
+  role,
+  brand,
+  variant = "full",
+  serviceTypes = [ServiceType.CAR_RENTAL],
+}: SidebarProps) {
   const pathname = usePathname();
 
   const visibleSections = SECTIONS.map((s) => ({
     ...s,
     items: s.items.filter(
-      (i) => !i.permissions || roleHasAnyPermission(role, i.permissions),
+      (i) =>
+        (!i.permissions || roleHasAnyPermission(role, i.permissions)) &&
+        (!i.serviceTypes ||
+          i.serviceTypes.some((t) => serviceTypes.includes(t))),
     ),
   })).filter((s) => s.items.length > 0);
 

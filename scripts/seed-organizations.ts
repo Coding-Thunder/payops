@@ -13,6 +13,11 @@
  *   SEED_ORGS_APPLY   "true" to write. Anything else = dry run.
  *   SEED_ORGS_SLUG    slug for the default organization.
  *                     Defaults to "rentalconfirmation".
+ *   SEED_ORGS_SERVICE_TYPES
+ *                     comma-separated service types this brand sells, e.g.
+ *                     "FLIGHT,CRUISE". Defaults to "CAR_RENTAL", which is
+ *                     what every deployment seeded before this knob existed
+ *                     already has — so omitting it changes nothing.
  *
  * DRY RUN IS THE DEFAULT, which is deliberately the opposite of
  * `backfill-order-providers.ts`. That script's worst case is a re-stamped
@@ -38,6 +43,7 @@
 
 import type { Types } from "mongoose";
 
+import { SERVICE_TYPES, ServiceType } from "../src/lib/constants/enums";
 import { connectMongo, disconnectMongo } from "../src/server/db/mongoose";
 import {
   Branding,
@@ -51,6 +57,41 @@ const APPLY = process.env.SEED_ORGS_APPLY === "true";
 const SLUG = (process.env.SEED_ORGS_SLUG ?? "rentalconfirmation")
   .trim()
   .toLowerCase();
+
+/**
+ * What this brand sells.
+ *
+ * Parsed strictly and REFUSED rather than silently narrowed on a typo: a
+ * misspelt "CRUISES" would otherwise seed an organization selling nothing
+ * it was meant to, the create-order page would render the wrong tabs, and
+ * the failure would surface as "why can't I make a cruise booking" days
+ * later. Defaults to CAR_RENTAL, matching the schema.
+ */
+function parseServiceTypes(): ServiceType[] {
+  const raw = process.env.SEED_ORGS_SERVICE_TYPES?.trim();
+  if (!raw) return [ServiceType.CAR_RENTAL];
+  const parts = raw
+    .split(",")
+    .map((p) => p.trim().toUpperCase())
+    .filter(Boolean);
+  const unknown = parts.filter(
+    (p) => !(SERVICE_TYPES as string[]).includes(p),
+  );
+  if (unknown.length > 0) {
+    throw new Error(
+      `SEED_ORGS_SERVICE_TYPES contains unknown value(s): ${unknown.join(", ")}. ` +
+        `Valid values: ${SERVICE_TYPES.join(", ")}.`,
+    );
+  }
+  if (parts.length === 0) {
+    throw new Error("SEED_ORGS_SERVICE_TYPES must name at least one service.");
+  }
+  // De-duplicated and canonically ordered, so two runs of the same list
+  // produce the same stored array.
+  return SERVICE_TYPES.filter((t) => parts.includes(t));
+}
+
+const SERVICE_TYPES_TO_SEED = parseServiceTypes();
 
 /**
  * Split an RFC-5322-ish `EMAIL_FROM` into display name and address.
@@ -110,6 +151,47 @@ async function main() {
     console.log("  • no settings document found (not required)");
   }
 
+  /**
+   * THE COMPATIBILITY ANCHOR IS CLAIMED ONCE, BY THE FIRST ORGANIZATION.
+   *
+   * `isDefault` is not decoration: `organizationScopeClause()` lets the
+   * default organization additionally see every row with no `organizationId`
+   * — i.e. all pre-migration history. Seeding a SECOND tenant as default
+   * would hand it the incumbent's entire back catalogue of orders, audit
+   * rows and disputes, and (because the model declares a partial unique
+   * index that production may not have built, autoIndex being off) it would
+   * do so silently rather than failing.
+   *
+   * So: anchor only if no organization holds it yet. An operator can still
+   * force the issue with SEED_ORGS_DEFAULT=true, which is what a genuine
+   * first-ever seed on an empty database does implicitly anyway.
+   */
+  const existingDefault = await Organization.findOne({ isDefault: true })
+    .select("_id slug")
+    .lean<{ _id: unknown; slug: string } | null>();
+  const forceDefault = process.env.SEED_ORGS_DEFAULT === "true";
+  const shouldBeDefault = forceDefault || !existingDefault;
+
+  if (existingDefault && existingDefault.slug !== SLUG && !forceDefault) {
+    console.log(
+      `  • organization "${existingDefault.slug}" already holds isDefault — seeding "${SLUG}" as a NON-default tenant`,
+    );
+    console.log(
+      "    (it will see only its own rows, never unattributed history — this is correct)",
+    );
+  }
+  if (existingDefault && existingDefault.slug !== SLUG && forceDefault) {
+    console.warn(
+      `  ⚠ SEED_ORGS_DEFAULT=true while "${existingDefault.slug}" is already the anchor.`,
+    );
+    console.warn(
+      "    Two default organizations would BOTH see unattributed history. Refusing.",
+    );
+    throw new Error(
+      "Refusing to create a second default organization — unset SEED_ORGS_DEFAULT.",
+    );
+  }
+
   const from = parseFrom(process.env.EMAIL_FROM ?? "");
   const brandName =
     branding?.brandName?.trim() ||
@@ -123,7 +205,7 @@ async function main() {
     brandName,
     domain: hostOf(process.env.APP_URL ?? ""),
     status: "ACTIVE",
-    isDefault: true,
+    isDefault: shouldBeDefault,
     branding: {
       logo: branding?.logo ?? "",
       primaryColor: branding?.primaryColor ?? "#0B1220",
@@ -162,6 +244,7 @@ async function main() {
       // Best-effort: Stripe test keys are prefixed. Only a hint for the UI.
       sandbox: secretKey.startsWith("sk_test"),
     },
+    serviceTypes: SERVICE_TYPES_TO_SEED,
   };
 
   console.log("  • resolved organization configuration:");
@@ -181,6 +264,10 @@ async function main() {
     `    – enabled        ${desired.payments.enabledProviders.join(", ")}`,
   );
   console.log(`    – currency       ${setting?.defaultCurrency ?? "(default)"}`);
+  console.log(`    – sells          ${desired.serviceTypes.join(", ")}`);
+  console.log(
+    `    – isDefault      ${desired.isDefault}${desired.isDefault ? " (compatibility anchor — sees unattributed history)" : " (sees only its own rows)"}`,
+  );
 
   const existing = await Organization.findOne({ slug: SLUG }).lean<{
     _id: unknown;

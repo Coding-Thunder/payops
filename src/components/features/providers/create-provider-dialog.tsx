@@ -26,10 +26,21 @@ import {
   type CreateProviderInput,
 } from "@/lib/validation";
 import type { ProviderDTO } from "@/types";
+import { ServiceType } from "@/lib/constants/enums";
+import { ProviderServiceTypesField } from "./provider-service-types-field";
 
 const PLACEHOLDER_LOGO = "/providers/_placeholder.svg";
 
-export function CreateProviderDialog() {
+interface CreateProviderDialogProps {
+  /** What this deployment sells. Drives the "Available for" control, which
+   *  is hidden entirely when there is only one service — see the note on
+   *  `ProviderServiceTypesField`. */
+  serviceTypes: readonly ServiceType[];
+}
+
+export function CreateProviderDialog({
+  serviceTypes,
+}: CreateProviderDialogProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -44,10 +55,17 @@ export function CreateProviderDialog() {
       primaryColor: "#1E3A8A",
       onPrimaryColor: "#FFFFFF",
       tagline: "",
+      // A single-service deployment never renders the control, so the value
+      // is defaulted to what that deployment sells rather than left empty —
+      // the schema requires at least one, and an operator should not have to
+      // answer a question with one possible answer.
+      serviceTypes: [...serviceTypes],
       sortOrder: 0,
     },
     mode: "onTouched",
   });
+
+  const selectedServiceTypes = form.watch("serviceTypes") ?? [];
 
   function reset() {
     form.reset();
@@ -183,6 +201,19 @@ export function CreateProviderDialog() {
                 </FormItem>
               )}
             />
+
+            {serviceTypes.length > 1 ? (
+              <ProviderServiceTypesField
+                value={selectedServiceTypes}
+                onChange={(next) =>
+                  form.setValue("serviceTypes", next, {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })
+                }
+                error={form.formState.errors.serviceTypes?.message}
+              />
+            ) : null}
 
             <FormField
               control={form.control}

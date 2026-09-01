@@ -10,6 +10,8 @@ import {
   PaymentGatewayKey,
   RECORD_STATES,
   RecordState,
+  SERVICE_TYPES,
+  ServiceType,
 } from "@/lib/constants/enums";
 
 /**
@@ -61,7 +63,33 @@ export interface OrganizationEmail {
   fromEmail: string;
   /** Empty string means "no Reply-To header". */
   replyTo: string;
+  /**
+   * Address copied on every outgoing customer email FOR THIS BRAND.
+   *
+   * Empty falls back to the deployment-wide `EMAIL_CC`, which is what the
+   * incumbent brand runs on today. That fallback is only safe while one
+   * organization exists: on a shared deployment a deployment-wide CC would
+   * copy one tenant's support inbox on the OTHER tenant's customer mail — a
+   * PII leak across two separate legal entities. Set this per brand.
+   */
+  cc: string;
   transport: OrganizationEmailTransport;
+}
+
+/**
+ * Legal text frozen onto each of this organization's orders at creation.
+ *
+ * Empty strings mean "inherit the deployment Settings singleton", which is
+ * what the incumbent brand does and will keep doing — its orders carry
+ * exactly the terms they carry today. A brand selling cruises should not be
+ * showing its customers car-rental terms in the receipt and the dispute
+ * evidence chain, which is the only reason this block exists.
+ */
+export interface OrganizationLegal {
+  termsAndConditions: string;
+  termsVersion: string;
+  cancellationPolicy: string;
+  cancellationPolicyVersion: string;
 }
 
 export interface OrganizationBranding {
@@ -120,6 +148,34 @@ export interface OrganizationDoc {
   support: OrganizationSupport;
   email: OrganizationEmail;
   payments: OrganizationPayments;
+  /**
+   * Which service types this organization may create orders for.
+   *
+   * Defaults to `[CAR_RENTAL]`, which is what the incumbent deployment
+   * sells — so its create-order page renders exactly as it does today, with
+   * no tab strip. RCR Cruise is seeded `[FLIGHT, CRUISE]`.
+   *
+   * This is a TENANT-SCOPE list, not a UI hint: the create-order route
+   * refuses a service type absent from it, so a hand-crafted POST cannot
+   * write an order shape this brand does not sell.
+   *
+   * Read it as `serviceTypes?.length ? serviceTypes : [CAR_RENTAL]` — the
+   * resolvers use `.lean()`, which does NOT apply Mongoose defaults to keys
+   * absent from the stored document.
+   */
+  serviceTypes: ServiceType[];
+  legal: OrganizationLegal;
+  /**
+   * Customer-facing base URL for THIS brand — the origin used to build the
+   * consent link, the acknowledgement link and the gateway return URLs.
+   *
+   * Empty falls back to the deployment's `APP_URL`, which is correct for a
+   * single-brand deployment. When two brands share one deployment it is
+   * not: without this, a cruise customer who pays is redirected to the
+   * car-rental brand's domain, and the consent link in their email points
+   * at the wrong company.
+   */
+  appUrl: string;
   createdBy?: Types.ObjectId | null;
   updatedBy?: Types.ObjectId | null;
   createdAt: Date;
@@ -189,6 +245,13 @@ const emailSubSchema = new Schema<OrganizationEmail>(
       trim: true,
       maxlength: 254,
     },
+    cc: {
+      type: String,
+      default: "",
+      lowercase: true,
+      trim: true,
+      maxlength: 254,
+    },
     transport: {
       type: emailTransportSubSchema,
       required: true,
@@ -215,6 +278,21 @@ const paymentsSubSchema = new Schema<OrganizationPayments>(
     },
     publishableKey: { type: String, default: "", trim: true, maxlength: 255 },
     sandbox: { type: Boolean, default: false },
+  },
+  { _id: false },
+);
+
+const legalSubSchema = new Schema<OrganizationLegal>(
+  {
+    termsAndConditions: { type: String, default: "", maxlength: 8000 },
+    termsVersion: { type: String, default: "", maxlength: 16, trim: true },
+    cancellationPolicy: { type: String, default: "", maxlength: 4000 },
+    cancellationPolicyVersion: {
+      type: String,
+      default: "",
+      maxlength: 16,
+      trim: true,
+    },
   },
   { _id: false },
 );
@@ -249,6 +327,15 @@ const organizationSchema = new Schema<OrganizationDoc>(
     support: { type: supportSubSchema, required: true, default: () => ({}) },
     email: { type: emailSubSchema, required: true, default: () => ({}) },
     payments: { type: paymentsSubSchema, required: true, default: () => ({}) },
+    serviceTypes: {
+      type: [String],
+      enum: SERVICE_TYPES,
+      required: true,
+      // Thunk: a shared array literal would be mutated across documents.
+      default: () => [ServiceType.CAR_RENTAL],
+    },
+    legal: { type: legalSubSchema, required: true, default: () => ({}) },
+    appUrl: { type: String, default: "", trim: true, maxlength: 253 },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     updatedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
   },

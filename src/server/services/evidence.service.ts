@@ -16,6 +16,7 @@ import {
 import { computeEvidenceHash } from "@/lib/crypto/hash-chain";
 import { ForbiddenError, NotFoundError } from "@/lib/errors";
 import { Permission, roleHasPermission } from "@/lib/constants/permissions";
+import { describeServiceItem, serviceTypeOf } from "@/lib/service-summary";
 import { logger } from "@/lib/logger";
 import {
   Order,
@@ -364,11 +365,21 @@ export async function getEvidenceChain(
       status: orderDoc.status,
       state: orderDoc.state,
       provider,
-      vehicle: {
-        company: orderDoc.vehicle.company,
-        type: orderDoc.vehicle.type,
-        imageUrl: orderDoc.vehicle.imageUrl ?? null,
-      },
+      serviceType: serviceTypeOf(orderDoc),
+      // Kept for CAR_RENTAL so the existing evidence snapshot shape is
+      // unchanged; null on a flight or a cruise, where `item` carries the
+      // human-readable equivalent instead.
+      vehicle: orderDoc.vehicle
+        ? {
+            company: orderDoc.vehicle.company,
+            type: orderDoc.vehicle.type,
+            imageUrl: orderDoc.vehicle.imageUrl ?? null,
+          }
+        : null,
+      // Always present. This is the packet a chargeback is defended with,
+      // and "what did they actually buy" is the first thing anyone reading
+      // it needs to know.
+      item: describeServiceItem(orderDoc),
       createdAt: orderDoc.createdAt.toISOString(),
     },
   };

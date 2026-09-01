@@ -2,7 +2,10 @@ import type { NextRequest } from "next/server";
 
 import { handleStripeWebhook } from "@/server/api/stripe-webhook";
 import { getGateway } from "@/server/payments/gateways";
-import { resolveOrganizationId } from "@/server/auth/organization";
+import {
+  getOrganization,
+  runWithOrganization,
+} from "@/server/auth/organization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,8 +30,28 @@ export const dynamic = "force-dynamic";
  *
  * The organization is resolved server-side and passed through so the settled
  * order is attributed correctly and audit rows name the tenant.
+ *
+ * THIS IS THE DEPLOYMENT-LEVEL ENDPOINT and it belongs to the incumbent
+ * organization. Its Stripe dashboard configuration is live, so it keeps this
+ * exact path and these exact env credentials. Every ADDITIONAL tenant points
+ * its own Stripe account at `/api/webhooks/stripe/<slug>`, where the tenant
+ * is explicit in the URL — a signature can only be verified with the secret
+ * of the account that produced it, so it cannot be derived from the payload.
  */
 export async function POST(req: NextRequest) {
-  const organizationId = await resolveOrganizationId();
-  return handleStripeWebhook(req, getGateway("STRIPE"), organizationId);
+  const org = await getOrganization();
+  // Pin the tenant for everything this delivery writes (audit, evidence,
+  // outbox). A webhook carries no session, so without this those rows would
+  // be attributed to nothing.
+  return runWithOrganization(
+    { organizationId: org.id, isDefault: org.isDefault },
+    () =>
+      handleStripeWebhook(
+        req,
+        getGateway("STRIPE"),
+        org.id,
+        org.slug,
+        org.isDefault,
+      ),
+  );
 }

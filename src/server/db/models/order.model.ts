@@ -10,6 +10,8 @@ import {
   BookingType,
   CONSENT_STATUSES,
   ConsentStatus,
+  CRUISE_CABIN_CATEGORIES,
+  CruiseCabinCategory,
   CURRENCIES,
   Currency,
   DISPUTE_OUTCOMES,
@@ -24,12 +26,20 @@ import {
   PaymentTiming,
   RECORD_STATES,
   RecordState,
+  SERVICE_TYPES,
+  ServiceType,
+  TRIP_TYPES,
+  TripType,
 } from "@/lib/constants/enums";
 import { PROVIDER_KEY_REGEX } from "@/lib/constants/providers";
 
 export interface OrderDoc extends OrganizationScoped {
   orderNumber: string;
   bookingType: BookingType;
+  /** WHAT was bought. Defaults to CAR_RENTAL on both write and hydration,
+   *  so every order written before this field existed reads back as the
+   *  car rental it has always been. */
+  serviceType: ServiceType;
   status: OrderStatus;
   state: RecordState;
 
@@ -48,7 +58,8 @@ export interface OrderDoc extends OrganizationScoped {
     primaryColor?: string | null;
     onPrimaryColor?: string | null;
   };
-  vehicle: {
+  /** CAR_RENTAL only. Null on FLIGHT / CRUISE orders. */
+  vehicle?: {
     company: string;
     type: string;
     /** Optional public URL the operator provides at creation time so the
@@ -56,15 +67,64 @@ export interface OrderDoc extends OrganizationScoped {
      *  checkout summary, and the payment-confirmation email. Stored
      *  verbatim — we don't proxy, resize, or rehost it. */
     imageUrl?: string | null;
-  };
-  trip: {
+  } | null;
+  /** CAR_RENTAL only. Null on FLIGHT / CRUISE orders. */
+  trip?: {
     pickupDate: Date;
     dropoffDate: Date;
     /** Free-text rental pick-up / drop-off locations. Optional so orders
      *  created before this field keep validating. */
     pickupLocation?: string | null;
     dropoffLocation?: string | null;
-  };
+  } | null;
+  /** FLIGHT only. A booking REQUEST — this platform holds no airline
+   *  inventory and talks to no GDS. Null on every other service type. */
+  flight?: {
+    tripType: TripType;
+    airline?: string | null;
+    flightNumber?: string | null;
+    origin: string;
+    destination: string;
+    departureDate: Date;
+    departureTimePreference?: string | null;
+    /** Scheduled arrival of the OUTBOUND leg. Null until the operator has
+     *  sourced an actual itinerary — a request may be quoted before a
+     *  specific flight is chosen. */
+    arrivalDate?: Date | null;
+    returnDate?: Date | null;
+    returnTimePreference?: string | null;
+    cabinClass: string;
+    passengers: { adults: number; children: number; infants: number };
+    passengerNotes?: string | null;
+    /** Airline record locator, pasted by the operator once ticketed. */
+    pnr?: string | null;
+  } | null;
+  /** CRUISE only. A booking REQUEST — no cruise-line inventory API is
+   *  involved. Null on every other service type.
+   *
+   *  Unlike a flight there is no one-way case: a sailing always ends, so
+   *  `returnDate` is required and the disembarkation port is optional
+   *  (absent means it returns to `departurePort`). */
+  cruise?: {
+    /** Operating line, e.g. "Royal Caribbean". Free text: the SUPPLIER is
+     *  `order.provider`, which may be an agency rather than the line. */
+    cruiseLine?: string | null;
+    shipName?: string | null;
+    /** Named route, e.g. "Western Caribbean". */
+    itinerary?: string | null;
+    departurePort: string;
+    /** Absent on a round trip, which is the common case. */
+    arrivalPort?: string | null;
+    departureDate: Date;
+    returnDate: Date;
+    cabinCategory: CruiseCabinCategory;
+    /** Stateroom number, assigned by the line after the cabin is held. */
+    cabinNumber?: string | null;
+    guests: { adults: number; children: number };
+    guestNotes?: string | null;
+    /** Cruise-line confirmation, pasted once the cabin is held. */
+    bookingReference?: string | null;
+  } | null;
   pricing: {
     /** Stored in MAJOR units (e.g. dollars), 2-decimal precision.
      *  Equals the sum of PREPAID `charges` — i.e. the amount the gateway is
@@ -235,6 +295,116 @@ const tripSchema = new Schema(
     dropoffDate: { type: Date, required: true },
     pickupLocation: { type: String, default: null, trim: true, maxlength: 200 },
     dropoffLocation: { type: String, default: null, trim: true, maxlength: 200 },
+  },
+  { _id: false },
+);
+
+const flightPassengersSchema = new Schema(
+  {
+    adults: { type: Number, required: true, min: 1, max: 9, default: 1 },
+    children: { type: Number, required: true, min: 0, max: 9, default: 0 },
+    infants: { type: Number, required: true, min: 0, max: 9, default: 0 },
+  },
+  { _id: false },
+);
+
+/**
+ * Flight booking REQUEST. Deliberately not an airline/GDS integration —
+ * this platform holds no inventory. It captures enough for an operator to
+ * source the fare manually and quote it back.
+ */
+const flightSchema = new Schema(
+  {
+    tripType: {
+      type: String,
+      enum: TRIP_TYPES,
+      required: true,
+      default: TripType.ONE_WAY,
+    },
+    airline: { type: String, default: null, trim: true, maxlength: 80 },
+    flightNumber: { type: String, default: null, trim: true, maxlength: 16 },
+    origin: { type: String, required: true, trim: true, maxlength: 120 },
+    destination: { type: String, required: true, trim: true, maxlength: 120 },
+    departureDate: { type: Date, required: true },
+    departureTimePreference: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 40,
+    },
+    arrivalDate: { type: Date, default: null },
+    returnDate: { type: Date, default: null },
+    returnTimePreference: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 40,
+    },
+    // Stored as a free string with an enum guard at the API boundary, so an
+    // unusual fare class sourced by hand can still be recorded later without
+    // a schema migration on every historical document.
+    cabinClass: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 40,
+      default: "ECONOMY",
+    },
+    passengers: {
+      type: flightPassengersSchema,
+      required: true,
+      default: () => ({ adults: 1, children: 0, infants: 0 }),
+    },
+    passengerNotes: { type: String, default: null, maxlength: 2000 },
+    pnr: { type: String, default: null, trim: true, maxlength: 32 },
+  },
+  { _id: false },
+);
+
+const cruiseGuestsSchema = new Schema(
+  {
+    adults: { type: Number, required: true, min: 1, max: 20, default: 1 },
+    children: { type: Number, required: true, min: 0, max: 20, default: 0 },
+  },
+  { _id: false },
+);
+
+/**
+ * Cruise booking REQUEST. No cruise-line inventory API is involved — the
+ * operator holds the cabin with the line by hand and records it here.
+ *
+ * `returnDate` is REQUIRED, which is the substantive difference from the
+ * flight payload: a sailing that never comes back is not a product anyone
+ * sells, so there is no one-way case to make the field conditional for.
+ */
+const cruiseSchema = new Schema(
+  {
+    cruiseLine: { type: String, default: null, trim: true, maxlength: 80 },
+    shipName: { type: String, default: null, trim: true, maxlength: 80 },
+    itinerary: { type: String, default: null, trim: true, maxlength: 160 },
+    departurePort: { type: String, required: true, trim: true, maxlength: 120 },
+    arrivalPort: { type: String, default: null, trim: true, maxlength: 120 },
+    departureDate: { type: Date, required: true },
+    returnDate: { type: Date, required: true },
+    cabinCategory: {
+      type: String,
+      enum: CRUISE_CABIN_CATEGORIES,
+      required: true,
+      default: CruiseCabinCategory.INTERIOR,
+    },
+    cabinNumber: { type: String, default: null, trim: true, maxlength: 16 },
+    guests: {
+      type: cruiseGuestsSchema,
+      required: true,
+      default: () => ({ adults: 1, children: 0 }),
+    },
+    guestNotes: { type: String, default: null, maxlength: 2000 },
+    bookingReference: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 32,
+    },
   },
   { _id: false },
 );
@@ -418,6 +588,21 @@ const orderSchema = new Schema<OrderDoc>(
       required: true,
       index: true,
     },
+    /**
+     * REQUIRED-WITH-DEFAULT is deliberate. Mongoose applies the default when
+     * hydrating a stored document that has no such key, so every order
+     * written before this field existed validates and re-saves as
+     * CAR_RENTAL — which is exactly what it is. The backfill script then
+     * writes the value to disk so QUERIES match too; correctness does not
+     * depend on the backfill having run, only query completeness does.
+     */
+    serviceType: {
+      type: String,
+      enum: SERVICE_TYPES,
+      required: true,
+      default: ServiceType.CAR_RENTAL,
+      index: true,
+    },
     status: {
       type: String,
       enum: ORDER_STATUSES,
@@ -434,8 +619,46 @@ const orderSchema = new Schema<OrderDoc>(
     },
     customer: { type: customerSchema, required: true },
     provider: { type: providerSchema, required: true },
-    vehicle: { type: vehicleSchema, required: true },
-    trip: { type: tripSchema, required: true },
+    /**
+     * Car-rental payload. The predicate is TRUE for every document that
+     * existed before `serviceType` was introduced (they hydrate as
+     * CAR_RENTAL), so this validates identically to the previous
+     * `required: true` for every inherited order.
+     */
+    vehicle: {
+      type: vehicleSchema,
+      default: null,
+      required: function (this: OrderDoc) {
+        return (
+          (this.serviceType ?? ServiceType.CAR_RENTAL) ===
+          ServiceType.CAR_RENTAL
+        );
+      },
+    },
+    trip: {
+      type: tripSchema,
+      default: null,
+      required: function (this: OrderDoc) {
+        return (
+          (this.serviceType ?? ServiceType.CAR_RENTAL) ===
+          ServiceType.CAR_RENTAL
+        );
+      },
+    },
+    flight: {
+      type: flightSchema,
+      default: null,
+      required: function (this: OrderDoc) {
+        return this.serviceType === ServiceType.FLIGHT;
+      },
+    },
+    cruise: {
+      type: cruiseSchema,
+      default: null,
+      required: function (this: OrderDoc) {
+        return this.serviceType === ServiceType.CRUISE;
+      },
+    },
     pricing: { type: pricingSchema, required: true },
     charges: { type: [chargeSchema], default: [] },
     confirmationNumber: {
@@ -492,11 +715,54 @@ orderSchema.index({ state: 1, createdAt: -1 });
 orderSchema.index({ "provider.id": 1, createdAt: -1 });
 orderSchema.index({ "consent.status": 1, createdAt: -1 });
 orderSchema.index({ "dispute.status": 1, "dispute.openedAt": -1 });
+orderSchema.index({ serviceType: 1, createdAt: -1 });
 // `payment.stripeSessionId` already has `index: true, sparse: true` on the
 // field definition — declaring it again here triggers a duplicate-index
 // warning at startup. Keep it on the field, drop the schema-level call.
 
+/**
+ * Cross-field date ordering, per service type.
+ *
+ * The CAR_RENTAL branch is the ORIGINAL rule, unchanged and still reached by
+ * every document that has no `serviceType` stored. FLIGHT and CRUISE get
+ * their own rules because the rental rule is wrong for them: a one-way
+ * flight has no return leg at all and a same-day return is legitimate,
+ * whereas `dropoff > pickup` would reject both.
+ */
 orderSchema.pre("validate", function () {
+  const serviceType = this.serviceType ?? ServiceType.CAR_RENTAL;
+
+  if (serviceType === ServiceType.FLIGHT) {
+    // Arrival may equal departure (short hops cross no clock boundary that
+    // matters here) but must never precede it.
+    if (
+      this.flight?.arrivalDate &&
+      this.flight.arrivalDate < this.flight.departureDate
+    ) {
+      throw new Error("Arrival must not be before departure");
+    }
+    if (this.flight?.tripType === TripType.ROUND_TRIP) {
+      if (!this.flight.returnDate) {
+        throw new Error("Return date is required for a round trip");
+      }
+      if (this.flight.returnDate < this.flight.departureDate) {
+        throw new Error("Return date must not be before the departure date");
+      }
+    }
+    return;
+  }
+
+  if (serviceType === ServiceType.CRUISE) {
+    // A sailing occupies nights, so unlike a flight the two dates cannot be
+    // equal — a zero-night cruise is a data-entry error, not a product.
+    if (this.cruise?.departureDate && this.cruise?.returnDate) {
+      if (this.cruise.returnDate <= this.cruise.departureDate) {
+        throw new Error("Return date must be after the sailing date");
+      }
+    }
+    return;
+  }
+
   if (this.trip?.pickupDate && this.trip?.dropoffDate) {
     if (this.trip.pickupDate >= this.trip.dropoffDate) {
       throw new Error("Drop-off date must be after pick-up date");

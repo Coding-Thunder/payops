@@ -43,10 +43,9 @@ const geistMono = Geist_Mono({
  * name made that failure mode "every customer sees PayOps"; defaulting to
  * the merchant makes it a no-op.
  */
-const SITE_NAME =
-  process.env.NEXT_PUBLIC_APP_NAME || "ReservationCarRentals.com";
+const SITE_NAME = process.env.NEXT_PUBLIC_APP_NAME || "RCR Cruise";
 const SITE_URL = (
-  process.env.NEXT_PUBLIC_APP_URL || "https://reservationcarrentals.rentalconfirmation.com"
+  process.env.NEXT_PUBLIC_APP_URL || "https://rcrcruise.com"
 ).replace(/\/$/, "");
 // This deployment serves ONE merchant, and these strings reach that
 // merchant's customers: they are the <meta description> on the hosted
@@ -77,12 +76,13 @@ export const metadata: Metadata = {
   // orchestration"); indexing this host against those terms describes a
   // business the customer is not buying from.
   keywords: [
-    "car rental booking payment",
+    "flight booking payment",
+    "cruise booking payment",
     "secure booking payment link",
-    "rental reservation confirmation",
+    "travel booking confirmation",
     "booking confirmation email",
-    "prepaid rental deposit",
-    "pay for car rental online",
+    "prepaid cruise deposit",
+    "pay for a flight online",
     "secure card payment",
     "booking receipt",
   ],

@@ -1,14 +1,18 @@
 import {
   BookingType,
+  CabinClass,
   ConsentMethod,
   ConsentMode,
   ConsentStatus,
+  CruiseCabinCategory,
   OrderEvidenceActorType,
   OrderEvidenceEventType,
   OrderStatus,
   PaymentGatewayKey,
   PaymentTiming,
   RecordState,
+  ServiceType,
+  TripType,
   UserRole,
 } from "./enums";
 
@@ -20,7 +24,60 @@ export const BookingTypeLabel: Record<BookingType, string> = {
 
 export const PaymentTimingLabel: Record<PaymentTiming, string> = {
   PREPAID: "Prepaid",
-  DUE_AT_COUNTER: "Due at counter",
+  DUE_AT_COUNTER: "Due later",
+};
+
+/** Tab strip, filter dropdown, evidence header. Plural — these name a
+ *  category of booking, not one booking. */
+export const ServiceTypeLabel: Record<ServiceType, string> = {
+  CAR_RENTAL: "Car rental",
+  FLIGHT: "Flights",
+  CRUISE: "Cruises",
+};
+
+/** Column header / detail-row label for the "what was bought" field. */
+export const ServiceItemLabel: Record<ServiceType, string> = {
+  CAR_RENTAL: "Vehicle",
+  FLIGHT: "Route",
+  CRUISE: "Sailing",
+};
+
+/**
+ * Who collects the balance, per service. Drives the operator-facing
+ * breakdown box, the consent page and the customer emails — a cruise
+ * passenger has no rental counter, and telling them otherwise on the screen
+ * where they part with money reads as a different company's page.
+ */
+export const ServiceDueLabel: Record<ServiceType, string> = {
+  CAR_RENTAL: "Amount due at counter",
+  FLIGHT: "Amount due at the airport",
+  CRUISE: "Amount due at the pier",
+};
+
+/** Grand-total row label, per service. */
+export const ServiceTotalLabel: Record<ServiceType, string> = {
+  CAR_RENTAL: "Total rental cost",
+  FLIGHT: "Total flight cost",
+  CRUISE: "Total cruise cost",
+};
+
+export const TripTypeLabel: Record<TripType, string> = {
+  ONE_WAY: "One way",
+  ROUND_TRIP: "Round trip",
+};
+
+export const CabinClassLabel: Record<CabinClass, string> = {
+  ECONOMY: "Economy",
+  PREMIUM_ECONOMY: "Premium economy",
+  BUSINESS: "Business",
+  FIRST: "First",
+};
+
+export const CruiseCabinCategoryLabel: Record<CruiseCabinCategory, string> = {
+  INTERIOR: "Interior",
+  OCEAN_VIEW: "Ocean view",
+  BALCONY: "Balcony",
+  SUITE: "Suite",
 };
 
 export const OrderStatusLabel: Record<OrderStatus, string> = {

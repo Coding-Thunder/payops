@@ -37,7 +37,11 @@ export default async function AuthenticatedLayout({
       </Suspense>
       <div className="relative flex min-h-screen bg-background print:block print:min-h-0 print:bg-white">
         <div className="print:hidden md:flex md:bg-sidebar">
-          <Sidebar role={user.role} brand={brand} />
+          <Sidebar
+            role={user.role}
+            brand={brand}
+            serviceTypes={organization.serviceTypes}
+          />
         </div>
         <div className="flex flex-1 flex-col min-w-0 print:block">
           {/* Control-tower chrome: thin telemetry strip (28px) over
@@ -52,7 +56,11 @@ export default async function AuthenticatedLayout({
             />
           </div>
           <div className="print:hidden">
-            <Topbar user={user} brand={organization.brandName} />
+            <Topbar
+              user={user}
+              brand={organization.brandName}
+              serviceTypes={organization.serviceTypes}
+            />
           </div>
           {/* Shell padding lives inside main so every page gets a
               consistent inset on all four sides without a coloured

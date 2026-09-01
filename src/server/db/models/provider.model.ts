@@ -5,12 +5,17 @@ import {
   type Types,
 } from "mongoose";
 
-import { RECORD_STATES, RecordState } from "@/lib/constants/enums";
+import {
+  RECORD_STATES,
+  RecordState,
+  SERVICE_TYPES,
+  ServiceType,
+} from "@/lib/constants/enums";
 import { PROVIDER_KEY_REGEX } from "@/lib/constants/providers";
 
 /**
- * Rental-provider catalog. Authoritative source for which brands the app
- * can attach to an order. The `key` is the stable identifier persisted on
+ * Supplier catalog — rental brands, airlines, cruise lines. Authoritative
+ * source for which brands the app can attach to an order. The `key` is the stable identifier persisted on
  * order snapshots — never renamed, never reused.
  *
  * `status` drives availability:
@@ -29,6 +34,24 @@ export interface ProviderDoc {
   primaryColor: string;
   onPrimaryColor: string;
   tagline: string;
+  /**
+   * Which service types this supplier can be attached to. Defaults to
+   * `[CAR_RENTAL]`, so every provider row that existed before this field
+   * keeps appearing exactly where it appears today — the car-rental form —
+   * and an airline added for RCR Cruise never surfaces on a cruise form.
+   */
+  serviceTypes: ServiceType[];
+  /**
+   * Organizations allowed to use this supplier. EMPTY MEANS "EVERY
+   * ORGANIZATION", which is precisely how the catalog behaved before this
+   * field existed — so no existing row needs a backfill and the incumbent
+   * brand loses no supplier.
+   *
+   * A non-empty list RESTRICTS. That is how RCR Cruise's airlines and cruise
+   * lines stay out of the car-rental brand's catalog even though both
+   * tenants share one `providers` collection in one database.
+   */
+  organizationIds: Types.ObjectId[];
   status: RecordState;
   sortOrder: number;
   createdBy?: Types.ObjectId | null;
@@ -65,6 +88,20 @@ const providerCatalogSchema = new Schema<ProviderDoc>(
       default: "#FFFFFF",
     },
     tagline: { type: String, default: "", maxlength: 140, trim: true },
+    serviceTypes: {
+      type: [String],
+      enum: SERVICE_TYPES,
+      required: true,
+      // Thunk: a shared array literal would be mutated across documents.
+      default: () => [ServiceType.CAR_RENTAL],
+    },
+    organizationIds: {
+      type: [Schema.Types.ObjectId],
+      ref: "Organization",
+      required: true,
+      // Thunk: a shared array literal would be mutated across documents.
+      default: () => [],
+    },
     status: {
       type: String,
       enum: RECORD_STATES,
@@ -92,6 +129,10 @@ const providerCatalogSchema = new Schema<ProviderDoc>(
 );
 
 providerCatalogSchema.index({ status: 1, sortOrder: 1, name: 1 });
+providerCatalogSchema.index({ serviceTypes: 1, status: 1, sortOrder: 1 });
+// Serves "which suppliers may this organization use?". Sparse because the
+// overwhelming majority of rows carry an empty list (= every organization).
+providerCatalogSchema.index({ organizationIds: 1 }, { sparse: true });
 
 import { registerModel } from "./register";
 export const Provider: Model<ProviderDoc> = registerModel<ProviderDoc>(

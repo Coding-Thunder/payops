@@ -30,10 +30,14 @@ import { api } from "@/lib/api-client";
 import type { SessionUser } from "@/types";
 
 import { Sidebar } from "./sidebar";
+import type { ServiceType } from "@/lib/constants/enums";
 
 interface TopbarProps {
   user: SessionUser;
   brand: string;
+  /** Passed straight through to the embedded mobile `Sidebar`, so the
+   *  mobile nav offers exactly the entries the desktop nav does. */
+  serviceTypes?: readonly ServiceType[];
   /** Organizations this operator may act in. Empty on an unmigrated
    *  deployment, in which case the switcher renders nothing. */
 }
@@ -41,6 +45,7 @@ interface TopbarProps {
 export function Topbar({
   user,
   brand,
+  serviceTypes,
 }: TopbarProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -73,7 +78,12 @@ export function Topbar({
               <LogoLockup brand={brand} subtitle="Ops console" size="sm" />
             </SheetTitle>
           </SheetHeader>
-          <Sidebar role={user.role} brand={brand} variant="embedded" />
+          <Sidebar
+            role={user.role}
+            brand={brand}
+            variant="embedded"
+            serviceTypes={serviceTypes}
+          />
         </SheetContent>
       </Sheet>
 

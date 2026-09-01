@@ -25,17 +25,23 @@ import {
   type UpdateProviderInput,
 } from "@/lib/validation";
 import type { ProviderDTO } from "@/types";
+import { ServiceType } from "@/lib/constants/enums";
+import { ProviderServiceTypesField } from "./provider-service-types-field";
 
 interface EditProviderDialogProps {
   provider: ProviderDTO;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** What this deployment sells. The "Available for" control is hidden
+   *  entirely when there is only one service. */
+  serviceTypes: readonly ServiceType[];
 }
 
 export function EditProviderDialog({
   provider,
   open,
   onOpenChange,
+  serviceTypes,
 }: EditProviderDialogProps) {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
@@ -48,10 +54,13 @@ export function EditProviderDialog({
       primaryColor: provider.primaryColor,
       onPrimaryColor: provider.onPrimaryColor,
       tagline: provider.tagline,
+      serviceTypes: provider.serviceTypes,
       sortOrder: provider.sortOrder,
     },
     mode: "onTouched",
   });
+
+  const selectedServiceTypes = form.watch("serviceTypes") ?? provider.serviceTypes;
 
   async function onSubmit(values: UpdateProviderInput) {
     try {
@@ -151,6 +160,19 @@ export function EditProviderDialog({
               </FormItem>
             )}
           />
+
+          {serviceTypes.length > 1 ? (
+            <ProviderServiceTypesField
+              value={selectedServiceTypes}
+              onChange={(next) =>
+                form.setValue("serviceTypes", next, {
+                  shouldDirty: true,
+                  shouldValidate: true,
+                })
+              }
+              error={form.formState.errors.serviceTypes?.message}
+            />
+          ) : null}
 
           <FormField
             control={form.control}

@@ -13,19 +13,35 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ORDER_STATUSES, BOOKING_TYPES } from "@/lib/constants/enums";
+import {
+  ORDER_STATUSES,
+  BOOKING_TYPES,
+  type ServiceType,
+} from "@/lib/constants/enums";
 import {
   BookingTypeLabel,
   OrderStatusLabel,
+  ServiceTypeLabel,
 } from "@/lib/constants/labels";
 
 const ALL = "__all__";
 
 interface OrderFiltersProps {
   canSeeAll: boolean;
+  /**
+   * The service types this organization sells. The service filter renders
+   * only when there is more than one — on a single-service deployment it
+   * would be a dropdown with exactly one meaningful option, which is
+   * clutter, and its absence is why a rental-only console's filter bar is
+   * unchanged from before service types existed.
+   */
+  serviceTypes?: readonly ServiceType[];
 }
 
-export function OrderFilters({ canSeeAll }: OrderFiltersProps) {
+export function OrderFilters({
+  canSeeAll,
+  serviceTypes = [],
+}: OrderFiltersProps) {
   const router = useRouter();
   const params = useSearchParams();
   const [pending, startTransition] = useTransition();
@@ -63,7 +79,7 @@ export function OrderFilters({ canSeeAll }: OrderFiltersProps) {
               commitQuery();
             }
           }}
-          placeholder="Search orders, customers, vehicles"
+          placeholder={searchPlaceholder(serviceTypes)}
           className="h-8 pl-8 bg-background"
         />
       </div>
@@ -99,6 +115,24 @@ export function OrderFilters({ canSeeAll }: OrderFiltersProps) {
           ))}
         </SelectContent>
       </Select>
+      {serviceTypes.length > 1 ? (
+        <Select
+          value={params.get("serviceType") ?? ALL}
+          onValueChange={(v) => update("serviceType", v)}
+        >
+          <SelectTrigger className="h-8 w-[140px]">
+            <SelectValue placeholder="Service" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All services</SelectItem>
+            {serviceTypes.map((t) => (
+              <SelectItem key={t} value={t}>
+                {ServiceTypeLabel[t]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : null}
       {canSeeAll ? (
         <Select
           value={params.get("mine") === "true" ? "mine" : "all"}
@@ -116,4 +150,25 @@ export function OrderFilters({ canSeeAll }: OrderFiltersProps) {
       {pending ? <InlineSpinner text="Updating" className="px-2" /> : null}
     </div>
   );
+}
+
+/**
+ * Search-box placeholder, naming what is actually searchable here.
+ *
+ * The rental-only string is the ORIGINAL copy. Offering "vehicles" as an
+ * example on a console that sells flights and cruises would name the one
+ * thing the operator cannot search for.
+ */
+function searchPlaceholder(serviceTypes: readonly ServiceType[]): string {
+  if (serviceTypes.length > 1) {
+    return "Search orders, customers, bookings";
+  }
+  switch (serviceTypes[0]) {
+    case "FLIGHT":
+      return "Search orders, customers, routes";
+    case "CRUISE":
+      return "Search orders, customers, sailings";
+    default:
+      return "Search orders, customers, vehicles";
+  }
 }

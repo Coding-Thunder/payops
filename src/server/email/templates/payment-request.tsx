@@ -10,9 +10,12 @@ import {
 import * as React from "react";
 
 import { BookingTypeLabel } from "@/lib/constants/labels";
-import type { BookingType } from "@/lib/constants/enums";
+import { ServiceType, type BookingType } from "@/lib/constants/enums";
+import type { ServiceRow } from "@/lib/service-summary";
 import type { ProviderSnapshot } from "@/lib/constants/providers";
 
+import { chargeWordingFor } from "../components/charge-breakdown";
+import { rentalBookingRows } from "./payment-confirmation";
 import {
   ChargeBreakdown,
   COLOR,
@@ -49,13 +52,21 @@ export interface PaymentRequestEmailProps {
    *  set — same treatment the post-payment confirmation email uses,
    *  so the customer recognises the car they reserved as soon as they
    *  open either email. */
-  vehicle: { company: string; type: string; imageUrl?: string | null };
-  trip: {
+  vehicle?: { company: string; type: string; imageUrl?: string | null } | null;
+  /** CAR_RENTAL payload. Null on a FLIGHT / CRUISE order. */
+  trip?: {
     pickupDate: string;
     dropoffDate: string;
     pickupLocation?: string | null;
     dropoffLocation?: string | null;
-  };
+  } | null;
+  /** WHAT is being booked. Optional and defaulting to CAR_RENTAL so every
+   *  existing caller renders exactly the rental email it rendered before. */
+  serviceType?: ServiceType;
+  /** Pre-formatted "what was booked" rows. Omitted for CAR_RENTAL, which
+   *  falls back to the original Vehicle / Pick-up / Drop-off triple —
+   *  see the note on `rentalBookingRows`. */
+  serviceRows?: ServiceRow[] | null;
   /** Pre-formatted charge breakdown — shows what the customer pays online
    *  today vs what's due at the counter. */
   chargeBreakdown?: EmailChargeBreakdown;
@@ -130,8 +141,10 @@ export function PaymentRequestEmail({
   amount,
   dueBy,
   provider,
+  serviceType = ServiceType.CAR_RENTAL,
   vehicle,
   trip,
+  serviceRows,
   chargeBreakdown,
   greeting,
   intro,
@@ -149,12 +162,10 @@ export function PaymentRequestEmail({
   const policyParagraphs = cancellationPolicy
     ? cancellationPolicy.split(/\n+/).filter((p) => p.trim().length > 0)
     : [];
-  const pickupValue = trip.pickupLocation
-    ? `${trip.pickupDate} · ${trip.pickupLocation}`
-    : trip.pickupDate;
-  const dropoffValue = trip.dropoffLocation
-    ? `${trip.dropoffDate} · ${trip.dropoffLocation}`
-    : trip.dropoffDate;
+  const bookingRows = serviceRows?.length
+    ? serviceRows
+    : rentalBookingRows(vehicle, trip);
+  const wording = chargeWordingFor(serviceType);
 
   const greetingLine =
     greeting && greeting.trim().length > 0
@@ -363,7 +374,7 @@ export function PaymentRequestEmail({
       {/* Car hero — same treatment the confirmation email uses, so the
           customer immediately recognises the vehicle they reserved. Only
           renders when the agent supplied an image URL at creation. */}
-      {vehicle.imageUrl ? (
+      {vehicle?.imageUrl ? (
         <Section style={{ padding: 0 }}>
           <Img
             src={vehicle.imageUrl}
@@ -388,17 +399,24 @@ export function PaymentRequestEmail({
         bottomPadding={SPACE.xs}
       >
         <MetadataRow label="Type" value={BookingTypeLabel[bookingType]} />
-        <MetadataRow label="Provider" value={provider.name} />
         <MetadataRow
-          label="Vehicle"
-          value={`${vehicle.company} • ${vehicle.type}`}
+          label="Provider"
+          value={provider.name}
+          isLast={bookingRows.length === 0}
         />
-        <MetadataRow label="Pick-up" value={pickupValue} />
-        <MetadataRow label="Drop-off" value={dropoffValue} isLast />
+        {bookingRows.map((row, idx) => (
+          <MetadataRow
+            key={`${row.label}-${idx}`}
+            label={row.label}
+            value={row.value}
+            isLast={idx === bookingRows.length - 1}
+          />
+        ))}
       </SummaryCard>
 
       {chargeBreakdown ? (
         <ChargeBreakdown
+          {...(serviceType === ServiceType.CAR_RENTAL ? {} : wording)}
           breakdown={chargeBreakdown}
           title="What you're paying"
           topPadding={SPACE.md}

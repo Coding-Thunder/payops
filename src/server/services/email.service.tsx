@@ -10,9 +10,16 @@ import {
   EmailKind,
   OrderEvidenceActorType,
   OrderEvidenceEventType,
+  ServiceType,
   type PaymentGatewayKey,
   type UserRole,
 } from "@/lib/constants/enums";
+import {
+  serviceConsentSlots,
+  serviceDetailRows,
+  serviceTypeOf,
+  type ServiceRow,
+} from "@/lib/service-summary";
 import { PaymentGatewayLabel as PAYMENT_GATEWAY_LABELS } from "@/lib/constants/labels";
 import { env } from "@/lib/env";
 import { DomainEventType } from "@/lib/constants/events";
@@ -39,6 +46,10 @@ import {
 } from "@/server/email/templates/payment-confirmation";
 import { formatEmailDate, formatEmailDay, formatMoney } from "@/server/email/format";
 import { buildConsentMailto } from "@/server/email/consent-mailto";
+import {
+  resolveAppUrl,
+  resolveEmailCc,
+} from "@/server/auth/organization-config";
 import { summarizeCharges } from "@/lib/charges";
 
 import { recordAudit } from "./audit.service";
@@ -69,6 +80,48 @@ function buildEmailChargeBreakdown(order: OrderDTO): EmailChargeBreakdown {
     dueAtCounter: s.dueAtCounter > 0 ? formatMoney(s.dueAtCounter, currency) : null,
     total: formatMoney(s.total, currency),
   };
+}
+
+/* ─────────────────── Service-aware email prop builders ─────────────────── */
+
+/**
+ * The CAR_RENTAL trip block the templates have always received, or null.
+ *
+ * `order.trip` is nullable now that an order can be a flight or a cruise.
+ * Returning null (rather than a zero-valued object) is what lets the
+ * templates skip the rental rows entirely instead of printing "Pick-up: "
+ * with nothing after it.
+ */
+function rentalTripProps(
+  order: OrderDTO,
+): PaymentConfirmationEmailProps["trip"] {
+  const t = order.trip;
+  if (!t) return null;
+  return {
+    pickupDate: formatEmailDay(t.pickupDate),
+    dropoffDate: formatEmailDay(t.dropoffDate),
+    pickupLocation: t.pickupLocation ?? null,
+    dropoffLocation: t.dropoffLocation ?? null,
+  };
+}
+
+/**
+ * The "what was booked" rows for a customer email.
+ *
+ * CAR_RENTAL returns undefined ON PURPOSE: the templates then take their
+ * original, untouched Vehicle / Pick-up / Drop-off path, built from the
+ * `vehicle` / `trip` props. That path composes strings `serviceDetailRows`
+ * does not reproduce (a "•" between company and type, a " · location"
+ * suffix on each date), so routing rentals through the shared helper would
+ * silently reword every inherited receipt.
+ *
+ * FLIGHT and CRUISE — which have no vehicle and no trip at all — take the
+ * shared helper, formatted with the same long UTC stamp the rental dates
+ * use so the two services read consistently inside one email.
+ */
+function emailServiceRows(order: OrderDTO): ServiceRow[] | undefined {
+  if (serviceTypeOf(order) === ServiceType.CAR_RENTAL) return undefined;
+  return serviceDetailRows(order, formatEmailDay);
 }
 
 interface SendArgs {
@@ -129,6 +182,12 @@ async function sendEmail(
   // organization is unaffected: deploymentIdentity() already carries
   // EMAIL_REPLY_TO.
   const replyTo = identity ? identity.replyTo : (env.server.EMAIL_REPLY_TO ?? "");
+  // Who is copied on this customer's mail, decided by the brand that owns
+  // the ORDER. Falls back to the deployment-wide EMAIL_CC, which is what a
+  // single-brand deployment runs on today.
+  const ccAddress = args.orderId
+    ? await resolveEmailCc(await organizationIdForOrder(args.orderId))
+    : env.server.EMAIL_CC?.trim() || undefined;
 
   if (!mailer) {
     logger.warn("email.skipped_no_smtp_config", {
@@ -166,6 +225,7 @@ async function sendEmail(
     const info = await mailer.sendMail({
       from: fromAddress,
       to: args.to,
+      cc: ccAddress,
       replyTo: replyTo || undefined,
       subject: args.subject,
       html: args.html,
@@ -234,6 +294,10 @@ export async function sendPaymentConfirmationEmail(
   // row can never disagree about which brand sent the mail.
   const identity = await resolveEmailIdentity(orgId, branding);
   const brandName = identity.brandName;
+  // Every customer-facing link in this email belongs to the brand that owns
+  // the ORDER, not to whichever deployment happens to be running this code —
+  // a confirmation sent from a webhook has no request context at all.
+  const appUrl = await resolveAppUrl(orgId);
   // Inline the provider logo as a data URI so Gmail / Outlook render it
   // without proxying back to our server. Falls back to the original
   // (absolute) URL if the file is missing or remote — same visual result
@@ -246,7 +310,7 @@ export async function sendPaymentConfirmationEmail(
     : order.provider;
   const props: PaymentConfirmationEmailProps = {
     brandName,
-    appUrl: env.server.APP_URL,
+    appUrl,
     supportEmail: identity.supportEmail,
     supportPhone: identity.supportPhone,
     customerName: order.customer.name,
@@ -260,20 +324,17 @@ export async function sendPaymentConfirmationEmail(
       ? formatEmailDate(order.payment.paidAt)
       : formatEmailDate(new Date()),
     provider: providerForEmail,
+    serviceType: serviceTypeOf(order),
     vehicle: order.vehicle,
-    trip: {
-      pickupDate: formatEmailDay(order.trip.pickupDate),
-      dropoffDate: formatEmailDay(order.trip.dropoffDate),
-      pickupLocation: order.trip.pickupLocation ?? null,
-      dropoffLocation: order.trip.dropoffLocation ?? null,
-    },
+    trip: rentalTripProps(order),
+    serviceRows: emailServiceRows(order),
     confirmationNumber: order.confirmationNumber ?? null,
     chargeBreakdown: buildEmailChargeBreakdown(order),
     termsText: order.terms?.text || null,
     termsVersion: order.terms?.version ?? null,
     // Signed "I Agree" link — only when there are terms to acknowledge.
     acknowledgeUrl: order.terms?.text
-      ? buildAckUrl(env.server.APP_URL, generateAckToken(order.id))
+      ? buildAckUrl(appUrl, generateAckToken(order.id))
       : null,
     receiptUrl: order.payment.receiptUrl ?? null,
     cancellationPolicy: order.policy?.text ?? "",
@@ -422,16 +483,18 @@ export async function composePaymentRequestProps(
   //     back to a clearly-labelled placeholder so the agent still sees
   //     the correct CTA copy ("Review & Confirm Booking") — the actual
   //     link is signed when they click Send.
+  // The origin every link in this email points at. Belongs to the brand that
+  // owns the ORDER — a customer must never be sent to another tenant's
+  // domain to confirm or pay for their booking.
+  const appUrl = await resolveAppUrl(await organizationIdForOrder(order.id));
+
   let consentUrl: string | null = consent?.consentUrl ?? null;
   if (!consentUrl && !alreadyConsented) {
     const existingId = order.consent?.currentConsentId;
     if (existingId) {
-      consentUrl = buildConsentUrl(
-        env.server.APP_URL,
-        generateConsentToken(existingId),
-      );
+      consentUrl = buildConsentUrl(appUrl, generateConsentToken(existingId));
     } else {
-      consentUrl = `${env.server.APP_URL.replace(/\/$/, "")}/consent/preview`;
+      consentUrl = `${appUrl}/consent/preview`;
     }
   }
 
@@ -472,7 +535,7 @@ export async function composePaymentRequestProps(
   // defaults without the agent having to know about templates.
   return {
     brandName: identity.brandName,
-    appUrl: env.server.APP_URL,
+    appUrl,
     supportEmail: identity.supportEmail,
     supportPhone: identity.supportPhone,
     customerName: order.customer.name,
@@ -483,13 +546,10 @@ export async function composePaymentRequestProps(
       ? formatEmailDate(order.payment.expiresAt)
       : null,
     provider: providerForEmail,
+    serviceType: serviceTypeOf(order),
     vehicle: order.vehicle,
-    trip: {
-      pickupDate: formatEmailDay(order.trip.pickupDate),
-      dropoffDate: formatEmailDay(order.trip.dropoffDate),
-      pickupLocation: order.trip.pickupLocation ?? null,
-      dropoffLocation: order.trip.dropoffLocation ?? null,
-    },
+    trip: rentalTripProps(order),
+    serviceRows: emailServiceRows(order),
     chargeBreakdown: buildEmailChargeBreakdown(order),
     paymentUrl: checkoutUrl,
     gatewayLabel,
@@ -584,14 +644,21 @@ export async function sendPaymentRequestEmail(
           consentEmailSubject: subject,
           snapshot: (() => {
             const s = summarizeCharges(order.charges, order.pricing.amount);
+            // The consent snapshot keeps ONE shape across every service —
+            // an item plus a start and an end — so the append-only chain
+            // never forks. `serviceConsentSlots` is what maps a route or a
+            // sailing into those three rental-named slots; `serviceType`
+            // is what lets the customer-facing page relabel them.
+            const slots = serviceConsentSlots(order);
             return {
               bookingType: order.bookingType,
+              serviceType: serviceTypeOf(order),
               provider: order.provider?.name ?? "",
-              vehicle: `${order.vehicle.company} • ${order.vehicle.type}`,
-              pickupDate: order.trip.pickupDate,
-              dropoffDate: order.trip.dropoffDate,
-              pickupLocation: order.trip.pickupLocation ?? null,
-              dropoffLocation: order.trip.dropoffLocation ?? null,
+              vehicle: slots.item,
+              pickupDate: slots.startDate,
+              dropoffDate: slots.endDate,
+              pickupLocation: slots.startLocation,
+              dropoffLocation: slots.endLocation,
               amount: order.pricing.amount,
               currency: order.pricing.currency,
               charges: s.charges,
@@ -603,7 +670,9 @@ export async function sendPaymentRequestEmail(
         },
         {
           actor: context.actor,
-          appUrl: env.server.APP_URL,
+          // The consent link the CUSTOMER clicks. Must be the order-owning
+          // brand's domain, not the deployment's.
+          appUrl: await resolveAppUrl(await organizationIdForOrder(order.id)),
           request: context.request ?? null,
         },
       );

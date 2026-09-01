@@ -29,17 +29,81 @@ export type BookingType = (typeof BookingType)[keyof typeof BookingType];
 export const BOOKING_TYPES = Object.values(BookingType) as BookingType[];
 
 /**
+ * WHAT the customer is buying. Orthogonal to `BookingType`, which is WHY
+ * they are being charged (new booking / modification / cancellation fee).
+ *
+ * CAR_RENTAL is the default on the schema, on hydration and on the read
+ * path, so every order written before this enum existed — i.e. every order
+ * this deployment has ever created — reads back as exactly what it has
+ * always been. Nothing about the incumbent workflow changes.
+ *
+ * Which of these an operator can actually create is decided per tenant by
+ * `Organization.serviceTypes`, not by this list: the enum is the universe of
+ * shapes the platform can persist, the organization is the subset one brand
+ * sells.
+ */
+export const ServiceType = {
+  CAR_RENTAL: "CAR_RENTAL",
+  FLIGHT: "FLIGHT",
+  CRUISE: "CRUISE",
+} as const;
+export type ServiceType = (typeof ServiceType)[keyof typeof ServiceType];
+export const SERVICE_TYPES = Object.values(ServiceType) as ServiceType[];
+
+/** Outbound-only or there-and-back. Shared by FLIGHT (where a one-way is
+ *  normal) and deliberately NOT by CRUISE (a cruise always returns to a
+ *  port, so its end date is required rather than conditional). */
+export const TripType = {
+  ONE_WAY: "ONE_WAY",
+  ROUND_TRIP: "ROUND_TRIP",
+} as const;
+export type TripType = (typeof TripType)[keyof typeof TripType];
+export const TRIP_TYPES = Object.values(TripType) as TripType[];
+
+/** Airline cabin. Stored as a string on the order so an unusual fare class
+ *  sourced by hand is never lost, but constrained here at the boundary. */
+export const CabinClass = {
+  ECONOMY: "ECONOMY",
+  PREMIUM_ECONOMY: "PREMIUM_ECONOMY",
+  BUSINESS: "BUSINESS",
+  FIRST: "FIRST",
+} as const;
+export type CabinClass = (typeof CabinClass)[keyof typeof CabinClass];
+export const CABIN_CLASSES = Object.values(CabinClass) as CabinClass[];
+
+/**
+ * Cruise stateroom grade. These four are the categories every mainstream
+ * cruise line prices against, and they are what a deposit is quoted on —
+ * deliberately not a per-line deck plan, which this platform holds no
+ * inventory for and could not keep current.
+ */
+export const CruiseCabinCategory = {
+  INTERIOR: "INTERIOR",
+  OCEAN_VIEW: "OCEAN_VIEW",
+  BALCONY: "BALCONY",
+  SUITE: "SUITE",
+} as const;
+export type CruiseCabinCategory =
+  (typeof CruiseCabinCategory)[keyof typeof CruiseCabinCategory];
+export const CRUISE_CABIN_CATEGORIES = Object.values(
+  CruiseCabinCategory,
+) as CruiseCabinCategory[];
+
+/**
  * When a single charge line is collected from the customer.
  *
  *  PREPAID        — collected now, online, via the initial payment link.
  *                   The sum of PREPAID charges is the ONLY amount the
  *                   gateway (Stripe) is ever asked to charge.
- *  DUE_AT_COUNTER — collected by the rental counter at pick-up. Shown to
- *                   the customer for transparency but never sent to the
- *                   gateway and never part of our recognised online revenue.
+ *  DUE_AT_COUNTER — collected later, in person, by whoever hands over the
+ *                   booking: the rental counter at pick-up, the airline at
+ *                   the airport, the cruise line at the pier. Shown to the
+ *                   customer for transparency but never sent to the gateway
+ *                   and never part of our recognised online revenue.
  *
- * Rental-specific today; isolated here so it can later move into per-tenant
- * configuration without touching the platform core.
+ * The KEY is historical and stays as-is — renaming it would rewrite the
+ * meaning of every stored charge line. What varies by service type is only
+ * the WORDING, which lives in `chargeWordingFor()` and `ServiceDueLabel`.
  */
 export const PaymentTiming = {
   PREPAID: "PREPAID",

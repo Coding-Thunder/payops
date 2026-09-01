@@ -5,6 +5,7 @@ import type {
   ConsentMethod,
   ConsentMode,
   ConsentStatus,
+  CruiseCabinCategory,
   Currency,
   DisputeOutcome,
   DisputeStatus,
@@ -14,6 +15,8 @@ import type {
   PaymentGatewayKey,
   PaymentTiming,
   RecordState,
+  ServiceType,
+  TripType,
   UserRole,
 } from "@/lib/constants/enums";
 import type { ProviderSnapshot } from "@/lib/constants/providers";
@@ -53,6 +56,17 @@ export interface OrganizationSummary {
   slug: string;
   name: string;
   brandName: string;
+  /** What this brand sells. Drives the create-order tab strip and is the
+   *  server-side allow-list the create route enforces. Never empty — a
+   *  document with no stored value resolves to `[CAR_RENTAL]`. */
+  serviceTypes: ServiceType[];
+  /**
+   * The compatibility anchor. Exactly one organization carries it, and only
+   * that one sees rows written before organizations existed
+   * (`organizationId: null`). A newly added tenant must be `false` or it
+   * would inherit the incumbent's entire history.
+   */
+  isDefault: boolean;
 }
 
 export interface OrderCustomer {
@@ -76,6 +90,46 @@ export interface OrderTrip {
    *  orders created before this field existed keep validating. */
   pickupLocation?: string | null;
   dropoffLocation?: string | null;
+}
+
+/** FLIGHT payload. A booking REQUEST — no airline inventory is held and no
+ *  GDS is contacted. Null on every other service type. */
+export interface OrderFlight {
+  tripType: TripType;
+  airline?: string | null;
+  flightNumber?: string | null;
+  origin: string;
+  destination: string;
+  departureDate: string;
+  departureTimePreference?: string | null;
+  /** Outbound arrival. Null until an itinerary is chosen. */
+  arrivalDate?: string | null;
+  returnDate?: string | null;
+  returnTimePreference?: string | null;
+  cabinClass: string;
+  passengers: { adults: number; children: number; infants: number };
+  passengerNotes?: string | null;
+  /** Airline record locator, present once ticketed. */
+  pnr?: string | null;
+}
+
+/** CRUISE payload. A booking REQUEST — no cruise-line inventory API is
+ *  involved. Null on every other service type. */
+export interface OrderCruise {
+  cruiseLine?: string | null;
+  shipName?: string | null;
+  itinerary?: string | null;
+  departurePort: string;
+  /** Null on a round trip, which is the common case. */
+  arrivalPort?: string | null;
+  departureDate: string;
+  returnDate: string;
+  cabinCategory: CruiseCabinCategory;
+  cabinNumber?: string | null;
+  guests: { adults: number; children: number };
+  guestNotes?: string | null;
+  /** Cruise-line confirmation, present once the cabin is held. */
+  bookingReference?: string | null;
 }
 
 /**
@@ -190,12 +244,21 @@ export interface OrderDTO {
   id: string;
   orderNumber: string;
   bookingType: BookingType;
+  /** WHAT was bought. Always populated on the DTO — an order stored before
+   *  this field existed reads back as CAR_RENTAL, which is what it is. */
+  serviceType: ServiceType;
   status: OrderStatus;
   state: RecordState;
   customer: OrderCustomer;
   provider: ProviderSnapshot;
-  vehicle: OrderVehicle;
-  trip: OrderTrip;
+  /** CAR_RENTAL only. Null on a flight or a cruise. */
+  vehicle: OrderVehicle | null;
+  /** CAR_RENTAL only. Null on a flight or a cruise. */
+  trip: OrderTrip | null;
+  /** FLIGHT only. Null otherwise. */
+  flight: OrderFlight | null;
+  /** CRUISE only. Null otherwise. */
+  cruise: OrderCruise | null;
   pricing: OrderPricing;
   /** Rental charge breakdown — source of truth for prepaid / due-at-counter
    *  / total. Empty for legacy orders (treat `pricing.amount` as one prepaid
@@ -254,7 +317,11 @@ export interface DisputeDTO {
 
 export interface PaymentConsentSnapshot {
   bookingType: BookingType;
+  /** Always populated on the DTO; records predating the field read as
+   *  CAR_RENTAL. Relabels the three rental-shaped slots below. */
+  serviceType: ServiceType;
   provider: string;
+  /** The item, whatever the service. Field name is historical. */
   vehicle: string;
   pickupDate: string;
   dropoffDate: string;
@@ -402,10 +469,16 @@ export interface OrderEvidenceChainDTO {
     status: OrderStatus;
     state: RecordState;
     provider: ProviderSnapshot;
+    serviceType: ServiceType;
     /** Vehicle snapshot lifted to the chain order so the evidence
      *  page + PDF can render the operator-captured car image
-     *  alongside the provider logo. */
-    vehicle: OrderVehicle;
+     *  alongside the provider logo. Null on a flight or a cruise, where
+     *  `item` carries the human-readable equivalent instead. */
+    vehicle: OrderVehicle | null;
+    /** Service-agnostic "what was bought" — "LHR → JFK", "Royal Caribbean
+     *  Wonder of the Seas • Round trip from Miami". Always present, so the
+     *  dispute pack never loses that line. */
+    item: string;
     createdAt: string;
   };
 }
@@ -425,6 +498,12 @@ export interface ProviderDTO {
   id: string;
   key: string;
   name: string;
+  /** Which service types this supplier may be attached to. Always
+   *  populated — a row predating the field reads as `[CAR_RENTAL]`. */
+  serviceTypes: ServiceType[];
+  /** Organizations this supplier is restricted to. EMPTY means every
+   *  organization — the pre-tenancy behaviour every existing row keeps. */
+  organizationIds: string[];
   logo: string;
   primaryColor: string;
   onPrimaryColor: string;

@@ -7,6 +7,7 @@ import {
   OrderStatus,
   PaymentTiming,
   RecordState,
+  ServiceType,
 } from "@/lib/constants/enums";
 import {
   buildProviderSnapshot,
@@ -54,28 +55,59 @@ export function buildOrder(seed: OrderSeed = {}): OrderDoc & { _id: Types.Object
   const now = new Date();
   const pickup = new Date(now.getTime() + 24 * 60 * 60 * 1000);
   const dropoff = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
+  const serviceType = seed.serviceType ?? ServiceType.CAR_RENTAL;
+  const isRental = serviceType === ServiceType.CAR_RENTAL;
   return {
     _id: new Types.ObjectId(),
+    /**
+     * Tenancy. NULL by default, which is what a pre-migration row carries and
+     * what every test written before organizations existed expects — the
+     * default organization's scope clause matches unattributed rows, so those
+     * tests keep passing unchanged.
+     *
+     * A multi-tenant test MUST pass this explicitly: without it every
+     * factory order is unattributed, and an isolation assertion would pass
+     * for the wrong reason.
+     */
+    organizationId: seed.organizationId ?? null,
     orderNumber: seed.orderNumber ?? `TST-${suffix.toUpperCase()}`.slice(0, 32),
     bookingType: seed.bookingType ?? BookingType.NEW_BOOKING,
     status: seed.status ?? OrderStatus.PAYMENT_PENDING,
     state: seed.state ?? RecordState.ACTIVE,
     provider: seed.provider ?? buildProviderSnapshot(ProviderId.BUDGET),
+    // CAR_RENTAL by default so every pre-existing test keeps building the
+    // order it has always built. A flight or cruise seed must pass BOTH the
+    // service type and its payload, and `serviceOf` below then drops the
+    // rental block so the document is not a hybrid of two services.
+    serviceType,
     customer: {
       name: seed.customer?.name ?? "Test Customer",
       email: (seed.customer?.email ?? "customer@payops.test").toLowerCase(),
       phone: seed.customer?.phone ?? "+15555550100",
     },
-    vehicle: {
-      company: seed.vehicle?.company ?? "Toyota",
-      type: seed.vehicle?.type ?? "Corolla",
-    },
-    trip: {
-      pickupDate: seed.trip?.pickupDate ?? pickup,
-      dropoffDate: seed.trip?.dropoffDate ?? dropoff,
-      pickupLocation: seed.trip?.pickupLocation ?? "LAX Airport — Terminal 1",
-      dropoffLocation: seed.trip?.dropoffLocation ?? "San Diego Downtown",
-    },
+    ...(isRental
+      ? {
+          vehicle: {
+            company: seed.vehicle?.company ?? "Toyota",
+            type: seed.vehicle?.type ?? "Corolla",
+          },
+          trip: {
+            pickupDate: seed.trip?.pickupDate ?? pickup,
+            dropoffDate: seed.trip?.dropoffDate ?? dropoff,
+            pickupLocation:
+              seed.trip?.pickupLocation ?? "LAX Airport — Terminal 1",
+            dropoffLocation:
+              seed.trip?.dropoffLocation ?? "San Diego Downtown",
+          },
+          flight: null,
+          cruise: null,
+        }
+      : {
+          vehicle: null,
+          trip: null,
+          flight: seed.flight ?? null,
+          cruise: seed.cruise ?? null,
+        }),
     pricing: {
       amount: seed.pricing?.amount ?? 199.5,
       currency: (seed.pricing?.currency ?? Currency.USD) as Currency,
@@ -153,28 +185,19 @@ function toObjectId(
 
 export async function createOrder(seed: OrderSeed = {}): Promise<OrderDocument> {
   const data = buildOrder(seed);
-  return (await Order.create({
-    _id: data._id,
-    orderNumber: data.orderNumber,
-    bookingType: data.bookingType,
-    status: data.status,
-    state: data.state,
-    provider: data.provider,
-    customer: data.customer,
-    vehicle: data.vehicle,
-    trip: data.trip,
-    pricing: data.pricing,
-    charges: data.charges,
-    confirmationNumber: data.confirmationNumber,
-    terms: data.terms,
-    termsAcknowledgement: data.termsAcknowledgement,
-    payment: data.payment,
-    createdBy: data.createdBy,
-    policy: data.policy,
-    risk: data.risk,
-    consent: data.consent,
-    notes: data.notes,
-  })) as OrderDocument;
+  /**
+   * The whole built document, spread — NOT a hand-maintained field list.
+   *
+   * This used to enumerate ~20 fields explicitly, and every field added to
+   * the model after that list was written was silently dropped on the way to
+   * the database: `organizationId`, `serviceType`, `flight`, `cruise`. A
+   * tenancy test would then assert isolation against an order that had no
+   * organization at all and pass for entirely the wrong reason.
+   *
+   * Spreading means a new model field is persisted by default; the failure
+   * mode becomes a loud schema error rather than a silent omission.
+   */
+  return (await Order.create({ ...data })) as OrderDocument;
 }
 
 export async function createPaidOrder(seed: OrderSeed = {}): Promise<OrderDocument> {

@@ -32,12 +32,22 @@ import type { ProviderDTO } from "@/types";
 
 import { EditProviderDialog } from "./edit-provider-dialog";
 import { ProviderLogo } from "./provider-logo";
+import { ServiceType } from "@/lib/constants/enums";
+import { ServiceTypeLabel } from "@/lib/constants/labels";
 
 interface AdminProviderTableProps {
+  /** What this deployment sells. When it is more than one service the table
+   *  gains a "Services" column and the edit dialog its picker; on a
+   *  single-service console both are noise and stay hidden. */
+  serviceTypes?: readonly ServiceType[];
   items: ProviderDTO[];
 }
 
-export function AdminProviderTable({ items }: AdminProviderTableProps) {
+export function AdminProviderTable({
+  items,
+  serviceTypes = [],
+}: AdminProviderTableProps) {
+  const showServices = serviceTypes.length > 1;
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [editing, setEditing] = useState<ProviderDTO | null>(null);
@@ -97,6 +107,9 @@ export function AdminProviderTable({ items }: AdminProviderTableProps) {
               <TableHead>Provider</TableHead>
               <TableHead>Key</TableHead>
               <TableHead>Brand</TableHead>
+              {showServices ? (
+                <TableHead className="hidden md:table-cell">Services</TableHead>
+              ) : null}
               <TableHead>Status</TableHead>
               <TableHead className="hidden lg:table-cell">Updated</TableHead>
               <TableHead className="w-[40px]" />
@@ -139,6 +152,13 @@ export function AdminProviderTable({ items }: AdminProviderTableProps) {
                     </span>
                   </div>
                 </TableCell>
+                {showServices ? (
+                  <TableCell className="hidden md:table-cell">
+                    <span className="text-[11.5px] text-muted-foreground">
+                      {p.serviceTypes.map((t) => ServiceTypeLabel[t]).join(", ")}
+                    </span>
+                  </TableCell>
+                ) : null}
                 <TableCell>
                   <RecordStateBadge state={p.status} />
                 </TableCell>
@@ -184,6 +204,7 @@ export function AdminProviderTable({ items }: AdminProviderTableProps) {
           provider={editing}
           open={!!editing}
           onOpenChange={(o) => !o && setEditing(null)}
+          serviceTypes={serviceTypes}
         />
       ) : null}
 

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { OrderStatus, UserRole } from "@/lib/constants/enums";
+import { OrderStatus, ServiceType, UserRole } from "@/lib/constants/enums";
 import { summarizeCharges } from "@/lib/charges";
 import { Order } from "@/server/db/models";
 import {
@@ -52,8 +52,9 @@ describe("rental journey (end-to-end)", () => {
     // pricing.amount == prepaid total (the ONLY figure billed online)
     expect(draft.pricing.amount).toBe(150);
     expect(draft.charges).toHaveLength(2);
-    expect(draft.trip.pickupLocation).toBe("LAX Airport — Terminal 1");
-    expect(draft.trip.dropoffLocation).toBe("San Diego Downtown");
+    expect(draft.serviceType).toBe(ServiceType.CAR_RENTAL);
+    expect(draft.trip?.pickupLocation).toBe("LAX Airport — Terminal 1");
+    expect(draft.trip?.dropoffLocation).toBe("San Diego Downtown");
 
     // Single source of truth derivations
     const sum = summarizeCharges(draft.charges);

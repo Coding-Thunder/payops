@@ -70,6 +70,11 @@ export function getMailerFor(config: SmtpTransportConfig): Transporter {
  * is far easier to prove correct directly than through a live transport.
  *
  * Rules, all of them about not sending someone the same mail twice:
+ *   - the caller already set `cc` → the message is returned UNTOUCHED. An
+ *     explicit CC is a per-organization decision made in `sendEmail`, and it
+ *     is authoritative: appending the deployment-wide address to it would
+ *     copy one brand's support inbox on another brand's customer mail, which
+ *     on a shared deployment is a PII leak across two legal entities.
  *   - no EMAIL_CC configured  → the message is returned untouched, which is
  *     what every deployment that does not set it continues to do
  *   - the address is already in `to` or `cc` → not added again
@@ -84,6 +89,11 @@ export function applyGlobalCc<T extends { to?: unknown; cc?: unknown }>(
   mail: T,
   ccAddress: string | undefined,
 ): T {
+  // An explicit CC wins outright — see the note above. `sendEmail` resolves
+  // it from the ORDER's organization, so the brand that owns the booking
+  // decides who is copied on its customer's mail.
+  if (typeof mail.cc === "string" ? mail.cc.trim() : mail.cc) return mail;
+
   const cc = ccAddress?.trim();
   if (!cc) return mail;
 

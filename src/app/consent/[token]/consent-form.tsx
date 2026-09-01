@@ -5,6 +5,7 @@ import { ShieldCheckIcon } from "lucide-react";
 
 import { api, ApiClientError } from "@/lib/api-client";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ServiceType } from "@/lib/constants/enums";
 import { BookingTypeLabel } from "@/lib/constants/labels";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import type { BrandingDTO, PublicConsentView } from "@/types";
@@ -243,6 +244,9 @@ function SummaryBlock({ view }: { view: PublicConsentView }) {
   const dueAtCounter = snapshot.dueAtCounter ?? 0;
   const total = snapshot.total ?? snapshot.amount;
   const hasCounterDue = dueAtCounter > 0;
+  // Consent records written before `serviceType` existed are car rentals.
+  const serviceType = snapshot.serviceType ?? ServiceType.CAR_RENTAL;
+  const wording = CONSENT_WORDING[serviceType];
   return (
     <div className="border-t border-slate-100 px-6 py-5 sm:px-8">
       <p className="text-[11px] font-semibold uppercase tracking-[0.10em] text-slate-500">
@@ -271,15 +275,13 @@ function SummaryBlock({ view }: { view: PublicConsentView }) {
             </span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-slate-500">
-              Remaining balance due at rental counter
-            </span>
+            <span className="text-slate-500">{wording.dueLabel}</span>
             <span className="tabular-nums text-slate-900">
               {formatCurrency(dueAtCounter, currency)}
             </span>
           </div>
           <div className="flex items-center justify-between border-t border-slate-200 pt-1.5 font-medium">
-            <span className="text-slate-700">Total rental cost</span>
+            <span className="text-slate-700">{wording.totalLabel}</span>
             <span className="tabular-nums text-slate-900">
               {formatCurrency(total, currency)}
             </span>
@@ -291,23 +293,29 @@ function SummaryBlock({ view }: { view: PublicConsentView }) {
         <DetailRow label="Customer" value={view.customerName} />
         <DetailRow label="Email" value={view.customerEmail} mono />
         <DetailRow label="Provider" value={snapshot.provider || "—"} />
-        <DetailRow label="Vehicle" value={snapshot.vehicle} />
+        <DetailRow label={wording.itemLabel} value={snapshot.vehicle} />
         <DetailRow
-          label="Pick-up"
+          label={wording.startLabel}
           value={
             snapshot.pickupLocation
               ? `${formatDateTime(snapshot.pickupDate)} · ${snapshot.pickupLocation}`
               : formatDateTime(snapshot.pickupDate)
           }
         />
-        <DetailRow
-          label="Drop-off"
-          value={
-            snapshot.dropoffLocation
-              ? `${formatDateTime(snapshot.dropoffDate)} · ${snapshot.dropoffLocation}`
-              : formatDateTime(snapshot.dropoffDate)
-          }
-        />
+        {/* A one-way flight stores the departure date in BOTH slots (the
+            consent chain is one shape); showing "Return" with the outbound
+            date would be a lie, so it is omitted. */}
+        {serviceType === ServiceType.FLIGHT &&
+        snapshot.dropoffDate === snapshot.pickupDate ? null : (
+          <DetailRow
+            label={wording.endLabel}
+            value={
+              snapshot.dropoffLocation
+                ? `${formatDateTime(snapshot.dropoffDate)} · ${snapshot.dropoffLocation}`
+                : formatDateTime(snapshot.dropoffDate)
+            }
+          />
+        )}
       </dl>
     </div>
   );
@@ -375,6 +383,49 @@ function Spinner({ large = false }: { large?: boolean }) {
     />
   );
 }
+
+/**
+ * Row labels and charge-breakdown copy, per service type.
+ *
+ * The consent snapshot is deliberately ONE shape — an item plus a start and
+ * an end date — so the append-only consent chain never forks. That makes
+ * these labels the only thing standing between a cruise guest and a page
+ * asking them to confirm a "Vehicle" and a "Drop-off" before they pay.
+ *
+ * CAR_RENTAL reproduces the exact strings this page has always rendered.
+ */
+const CONSENT_WORDING: Record<
+  ServiceType,
+  {
+    itemLabel: string;
+    startLabel: string;
+    endLabel: string;
+    dueLabel: string;
+    totalLabel: string;
+  }
+> = {
+  CAR_RENTAL: {
+    itemLabel: "Vehicle",
+    startLabel: "Pick-up",
+    endLabel: "Drop-off",
+    dueLabel: "Remaining balance due at rental counter",
+    totalLabel: "Total rental cost",
+  },
+  FLIGHT: {
+    itemLabel: "Route",
+    startLabel: "Departure",
+    endLabel: "Return",
+    dueLabel: "Remaining balance due at the airport",
+    totalLabel: "Total flight cost",
+  },
+  CRUISE: {
+    itemLabel: "Sailing",
+    startLabel: "Sailing date",
+    endLabel: "Return date",
+    dueLabel: "Remaining balance due at the pier",
+    totalLabel: "Total cruise cost",
+  },
+};
 
 function DetailRow({
   label,

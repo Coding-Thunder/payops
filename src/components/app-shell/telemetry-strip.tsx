@@ -86,6 +86,13 @@ export function TelemetryStrip({
       data-slot="telemetry-strip"
       className={cn(
         "hidden md:flex h-7 shrink-0 items-center gap-0",
+        // The cells are fixed-width and do not shrink, so between `md` and
+        // `lg` they totalled ~950px against an ~810px tablet viewport and
+        // scrolled the WHOLE PAGE sideways — every route, not just this
+        // strip. `overflow-hidden` stops the strip forcing the document
+        // wide; the per-cell breakpoints below are what keep it from
+        // silently clipping something that mattered.
+        "overflow-hidden",
         // Inset hairline border + faint top accent stroke. Visually
         // partitions infrastructure status from app chrome below.
         "relative border-b border-border bg-surface-1/80",
@@ -127,10 +134,10 @@ export function TelemetryStrip({
       </Cell>
 
       <span className="ml-auto flex h-full items-center">
-        <Cell>
+        <Cell className="hidden lg:flex">
           <span>{region}</span>
         </Cell>
-        <Cell>
+        <Cell className="hidden lg:flex">
           <span className="text-foreground/85 normal-case tabular-nums tracking-normal">
             {now}
           </span>
@@ -152,15 +159,20 @@ export function TelemetryStrip({
 function Cell({
   children,
   last = false,
+  className,
 }: {
   children: React.ReactNode;
   last?: boolean;
+  /** Lets a caller hide a cell at narrow widths. Applied last so a
+   *  `hidden lg:flex` overrides the base `flex`. */
+  className?: string;
 }) {
   return (
     <span
       className={cn(
         "flex h-full items-center gap-1.5 px-3",
         !last && "border-r border-border/70",
+        className,
       )}
     >
       {children}

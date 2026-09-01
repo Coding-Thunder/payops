@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-import { RECORD_STATES, RecordState } from "@/lib/constants/enums";
+import {
+  RECORD_STATES,
+  RecordState,
+  SERVICE_TYPES,
+  ServiceType,
+} from "@/lib/constants/enums";
 import { PROVIDER_KEY_REGEX } from "@/lib/constants/providers";
 
 const hexColor = z
@@ -29,6 +34,22 @@ export const createProviderSchema = z.object({
   primaryColor: hexColor,
   onPrimaryColor: hexColor,
   tagline: z.string().trim().max(140),
+  /** Which forms this supplier appears on. At least one — a supplier
+   *  attached to nothing is unreachable, which is a silent way to lose it. */
+  serviceTypes: z
+    .array(z.enum(SERVICE_TYPES))
+    .min(1, "Pick at least one service")
+    .max(SERVICE_TYPES.length)
+    // Order-insensitive de-duplication: the same key twice would widen no
+    // permission but would render a duplicated chip in the admin UI.
+    .transform((v) => [...new Set(v)] as ServiceType[]),
+  /** Organizations this supplier is restricted to. Empty/omitted means
+   *  every organization, which is how the catalog behaved before tenancy. */
+  organizationIds: z
+    .array(z.string().regex(/^[a-f0-9]{24}$/i, "Invalid organization id"))
+    .max(50)
+    .transform((v) => [...new Set(v)])
+    .optional(),
   sortOrder: z.number().int().min(0).max(9_999),
 });
 
@@ -40,6 +61,19 @@ export const updateProviderSchema = z.object({
   primaryColor: hexColor.optional(),
   onPrimaryColor: hexColor.optional(),
   tagline: z.string().trim().max(140).optional(),
+  serviceTypes: z
+    .array(z.enum(SERVICE_TYPES))
+    .min(1, "Pick at least one service")
+    .max(SERVICE_TYPES.length)
+    .transform((v) => [...new Set(v)] as ServiceType[])
+    .optional(),
+  /** Organizations this supplier is restricted to. Empty/omitted means
+   *  every organization, which is how the catalog behaved before tenancy. */
+  organizationIds: z
+    .array(z.string().regex(/^[a-f0-9]{24}$/i, "Invalid organization id"))
+    .max(50)
+    .transform((v) => [...new Set(v)])
+    .optional(),
   sortOrder: z.number().int().min(0).max(9_999).optional(),
 });
 
@@ -55,6 +89,15 @@ export type SetProviderStatusInput = z.infer<typeof setProviderStatusSchema>;
 
 export const listProvidersQuerySchema = z.object({
   status: z.enum(RECORD_STATES).optional(),
+  /** Narrow the catalog to suppliers usable for one service. A row with no
+   *  `serviceTypes` predates the field and counts as CAR_RENTAL. */
+  serviceType: z.enum(SERVICE_TYPES).optional(),
+  /** Narrow to suppliers this organization may use. Server-supplied only —
+   *  never read from the query string on a client-facing route. */
+  organizationId: z
+    .string()
+    .regex(/^[a-f0-9]{24}$/i)
+    .optional(),
   /** When true, returns every provider regardless of status. Admin use only. */
   includeAll: z
     .union([z.string(), z.boolean()])

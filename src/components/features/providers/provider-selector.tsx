@@ -105,7 +105,7 @@ export function ProviderSelector({
                 ? "No providers configured yet."
                 : "No provider matches that search."}
             </CommandEmpty>
-            <CommandGroup heading="Rental providers">
+            <CommandGroup heading="Suppliers">
               {providers.map((p) => {
                 const active = p.key === value;
                 return (

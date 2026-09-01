@@ -53,12 +53,42 @@ describe("adding the CC", () => {
     expect(out).toMatchObject({ from: "b@x.com", subject: "S", html: "<p/>" });
   });
 
-  it("appends to an existing cc rather than replacing it", () => {
+  /**
+   * CONTRACT CHANGE, and the reason for it.
+   *
+   * This used to APPEND the deployment address to an existing cc. That was
+   * right while one organization existed and nothing ever set `cc` itself.
+   *
+   * It is wrong on a shared deployment: `sendEmail` now resolves the CC from
+   * the organization that owns the ORDER, so an explicit value is a
+   * deliberate per-brand decision. Appending the deployment-wide address to
+   * it would copy one tenant's support inbox on another tenant's customer
+   * mail — two separate legal entities, and a PII leak.
+   *
+   * An explicit CC is therefore AUTHORITATIVE and passes through untouched.
+   */
+  it("leaves an explicit cc untouched — it is the caller's decision", () => {
     const out = applyGlobalCc(
       { to: "guest@example.com", cc: "ops@example.com" },
       CC,
     );
-    expect(out.cc).toEqual(["ops@example.com", CC]);
+    expect(out.cc).toBe("ops@example.com");
+  });
+
+  it("does not append the deployment CC to an explicit array cc", () => {
+    const out = applyGlobalCc(
+      { to: "guest@example.com", cc: ["brand-support@example.com"] },
+      CC,
+    );
+    expect(out.cc).toEqual(["brand-support@example.com"]);
+  });
+
+  it("still applies the deployment CC when the caller set an EMPTY cc", () => {
+    // An empty string is "no decision made", not "copy nobody" — otherwise a
+    // caller that defaults `cc` to "" would silently disable the deployment
+    // CC for a single-brand deployment that relies on it.
+    const out = applyGlobalCc({ to: "guest@example.com", cc: "" }, CC);
+    expect(out.cc).toEqual([CC]);
   });
 
   it("does not mutate the caller's object", () => {

@@ -30,10 +30,18 @@ import { setEnabledProviders, TEST_ORG_SLUG } from "@/tests/utils/organization";
  *   - only PAYMENT.CAPTURE.COMPLETED moves an order to PAID
  */
 
+/**
+ * `resolve-gateway` derives these names from the organization SLUG, so they
+ * are derived here too rather than spelled out. Hardcoding them meant that
+ * renaming the seeded organization silently unconfigured PayPal, and the
+ * whole file failed with "not configured" instead of testing anything.
+ */
+const ORG_ENV_PREFIX = `ORG_${TEST_ORG_SLUG.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+
 const ORG_ENV = {
-  ORG_HIMANSHU_PAYPAL_CLIENT_ID: "test-client-id",
-  ORG_HIMANSHU_PAYPAL_CLIENT_SECRET: "test-client-secret",
-  ORG_HIMANSHU_PAYPAL_WEBHOOK_ID: "test-webhook-id",
+  [`${ORG_ENV_PREFIX}_PAYPAL_CLIENT_ID`]: "test-client-id",
+  [`${ORG_ENV_PREFIX}_PAYPAL_CLIENT_SECRET`]: "test-client-secret",
+  [`${ORG_ENV_PREFIX}_PAYPAL_WEBHOOK_ID`]: "test-webhook-id",
 } as const;
 
 /** Every header PayPal signs a delivery with. Their values are not checked
@@ -271,7 +279,7 @@ describe("when PayPal is enabled", () => {
   });
 
   it("uses the sandbox host only when ORG_<SLUG>_PAYPAL_SANDBOX says so", async () => {
-    vi.stubEnv("ORG_HIMANSHU_PAYPAL_SANDBOX", "true");
+    vi.stubEnv(`${ORG_ENV_PREFIX}_PAYPAL_SANDBOX`, "true");
     const calls = stubPayPal();
     await paypalWebhook(request(captureCompleted("PAYPAL-ORDER-6")) as never);
 

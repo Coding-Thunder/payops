@@ -10,9 +10,11 @@ import {
 import * as React from "react";
 
 import { BookingTypeLabel } from "@/lib/constants/labels";
-import type { BookingType } from "@/lib/constants/enums";
+import { ServiceType, type BookingType } from "@/lib/constants/enums";
+import type { ServiceRow } from "@/lib/service-summary";
 import type { ProviderSnapshot } from "@/lib/constants/providers";
 
+import { chargeWordingFor } from "../components/charge-breakdown";
 import {
   ChargeBreakdown,
   COLOR,
@@ -43,13 +45,38 @@ export interface PaymentConfirmationEmailProps {
   amount: string;
   paidOn: string;
   provider: ProviderSnapshot;
-  vehicle: { company: string; type: string; imageUrl?: string | null };
-  trip: {
+  /**
+   * WHAT was booked. Optional and defaulting to CAR_RENTAL so every
+   * existing caller — the previews, the admin template editor — renders
+   * exactly the rental email it rendered before. Only the charge wording
+   * and the hero image read it; the booking rows come in pre-formatted.
+   */
+  serviceType?: ServiceType;
+  /**
+   * CAR_RENTAL payload. Null on a FLIGHT / CRUISE order, where it only
+   * still drives the (absent) car hero image.
+   */
+  vehicle?: { company: string; type: string; imageUrl?: string | null } | null;
+  /** CAR_RENTAL payload. Null on a FLIGHT / CRUISE order. */
+  trip?: {
     pickupDate: string;
     dropoffDate: string;
     pickupLocation?: string | null;
     dropoffLocation?: string | null;
-  };
+  } | null;
+  /**
+   * Pre-formatted "what was booked" rows for the booking-details card.
+   *
+   * The caller (email.service) derives these from the shared
+   * `serviceDetailRows()` for FLIGHT / CRUISE. When omitted — which is what
+   * every CAR_RENTAL send and every preview does — the template falls back
+   * to the Vehicle / Pick-up / Drop-off triple it has always rendered,
+   * built from `vehicle` / `trip` below. That fallback is deliberately the
+   * ORIGINAL expression: `serviceDetailRows` drops the " · location"
+   * suffix and uses a space instead of "•", so routing rentals through it
+   * would silently reword every inherited receipt.
+   */
+  serviceRows?: ServiceRow[] | null;
   /** Supplier confirmation number — surfaces prominently at the top. */
   confirmationNumber?: string | null;
   /** Pre-formatted charge breakdown (prepaid / due-at-counter / total). */
@@ -88,8 +115,10 @@ export function PaymentConfirmationEmail({
   amount,
   paidOn,
   provider,
+  serviceType = ServiceType.CAR_RENTAL,
   vehicle,
   trip,
+  serviceRows,
   confirmationNumber,
   chargeBreakdown,
   termsText,
@@ -104,12 +133,10 @@ export function PaymentConfirmationEmail({
   const policyParagraphs = cancellationPolicy
     ? cancellationPolicy.split(/\n+/).filter((p) => p.trim().length > 0)
     : [];
-  const pickupValue = trip.pickupLocation
-    ? `${trip.pickupDate} · ${trip.pickupLocation}`
-    : trip.pickupDate;
-  const dropoffValue = trip.dropoffLocation
-    ? `${trip.dropoffDate} · ${trip.dropoffLocation}`
-    : trip.dropoffDate;
+  const bookingRows = serviceRows?.length
+    ? serviceRows
+    : rentalBookingRows(vehicle, trip);
+  const wording = chargeWordingFor(serviceType);
 
   return (
     <EmailLayout preview={preview}>
@@ -183,17 +210,22 @@ export function PaymentConfirmationEmail({
         bottomPadding={SPACE.xs}
       >
         <MetadataRow label="Type" value={BookingTypeLabel[bookingType]} />
-        <MetadataRow label="Provider" value={provider.name} />
         <MetadataRow
-          label="Vehicle"
-          value={`${vehicle.company} • ${vehicle.type}`}
+          label="Provider"
+          value={provider.name}
+          isLast={bookingRows.length === 0 && !receiptUrl}
         />
-        <MetadataRow label="Pick-up" value={pickupValue} />
-        <MetadataRow
-          label="Drop-off"
-          value={dropoffValue}
-          isLast={!receiptUrl}
-        />
+        {/* Vehicle / Pick-up / Drop-off for a rental; Route / Airline /
+            Departure … for a flight; Ship / Departs from … for a cruise.
+            Same rows, same order, same labels as before for CAR_RENTAL. */}
+        {bookingRows.map((row, idx) => (
+          <MetadataRow
+            key={`${row.label}-${idx}`}
+            label={row.label}
+            value={row.value}
+            isLast={idx === bookingRows.length - 1 && !receiptUrl}
+          />
+        ))}
         {receiptUrl ? (
           <MetadataRow
             label={gatewayLabel ? `${gatewayLabel} receipt` : "Receipt"}
@@ -234,10 +266,11 @@ export function PaymentConfirmationEmail({
           breakdown={chargeBreakdown}
           title="Charge breakdown"
           topPadding={SPACE.md}
+          {...(serviceType === ServiceType.CAR_RENTAL ? {} : wording)}
         />
       ) : null}
 
-      {vehicle.imageUrl ? (
+      {vehicle?.imageUrl ? (
         <Section style={{ padding: 0 }}>
           <Img
             src={vehicle.imageUrl}
@@ -343,6 +376,47 @@ export function PaymentConfirmationEmail({
       />
     </EmailLayout>
   );
+}
+
+/**
+ * The Vehicle / Pick-up / Drop-off triple, built from the pre-formatted
+ * rental props EXACTLY as this template built it inline before service
+ * types existed — "Company • Type", and the date with " · location"
+ * appended when the operator captured one.
+ *
+ * Kept here rather than routed through `serviceDetailRows()` on purpose:
+ * that helper's rental branch reproduces the ORDER TABLE's strings, not the
+ * email's, so swapping it in would reword every inherited receipt.
+ *
+ * Exported so the payment-request template shares the one definition — two
+ * copies of these literals is two chances for the emails to drift apart.
+ */
+export function rentalBookingRows(
+  vehicle: PaymentConfirmationEmailProps["vehicle"],
+  trip: PaymentConfirmationEmailProps["trip"],
+): ServiceRow[] {
+  const rows: ServiceRow[] = [];
+  if (vehicle) {
+    rows.push({
+      label: "Vehicle",
+      value: `${vehicle.company} • ${vehicle.type}`,
+    });
+  }
+  if (trip) {
+    rows.push({
+      label: "Pick-up",
+      value: trip.pickupLocation
+        ? `${trip.pickupDate} · ${trip.pickupLocation}`
+        : trip.pickupDate,
+    });
+    rows.push({
+      label: "Drop-off",
+      value: trip.dropoffLocation
+        ? `${trip.dropoffDate} · ${trip.dropoffLocation}`
+        : trip.dropoffDate,
+    });
+  }
+  return rows;
 }
 
 interface PaymentSummaryProps {

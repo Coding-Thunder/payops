@@ -2,11 +2,17 @@ import { z } from "zod";
 
 import {
   BOOKING_TYPES,
+  CABIN_CLASSES,
+  CRUISE_CABIN_CATEGORIES,
   CURRENCIES,
   ORDER_STATUSES,
   PAYMENT_TIMINGS,
   PaymentTiming,
   RECORD_STATES,
+  SERVICE_TYPES,
+  ServiceType,
+  TRIP_TYPES,
+  TripType,
 } from "@/lib/constants/enums";
 import { PROVIDER_KEY_REGEX } from "@/lib/constants/providers";
 
@@ -112,6 +118,220 @@ export const createOrderSchema = z
 
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 
+/* ------------------------------------------------------------------ *
+ * Multi-service order input.
+ *
+ * `createOrderSchema` above is LEFT EXACTLY AS IT WAS. The existing
+ * car-rental form binds to it, `validation.test.ts` pins its behaviour, and
+ * the safest possible change to a schema an inherited production deployment
+ * depends on is no change at all. The car-rental union member is DERIVED
+ * from it with `.extend()`, so the two can never drift.
+ * ------------------------------------------------------------------ */
+
+/** Customer contact block. Identical across all service types. */
+const customerInputSchema = z.object({
+  name: z.string().trim().min(2, "Customer name is required").max(120),
+  email: z.string().email("Enter a valid email").toLowerCase(),
+  phone: z
+    .string()
+    .trim()
+    .regex(phoneRegex, "Enter a valid phone number")
+    .max(32),
+});
+
+/** Charge lines. Identical across all service types — the money side of an
+ *  order does not vary by what is being sold. */
+const chargesInputSchema = z
+  .array(chargeInputSchema)
+  .min(1, "Add at least one charge")
+  .max(20, "Too many charge lines")
+  .refine(
+    (lines) =>
+      lines.some((l) => l.timing === PaymentTiming.PREPAID && l.amount > 0),
+    {
+      message: "At least one prepaid charge is required to collect payment",
+    },
+  );
+
+/** Car rental — the incumbent shape, plus its discriminator. */
+export const carRentalOrderSchema = createOrderSchema.extend({
+  serviceType: z.literal(ServiceType.CAR_RENTAL),
+});
+
+export type CarRentalOrderInput = z.infer<typeof carRentalOrderSchema>;
+
+const flightPassengersSchema = z
+  .object({
+    adults: z.coerce
+      .number()
+      .int()
+      .min(1, "At least one adult is required")
+      .max(9, "Contact us for groups over 9"),
+    children: z.coerce.number().int().min(0).max(9).default(0),
+    infants: z.coerce.number().int().min(0).max(9).default(0),
+  })
+  .refine((p) => p.infants <= p.adults, {
+    path: ["infants"],
+    message: "Each infant must travel with an adult",
+  });
+
+/**
+ * Flight booking REQUEST.
+ *
+ * No airline or GDS integration is implied — this platform holds no
+ * inventory. The fields are what an operator needs to source a fare by hand
+ * and quote it back.
+ */
+export const flightOrderSchema = z.object({
+  serviceType: z.literal(ServiceType.FLIGHT),
+  bookingType: z.enum(BOOKING_TYPES),
+  provider: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(PROVIDER_KEY_REGEX, "Select an airline or travel supplier"),
+  customer: customerInputSchema,
+  flight: z
+    .object({
+      tripType: z.enum(TRIP_TYPES),
+      airline: z.string().trim().max(80).optional().nullable(),
+      flightNumber: z.string().trim().max(16).optional().nullable(),
+      origin: z.string().trim().min(2, "Origin is required").max(120),
+      destination: z
+        .string()
+        .trim()
+        .min(2, "Destination is required")
+        .max(120),
+      departureDate: isoDateString,
+      departureTimePreference: z.string().trim().max(40).optional().nullable(),
+      /** Outbound arrival. Optional: a request can be quoted before a
+       *  specific itinerary is chosen. */
+      arrivalDate: z.string().optional().nullable(),
+      /** Airline record locator, entered once the booking is ticketed. */
+      pnr: z.string().trim().max(32).optional().nullable(),
+      returnDate: z.string().optional().nullable(),
+      returnTimePreference: z.string().trim().max(40).optional().nullable(),
+      cabinClass: z.enum(CABIN_CLASSES),
+      passengers: flightPassengersSchema,
+      passengerNotes: z.string().trim().max(2000).optional().nullable(),
+    })
+    .refine(
+      (f) =>
+        f.tripType !== TripType.ROUND_TRIP ||
+        (typeof f.returnDate === "string" && f.returnDate.length > 0),
+      {
+        path: ["returnDate"],
+        message: "Return date is required for a round trip",
+      },
+    )
+    .refine(
+      (f) =>
+        f.tripType !== TripType.ROUND_TRIP ||
+        !f.returnDate ||
+        new Date(f.returnDate) >= new Date(f.departureDate),
+      {
+        path: ["returnDate"],
+        message: "Return must be on or after departure",
+      },
+    )
+    .refine(
+      (f) =>
+        f.origin.trim().toUpperCase() !== f.destination.trim().toUpperCase(),
+      {
+        path: ["destination"],
+        message: "Destination must differ from origin",
+      },
+    )
+    .refine(
+      (f) =>
+        !f.arrivalDate || new Date(f.arrivalDate) >= new Date(f.departureDate),
+      {
+        path: ["arrivalDate"],
+        message: "Arrival must not be before departure",
+      },
+    ),
+  currency: z.enum(CURRENCIES),
+  charges: chargesInputSchema,
+  notes: z.string().trim().max(2000).optional(),
+});
+
+export type FlightOrderInput = z.infer<typeof flightOrderSchema>;
+
+const cruiseGuestsSchema = z.object({
+  adults: z.coerce
+    .number()
+    .int()
+    .min(1, "At least one adult is required")
+    .max(20, "Contact us for groups over 20"),
+  children: z.coerce.number().int().min(0).max(20).default(0),
+});
+
+/**
+ * Cruise booking REQUEST. No cruise-line inventory API is implied.
+ *
+ * The one structural difference from a flight: `returnDate` is REQUIRED and
+ * must be strictly after the sailing date. A cruise always comes back, and a
+ * zero-night sailing is a typo rather than a product — so unlike the flight
+ * schema there is no conditional and no same-day case to allow.
+ */
+export const cruiseOrderSchema = z.object({
+  serviceType: z.literal(ServiceType.CRUISE),
+  bookingType: z.enum(BOOKING_TYPES),
+  provider: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(PROVIDER_KEY_REGEX, "Select a cruise line or travel supplier"),
+  customer: customerInputSchema,
+  cruise: z
+    .object({
+      cruiseLine: z.string().trim().max(80).optional().nullable(),
+      shipName: z.string().trim().max(80).optional().nullable(),
+      itinerary: z.string().trim().max(160).optional().nullable(),
+      departurePort: z
+        .string()
+        .trim()
+        .min(2, "Departure port is required")
+        .max(120),
+      /** Absent on a round trip, which is the common case. */
+      arrivalPort: z.string().trim().max(120).optional().nullable(),
+      departureDate: isoDateString,
+      returnDate: isoDateString,
+      cabinCategory: z.enum(CRUISE_CABIN_CATEGORIES),
+      cabinNumber: z.string().trim().max(16).optional().nullable(),
+      guests: cruiseGuestsSchema,
+      guestNotes: z.string().trim().max(2000).optional().nullable(),
+      /** Cruise-line confirmation, entered once the cabin is held. */
+      bookingReference: z.string().trim().max(32).optional().nullable(),
+    })
+    .refine((c) => new Date(c.returnDate) > new Date(c.departureDate), {
+      path: ["returnDate"],
+      message: "Return must be after the sailing date",
+    }),
+  currency: z.enum(CURRENCIES),
+  charges: chargesInputSchema,
+  notes: z.string().trim().max(2000).optional(),
+});
+
+export type CruiseOrderInput = z.infer<typeof cruiseOrderSchema>;
+
+/**
+ * The API-level entry point. A discriminated union on `serviceType`, so a
+ * cruise payload is validated by cruise rules and a rental payload by the
+ * unchanged rental rules — service-specific validation with no shared
+ * "optional everything" object that would let a half-filled order through.
+ *
+ * Callers that predate `serviceType` are handled at the route by injecting
+ * the CAR_RENTAL default before parsing, so an old client keeps working.
+ */
+export const createOrderRequestSchema = z.discriminatedUnion("serviceType", [
+  carRentalOrderSchema,
+  flightOrderSchema,
+  cruiseOrderSchema,
+]);
+
+export type CreateOrderRequestInput = z.infer<typeof createOrderRequestSchema>;
+
 /** Staff edit of the supplier confirmation number from the admin portal.
  *  Empty string clears it. */
 export const confirmationNumberSchema = z.object({
@@ -127,6 +347,7 @@ export const listOrdersQuerySchema = z.object({
   q: z.string().trim().max(120).optional(),
   status: z.enum(ORDER_STATUSES).optional(),
   bookingType: z.enum(BOOKING_TYPES).optional(),
+  serviceType: z.enum(SERVICE_TYPES).optional(),
   state: z.enum(RECORD_STATES).optional().default("ACTIVE"),
   mine: z
     .union([z.string(), z.boolean()])

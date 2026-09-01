@@ -31,8 +31,7 @@ export const runtime = "edge";
  * Edge runtime, so only NEXT_PUBLIC_* is readable here — which is the right
  * variable anyway, since this is a public surface.
  */
-const BRAND =
-  process.env.NEXT_PUBLIC_APP_NAME || "ReservationCarRentals.com";
+const BRAND = process.env.NEXT_PUBLIC_APP_NAME || "RCR Cruise";
 
 export const alt = `${BRAND} — secure booking payment and written confirmation.`;
 export const size = { width: 1200, height: 630 };

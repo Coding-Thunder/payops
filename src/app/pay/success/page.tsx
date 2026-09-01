@@ -12,7 +12,12 @@ import {
   PaymentGatewayLabel as PAYMENT_GATEWAY_LABELS,
 } from "@/lib/constants/labels";
 import { resolveProvider } from "@/lib/constants/providers";
-import { OrderStatus, PaymentGatewayKey } from "@/lib/constants/enums";
+import {
+  OrderStatus,
+  PaymentGatewayKey,
+  ServiceType,
+} from "@/lib/constants/enums";
+import { ServiceDueLabel, ServiceTotalLabel } from "@/lib/constants/labels";
 import { summarizeCharges } from "@/lib/charges";
 import {
   formatCurrency,
@@ -22,6 +27,7 @@ import {
 import { logger } from "@/lib/logger";
 
 import { PaymentSuccessAutoRefresh } from "./auto-refresh";
+import { serviceDetailRows, serviceTypeOf } from "@/lib/service-summary";
 
 export const metadata = { title: "Payment received" };
 export const dynamic = "force-dynamic";
@@ -122,6 +128,9 @@ export default async function PaymentSuccessPage({
     ? summarizeCharges(order.charges, order.pricing.amount)
     : null;
   const hasCounterDue = (breakdown?.dueAtCounter ?? 0) > 0;
+  // The last screen a paying customer sees. Naming a rental counter on a
+  // cruise receipt is the same class of mistake as naming the wrong gateway.
+  const serviceType = order ? serviceTypeOf(order) : ServiceType.CAR_RENTAL;
 
   return (
     <PublicBrandChrome brand={publicBrand}>
@@ -238,7 +247,9 @@ export default async function PaymentSuccessPage({
                   </div>
                   <div className="flex items-center justify-between">
                     <dt className="text-slate-500">
-                      Remaining balance due at rental counter
+                      {serviceType === ServiceType.CAR_RENTAL
+                        ? "Remaining balance due at rental counter"
+                        : `Remaining ${ServiceDueLabel[serviceType].replace(/^Amount /, "balance ")}`}
                     </dt>
                     <dd className="tabular-nums text-slate-900">
                       {formatCurrency(
@@ -248,7 +259,9 @@ export default async function PaymentSuccessPage({
                     </dd>
                   </div>
                   <div className="flex items-center justify-between border-t border-slate-100 pt-1.5 font-medium">
-                    <dt className="text-slate-700">Total rental cost</dt>
+                    <dt className="text-slate-700">
+                      {ServiceTotalLabel[serviceType]}
+                    </dt>
                     <dd className="tabular-nums text-slate-900">
                       {formatCurrency(breakdown.total, order.pricing.currency)}
                     </dd>
@@ -291,26 +304,43 @@ export default async function PaymentSuccessPage({
                   value={BookingTypeLabel[order.bookingType]}
                 />
                 <DetailRow label="Provider" value={providerMeta.name} />
-                <DetailRow
-                  label="Vehicle"
-                  value={`${order.vehicle.company} · ${order.vehicle.type}`}
-                />
-                <DetailRow
-                  label="Pick-up"
-                  value={
-                    order.trip.pickupLocation
-                      ? `${formatDateTime(order.trip.pickupDate)} · ${order.trip.pickupLocation}`
-                      : formatDateTime(order.trip.pickupDate)
-                  }
-                />
-                <DetailRow
-                  label="Drop-off"
-                  value={
-                    order.trip.dropoffLocation
-                      ? `${formatDateTime(order.trip.dropoffDate)} · ${order.trip.dropoffLocation}`
-                      : formatDateTime(order.trip.dropoffDate)
-                  }
-                />
+                {/* CAR_RENTAL keeps its exact original three rows, including
+                    the " · location" suffixes, so an inherited rental receipt
+                    is unchanged. A flight or a cruise renders the shared
+                    service rows — the same facts the confirmation email and
+                    the evidence PDF show, from the same helper. */}
+                {order.vehicle && order.trip ? (
+                  <>
+                    <DetailRow
+                      label="Vehicle"
+                      value={`${order.vehicle.company} · ${order.vehicle.type}`}
+                    />
+                    <DetailRow
+                      label="Pick-up"
+                      value={
+                        order.trip.pickupLocation
+                          ? `${formatDateTime(order.trip.pickupDate)} · ${order.trip.pickupLocation}`
+                          : formatDateTime(order.trip.pickupDate)
+                      }
+                    />
+                    <DetailRow
+                      label="Drop-off"
+                      value={
+                        order.trip.dropoffLocation
+                          ? `${formatDateTime(order.trip.dropoffDate)} · ${order.trip.dropoffLocation}`
+                          : formatDateTime(order.trip.dropoffDate)
+                      }
+                    />
+                  </>
+                ) : (
+                  serviceDetailRows(order, formatDateTime).map((row) => (
+                    <DetailRow
+                      key={row.label}
+                      label={row.label}
+                      value={row.value}
+                    />
+                  ))
+                )}
                 {order.confirmationNumber ? (
                   <DetailRow
                     label="Confirmation #"

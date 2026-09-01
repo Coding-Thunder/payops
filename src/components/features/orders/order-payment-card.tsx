@@ -26,6 +26,8 @@ import { OrderStatus, PaymentTiming } from "@/lib/constants/enums";
 import { PaymentGatewayLabel } from "@/lib/constants/labels";
 import { summarizeCharges } from "@/lib/charges";
 import type { OrderDTO } from "@/types";
+import { ServiceDueLabel, ServiceTotalLabel } from "@/lib/constants/labels";
+import { serviceTypeOf } from "@/lib/service-summary";
 
 interface OrderPaymentCardProps {
   order: OrderDTO;
@@ -172,14 +174,18 @@ export function OrderPaymentCard({
           </div>
           {hasCounterDue ? (
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Amount due at counter</span>
+              <span className="text-muted-foreground">
+                {ServiceDueLabel[serviceTypeOf(order)]}
+              </span>
               <span className="font-medium tabular-nums">
                 {formatCurrency(breakdown.dueAtCounter, currency)}
               </span>
             </div>
           ) : null}
           <div className="flex items-center justify-between">
-            <span className="font-medium">Total rental cost</span>
+            <span className="font-medium">
+              {ServiceTotalLabel[serviceTypeOf(order)]}
+            </span>
             <span className="font-semibold tabular-nums">
               {formatCurrency(breakdown.total, currency)}
             </span>

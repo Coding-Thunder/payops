@@ -2,6 +2,7 @@ import { Permission } from "@/lib/constants/permissions";
 import { CURRENCIES } from "@/lib/constants/enums";
 import { jsonOk, withApi } from "@/server/api/respond";
 import { requirePermission } from "@/server/auth/session";
+import { getOrganization } from "@/server/auth/organization";
 import { getSettings } from "@/server/services/settings.service";
 import { listActiveProviders } from "@/server/services/provider.service";
 
@@ -17,14 +18,19 @@ export const dynamic = "force-dynamic";
  */
 export const GET = withApi(async () => {
   await requirePermission(Permission.ORDER_CREATE);
-  const [settings, providers] = await Promise.all([
+  const [settings, providers, organization] = await Promise.all([
     getSettings(),
     listActiveProviders(),
+    getOrganization(),
   ]);
   return jsonOk({
     allowedBookingTypes: settings.allowedBookingTypes,
     defaultCurrency: settings.defaultCurrency,
     allowedCurrencies: CURRENCIES,
+    // What this brand sells, so a client rendering the form knows which
+    // tabs to offer. `providers` carries `serviceTypes` per row for the
+    // per-tab narrowing.
+    serviceTypes: organization.serviceTypes,
     providers,
   });
 });

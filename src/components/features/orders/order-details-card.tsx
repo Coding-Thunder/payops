@@ -5,7 +5,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ProviderCard } from "@/components/features/providers";
-import { BookingTypeLabel } from "@/lib/constants/labels";
+import { BookingTypeLabel, ServiceTypeLabel } from "@/lib/constants/labels";
+import { ServiceType } from "@/lib/constants/enums";
+import {
+  describeServiceItem,
+  serviceDetailRows,
+  serviceTypeOf,
+} from "@/lib/service-summary";
 import { formatDateTime } from "@/lib/format";
 import type { OrderDTO } from "@/types";
 
@@ -13,13 +19,32 @@ interface OrderDetailsCardProps {
   order: OrderDTO;
 }
 
+/**
+ * The operator's view of what was booked.
+ *
+ * CAR_RENTAL keeps its bespoke layout — the two-line Vehicle cell, the
+ * date-over-location Pick-up and Drop-off cells, and the car hero image —
+ * because those are genuinely richer than a flat label/value list and are
+ * what the rental workflow was built around. FLIGHT and CRUISE render the
+ * shared `serviceDetailRows()` instead, which is the same data every other
+ * surface (emails, evidence PDF, /pay/success) reads, so the operator and
+ * the customer can never be looking at different facts.
+ */
 export function OrderDetailsCard({ order }: OrderDetailsCardProps) {
-  const imageUrl = order.vehicle.imageUrl ?? null;
+  const serviceType = serviceTypeOf(order);
+  const isCarRental = serviceType === ServiceType.CAR_RENTAL;
+  // Car photo only — there is no equivalent operator-supplied image on a
+  // flight or a cruise, and the provider mark already carries the brand.
+  const imageUrl = order.vehicle?.imageUrl ?? null;
+  const serviceRows = isCarRental
+    ? []
+    : serviceDetailRows(order, formatDateTime);
+
   return (
     <div className="space-y-4">
       <ProviderCard
         provider={order.provider}
-        description={`${order.vehicle.company} ${order.vehicle.type}`}
+        description={describeServiceItem(order)}
         meta={
           <>
             <div className="font-mono text-[12px] text-foreground">
@@ -46,7 +71,7 @@ export function OrderDetailsCard({ order }: OrderDetailsCardProps) {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={imageUrl}
-                alt={`${order.vehicle.company} ${order.vehicle.type}`}
+                alt={describeServiceItem(order)}
                 className="aspect-[16/9] w-full rounded-t-lg object-cover bg-surface-1"
                 loading="lazy"
               />
@@ -67,6 +92,11 @@ export function OrderDetailsCard({ order }: OrderDetailsCardProps) {
             value={BookingTypeLabel[order.bookingType]}
           />
           <Detail label="Created" value={formatDateTime(order.createdAt)} />
+          {/* Only shown once the deployment sells more than car rental —
+              on a rental-only console it would be a constant. */}
+          {isCarRental ? null : (
+            <Detail label="Service" value={ServiceTypeLabel[serviceType]} />
+          )}
           <Detail
             label="Customer"
             value={
@@ -81,43 +111,80 @@ export function OrderDetailsCard({ order }: OrderDetailsCardProps) {
               </>
             }
           />
-          <Detail
-            label="Vehicle"
-            value={
-              <>
-                <div className="font-medium">{order.vehicle.company}</div>
-                <div className="text-xs text-muted-foreground">
-                  {order.vehicle.type}
-                </div>
-              </>
-            }
-          />
-          <Detail
-            label="Pick-up"
-            value={
-              <>
-                <div>{formatDateTime(order.trip.pickupDate)}</div>
-                {order.trip.pickupLocation ? (
+
+          {order.vehicle ? (
+            <Detail
+              label="Vehicle"
+              value={
+                <>
+                  <div className="font-medium">{order.vehicle.company}</div>
                   <div className="text-xs text-muted-foreground">
-                    {order.trip.pickupLocation}
+                    {order.vehicle.type}
                   </div>
-                ) : null}
-              </>
-            }
-          />
-          <Detail
-            label="Drop-off"
-            value={
-              <>
-                <div>{formatDateTime(order.trip.dropoffDate)}</div>
-                {order.trip.dropoffLocation ? (
-                  <div className="text-xs text-muted-foreground">
-                    {order.trip.dropoffLocation}
-                  </div>
-                ) : null}
-              </>
-            }
-          />
+                </>
+              }
+            />
+          ) : null}
+          {order.trip ? (
+            <>
+              <Detail
+                label="Pick-up"
+                value={
+                  <>
+                    <div>{formatDateTime(order.trip.pickupDate)}</div>
+                    {order.trip.pickupLocation ? (
+                      <div className="text-xs text-muted-foreground">
+                        {order.trip.pickupLocation}
+                      </div>
+                    ) : null}
+                  </>
+                }
+              />
+              <Detail
+                label="Drop-off"
+                value={
+                  <>
+                    <div>{formatDateTime(order.trip.dropoffDate)}</div>
+                    {order.trip.dropoffLocation ? (
+                      <div className="text-xs text-muted-foreground">
+                        {order.trip.dropoffLocation}
+                      </div>
+                    ) : null}
+                  </>
+                }
+              />
+            </>
+          ) : null}
+
+          {serviceRows.map((row) => (
+            <Detail key={row.label} label={row.label} value={row.value} />
+          ))}
+
+          {/* Free-text requirements the operator captured. Wide, because
+              they are prose rather than a field. */}
+          {order.flight?.passengerNotes ? (
+            <Detail
+              label="Special requirements"
+              value={
+                <p className="whitespace-pre-line">
+                  {order.flight.passengerNotes}
+                </p>
+              }
+              full
+            />
+          ) : null}
+          {order.cruise?.guestNotes ? (
+            <Detail
+              label="Guest requirements"
+              value={
+                <p className="whitespace-pre-line">
+                  {order.cruise.guestNotes}
+                </p>
+              }
+              full
+            />
+          ) : null}
+
           <Detail
             label="Created by"
             value={

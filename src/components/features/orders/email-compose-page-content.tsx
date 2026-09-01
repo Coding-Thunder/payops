@@ -25,6 +25,8 @@ import { CenteredSpinner } from "@/components/ui/spinner";
 import { useOrderQuery } from "@/hooks/use-order-query";
 import { ApiClientError } from "@/lib/api-client";
 import { BookingTypeLabel } from "@/lib/constants/labels";
+import { describeServiceItem, serviceTypeOf } from "@/lib/service-summary";
+import { ServiceItemLabel } from "@/lib/constants/labels";
 import { formatCurrency } from "@/lib/format";
 
 interface EmailComposePageContentProps {
@@ -148,8 +150,8 @@ export function EmailComposePageContent({
             />
             <SummaryRow label="Provider" value={order.provider?.name ?? "—"} />
             <SummaryRow
-              label="Vehicle"
-              value={`${order.vehicle.company} · ${order.vehicle.type}`}
+              label={ServiceItemLabel[serviceTypeOf(order)]}
+              value={describeServiceItem(order)}
             />
             <SummaryRow label="Order" value={order.orderNumber} mono />
           </dl>

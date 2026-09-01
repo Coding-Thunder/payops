@@ -15,8 +15,16 @@ import {
   OrderStatus,
   PaymentGatewayKey,
   RecordState,
+  ServiceType,
+  TripType,
   UserRole,
 } from "@/lib/constants/enums";
+import {
+  describeServiceDates,
+  describeServiceItem,
+  serviceNoun,
+  serviceTypeOf,
+} from "@/lib/service-summary";
 import {
   ConflictError,
   ForbiddenError,
@@ -37,11 +45,21 @@ import {
   organizationStamp,
   withOrganizationScope,
 } from "@/server/db/organization-filter";
-import { getRequestOrganizationScope } from "@/server/auth/organization";
+import {
+  getOrganization,
+  getRequestOrganizationScope,
+} from "@/server/auth/organization";
+import {
+  resolveAppUrl,
+  resolveOrganizationLegal,
+} from "@/server/auth/organization-config";
 import { resolvePublicBrand } from "@/server/email/identity";
 import type {
   ArchiveOrderInput,
-  CreateOrderInput,
+  CarRentalOrderInput,
+  CreateOrderRequestInput,
+  CruiseOrderInput,
+  FlightOrderInput,
   ListOrdersQuery,
 } from "@/lib/validation";
 import type { OrderDTO, PaginatedResult } from "@/types";
@@ -145,13 +163,64 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
             onPrimaryColor: fallback.onPrimaryColor,
           };
         })(),
-    vehicle: { ...doc.vehicle },
-    trip: {
-      pickupDate: doc.trip.pickupDate.toISOString(),
-      dropoffDate: doc.trip.dropoffDate.toISOString(),
-      pickupLocation: doc.trip.pickupLocation ?? null,
-      dropoffLocation: doc.trip.dropoffLocation ?? null,
-    },
+    // Read through the shared helper, never off the field: an order stored
+    // before `serviceType` existed arrives here with no such key at all,
+    // and `.lean()` does not apply Mongoose defaults.
+    serviceType: serviceTypeOf(doc),
+    vehicle: doc.vehicle ? { ...doc.vehicle } : null,
+    trip: doc.trip
+      ? {
+          pickupDate: doc.trip.pickupDate.toISOString(),
+          dropoffDate: doc.trip.dropoffDate.toISOString(),
+          pickupLocation: doc.trip.pickupLocation ?? null,
+          dropoffLocation: doc.trip.dropoffLocation ?? null,
+        }
+      : null,
+    flight: doc.flight
+      ? {
+          tripType: doc.flight.tripType,
+          airline: doc.flight.airline ?? null,
+          flightNumber: doc.flight.flightNumber ?? null,
+          origin: doc.flight.origin,
+          destination: doc.flight.destination,
+          departureDate: new Date(doc.flight.departureDate).toISOString(),
+          departureTimePreference: doc.flight.departureTimePreference ?? null,
+          arrivalDate: doc.flight.arrivalDate
+            ? new Date(doc.flight.arrivalDate).toISOString()
+            : null,
+          returnDate: doc.flight.returnDate
+            ? new Date(doc.flight.returnDate).toISOString()
+            : null,
+          returnTimePreference: doc.flight.returnTimePreference ?? null,
+          cabinClass: doc.flight.cabinClass,
+          passengers: {
+            adults: doc.flight.passengers?.adults ?? 1,
+            children: doc.flight.passengers?.children ?? 0,
+            infants: doc.flight.passengers?.infants ?? 0,
+          },
+          passengerNotes: doc.flight.passengerNotes ?? null,
+          pnr: doc.flight.pnr ?? null,
+        }
+      : null,
+    cruise: doc.cruise
+      ? {
+          cruiseLine: doc.cruise.cruiseLine ?? null,
+          shipName: doc.cruise.shipName ?? null,
+          itinerary: doc.cruise.itinerary ?? null,
+          departurePort: doc.cruise.departurePort,
+          arrivalPort: doc.cruise.arrivalPort ?? null,
+          departureDate: new Date(doc.cruise.departureDate).toISOString(),
+          returnDate: new Date(doc.cruise.returnDate).toISOString(),
+          cabinCategory: doc.cruise.cabinCategory,
+          cabinNumber: doc.cruise.cabinNumber ?? null,
+          guests: {
+            adults: doc.cruise.guests?.adults ?? 1,
+            children: doc.cruise.guests?.children ?? 0,
+          },
+          guestNotes: doc.cruise.guestNotes ?? null,
+          bookingReference: doc.cruise.bookingReference ?? null,
+        }
+      : null,
     pricing: { amount: doc.pricing.amount, currency: doc.pricing.currency },
     // Charges are the source of truth; legacy orders (no `charges[]`) get a
     // single synthesised prepaid line from `pricing.amount`.
@@ -272,6 +341,69 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
   };
 }
 
+/**
+ * The service-specific half of a new order document.
+ *
+ * Returns a partial that names EVERY service slot, not just the populated
+ * one, so the written document always carries explicit nulls for the
+ * services it is not. Leaving the other keys absent would work today
+ * (`default: null` fills them) but makes the stored shape depend on which
+ * code path wrote it, and `$exists` queries then answer differently for two
+ * orders of the same type.
+ *
+ * Dates arrive as ISO strings from the validated input and are converted
+ * here, once, rather than at each call site.
+ */
+function buildServicePayload(
+  input: CreateOrderRequestInput,
+  serviceType: ServiceType,
+): Pick<OrderDoc, "vehicle" | "trip" | "flight" | "cruise"> {
+  const empty = { vehicle: null, trip: null, flight: null, cruise: null };
+
+  if (serviceType === ServiceType.FLIGHT) {
+    const f = (input as FlightOrderInput).flight;
+    return {
+      ...empty,
+      flight: {
+        ...f,
+        departureDate: new Date(f.departureDate),
+        arrivalDate: f.arrivalDate ? new Date(f.arrivalDate) : null,
+        // A one-way request may still carry a stale return date from a form
+        // the operator switched back; the schema stops requiring it, so drop
+        // it here rather than persisting a return leg that does not exist.
+        returnDate:
+          f.tripType === TripType.ROUND_TRIP && f.returnDate
+            ? new Date(f.returnDate)
+            : null,
+      },
+    };
+  }
+
+  if (serviceType === ServiceType.CRUISE) {
+    const c = (input as CruiseOrderInput).cruise;
+    return {
+      ...empty,
+      cruise: {
+        ...c,
+        departureDate: new Date(c.departureDate),
+        returnDate: new Date(c.returnDate),
+      },
+    };
+  }
+
+  const rental = input as CarRentalOrderInput;
+  return {
+    ...empty,
+    vehicle: rental.vehicle,
+    trip: {
+      pickupDate: new Date(rental.trip.pickupDate),
+      dropoffDate: new Date(rental.trip.dropoffDate),
+      pickupLocation: rental.trip.pickupLocation,
+      dropoffLocation: rental.trip.dropoffLocation,
+    },
+  };
+}
+
 interface CreateOrderResult {
   order: OrderDTO;
   /** Always null on creation now — Stripe is no longer contacted until
@@ -295,7 +427,7 @@ interface CreateOrderResult {
  *   - keep Stripe rate-limit + idempotency surface tight
  */
 export async function createOrder(
-  input: CreateOrderInput,
+  input: CreateOrderRequestInput,
   ctx: OrderContext,
 ): Promise<CreateOrderResult> {
   await connectMongo();
@@ -307,10 +439,37 @@ export async function createOrder(
     );
   }
 
+  // A payload with no `serviceType` is a pre-multi-service client — i.e. a
+  // car rental, which is the only thing that existed then.
+  const serviceType =
+    ("serviceType" in input ? input.serviceType : undefined) ??
+    ServiceType.CAR_RENTAL;
+
+  // THE TENANT ALLOW-LIST, enforced server-side.
+  //
+  // The create-order page renders only the tabs this organization sells, but
+  // that is a UI convenience. This is the check that holds: without it a
+  // hand-crafted POST could write a car-rental order into a cruise brand's
+  // collection, and every downstream surface — receipts, evidence, the
+  // dispute pack — would render a service the brand does not sell.
+  const organization = await getOrganization();
+  if (!organization.serviceTypes.includes(serviceType)) {
+    throw new ValidationError(
+      `${organization.brandName} does not sell this service type.`,
+    );
+  }
+
   const currency = input.currency ?? settings.defaultCurrency;
   const orderId = new Types.ObjectId();
   const orderNumber = generateOrderNumber(settings.orderPrefix);
-  const providerSnapshot = await buildProviderSnapshotFromKey(input.provider);
+  // Second server-side guard, independent of the first: the supplier must
+  // itself be valid for this service, so a cruise line cannot end up
+  // branding a flight receipt.
+  const providerSnapshot = await buildProviderSnapshotFromKey(
+    input.provider,
+    serviceType,
+  );
+  const servicePayload = buildServicePayload(input, serviceType);
 
   // Charges are the source of truth. `pricing.amount` is the PREPAID total —
   // the ONLY figure ever sent to the gateway. Due-at-counter never touches
@@ -325,6 +484,24 @@ export async function createOrder(
   // consistent in both worlds.
   const organizationId = organizationStamp(await getRequestOrganizationScope());
 
+  // The terms a customer is charged under. Per-organization where the brand
+  // has set its own, falling back FIELD BY FIELD to the deployment Settings
+  // singleton — so the incumbent brand's orders freeze exactly the text they
+  // freeze today, and a brand selling cruises never shows car-rental terms.
+  const orgLegal = await resolveOrganizationLegal(
+    organizationId ? String(organizationId) : null,
+  );
+  const legal = {
+    termsAndConditions:
+      orgLegal?.termsAndConditions || settings.termsAndConditions,
+    termsVersion: orgLegal?.termsVersion || settings.termsVersion,
+    cancellationPolicy:
+      orgLegal?.cancellationPolicy || settings.cancellationPolicy,
+    cancellationPolicyVersion:
+      orgLegal?.cancellationPolicyVersion || settings.cancellationPolicyVersion,
+  };
+
+
   const created = await withTx(async (session) => {
     const inserted = await Order.create(
       [
@@ -335,20 +512,15 @@ export async function createOrder(
           bookingType: input.bookingType,
           status: OrderStatus.NOT_INITIATED,
           state: RecordState.ACTIVE,
+          serviceType,
           customer: input.customer,
           provider: providerSnapshot,
-          vehicle: input.vehicle,
-          trip: {
-            pickupDate: new Date(input.trip.pickupDate),
-            dropoffDate: new Date(input.trip.dropoffDate),
-            pickupLocation: input.trip.pickupLocation,
-            dropoffLocation: input.trip.dropoffLocation,
-          },
+          ...servicePayload,
           pricing: { amount: chargeSummary.prepaid, currency },
           charges: chargeSummary.charges,
           terms: {
-            text: settings.termsAndConditions,
-            version: settings.termsVersion,
+            text: legal.termsAndConditions,
+            version: legal.termsVersion,
           },
           payment: {
             status: OrderStatus.NOT_INITIATED,
@@ -361,8 +533,8 @@ export async function createOrder(
           },
           policy: {
             acceptedAt: new Date(),
-            version: settings.cancellationPolicyVersion,
-            text: settings.cancellationPolicy,
+            version: legal.cancellationPolicyVersion,
+            text: legal.cancellationPolicy,
           },
           risk: { flagged: false },
           consent: { status: ConsentStatus.NOT_REQUESTED },
@@ -424,17 +596,85 @@ export async function createOrder(
                 onPrimaryColor: orderDoc.provider.onPrimaryColor ?? null,
               }
             : null,
-          vehicle: {
-            company: orderDoc.vehicle.company,
-            type: orderDoc.vehicle.type,
-            imageUrl: orderDoc.vehicle.imageUrl ?? null,
-          },
-          trip: {
-            pickupDate: orderDoc.trip.pickupDate.toISOString(),
-            dropoffDate: orderDoc.trip.dropoffDate.toISOString(),
-            pickupLocation: orderDoc.trip.pickupLocation ?? null,
-            dropoffLocation: orderDoc.trip.dropoffLocation ?? null,
-          },
+          serviceType: orderDoc.serviceType,
+          // Human-readable "what was bought", independent of service type.
+          // The dispute pack is read by people, and a chargeback analyst
+          // should not have to know this schema to see what was sold.
+          item: describeServiceItem(orderDoc),
+          // The structured payloads follow. Only the populated one is
+          // written — a genesis evidence row carrying three explicit nulls
+          // is noise in a document whose whole purpose is being read.
+          ...(orderDoc.vehicle
+            ? {
+                vehicle: {
+                  company: orderDoc.vehicle.company,
+                  type: orderDoc.vehicle.type,
+                  imageUrl: orderDoc.vehicle.imageUrl ?? null,
+                },
+              }
+            : {}),
+          ...(orderDoc.trip
+            ? {
+                trip: {
+                  pickupDate: orderDoc.trip.pickupDate.toISOString(),
+                  dropoffDate: orderDoc.trip.dropoffDate.toISOString(),
+                  pickupLocation: orderDoc.trip.pickupLocation ?? null,
+                  dropoffLocation: orderDoc.trip.dropoffLocation ?? null,
+                },
+              }
+            : {}),
+          ...(orderDoc.flight
+            ? {
+                flight: {
+                  tripType: orderDoc.flight.tripType,
+                  airline: orderDoc.flight.airline ?? null,
+                  flightNumber: orderDoc.flight.flightNumber ?? null,
+                  origin: orderDoc.flight.origin,
+                  destination: orderDoc.flight.destination,
+                  departureDate: orderDoc.flight.departureDate.toISOString(),
+                  departureTimePreference:
+                    orderDoc.flight.departureTimePreference ?? null,
+                  arrivalDate: orderDoc.flight.arrivalDate
+                    ? orderDoc.flight.arrivalDate.toISOString()
+                    : null,
+                  returnDate: orderDoc.flight.returnDate
+                    ? orderDoc.flight.returnDate.toISOString()
+                    : null,
+                  returnTimePreference:
+                    orderDoc.flight.returnTimePreference ?? null,
+                  cabinClass: orderDoc.flight.cabinClass,
+                  passengers: {
+                    adults: orderDoc.flight.passengers.adults,
+                    children: orderDoc.flight.passengers.children,
+                    infants: orderDoc.flight.passengers.infants,
+                  },
+                  passengerNotes: orderDoc.flight.passengerNotes ?? null,
+                  pnr: orderDoc.flight.pnr ?? null,
+                },
+              }
+            : {}),
+          ...(orderDoc.cruise
+            ? {
+                cruise: {
+                  cruiseLine: orderDoc.cruise.cruiseLine ?? null,
+                  shipName: orderDoc.cruise.shipName ?? null,
+                  itinerary: orderDoc.cruise.itinerary ?? null,
+                  departurePort: orderDoc.cruise.departurePort,
+                  arrivalPort: orderDoc.cruise.arrivalPort ?? null,
+                  departureDate: orderDoc.cruise.departureDate.toISOString(),
+                  returnDate: orderDoc.cruise.returnDate.toISOString(),
+                  cabinCategory: orderDoc.cruise.cabinCategory,
+                  cabinNumber: orderDoc.cruise.cabinNumber ?? null,
+                  guests: {
+                    adults: orderDoc.cruise.guests.adults,
+                    children: orderDoc.cruise.guests.children,
+                  },
+                  guestNotes: orderDoc.cruise.guestNotes ?? null,
+                  bookingReference:
+                    orderDoc.cruise.bookingReference ?? null,
+                },
+              }
+            : {}),
           pricing: {
             amount: orderDoc.pricing.amount,
             currency: orderDoc.pricing.currency,
@@ -609,19 +849,14 @@ export async function initiatePayment(
     doc.organizationId ? String(doc.organizationId) : null,
     branding,
   );
-  const productName = describeProductName({
-    bookingType: doc.bookingType,
-    provider: doc.provider?.id ?? resolveProvider(undefined).id,
-    vehicle: { company: doc.vehicle.company, type: doc.vehicle.type },
-  });
-  const description = describeProductDescription({
-    trip: {
-      pickupDate: doc.trip.pickupDate.toISOString(),
-      dropoffDate: doc.trip.dropoffDate.toISOString(),
-      pickupLocation: doc.trip.pickupLocation ?? null,
-      dropoffLocation: doc.trip.dropoffLocation ?? null,
-    },
-  });
+  // Return URLs must belong to the brand the CUSTOMER is buying from, not to
+  // whichever deployment happens to be serving the request. Falls back to
+  // APP_URL when the organization has no own domain configured.
+  const orgAppUrl = await resolveAppUrl(
+    doc.organizationId ? String(doc.organizationId) : null,
+  );
+  const productName = describeProductName(doc);
+  const description = describeProductDescription(doc);
 
   let session: CreatedPaymentSession;
   try {
@@ -633,9 +868,9 @@ export async function initiatePayment(
       customer: doc.customer,
       productName,
       description,
-      imageUrls: doc.vehicle.imageUrl ? [doc.vehicle.imageUrl] : undefined,
-      successUrl: settings.successRedirectUrl,
-      cancelUrl: settings.cancelRedirectUrl,
+      imageUrls: doc.vehicle?.imageUrl ? [doc.vehicle.imageUrl] : undefined,
+      successUrl: `${orgAppUrl}/pay/success`,
+      cancelUrl: `${orgAppUrl}/pay/cancelled`,
       expiresAt,
       metadata: {
         orderId: String(doc._id),
@@ -806,44 +1041,43 @@ export async function initiatePayment(
   };
 }
 
-interface ProductNameInput {
-  bookingType: BookingType;
-  provider: string;
-  vehicle: { company: string; type: string };
-}
-
-function describeProductName(input: ProductNameInput): string {
-  const providerName = resolveProvider({ id: input.provider }).name;
-  const vehicle = `${input.vehicle.company} ${input.vehicle.type}`;
-  switch (input.bookingType) {
+/**
+ * The gateway-hosted checkout line item — the ONE string a customer reads on
+ * the page where they enter their card, and the one that appears on their
+ * bank statement. Getting it wrong is not cosmetic.
+ *
+ * The CAR_RENTAL output is unchanged and pinned by
+ * `stripe-session.characterization.test.ts`: "Hertz • Toyota Corolla rental".
+ * FLIGHT and CRUISE keep the same three-part shape — supplier, what, why —
+ * with the noun that fits what was actually sold.
+ */
+function describeProductName(doc: OrderDoc): string {
+  const providerName = resolveProvider({ id: doc.provider?.id }).name;
+  const item = describeServiceItem(doc);
+  const serviceType = serviceTypeOf(doc);
+  switch (doc.bookingType) {
     case BookingType.NEW_BOOKING:
-      return `${providerName} • ${vehicle} rental`;
+      // "rental" / "flight" / "cruise" — the trailing noun the incumbent
+      // string has always carried, chosen by service rather than assumed.
+      return `${providerName} • ${item} ${serviceNoun({ serviceType })}`;
     case BookingType.MODIFICATION:
-      return `${providerName} booking modification • ${vehicle}`;
+      return `${providerName} booking modification • ${item}`;
     case BookingType.CANCELLATION_CHARGE:
-      return `${providerName} cancellation charge • ${vehicle}`;
+      return `${providerName} cancellation charge • ${item}`;
     default:
-      return `${providerName} • ${vehicle}`;
+      return `${providerName} • ${item}`;
   }
 }
 
-interface ProductDescriptionInput {
-  trip: {
-    pickupDate: string;
-    dropoffDate: string;
-    pickupLocation?: string | null;
-    dropoffLocation?: string | null;
-  };
-}
-
-function describeProductDescription(input: ProductDescriptionInput): string {
-  const pickup = new Date(input.trip.pickupDate).toISOString().slice(0, 10);
-  const drop = new Date(input.trip.dropoffDate).toISOString().slice(0, 10);
-  const pickupLoc = input.trip.pickupLocation?.trim();
-  const dropLoc = input.trip.dropoffLocation?.trim();
-  const pickupPart = pickupLoc ? `${pickup} (${pickupLoc})` : pickup;
-  const dropPart = dropLoc ? `${drop} (${dropLoc})` : drop;
-  return `Pick-up: ${pickupPart} • Drop-off: ${dropPart}`;
+/**
+ * The checkout sub-line: when the thing happens.
+ *
+ * Delegates wholesale to `describeServiceDates`, whose CAR_RENTAL branch is
+ * a verbatim copy of the string this function used to build inline —
+ * including the bullet separator and the parenthesised locations.
+ */
+function describeProductDescription(doc: OrderDoc): string {
+  return describeServiceDates(doc);
 }
 
 // ---------- Listing / fetching ----------
@@ -859,6 +1093,15 @@ export async function listOrders(
   filter.state = query.state ?? RecordState.ACTIVE;
   if (query.status) filter.status = query.status;
   if (query.bookingType) filter.bookingType = query.bookingType;
+  if (query.serviceType) {
+    // CAR_RENTAL must also match orders stored before `serviceType` existed:
+    // they have no such key and are car rentals. Every other value matches
+    // only an explicit stamp.
+    filter.serviceType =
+      query.serviceType === ServiceType.CAR_RENTAL
+        ? { $in: [ServiceType.CAR_RENTAL, null] }
+        : query.serviceType;
+  }
 
   // STAFF can only see their own orders unless explicitly granted ORDER_VIEW_ALL.
   const canSeeAll = roleHasPermission(ctx.actor.role, Permission.ORDER_VIEW_ALL);
@@ -878,6 +1121,19 @@ export async function listOrders(
       { "customer.phone": { $regex: escaped, $options: "i" } },
       { "vehicle.company": { $regex: escaped, $options: "i" } },
       { "vehicle.type": { $regex: escaped, $options: "i" } },
+      // Flight and cruise orders carry no vehicle, so without these an
+      // operator searching "JFK" or "Wonder of the Seas" gets nothing back.
+      { "flight.origin": { $regex: escaped, $options: "i" } },
+      { "flight.destination": { $regex: escaped, $options: "i" } },
+      { "flight.airline": { $regex: escaped, $options: "i" } },
+      { "flight.flightNumber": { $regex: escaped, $options: "i" } },
+      { "flight.pnr": { $regex: escaped, $options: "i" } },
+      { "cruise.cruiseLine": { $regex: escaped, $options: "i" } },
+      { "cruise.shipName": { $regex: escaped, $options: "i" } },
+      { "cruise.itinerary": { $regex: escaped, $options: "i" } },
+      { "cruise.departurePort": { $regex: escaped, $options: "i" } },
+      { "cruise.arrivalPort": { $regex: escaped, $options: "i" } },
+      { "cruise.bookingReference": { $regex: escaped, $options: "i" } },
     ];
   }
   if (query.from || query.to) {
@@ -1118,6 +1374,9 @@ export async function regeneratePaymentLink(
 
   let session: CreatedPaymentSession;
   try {
+  const orgAppUrl = await resolveAppUrl(
+    doc.organizationId ? String(doc.organizationId) : null,
+  );
     session = await gateway.createSession({
       orderId: String(doc._id),
       orderNumber: doc.orderNumber,
@@ -1129,22 +1388,11 @@ export async function regeneratePaymentLink(
       amount: doc.pricing.amount,
       currency: doc.pricing.currency,
       customer: doc.customer,
-      productName: describeProductName({
-        bookingType: doc.bookingType,
-        provider: doc.provider?.id ?? resolveProvider(undefined).id,
-        vehicle: { company: doc.vehicle.company, type: doc.vehicle.type },
-      }),
-      description: describeProductDescription({
-        trip: {
-          pickupDate: doc.trip.pickupDate.toISOString(),
-          dropoffDate: doc.trip.dropoffDate.toISOString(),
-          pickupLocation: doc.trip.pickupLocation ?? null,
-          dropoffLocation: doc.trip.dropoffLocation ?? null,
-        },
-      }),
-      imageUrls: doc.vehicle.imageUrl ? [doc.vehicle.imageUrl] : undefined,
-      successUrl: settings.successRedirectUrl,
-      cancelUrl: settings.cancelRedirectUrl,
+      productName: describeProductName(doc),
+      description: describeProductDescription(doc),
+      imageUrls: doc.vehicle?.imageUrl ? [doc.vehicle.imageUrl] : undefined,
+      successUrl: `${orgAppUrl}/pay/success`,
+      cancelUrl: `${orgAppUrl}/pay/cancelled`,
       expiresAt,
       metadata: {
         orderId: String(doc._id),

@@ -30,6 +30,8 @@ import { api, ApiClientError } from "@/lib/api-client";
 import { DomainEventType } from "@/lib/constants/events";
 import { cn } from "@/lib/utils";
 import type { OrderDTO } from "@/types";
+import { describeServiceItem, serviceTypeOf } from "@/lib/service-summary";
+import { ServiceItemLabel } from "@/lib/constants/labels";
 
 interface EmailComposerProps {
   order: OrderDTO;
@@ -630,8 +632,8 @@ function PaymentSummaryCard({
           <Meta label="Amount" value={formatAmount(order)} />
           <Meta label="Provider" value={order.provider?.name ?? "—"} />
           <Meta
-            label="Vehicle"
-            value={`${order.vehicle.company} · ${order.vehicle.type}`}
+            label={ServiceItemLabel[serviceTypeOf(order)]}
+            value={describeServiceItem(order)}
           />
         </dl>
         {order.payment.paymentUrl ? (

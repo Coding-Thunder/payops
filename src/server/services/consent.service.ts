@@ -11,6 +11,7 @@ import {
   type Currency,
   OrderEvidenceActorType,
   OrderEvidenceEventType,
+  ServiceType,
   type UserRole,
 } from "@/lib/constants/enums";
 import {
@@ -73,6 +74,9 @@ function consentToDTO(doc: PaymentConsentDoc & { _id: Types.ObjectId | string })
     signedName: doc.signedName ?? null,
     snapshot: {
       bookingType: doc.snapshot.bookingType as BookingType,
+      // Null on a record written before service types existed, and every
+      // such record is a car rental.
+      serviceType: doc.snapshot.serviceType ?? ServiceType.CAR_RENTAL,
       provider: doc.snapshot.provider,
       vehicle: doc.snapshot.vehicle,
       pickupDate: doc.snapshot.pickupDate.toISOString(),
@@ -162,6 +166,7 @@ export async function requestConsent(
   // the frozen record always carries locations + the full charge breakdown.
   const persistedSnapshot = {
     bookingType: input.snapshot.bookingType,
+    serviceType: input.snapshot.serviceType ?? ServiceType.CAR_RENTAL,
     provider: input.snapshot.provider,
     vehicle: input.snapshot.vehicle,
     pickupDate: new Date(input.snapshot.pickupDate),
@@ -271,6 +276,7 @@ export async function requestConsent(
       resend: Boolean(existing),
       snapshot: {
         bookingType: input.snapshot.bookingType,
+        serviceType: input.snapshot.serviceType ?? ServiceType.CAR_RENTAL,
         provider: input.snapshot.provider,
         vehicle: input.snapshot.vehicle,
         pickupDate: new Date(input.snapshot.pickupDate).toISOString(),
@@ -333,6 +339,9 @@ export async function getPublicConsentView(
     consentMessage: doc.consentMessage,
     snapshot: {
       bookingType: doc.snapshot.bookingType as BookingType,
+      // Null on a record written before service types existed, and every
+      // such record is a car rental.
+      serviceType: doc.snapshot.serviceType ?? ServiceType.CAR_RENTAL,
       provider: doc.snapshot.provider,
       vehicle: doc.snapshot.vehicle,
       pickupDate: doc.snapshot.pickupDate.toISOString(),
@@ -473,6 +482,7 @@ export async function recordConsentFromToken(
       consentMessage: doc.consentMessage,
       snapshot: {
         bookingType: doc.snapshot.bookingType,
+        serviceType: doc.snapshot.serviceType ?? ServiceType.CAR_RENTAL,
         provider: doc.snapshot.provider,
         vehicle: doc.snapshot.vehicle,
         pickupDate: doc.snapshot.pickupDate.toISOString(),
