@@ -61,6 +61,38 @@ const serverSchema = z.object({
     .min(1, "STRIPE_WEBHOOK_SECRET is required"),
   STRIPE_PUBLISHABLE_KEY: z.string().optional(),
 
+  /**
+   * ---- PayPal, deployment level ----
+   *
+   * The mirror of STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET for the other
+   * live gateway. Stripe has always had a deployment-level pair that the
+   * DEFAULT organization falls back to; PayPal did not, and could only be
+   * configured through `ORG_<SLUG>_PAYPAL_*`. That asymmetry forced a
+   * per-organization credential namespace onto single-tenant deployments
+   * that have exactly one organization and no use for one.
+   *
+   * OPTIONAL, unlike the Stripe pair, and that is deliberate: a deployment
+   * that does not offer PayPal must keep booting. An empty value is treated
+   * as absent rather than as "configured but broken" — see
+   * `resolve-gateway.ts`, which requires all three before it will build a
+   * PayPal gateway and refuses loudly otherwise.
+   *
+   * `ORG_<SLUG>_PAYPAL_*` still wins where it is set, so a future second
+   * organization keeps its own credentials.
+   */
+  PAYPAL_CLIENT_ID: z.string().optional(),
+  PAYPAL_CLIENT_SECRET: z.string().optional(),
+  PAYPAL_WEBHOOK_ID: z.string().optional(),
+  /**
+   * NOTE: there is deliberately NO PAYPAL_SANDBOX variable.
+   *
+   * This deployment is live-only, and the PayPal adapter now has a single
+   * host with no sandbox constant to select. A variable that cannot change
+   * anything is worse than no variable — it invites someone to set it and
+   * assume it took effect. Sandbox support, if ever needed, comes back in
+   * `gateways/paypal.ts` first.
+   */
+
   // ---- SMTP (Google Workspace + App Password) ----
   // Leave SMTP_HOST empty to disable email sending (failed sends become
   // EMAIL_FAILED audit rows; nothing else breaks).
@@ -166,3 +198,21 @@ export const env = {
     return parseClient();
   },
 };
+
+/**
+ * Test seam — drop the memoised parse so a suite can stub a variable and see
+ * it through `env.server`.
+ *
+ * Both caches are populated on the first read, which in an integration run
+ * happens during setup (`connectMongo` reads MONGODB_URI) long before any
+ * individual test gets to call `vi.stubEnv`. Without this, stubbing something
+ * like PAYPAL_CLIENT_ID silently has no effect and the test passes or fails
+ * for a reason unrelated to what it claims to check.
+ *
+ * Mirrors `_resetOrganizationCacheForTests` in `@/server/auth/organization`.
+ * Not for production code.
+ */
+export function _resetEnvCacheForTests(): void {
+  cachedServer = null;
+  cachedClient = null;
+}

@@ -3,6 +3,7 @@ import "server-only";
 import { Types } from "mongoose";
 
 import { PaymentGatewayKey } from "@/lib/constants/enums";
+import { env } from "@/lib/env";
 import { ConflictError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import {
@@ -367,48 +368,97 @@ export async function getGatewayForOrganization(
         provider: CredentialProvider.PAYPAL,
         field: CredentialField.CLIENT_SECRET,
       }));
+    // `payments.publishableKey` is a single field documented as
+    // "publishable / client id", and the seed always writes the STRIPE
+    // publishable key into it (seed-organizations.ts). For an organization
+    // running both gateways it therefore holds a `pk_live_…`, and using that
+    // as a PayPal client id makes the `clientId && …` guard below pass with
+    // a Stripe key. PayPal then answers 401 from its OAuth endpoint, which
+    // reads as "PayPal is broken" instead of "PayPal is not configured".
+    //
+    // Accept the field only when it is not recognisably a Stripe key, so a
+    // PayPal-only organization that legitimately stored its client id there
+    // keeps working.
+    const sharedPublicId = org.payments?.publishableKey?.trim() ?? "";
+    const publicIdIsStripeKey = /^(pk_|sk_|rk_)/.test(sharedPublicId);
     const clientId =
       fromEnv(org.slug, "PAYPAL_CLIENT_ID") ??
-      org.payments?.publishableKey ??
-      "";
+      (publicIdIsStripeKey ? "" : sharedPublicId);
     const webhookId = fromEnv(org.slug, "PAYPAL_WEBHOOK_ID") ?? "";
 
     if (clientId && clientSecret && webhookId) {
-      // PayPal's environment comes from PayPal's own configuration, and from
-      // nothing else.
-      //
-      // This used to be OR'd with `org.payments.sandbox`, which the seed
-      // derives from whether the STRIPE key starts with `sk_test`
-      // (seed-organizations.ts). Two consequences, both bad: a Stripe test
-      // key silently moved PayPal to api-m.sandbox.paypal.com, and because
-      // it was an OR, `ORG_<SLUG>_PAYPAL_SANDBOX=false` could not move it
-      // back. Live PayPal credentials pointed at the sandbox host fail
-      // authentication, so the symptom would have been "PayPal suddenly
-      // stopped working" with nothing in the PayPal configuration changed.
-      //
-      // Absent means live. That is the safe default here in the sense that
-      // matters: a live credential sent to the sandbox host cannot charge
-      // anyone, but it also cannot work, and silently degrading a working
-      // payment provider is worse than requiring the flag to be explicit.
-      const sandbox = fromEnv(org.slug, "PAYPAL_SANDBOX") === "true";
+      // PayPal is LIVE-ONLY on this deployment. There is no environment to
+      // select: the adapter has a single host and no sandbox constant, so
+      // neither an env var nor the organization's Stripe-derived
+      // `payments.sandbox` flag can reach it. The Stripe-key coupling that
+      // once silently moved PayPal to api-m.sandbox.paypal.com is gone with
+      // the switch itself.
       return createPayPalGateway(() => ({
         clientId,
         clientSecret,
         webhookId,
-        sandbox,
       }));
     }
 
-    // No env fallback for PayPal, for ANY organization including the
-    // default: the deployment has no PayPal credentials of its own, so
-    // there is nothing coherent to fall back TO.
+    // DEPLOYMENT-LEVEL FALLBACK, for the DEFAULT organization only —
+    // exactly the rule the Stripe branch above applies, and it exists for
+    // the same reason.
+    //
+    // A single-tenant deployment has one organization, which the seed marks
+    // default, and that organization's credentials ARE the deployment's.
+    // Without this, PayPal was reachable only through
+    // `ORG_<SLUG>_PAYPAL_*`, so standing up one live PayPal account meant
+    // inventing a per-organization credential namespace for a deployment
+    // that has no second organization to distinguish it from — and silently
+    // coupling the secret's name to a slug, where a slug rename breaks
+    // payments with no error until someone tries to pay.
+    //
+    // The default-only restriction is the whole safety story, unchanged: a
+    // SECOND organization must never reach these, because falling back would
+    // take its money through the deployment's PayPal merchant account.
+    //
+    // All three values are required together. A partial set falls through to
+    // the refusal below rather than half-configuring a gateway, mirroring the
+    // Stripe branch's reasoning — a client id paired with the wrong webhook
+    // id fails at webhook time, long after the money moved.
+    const envClientId = env.server.PAYPAL_CLIENT_ID?.trim() ?? "";
+    const envClientSecret = env.server.PAYPAL_CLIENT_SECRET?.trim() ?? "";
+    const envWebhookId = env.server.PAYPAL_WEBHOOK_ID?.trim() ?? "";
+
+    if (org.isDefault) {
+      if (envClientId && envClientSecret && envWebhookId) {
+        logger.info("payments.gateway.env_fallback", {
+          organizationId,
+          provider,
+          reason: "default organization using deployment PayPal credentials",
+        });
+        return createPayPalGateway(() => ({
+          clientId: envClientId,
+          clientSecret: envClientSecret,
+          webhookId: envWebhookId,
+        }));
+      }
+    }
+
+    // Refuse rather than charge through another brand's merchant account,
+    // or run a half-configured gateway.
+    // Report BOTH candidate sources. Logging only the organization-level
+    // values said "hasClientId: false" even when the real problem was a
+    // deployment set missing exactly one variable, which sends an operator
+    // looking in the wrong place.
     logger.error("payments.gateway.not_configured", {
       organizationId,
       brandName: org.brandName,
       provider,
+      isDefaultOrganization: org.isDefault,
+      // ORG_<SLUG>_PAYPAL_* / vault / organization document
       hasClientId: Boolean(clientId),
       hasClientSecret: Boolean(clientSecret),
       hasWebhookId: Boolean(webhookId),
+      // deployment-level PAYPAL_*, only consulted for the default org
+      deploymentHasClientId: Boolean(envClientId),
+      deploymentHasClientSecret: Boolean(envClientSecret),
+      deploymentHasWebhookId: Boolean(envWebhookId),
     });
     throw new PaymentProviderNotConfiguredError(org.brandName, "PayPal");
   }

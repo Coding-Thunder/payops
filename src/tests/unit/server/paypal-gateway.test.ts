@@ -25,7 +25,6 @@ const CREDS = {
   clientId: "test-client-id",
   clientSecret: "test-client-secret",
   webhookId: "TESTWEBHOOKID",
-  sandbox: true,
 };
 
 const gateway = createPayPalGateway(() => CREDS);

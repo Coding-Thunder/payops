@@ -85,9 +85,20 @@ function orderApproved(orderId: string, eventId = "WH-APPROVED-1") {
  * Stub PayPal. `verification` decides what the signature-verification call
  * answers; `onCapture` records or rejects a capture attempt.
  */
+/**
+ * How the stubbed capture call fails.
+ *
+ *   "already"   PayPal's real 422 envelope for a replayed APPROVED. Safe.
+ *   "declined"  422, buyer's instrument refused. Terminal — retrying is futile.
+ *   "transient" 503. MUST be retried, so the route must not answer 2xx.
+ *   "network"   the fetch itself rejects (socket timeout / abort).
+ */
+type CaptureFailure = "already" | "declined" | "transient" | "network";
+
 function stubPayPal(opts: {
   verification?: "SUCCESS" | "FAILURE";
   captureFails?: boolean;
+  captureFailure?: CaptureFailure;
 } = {}) {
   const calls: string[] = [];
   _setPayPalFetchForTesting((async (input: RequestInfo | URL) => {
@@ -107,9 +118,35 @@ function stubPayPal(opts: {
       );
     }
     if (url.includes("/capture")) {
-      if (opts.captureFails) {
+      const mode: CaptureFailure | null = opts.captureFailure
+        ?? (opts.captureFails ? "already" : null);
+      if (mode === "network") {
+        throw new Error("socket hang up");
+      }
+      if (mode === "transient") {
         return new Response(
-          JSON.stringify({ name: "UNPROCESSABLE_ENTITY", message: "ORDER_ALREADY_CAPTURED" }),
+          JSON.stringify({ name: "INTERNAL_SERVER_ERROR", debug_id: "dbg-1" }),
+          { status: 503, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (mode === "declined") {
+        // PayPal's real envelope shape: the issue lives in details[].issue.
+        return new Response(
+          JSON.stringify({
+            name: "UNPROCESSABLE_ENTITY",
+            details: [{ issue: "INSTRUMENT_DECLINED" }],
+            debug_id: "dbg-2",
+          }),
+          { status: 422, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (mode === "already") {
+        return new Response(
+          JSON.stringify({
+            name: "UNPROCESSABLE_ENTITY",
+            details: [{ issue: "ORDER_ALREADY_CAPTURED" }],
+            debug_id: "dbg-3",
+          }),
           { status: 422, headers: { "content-type": "application/json" } },
         );
       }
@@ -253,15 +290,63 @@ describe("when PayPal is enabled", () => {
         stripeSessionId: "PAYPAL-ORDER-4",
       },
     });
-    stubPayPal({ captureFails: true });
+    stubPayPal({ captureFailure: "already" });
 
     // PayPal refusing a second capture IS the idempotency guarantee. Retrying
     // cannot help, so the route acknowledges instead of 500-ing.
     const res = await paypalWebhook(request(orderApproved("PAYPAL-ORDER-4")) as never);
     expect(res.status).toBe(200);
+    const body = (await res.json()) as { data?: { duplicate?: boolean } };
+    expect(body.data?.duplicate).toBe(true);
   });
 
-  it("uses the LIVE PayPal host unless sandbox is explicitly requested", async () => {
+  /**
+   * The distinction these three tests pin is the difference between losing a
+   * payment and not losing it.
+   *
+   * Answering 200 tells PayPal to stop redelivering. Before this, EVERY
+   * capture exception was swallowed and 200'd, so one transient 503 left an
+   * approved order permanently uncaptured — no retry, no alert, and reconcile
+   * cannot recover it because PayPal reports an approved-but-uncaptured order
+   * as "open" and refuses to capture from there.
+   */
+  it("returns 502 on a TRANSIENT capture failure so PayPal retries", async () => {
+    await createOrder({
+      orderNumber: "RT-PP-TRANSIENT",
+      payment: { gateway: PaymentGatewayKey.PAYPAL, stripeSessionId: "PAYPAL-ORDER-T1" },
+    });
+    stubPayPal({ captureFailure: "transient" });
+
+    const res = await paypalWebhook(request(orderApproved("PAYPAL-ORDER-T1")) as never);
+    expect(res.status).toBe(502);
+  });
+
+  it("returns 502 when the capture call itself throws (timeout / socket)", async () => {
+    await createOrder({
+      orderNumber: "RT-PP-NETWORK",
+      payment: { gateway: PaymentGatewayKey.PAYPAL, stripeSessionId: "PAYPAL-ORDER-T2" },
+    });
+    stubPayPal({ captureFailure: "network" });
+
+    const res = await paypalWebhook(request(orderApproved("PAYPAL-ORDER-T2")) as never);
+    expect(res.status).toBe(502);
+  });
+
+  it("acks a TERMINAL decline without claiming the capture succeeded", async () => {
+    await createOrder({
+      orderNumber: "RT-PP-DECLINED",
+      payment: { gateway: PaymentGatewayKey.PAYPAL, stripeSessionId: "PAYPAL-ORDER-T3" },
+    });
+    stubPayPal({ captureFailure: "declined" });
+
+    const res = await paypalWebhook(request(orderApproved("PAYPAL-ORDER-T3")) as never);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data?: { captured?: boolean; declined?: boolean } };
+    expect(body.data?.captured).toBe(false);
+    expect(body.data?.declined).toBe(true);
+  });
+
+  it("uses the LIVE PayPal host", async () => {
     const calls = stubPayPal();
     await paypalWebhook(request(captureCompleted("PAYPAL-ORDER-5")) as never);
 
@@ -270,12 +355,21 @@ describe("when PayPal is enabled", () => {
     expect(calls.some((u) => u.includes("sandbox"))).toBe(false);
   });
 
-  it("uses the sandbox host only when ORG_<SLUG>_PAYPAL_SANDBOX says so", async () => {
+  it("CANNOT be moved to the sandbox host by any environment variable", async () => {
+    // This deployment is live-only. The sandbox switch was removed rather
+    // than defaulted to false, so setting the variable that used to flip it
+    // must now do nothing at all. Asserting the negative is the point: a
+    // regression that reintroduced the switch would send live credentials to
+    // api-m.sandbox.paypal.com, where they cannot authenticate, and PayPal
+    // would appear to "stop working" with nothing in PayPal changed.
     vi.stubEnv("ORG_HIMANSHU_PAYPAL_SANDBOX", "true");
+    vi.stubEnv("PAYPAL_SANDBOX", "true");
     const calls = stubPayPal();
     await paypalWebhook(request(captureCompleted("PAYPAL-ORDER-6")) as never);
 
-    expect(calls.every((u) => u.startsWith("https://api-m.sandbox.paypal.com"))).toBe(true);
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.every((u) => u.startsWith("https://api-m.paypal.com"))).toBe(true);
+    expect(calls.some((u) => u.includes("sandbox"))).toBe(false);
   });
 });
 

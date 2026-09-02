@@ -7,7 +7,11 @@ import {
 } from "@/lib/constants/enums";
 import { logger } from "@/lib/logger";
 import { resolveOrganizationId } from "@/server/auth/organization";
-import { supportsCapture } from "@/server/payments/gateways/paypal";
+import {
+  isAlreadyCapturedError,
+  isTerminalCaptureError,
+  supportsCapture,
+} from "@/server/payments/gateways/paypal";
 import {
   PaymentProviderNotConfiguredError,
   PaymentProviderNotEnabledError,
@@ -162,20 +166,92 @@ export async function POST(req: NextRequest) {
         organizationId,
         sessionId: event.sessionId,
       });
+      return NextResponse.json({
+        ok: true,
+        data: { received: true, captured: true },
+      });
     } catch (err) {
-      // A replayed APPROVED hits an already-captured order and PayPal
-      // rejects it. Expected, and not worth retrying — ack so the replays
-      // stop, and let PAYMENT.CAPTURE.COMPLETED do the actual work.
-      logger.warn("paypal.capture_failed", {
+      // THE CLASSIFICATION HERE IS LOAD-BEARING. A 200 tells PayPal to stop
+      // redelivering, so acknowledging a failure it could have retried
+      // strands an approved order as never-charged, with no retry, no alert,
+      // and — because reconcile maps PayPal's APPROVED to "open" and refuses
+      // to capture — no way to recover it from inside the app.
+      //
+      // Only two classes may be acknowledged:
+      //
+      //   1. ORDER_ALREADY_CAPTURED — a replayed APPROVED arriving after the
+      //      money moved. PAYMENT.CAPTURE.COMPLETED did, or will do, the real
+      //      work. Acknowledging stops a replay storm and changes nothing.
+      //
+      //   2. Terminal refusals (instrument declined, order not approved, …).
+      //      Nothing was captured and no retry can change that, so three days
+      //      of PayPal redeliveries would only bury the endpoint in failures.
+      //      Recorded as a FAILURE so it is visible, not silently ok'd.
+      //      PayPal sends PAYMENT.CAPTURE.DENIED separately, and that is what
+      //      moves the order to failed.
+      //
+      // Everything else — 5xx, rate limit, OAuth, socket timeout, anything
+      // unrecognised — returns 502 so PayPal delivers it again.
+      if (isAlreadyCapturedError(err)) {
+        logger.info("paypal.capture.already_captured", {
+          organizationId,
+          sessionId: event.sessionId,
+        });
+        return NextResponse.json({
+          ok: true,
+          data: { received: true, captured: true, duplicate: true },
+        });
+      }
+
+      if (isTerminalCaptureError(err)) {
+        logger.error("paypal.capture.declined", {
+          organizationId,
+          sessionId: event.sessionId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+        await recordAudit({
+          action: AuditAction.PAYMENT_FAILED,
+          entityType: AuditEntity.ORDER,
+          entityId: event.orderId ?? event.sessionId,
+          actor: null,
+          metadata: {
+            gateway: PaymentGatewayKey.PAYPAL,
+            sessionId: event.sessionId,
+            reason: err instanceof Error ? err.message : String(err),
+            source: "paypal.capture.declined",
+          },
+        }).catch(() => {});
+        return NextResponse.json({
+          ok: true,
+          data: { received: true, captured: false, declined: true },
+        });
+      }
+
+      // Retryable. Must NOT be acknowledged.
+      logger.error("paypal.capture.retryable_failure", {
         organizationId,
         sessionId: event.sessionId,
         err: err instanceof Error ? err.message : String(err),
       });
+      await recordAudit({
+        action: AuditAction.PAYMENT_FAILED,
+        entityType: AuditEntity.ORDER,
+        entityId: event.orderId ?? event.sessionId,
+        actor: null,
+        metadata: {
+          gateway: PaymentGatewayKey.PAYPAL,
+          sessionId: event.sessionId,
+          reason: err instanceof Error ? err.message : String(err),
+          source: "paypal.capture.retryable_failure",
+          willRetry: true,
+        },
+      }).catch(() => {});
+      return bad(
+        502,
+        "GATEWAY_ERROR",
+        "Capture failed; PayPal should retry this delivery",
+      );
     }
-    return NextResponse.json({
-      ok: true,
-      data: { received: true, captured: true },
-    });
   }
 
   try {

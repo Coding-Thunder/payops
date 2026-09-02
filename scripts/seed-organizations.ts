@@ -13,6 +13,11 @@
  *   SEED_ORGS_APPLY   "true" to write. Anything else = dry run.
  *   SEED_ORGS_SLUG    slug for the default organization.
  *                     Defaults to "rentalconfirmation".
+ *   SEED_ORGS_PROVIDERS  comma-separated gateways to switch on, e.g.
+ *                     "STRIPE,PAYPAL". The first entry becomes the
+ *                     organization's default provider. Defaults to
+ *                     "STRIPE", which is what this script hardcoded before
+ *                     the knob existed.
  *
  * DRY RUN IS THE DEFAULT, which is deliberately the opposite of
  * `backfill-order-providers.ts`. That script's worst case is a re-stamped
@@ -51,6 +56,48 @@ const APPLY = process.env.SEED_ORGS_APPLY === "true";
 const SLUG = (process.env.SEED_ORGS_SLUG ?? "rentalconfirmation")
   .trim()
   .toLowerCase();
+
+/**
+ * Which gateways the seeded organization is switched on for.
+ *
+ * `SEED_ORGS_PROVIDERS=STRIPE,PAYPAL`. Unset means `["STRIPE"]`, which is
+ * what this script hardcoded before, so an existing deployment re-running the
+ * seed writes exactly what it wrote previously.
+ *
+ * Only providers with a real implementation are accepted. RAZORPAY /
+ * AUTHORIZE_NET / MANUAL are enum placeholders whose registry entries throw
+ * on every operation, and seeding one would put a provider in the composer's
+ * dropdown that fails the moment an operator picks it.
+ */
+const SUPPORTED_PROVIDERS = ["STRIPE", "PAYPAL"] as const;
+type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
+
+function parseProviders(raw: string | undefined): SupportedProvider[] {
+  const requested = (raw ?? "")
+    .split(",")
+    .map((p) => p.trim().toUpperCase())
+    .filter(Boolean);
+  if (requested.length === 0) return ["STRIPE"];
+
+  const unknown = requested.filter(
+    (p) => !SUPPORTED_PROVIDERS.includes(p as SupportedProvider),
+  );
+  if (unknown.length > 0) {
+    // Refuse rather than silently drop. A typo'd SEED_ORGS_PROVIDERS that
+    // quietly seeded ["STRIPE"] would look like a working seed and only
+    // surface as "PayPal is missing from the dropdown" much later.
+    throw new Error(
+      `SEED_ORGS_PROVIDERS contains unsupported provider(s): ${unknown.join(", ")}. ` +
+        `Supported: ${SUPPORTED_PROVIDERS.join(", ")}.`,
+    );
+  }
+  // De-duplicate while preserving the operator's ordering; the first entry
+  // becomes the organization's default provider.
+  return [...new Set(requested as SupportedProvider[])];
+}
+
+const ENABLED_PROVIDERS = parseProviders(process.env.SEED_ORGS_PROVIDERS);
+const DEFAULT_PROVIDER = ENABLED_PROVIDERS[0]!;
 
 /**
  * Split an RFC-5322-ish `EMAIL_FROM` into display name and address.
@@ -150,16 +197,26 @@ async function main() {
       },
     },
     payments: {
-      provider: "STRIPE",
+      provider: DEFAULT_PROVIDER,
       // EXPLICIT, not inferred. An empty list used to be read as "Stripe
       // only" by both the resolver and the composer's dropdown, which meant
       // a freshly seeded organization could never reach a second provider —
       // the gateway existed, the credentials existed, and the UI simply never
       // offered it. Stating the list makes enabling PayPal later a one-word
       // change here rather than an archaeology exercise.
-      enabledProviders: ["STRIPE"],
+      //
+      // Now environment-driven, so "one word" is a deployment variable rather
+      // than a source edit. Unset it and this is byte-identical to before:
+      // ["STRIPE"], the incumbent deployment's list.
+      enabledProviders: ENABLED_PROVIDERS,
       publishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? "",
       // Best-effort: Stripe test keys are prefixed. Only a hint for the UI.
+      //
+      // STRIPE-ONLY, and nothing reads it to decide gateway behaviour. In
+      // particular PayPal's live-vs-sandbox host does NOT come from here —
+      // it comes from PAYPAL_SANDBOX alone. Deriving one gateway's
+      // environment from the other's key once sent live PayPal credentials
+      // to the sandbox host, where they cannot authenticate.
       sandbox: secretKey.startsWith("sk_test"),
     },
   };
