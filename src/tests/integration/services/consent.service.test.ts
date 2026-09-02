@@ -4,6 +4,7 @@ import {
   AuditAction,
   ConsentMethod,
   ConsentStatus,
+  PaymentGatewayKey,
   UserRole,
 } from "@/lib/constants/enums";
 import { BadRequestError, NotFoundError } from "@/lib/errors";
@@ -29,13 +30,16 @@ import { createSettings } from "@/tests/factories/settings.factory";
 
 const BRANDING = { brandName: "Test Brand" } as const;
 
-async function seedRequestedConsent() {
+async function seedRequestedConsent(
+  paymentOverrides: Record<string, unknown> = {},
+) {
   const order = await factoryCreateOrder({
     payment: {
       status: "PAYMENT_PENDING",
       checkoutUrl: "https://checkout.stripe.com/c/pay/cs_test_seed",
       stripeSessionId: "cs_test_seed",
       processedWebhookEventIds: [],
+      ...paymentOverrides,
     },
   });
   const actor = actorFor(UserRole.ADMIN);
@@ -187,6 +191,38 @@ describe("recordConsentFromToken", () => {
       action: AuditAction.CONSENT_RECEIVED,
     }).lean();
     expect(audits).toHaveLength(1);
+  });
+
+  /**
+   * The consent page is the last screen before the customer is handed to a
+   * processor. It used to say "Stripe" unconditionally, so on this
+   * two-gateway deployment a PayPal customer was told a different company
+   * would take their money, seconds before landing on paypal.com. The view
+   * now carries the gateway actually pinned to the order and the copy follows
+   * it.
+   */
+  it("reports the PayPal gateway label for a PayPal-pinned order", async () => {
+    const { result } = await seedRequestedConsent({
+      gateway: PaymentGatewayKey.PAYPAL,
+      stripeSessionId: "PAYPAL-ORDER-CONSENT",
+      checkoutUrl: "https://www.paypal.com/checkoutnow?token=PAYPAL-ORDER-CONSENT",
+    });
+    const view = await getPublicConsentView(result.token, BRANDING);
+    expect(view.gatewayLabel).toBe("PayPal");
+  });
+
+  it("still reports Stripe for a Stripe-pinned order", async () => {
+    const { result } = await seedRequestedConsent({
+      gateway: PaymentGatewayKey.STRIPE,
+    });
+    const view = await getPublicConsentView(result.token, BRANDING);
+    expect(view.gatewayLabel).toBe("Stripe");
+  });
+
+  it("reports null rather than guessing when no gateway is pinned", async () => {
+    const { result } = await seedRequestedConsent({ gateway: null });
+    const view = await getPublicConsentView(result.token, BRANDING);
+    expect(view.gatewayLabel).toBeNull();
   });
 
   it("rejects an invalid token", async () => {

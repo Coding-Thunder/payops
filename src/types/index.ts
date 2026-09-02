@@ -313,6 +313,17 @@ export interface PublicConsentView {
   snapshot: PaymentConsentSnapshot;
   paymentUrl: string | null;
   alreadyConfirmedAt: string | null;
+  /**
+   * Customer-facing name of the processor this booking will actually be paid
+   * through, e.g. "Stripe" or "PayPal".
+   *
+   * The consent page used to say "Stripe" unconditionally. On a deployment
+   * running both gateways that told a PayPal customer, on the page where they
+   * authorise the payment, that a different company would take their money —
+   * and then redirected them to paypal.com. Null when the order has no
+   * gateway pinned yet, in which case the copy stays processor-neutral.
+   */
+  gatewayLabel: string | null;
 }
 
 export interface ConsentSettings {

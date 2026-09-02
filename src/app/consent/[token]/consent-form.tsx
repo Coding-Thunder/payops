@@ -16,10 +16,11 @@ interface ConsentFormProps {
 }
 
 /**
- * Hosted consent → Stripe handoff.
+ * Hosted consent → payment-gateway handoff.
  *
  * The page has one job: capture a digital signature and push the customer
- * into Stripe Checkout. There's no intermediate "you're confirmed" screen
+ * into the gateway's hosted checkout. There's no intermediate
+ * "you're confirmed" screen
  * because the spec demands an immediate handoff — any dead state between
  * sign and pay erodes conversion.
  *
@@ -27,7 +28,7 @@ interface ConsentFormProps {
  *  1. fresh REQUESTED — render the form (booking summary + required
  *     signature + confirm button).
  *  2. submitting       — disabled CTA + inline spinner copy.
- *  3. redirecting      — page replaces itself to the Stripe URL via
+ *  3. redirecting      — page replaces itself to the gateway URL via
  *     `window.location.replace`. We render a slim "Redirecting…" shell
  *     so the brief window before the browser navigates isn't blank. If
  *     the redirect hasn't completed after 5 s (mobile browser quirk,
@@ -49,6 +50,21 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
   const [redirecting, setRedirecting] = useState(false);
   const [fallbackUrl, setFallbackUrl] = useState<string | null>(null);
   const fallbackTimer = useRef<number | null>(null);
+
+  /**
+   * The processor this booking is actually pinned to.
+   *
+   * This copy used to say "Stripe" unconditionally. On a deployment running
+   * both gateways that told a PayPal customer — on the page where they
+   * authorise the payment — that a different company would take their money,
+   * seconds before redirecting them to paypal.com. Falls back to
+   * processor-neutral wording when no gateway is pinned, which is strictly
+   * better than naming the wrong one.
+   */
+  const gatewayLabel = view.gatewayLabel;
+  const checkoutName = gatewayLabel
+    ? `${gatewayLabel} Checkout`
+    : "secure checkout";
 
   /** Imperative redirect with safety net. Browsers handle
    *  `location.replace` asynchronously; on mobile the navigation can
@@ -129,7 +145,13 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
   }
 
   if (redirecting) {
-    return <RedirectingShell fallbackUrl={fallbackUrl} branding={branding} />;
+    return (
+      <RedirectingShell
+        fallbackUrl={fallbackUrl}
+        branding={branding}
+        gatewayLabel={gatewayLabel}
+      />
+    );
   }
 
   return (
@@ -144,7 +166,8 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-slate-600">
           Review the details below, sign with your full name, and you&apos;ll
-          continue to {view.brandName}&apos;s secure Stripe checkout.
+          continue to {view.brandName}&apos;s secure{gatewayLabel ? ` ${gatewayLabel}` : ""}{" "}
+          checkout.
         </p>
       </div>
 
@@ -221,7 +244,7 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
         </button>
 
         <p className="text-center text-[11px] text-slate-500">
-          You&apos;ll be taken directly to Stripe Checkout to complete
+          You&apos;ll be taken directly to {checkoutName} to complete
           payment. Your timestamp and IP are recorded against this booking
           as evidence of consent.{" "}
           <a
@@ -316,10 +339,16 @@ function SummaryBlock({ view }: { view: PublicConsentView }) {
 function RedirectingShell({
   fallbackUrl,
   branding,
+  gatewayLabel,
 }: {
   fallbackUrl: string | null;
   branding: BrandingDTO;
+  /** Processor actually pinned to this booking, or null when unknown. */
+  gatewayLabel: string | null;
 }) {
+  const checkoutName = gatewayLabel
+    ? `${gatewayLabel} Checkout`
+    : "secure checkout";
   return (
     <div
       className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
@@ -333,7 +362,7 @@ function RedirectingShell({
         </h1>
         <p className="mt-1.5 max-w-md text-sm text-slate-600">
           We&apos;ve recorded your acknowledgement. You&apos;re being taken
-          straight to Stripe Checkout to complete payment.
+          straight to {checkoutName} to complete payment.
         </p>
         {fallbackUrl ? (
           <div className="mt-6 w-full max-w-sm rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-left">
@@ -341,7 +370,8 @@ function RedirectingShell({
               Redirect failed.
             </p>
             <p className="mt-1 text-[11px] text-amber-800">
-              Your browser didn&apos;t open Stripe automatically. Continue
+              Your browser didn&apos;t open{" "}
+              {gatewayLabel ?? "the payment page"} automatically. Continue
               securely below.
             </p>
             <a

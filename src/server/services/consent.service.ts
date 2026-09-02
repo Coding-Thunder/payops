@@ -11,6 +11,7 @@ import {
   type Currency,
   OrderEvidenceActorType,
   OrderEvidenceEventType,
+  PaymentGatewayKey,
   type UserRole,
 } from "@/lib/constants/enums";
 import {
@@ -302,6 +303,22 @@ async function loadConsentByTokenOrThrow(token: string) {
 }
 
 /**
+ * Display name for a pinned gateway. Deliberately a small local map rather
+ * than a registry lookup: the registry is `server-only` and its placeholder
+ * entries throw on access, and this only ever needs the customer-facing word.
+ */
+function gatewayLabelOf(gateway: string | null | undefined): string | null {
+  switch (gateway) {
+    case PaymentGatewayKey.STRIPE:
+      return "Stripe";
+    case PaymentGatewayKey.PAYPAL:
+      return "PayPal";
+    default:
+      return null;
+  }
+}
+
+/**
  * Load a consent record for the public-facing hosted page. Returns the
  * trimmed view shape so we never leak audit metadata (IP, UA, verifier)
  * to the customer.
@@ -330,6 +347,10 @@ export async function getPublicConsentView(
     customerEmail: doc.customerEmail,
     brandName: brand.brandName,
     organizationId,
+    // The gateway is pinned on the order at link generation. Read it from
+    // there rather than assuming, so the copy always names the processor the
+    // customer is actually about to be handed to.
+    gatewayLabel: gatewayLabelOf(order?.payment?.gateway),
     consentMessage: doc.consentMessage,
     snapshot: {
       bookingType: doc.snapshot.bookingType as BookingType,
