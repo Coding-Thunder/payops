@@ -1,7 +1,7 @@
 {
-  "name": "PayOps — Payment Operations Platform",
-  "short_name": "PayOps",
-  "description": "Lifecycle visibility, hashed dispute evidence, and multi-gateway orchestration. Privately deployed on a domain you own.",
+  "name": "Rental Travels — Secure Booking Payments & Confirmations",
+  "short_name": "Rental Travels",
+  "description": "Pay for your booking with Rental Travels through a secure, single-use payment link. Card details are handled entirely by a PCI-DSS Level 1 certified payment provider, and a written confirmation and receipt are emailed the moment payment clears.",
   "id": "/?source=pwa",
   "start_url": "/",
   "scope": "/",
@@ -10,7 +10,7 @@
   "orientation": "any",
   "background_color": "#0A0A0A",
   "theme_color": "#0A0A0A",
-  "categories": ["business", "finance", "productivity"],
+  "categories": ["business", "travel", "productivity"],
   "lang": "en-US",
   "dir": "ltr",
   "icons": [
@@ -25,22 +25,6 @@
       "sizes": "180x180",
       "type": "image/svg+xml",
       "purpose": "maskable"
-    }
-  ],
-  "screenshots": [
-    {
-      "src": "/marketing/dashboard.webp",
-      "sizes": "1440x900",
-      "type": "image/webp",
-      "form_factor": "wide",
-      "label": "Operations dashboard"
-    },
-    {
-      "src": "/marketing/evidence-chain.webp",
-      "sizes": "1440x900",
-      "type": "image/webp",
-      "form_factor": "wide",
-      "label": "Hashed evidence chain for a disputed order"
     }
   ]
 }

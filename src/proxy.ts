@@ -74,10 +74,33 @@ function isPublic(pathname: string): boolean {
   if (pathname.startsWith("/favicon")) return true;
   if (pathname.startsWith("/static")) return true;
   if (pathname.startsWith("/assets")) return true;
-  // Marketing screenshots + any landing imagery served from
-  // public/marketing/. Without this they'd 307 through proxy → /login
-  // and the landing page would render broken images.
-  if (pathname.startsWith("/marketing/")) return true;
+  // Next's file-based metadata routes. These are fetched by link-preview
+  // crawlers (WhatsApp, iMessage, Slack, Facebook, Twitter) and by the
+  // browser chrome, none of which carry a session — so without this the
+  // proxy 307s them to /login and the payment link a customer receives
+  // previews with no image at all.
+  //
+  // This was masked until now: the root metadata used to point og:image at
+  // /marketing/evidence-chain.webp, which the rule above already allowed.
+  // That file is a screenshot of the internal operations console, so the
+  // preview worked by leaking the wrong thing. Pointing og:image at the
+  // generated card is what exposed the gap.
+  //
+  // Nothing here is sensitive: they are the brand card, the icons, the web
+  // manifest, and the two crawler files, all derived from public branding.
+  if (
+    pathname === "/opengraph-image" ||
+    pathname === "/twitter-image" ||
+    pathname === "/icon" ||
+    pathname === "/icon.svg" ||
+    pathname === "/apple-icon" ||
+    pathname === "/apple-icon.svg" ||
+    pathname === "/manifest.webmanifest" ||
+    pathname === "/robots.txt" ||
+    pathname === "/sitemap.xml"
+  ) {
+    return true;
+  }
   // Marketing surface only lives at "/"; everything else routed through
   // here gets evaluated normally.
   return false;
@@ -175,6 +198,6 @@ export const config = {
      *      renders as a broken image.)
      *   - stripe webhook (must keep raw body)
      */
-    "/((?!_next/static|_next/image|favicon.ico|assets|providers|branding|marketing|static|api/webhooks/stripe).*)",
+    "/((?!_next/static|_next/image|favicon.ico|assets|providers|branding|static|api/webhooks/stripe).*)",
   ],
 };

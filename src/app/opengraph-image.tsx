@@ -31,8 +31,7 @@ export const runtime = "edge";
  * Edge runtime, so only NEXT_PUBLIC_* is readable here — which is the right
  * variable anyway, since this is a public surface.
  */
-const BRAND =
-  process.env.NEXT_PUBLIC_APP_NAME || "ReservationCarRentals.com";
+const BRAND = process.env.NEXT_PUBLIC_APP_NAME || "Rental Travels";
 
 export const alt = `${BRAND} — secure booking payment and written confirmation.`;
 export const size = { width: 1200, height: 630 };
@@ -170,6 +169,15 @@ export default async function OgImage() {
         >
           <div
             style={{
+              // Satori requires an explicit display on any element with more
+              // than one child, and this one has three (text, the gradient
+              // span, the full stop). Without it the whole route throws
+              // "Expected <div> to have explicit display: flex" and
+              // /opengraph-image answers 500 — which is what it did, unnoticed,
+              // for as long as the proxy was redirecting crawlers to /login
+              // before they ever reached it.
+              display: "flex",
+              flexWrap: "wrap",
               fontSize: 76,
               fontWeight: 600,
               lineHeight: 1.04,
@@ -187,9 +195,8 @@ export default async function OgImage() {
                 color: "transparent",
               }}
             >
-              the moment your payment clears
+              the moment your payment clears.
             </span>
-            .
           </div>
         </div>
 

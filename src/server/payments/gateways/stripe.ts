@@ -188,7 +188,11 @@ export function createStripeGateway(
         ],
         metadata: input.metadata,
         payment_intent_data: {
-          description: `${input.metadata.appName ?? "PayOps"} • ${input.orderNumber}`,
+          // `||`, not `??`: an empty brandName is as unusable here as an
+          // absent one, and this string reaches the customer — it is the
+          // payment-intent description Stripe shows on the receipt. The
+          // fallback is the merchant, never the platform vendor's name.
+          description: `${input.metadata.appName || "Rental Travels"} • ${input.orderNumber}`,
           metadata: {
             orderId: input.orderId,
             orderNumber: input.orderNumber,

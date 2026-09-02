@@ -1,14 +1,10 @@
-# RFC 9116 security disclosure for PayOps.
+# RFC 9116 security disclosure for Rental Travels.
 #
-# If you find a vulnerability in any PayOps deployment, please report
-# it directly to the engineer running the service. Every deployment
-# is privately operated on its own domain, so this file applies to
-# the public marketing landing only — customer deployments will
-# publish their own /.well-known/security.txt on their domain.
+# This host serves Rental Travels' booking payment, consent and
+# confirmation surfaces. If you find a vulnerability affecting it, please
+# report it to the address below rather than disclosing it publicly.
 
-Contact: mailto:vinaymaheshwari35@gmail.com
+Contact: mailto:reservations@rentaltravels.com
 Preferred-Languages: en
-Canonical: https://payops.example.com/.well-known/security.txt
+Canonical: https://rentaltravels.rentalconfirmation.com/.well-known/security.txt
 Expires: 2026-12-31T23:59:59Z
-Acknowledgments: https://payops.example.com/
-Policy: https://payops.example.com/#contact

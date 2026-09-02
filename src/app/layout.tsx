@@ -43,10 +43,10 @@ const geistMono = Geist_Mono({
  * name made that failure mode "every customer sees PayOps"; defaulting to
  * the merchant makes it a no-op.
  */
-const SITE_NAME =
-  process.env.NEXT_PUBLIC_APP_NAME || "ReservationCarRentals.com";
+const SITE_NAME = process.env.NEXT_PUBLIC_APP_NAME || "Rental Travels";
 const SITE_URL = (
-  process.env.NEXT_PUBLIC_APP_URL || "https://reservationcarrentals.rentalconfirmation.com"
+  process.env.NEXT_PUBLIC_APP_URL ||
+  "https://rentaltravels.rentalconfirmation.com"
 ).replace(/\/$/, "");
 // This deployment serves ONE merchant, and these strings reach that
 // merchant's customers: they are the <meta description> on the hosted
@@ -57,7 +57,6 @@ const SITE_URL = (
 const HEADLINE = "Secure Booking Payments & Confirmations";
 const DESCRIPTION = `Pay for your booking with ${SITE_NAME} through a secure, single-use payment link. Card details are handled entirely by a PCI-DSS Level 1 certified payment provider, and a written confirmation and receipt are emailed the moment payment clears.`;
 const SHORT_DESCRIPTION = `Secure booking payments and written confirmations from ${SITE_NAME}.`;
-const OG_IMAGE = `${SITE_URL}/marketing/evidence-chain.webp`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -96,6 +95,17 @@ export const metadata: Metadata = {
     canonical: SITE_URL,
     languages: { "en-US": SITE_URL },
   },
+  // NO `images` here, deliberately. `src/app/opengraph-image.tsx` generates
+  // the card at /opengraph-image and Next injects it, so this file naming a
+  // second image only creates ambiguity about which one a crawler picks.
+  //
+  // What used to be named here was /marketing/evidence-chain.webp — a
+  // screenshot of the internal operations console, complete with the vendor's
+  // "PayOps / OPS CONSOLE" wordmark and a named super-admin in the corner.
+  // That is the image a customer would have seen when a payment link was
+  // pasted into WhatsApp, iMessage or Slack: another company's product, an
+  // internal tool, and a staff member's name. The generated card renders this
+  // merchant's brand instead, which is the whole point of that file.
   openGraph: {
     type: "website",
     url: SITE_URL,
@@ -103,27 +113,15 @@ export const metadata: Metadata = {
     description: DESCRIPTION,
     siteName: SITE_NAME,
     locale: "en_US",
-    images: [
-      {
-        url: OG_IMAGE,
-        width: 1440,
-        height: 900,
-        alt: `${SITE_NAME} — secure booking payment`,
-      },
-    ],
   },
+  // `site` / `creator` are omitted rather than derived from the brand name.
+  // `@${SITE_NAME.toLowerCase()}` produced "@rental travels" — a handle with
+  // a space in it, which is not a valid Twitter handle and points at nothing.
+  // Add them back only with a real account.
   twitter: {
     card: "summary_large_image",
-    site: `@${SITE_NAME.toLowerCase()}`,
-    creator: `@${SITE_NAME.toLowerCase()}`,
     title: `${SITE_NAME} — ${HEADLINE}`,
     description: SHORT_DESCRIPTION,
-    images: [
-      {
-        url: OG_IMAGE,
-        alt: `${SITE_NAME} — secure booking payment`,
-      },
-    ],
   },
   // Marketing surfaces are indexable; the authed app is locked behind
   // login. Per-page robots overrides can opt-out (e.g. /pay/success,
