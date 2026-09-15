@@ -4,6 +4,7 @@ import { listBetaApplications } from "@/console/server/services/beta-application
 import { parsePagination } from "@/console/server/pagination";
 import { Badge, Pagination, Td, Th, fmtDate, DataTable } from "@/console/components/ui";
 import { ADMIN_BASE } from "@/console/lib/paths";
+import { requireAdminPage } from "@/console/server/auth/session";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,14 @@ export default async function BetaApplicationsPage({
     q?: string;
   }>;
 }) {
+  // Defence in depth. `src/proxy.ts` already refuses this request without a
+  // valid admin session, so nothing should reach here unauthenticated — but a
+  // layout `redirect()` does NOT stop a page rendering (the App Router runs
+  // them concurrently and attaches the rendered payload to the 307), so the
+  // guard has to be awaited HERE, before any data is read, for this page to be
+  // safe on its own. Awaiting it first is the whole point: it must precede
+  // every query below.
+  await requireAdminPage();
   const sp = await searchParams;
   const p = parsePagination(sp);
   const status =

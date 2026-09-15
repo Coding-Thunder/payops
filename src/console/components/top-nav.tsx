@@ -31,9 +31,12 @@ function isGroup(item: NavItem): item is Group {
 export function TopNav({
   email,
   pendingBeta = 0,
+  pendingReviews = 0,
 }: {
   email: string;
   pendingBeta?: number;
+  /** Reviews waiting on a moderator. Badged so the queue is not silent. */
+  pendingReviews?: number;
 }) {
   const pathname = usePathname();
   const [busy, setBusy] = React.useState(false);
@@ -71,6 +74,17 @@ export function TopNav({
       children: [
         { href: `${ADMIN_BASE}/orders`, label: "Orders" },
         { href: `${ADMIN_BASE}/emails`, label: "Email Ops" },
+      ],
+    },
+    {
+      label: "Content",
+      children: [
+        { href: `${ADMIN_BASE}/blog`, label: "Blog" },
+        {
+          href: `${ADMIN_BASE}/reviews`,
+          label: "Reviews",
+          count: pendingReviews,
+        },
       ],
     },
     {

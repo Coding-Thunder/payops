@@ -8,6 +8,7 @@ import type { NextConfig } from "next";
 // The module is dependency-free, which is what makes it safe to pull into
 // the config's module graph.
 import { CLARITY_TRACKED_PATHS } from "./src/lib/analytics/clarity";
+import { GTM_BLOCKED_PATTERNS } from "./src/lib/analytics/gtm";
 
 /**
  * Resolve the deployed commit SHA at BUILD time so `/api/health` can echo it
@@ -132,6 +133,37 @@ const nextConfig: NextConfig = {
     //   - NO frame-src — it serialises iframes, it never creates one.
     //   - NO img-src change — the c.clarity.ms → c.bing.com MUID pixel is
     //     already covered by the existing `img-src 'self' data: https:`.
+    // ── Google Tag Manager ────────────────────────────────────────────
+    // Measured, not copied from a guide: served the real container under this
+    // app's exact production policy in headless Chromium, and separately
+    // under a wide-open policy as a control. With NO CSP at all the container
+    // makes exactly ONE outbound request — GET www.googletagmanager.com/gtm.js
+    // — so one script-src host is the entire requirement for a visitor with
+    // JavaScript enabled. Granting connect-src/img-src as Google's guide
+    // suggests produced zero additional requests; those grants are dead.
+    //
+    //   - NO 'unsafe-eval'. The 331 KB container has zero eval / new Function /
+    //     document.write. Production stays eval-free. (Google documents that
+    //     Custom JavaScript VARIABLES need it — this container has none, and
+    //     adding one is a decision, not a default.)
+    //   - NO worker-src / blob: — it creates neither.
+    //   - NO img-src change — 'self' data: https: already covers any pixel.
+    //   - frame-src IS needed, but only for the <noscript> fallback: with JS
+    //     disabled the iframe is otherwise blocked. With JS on it is never
+    //     instantiated.
+    //
+    // GTM is in the BASE policy — it loads on the public site by default —
+    // but is withdrawn on the routes in `GTM_BLOCKED_PATTERNS`: token-bearing
+    // URLs, the authenticated app, the admin console, and /login. See the
+    // header of `@/lib/analytics/gtm` for the reasoning, including why the
+    // boundary is a CSP rather than a runtime check.
+    //
+    // The tag still RENDERS on those routes (the root layout has no pathname
+    // without opting every static page into dynamic rendering). It is inert:
+    // the browser refuses to fetch gtm.js, so no container code executes.
+    const GTM_SCRIPT_SRC = ["https://www.googletagmanager.com"];
+    const GTM_FRAME_SRC = ["https://www.googletagmanager.com"];
+
     const CLARITY_SCRIPT_SRC = [
       "https://www.clarity.ms",
       "https://scripts.clarity.ms",
@@ -145,7 +177,7 @@ const nextConfig: NextConfig = {
      * widened `/admin/**` unless someone remembered a matching `.replace()`.
      * Only the marketing pages that actually load the tag pass `true`.
      */
-    const buildCsp = ({ clarity }: { clarity: boolean }) =>
+    const buildCsp = ({ clarity, gtm = true }: { clarity: boolean; gtm?: boolean }) =>
       [
         "default-src 'self'",
         "base-uri 'self'",
@@ -163,6 +195,7 @@ const nextConfig: NextConfig = {
           "https://apis.google.com",
           "https://www.gstatic.com",
           "https://accounts.google.com",
+          ...(gtm ? GTM_SCRIPT_SRC : []),
           ...(clarity ? CLARITY_SCRIPT_SRC : []),
         ]
           .filter(Boolean)
@@ -185,6 +218,14 @@ const nextConfig: NextConfig = {
           "https://challenges.cloudflare.com",
           "https://*.firebaseapp.com",
           "https://accounts.google.com",
+          // The GTM <noscript> fallback iframe. Only ever loaded by a visitor
+          // with JavaScript disabled; without it they get a CSP violation and
+          // a dead frame.
+          // Withdrawn on blocked routes too. Without this a JavaScript-
+          // disabled visitor on /reset-password/<token> would still load the
+          // GTM iframe, which reports the full URL — the exact leak the
+          // scoping exists to prevent.
+          ...(gtm ? GTM_FRAME_SRC : []),
         ].join(" "),
       ].join("; ");
 
@@ -194,6 +235,12 @@ const nextConfig: NextConfig = {
     const csp = buildCsp({ clarity: false });
     // Only the public marketing routes in the allow-list.
     const marketingCsp = buildCsp({ clarity: true });
+    /**
+     * Token-bearing, authenticated, and credential-entry routes: no Clarity
+     * AND no GTM. Applied by a later `headers()` entry so it wins the
+     * duplicate-key resolution for those paths.
+     */
+    const sensitiveCsp = buildCsp({ clarity: false, gtm: false });
 
     // The platform super-admin console (`/admin/**`) shipped its own,
     // deliberately tighter CSP when it was a separate app: no Stripe, no
@@ -205,7 +252,7 @@ const nextConfig: NextConfig = {
     // Every pattern is /g: `https://*.stripe.com` appears in BOTH form-action
     // and frame-src, and a string-argument `.replace()` would strip only the
     // first, silently leaving the console able to frame Stripe.
-    const consoleCsp = csp
+    const consoleCsp = sensitiveCsp
       .replace(/ https:\/\/api\.stripe\.com/g, "")
       .replace(/ https:\/\/\*\.stripe\.com/g, "")
       .replace(/ https:\/\/challenges\.cloudflare\.com/g, "");
@@ -217,11 +264,27 @@ const nextConfig: NextConfig = {
     // from a CSP report after it has already shipped.
     for (const [name, policy] of [
       ["app", csp],
+      ["sensitive", sensitiveCsp],
       ["console", consoleCsp],
     ] as const) {
       if (policy.includes("clarity.ms")) {
         throw new Error(
           `The ${name} CSP must not allow Clarity hosts — analytics is scoped to ${CLARITY_TRACKED_PATHS.length} public marketing routes only.`,
+        );
+      }
+    }
+
+    // The same build-time invariant for GTM. A container that can execute on
+    // a token-bearing or authenticated route is the failure this scoping
+    // exists to prevent, and it is not something to discover from a CSP
+    // report after it has shipped.
+    for (const [name, policy] of [
+      ["sensitive", sensitiveCsp],
+      ["console", consoleCsp],
+    ] as const) {
+      if (policy.includes("googletagmanager.com")) {
+        throw new Error(
+          `The ${name} CSP must not allow GTM — the container is scoped away from ${GTM_BLOCKED_PATTERNS.length} token-bearing and authenticated route patterns.`,
         );
       }
     }
@@ -271,6 +334,19 @@ const nextConfig: NextConfig = {
       ...CLARITY_TRACKED_PATHS.map((source) => ({
         source,
         headers: [{ key: "Content-Security-Policy", value: marketingCsp }],
+      })),
+      // ── Token-bearing, authenticated and credential-entry routes ─────
+      // No Clarity and no GTM. Must come AFTER the catch-all so its
+      // Content-Security-Policy wins; every other header from the catch-all
+      // still applies. `/admin` is covered again by the console block below,
+      // which additionally narrows Stripe/Turnstile and adds HSTS.
+      //
+      // This is the enforcement point for the GTM boundary. It holds even if
+      // the component were changed to render unconditionally, because the
+      // browser — not this repository — refuses the fetch.
+      ...GTM_BLOCKED_PATTERNS.map((source) => ({
+        source,
+        headers: [{ key: "Content-Security-Policy", value: sensitiveCsp }],
       })),
       // ── Platform super-admin console ──────────────────────────────────
       // Must come AFTER the catch-all: for a duplicate header key, the last

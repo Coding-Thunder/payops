@@ -17,8 +17,8 @@ import { StructuredData } from "@/components/marketing/seo/structured-data";
 import { pageMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = pageMetadata({
-  title: "TraceTxn, Client Management for Agencies and Freelancers",
-  description: "One permanent, searchable record per client \u2014 orders, invoices, payments, email and the full timeline. Stop reconstructing what happened across Gmail and Stripe.",
+  title: "Client Management Software for Agencies & Service Businesses | TraceTxn",
+  description: "Client management software for agencies and service businesses. Keep every client's orders, invoices, payments, files and email in one searchable record.",
   path: "/",
   absoluteTitle: true,
 });

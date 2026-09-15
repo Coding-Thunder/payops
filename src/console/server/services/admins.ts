@@ -5,6 +5,7 @@ import { AdminUser, type AdminUserDoc } from "@/console/server/db/models";
 import { recordAdminAction } from "@/console/server/audit";
 import { sendAdminWelcomeEmail } from "@/console/server/email/mailer";
 import { normalizeEmail } from "@/console/server/auth/allowlist";
+import { assertConsoleAdmin } from "@/console/server/auth/session";
 
 /**
  * Admin allow-list management. The `admin_users` collection is the ONLY source
@@ -37,6 +38,7 @@ function toRow(d: AdminUserDoc): AdminRow {
 
 /** Every admin, oldest first. */
 export async function listAdmins(): Promise<AdminRow[]> {
+  await assertConsoleAdmin();
   await connectMongo();
   const docs = await AdminUser.find({})
     .sort({ createdAt: 1 })
@@ -56,6 +58,7 @@ export async function addAdmin(
   actorEmail: string,
   ip: string | null,
 ): Promise<AdminRow> {
+  await assertConsoleAdmin();
   await connectMongo();
   const email = normalizeEmail(input.email);
   const name = input.name.trim();
@@ -116,6 +119,7 @@ export async function removeAdmin(
   actorEmail: string,
   ip: string | null,
 ): Promise<void> {
+  await assertConsoleAdmin();
   await connectMongo();
   const doc = await AdminUser.findById(id);
   if (!doc) throw new Error("Admin not found");
@@ -167,6 +171,12 @@ export async function removeAdmin(
  * login path itself a grant path.
  */
 export async function recordAdminLogin(email: string): Promise<void> {
+  // DELIBERATELY NOT `assertConsoleAdmin()`. This runs inside the OTP
+  // verification route, at the moment the operator is being signed IN — there
+  // is no session cookie yet, so requiring one would make console login
+  // impossible. It reads nothing and returns nothing; it only stamps
+  // `lastLoginAt` on a row that must already exist (the `$set`-without-upsert
+  // below is what keeps it from granting access to an unknown address).
   await connectMongo();
   await AdminUser.updateOne(
     { email: normalizeEmail(email) },

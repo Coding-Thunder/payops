@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { disposableEmailRefinement } from "@/lib/validation/disposable-email";
+
 /**
  * Public signup form. Validation mirrors `createUserSchema` for the
  * user fields, adds an organization name (free-form, server slugifies
@@ -8,7 +10,14 @@ import { z } from "zod";
 export const signupSchema = z.object({
   // Founder user.
   name: z.string().trim().min(2, "Name must be at least 2 characters").max(120),
-  email: z.string().email("Enter a valid email").toLowerCase().trim(),
+  email: z
+    .string()
+    .email("Enter a valid email")
+    .toLowerCase()
+    .trim()
+    // Enforced here rather than at the route so every caller of
+    // signupSchema — API route, server action, future flow — inherits it.
+    .refine(...disposableEmailRefinement),
   password: z
     .string()
     .min(10, "Use at least 10 characters")

@@ -427,6 +427,17 @@ export interface BetaApplicationDoc {
   businessName?: string | null;
   clientsManaged?: string | null;
   challengeAnswer?: string | null;
+  /** Marketing attribution captured on the public site. Absent on any lead
+   *  created before it shipped, and on every direct visit. */
+  attribution?: {
+    utmSource?: string | null;
+    utmMedium?: string | null;
+    utmCampaign?: string | null;
+    utmTerm?: string | null;
+    utmContent?: string | null;
+    referrer?: string | null;
+    landingPage?: string | null;
+  } | null;
   status: "PENDING" | "APPROVED" | "REJECTED" | "INVITED" | "ACTIVATED";
   adminNote?: string | null;
   reviewedByEmail?: string | null;
@@ -451,6 +462,10 @@ const betaApplicationSchema = new Schema<BetaApplicationDoc>(
     businessName: { type: String, default: null },
     clientsManaged: { type: String, default: null },
     challengeAnswer: { type: String, default: null },
+    // Read-only here. The main app owns the authoritative sub-schema; the
+    // console only displays it, so Mixed avoids duplicating field-level caps
+    // that would drift.
+    attribution: { type: Schema.Types.Mixed, default: null },
     status: { type: String },
     adminNote: { type: String, default: null },
     reviewedByEmail: { type: String, default: null },
@@ -475,6 +490,105 @@ export const BetaApplication = model<BetaApplicationDoc>(
   "ConsoleBetaApplication",
   betaApplicationSchema,
 );
+
+// Blog posts (owned by the main app; the console authors and publishes
+// them). Mirrored over the SAME collection under a Console-prefixed model
+// name. `status` is the publication boundary — the console is the only thing
+// that may change it, and only through the dedicated publish/unpublish
+// service functions, never as a field on an update body.
+export interface BlogPostDoc {
+  _id: Types.ObjectId;
+  slug: string;
+  title: string;
+  excerpt: string;
+  body: string;
+  coverImageUrl?: string | null;
+  coverImageAlt?: string | null;
+  authorName: string;
+  tags: string[];
+  status: "DRAFT" | "PUBLISHED";
+  publishedAt?: Date | null;
+  everPublished?: boolean;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  readingMinutes?: number;
+  updatedByEmail?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+const blogPostSchema = new Schema<BlogPostDoc>(
+  {
+    slug: { type: String, lowercase: true, trim: true },
+    title: { type: String },
+    excerpt: { type: String },
+    body: { type: String },
+    coverImageUrl: { type: String, default: null },
+    coverImageAlt: { type: String, default: null },
+    authorName: { type: String },
+    tags: { type: [String], default: [] },
+    status: { type: String, default: "DRAFT" },
+    publishedAt: { type: Date, default: null },
+    everPublished: { type: Boolean, default: false },
+    seoTitle: { type: String, default: null },
+    seoDescription: { type: String, default: null },
+    readingMinutes: { type: Number, default: 1 },
+    updatedByEmail: { type: String, default: null },
+  },
+  {
+    timestamps: true,
+    versionKey: false,
+    collection: "blog_posts",
+    strict: false,
+  },
+);
+export const BlogPost = model<BlogPostDoc>("ConsoleBlogPost", blogPostSchema);
+
+// Customer reviews (owned by the main app; the console moderates them).
+// Mirrored over the SAME collection. `authorEmail` and `submittedIp` exist
+// for moderation only and are never returned by a public read — see
+// `review.service.ts` in the main app.
+export interface ReviewDoc {
+  _id: Types.ObjectId;
+  authorName: string;
+  authorEmail: string;
+  authorTitle?: string | null;
+  authorCompany?: string | null;
+  rating: number;
+  title: string;
+  body: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  approvedAt?: Date | null;
+  moderatedByEmail?: string | null;
+  moderatedAt?: Date | null;
+  moderationNote?: string | null;
+  submittedIp?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+const reviewSchema = new Schema<ReviewDoc>(
+  {
+    authorName: { type: String },
+    authorEmail: { type: String, lowercase: true, trim: true },
+    authorTitle: { type: String, default: null },
+    authorCompany: { type: String, default: null },
+    rating: { type: Number },
+    title: { type: String },
+    body: { type: String },
+    status: { type: String, default: "PENDING" },
+    approvedAt: { type: Date, default: null },
+    moderatedByEmail: { type: String, default: null },
+    moderatedAt: { type: Date, default: null },
+    moderationNote: { type: String, default: null },
+    submittedIp: { type: String, default: null },
+  },
+  {
+    timestamps: true,
+    versionKey: false,
+    collection: "reviews",
+    strict: false,
+  },
+);
+export const Review = model<ReviewDoc>("ConsoleReview", reviewSchema);
 
 export interface AdminAuditDoc {
   _id: Types.ObjectId;

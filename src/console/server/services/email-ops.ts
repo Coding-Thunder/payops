@@ -7,6 +7,7 @@ import {
   type Pagination,
   type PageResult,
 } from "@/console/server/pagination";
+import { assertConsoleAdmin } from "@/console/server/auth/session";
 
 /**
  * Email Operations — visibility + control over the main app's email
@@ -112,6 +113,7 @@ export async function listEmails(
   p: Pagination,
   f: EmailFilters = {},
 ): Promise<PageResult<EmailRow>> {
+  await assertConsoleAdmin();
   await connectMongo();
   const filter = buildFilter(f);
   const sort =
@@ -138,6 +140,7 @@ export interface EmailStats {
 }
 
 export async function getEmailStats(): Promise<EmailStats> {
+  await assertConsoleAdmin();
   await connectMongo();
   const agg = await PendingEmail.aggregate<{ _id: string; n: number }>([
     { $group: { _id: "$status", n: { $sum: 1 } } },
@@ -157,6 +160,7 @@ export async function getEmailStats(): Promise<EmailStats> {
 }
 
 export async function getEmailById(id: string): Promise<EmailDetail | null> {
+  await assertConsoleAdmin();
   if (!Types.ObjectId.isValid(id)) return null;
   await connectMongo();
   const d = await PendingEmail.findById(id).lean<LeanEmail | null>();
@@ -174,6 +178,7 @@ export async function listEmailsForExport(
   f: EmailFilters = {},
   cap = 5000,
 ): Promise<EmailRow[]> {
+  await assertConsoleAdmin();
   await connectMongo();
   const filter = buildFilter(f);
   const sort =
@@ -202,6 +207,7 @@ export interface ActionResult {
 const STUCK_PROCESSING_MS = 10 * 60_000;
 
 export async function retryEmail(id: string): Promise<ActionResult> {
+  await assertConsoleAdmin();
   if (!Types.ObjectId.isValid(id)) return { ok: false, message: "Invalid id" };
   await connectMongo();
   const staleBefore = new Date(Date.now() - STUCK_PROCESSING_MS);
@@ -226,6 +232,7 @@ export async function retryEmail(id: string): Promise<ActionResult> {
 
 /** Remove a not-yet-sent email so the drainer never picks it up. */
 export async function cancelEmail(id: string): Promise<ActionResult> {
+  await assertConsoleAdmin();
   if (!Types.ObjectId.isValid(id)) return { ok: false, message: "Invalid id" };
   await connectMongo();
   const res = await PendingEmail.deleteOne({
@@ -243,6 +250,7 @@ export async function cancelEmail(id: string): Promise<ActionResult> {
 
 /** Enqueue a fresh copy so the drainer re-renders + re-delivers it. */
 export async function resendEmail(id: string): Promise<ActionResult> {
+  await assertConsoleAdmin();
   if (!Types.ObjectId.isValid(id)) return { ok: false, message: "Invalid id" };
   await connectMongo();
   const src = await PendingEmail.findById(id).lean<LeanEmail | null>();

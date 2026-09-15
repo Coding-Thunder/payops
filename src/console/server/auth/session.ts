@@ -116,6 +116,41 @@ export async function requireAdminPage(): Promise<string> {
 }
 
 /**
+ * Hard authorization gate for anything that READS OR WRITES console data.
+ *
+ * ── Why this exists in addition to `requireAdminPage()` ──────────────────
+ *
+ * `requireAdminPage()` calls `redirect()`, and a redirect thrown during
+ * rendering does NOT reliably prevent the page from being rendered. The App
+ * Router renders layout and page concurrently and streams the RSC payload as
+ * it goes, so an unauthenticated GET of a protected console page was observed
+ * returning HTTP 307 WITH the fully-rendered page in the body — on production,
+ * `/admin/users` shipped 16 real user email addresses that way. A browser
+ * follows the Location header and discards the body; `curl` does not.
+ *
+ * Guarding the RENDER is therefore the wrong layer. This guards the DATA: if
+ * no service can return a row without a verified admin session, then there is
+ * nothing for a partially-rendered page to leak, no matter how the framework
+ * schedules the render.
+ *
+ * Throws rather than redirects, deliberately. A throw aborts the render and
+ * cannot be swallowed into a partially-streamed payload the way a redirect
+ * can; the worst case is an error page containing no data, which is the
+ * correct failure mode for an unauthorized read.
+ *
+ * Every console service calls this before it touches the database. Adding a
+ * service without it is the regression `admin-route-protection.test.ts`
+ * exists to catch.
+ */
+export async function assertConsoleAdmin(): Promise<string> {
+  const email = await getAdminEmail();
+  if (!email) {
+    throw new Error("UNAUTHORIZED: console access requires an admin session");
+  }
+  return email;
+}
+
+/**
  * The path (plus query) of the request being served, when it is a console
  * page. Read from the headers Next sets on every request; returns null when
  * unavailable or when the value isn't a console path, so the caller falls

@@ -1,8 +1,25 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 
+import { BLOG_INDEX_PATH } from "@/lib/blog/slug";
+import { SEO_LANDING_PATHS } from "@/lib/seo-routes";
+
 const ISSUER = "tracetxn";
 const AUDIENCE = "tracetxn:web";
+
+/**
+ * The platform console's session, mirrored from
+ * `@/console/server/auth/session`. Duplicated rather than imported because
+ * that module is `server-only` and pulls the console env parse; the proxy
+ * must stay importable from the middleware runtime.
+ *
+ * If any of these three change there, they must change here — a mismatch
+ * fails closed (every console request bounces to the login page), which is
+ * the safe direction for a mistake to fall.
+ */
+const ADMIN_COOKIE = "admin_session";
+const ADMIN_ISSUER = "tracetxn-admin";
+const ADMIN_AUDIENCE = "tracetxn-admin:web";
 
 /**
  * Route taxonomy
@@ -38,6 +55,18 @@ const PUBLIC_PATHS = [
   // reachable unauthenticated; the token (validated + consumed in the route)
   // is the credential.
   "/activate",
+  // Client-management SEO landing pages. Spread from the registry rather
+  // than listed here: this gate is deny-by-default, so a page added to the
+  // registry but forgotten here would 307 to /login and be uncrawlable —
+  // which is exactly what happened the first time these shipped.
+  ...SEO_LANDING_PATHS,
+  // Blog index. Individual posts are covered by the `/blog/` prefix below.
+  BLOG_INDEX_PATH,
+  // Public reviews page and its submission endpoint. The endpoint stores a
+  // PENDING review and can never publish one; moderation happens in the
+  // console.
+  "/reviews",
+  "/api/reviews",
   // Legal pages — long-form documents referenced from signup
   // click-wrap, footer, and DPA workflows. Public by definition.
   "/terms",
@@ -71,6 +100,11 @@ const PUBLIC_PATHS = [
 
 /** Public path prefixes for marketing + customer-facing flows. */
 const PUBLIC_PREFIXES = [
+  // Blog posts: `/blog/<slug>`. Editorial content on the public marketing
+  // site — no session, no tenant, nothing to gate. The route itself 404s for
+  // an unpublished slug, so the draft boundary is enforced where the data is
+  // read rather than here.
+  "/blog/",
   "/pay/",
   // Token-bound password reset URLs of the form
   // `/reset-password/<base64url-token>`. The server-side route
@@ -119,18 +153,86 @@ const ADMIN_PATH_PREFIXES = ["/app/admin", "/api/admin"];
  *     Now that the console shares the origin, that would block every console
  *     POST/DELETE for an operator who happens to be mid-impersonation.
  *
- * Both are avoided by returning BEFORE the session cookie is read.
+ * Both are avoided by `isConsolePublic()` below, which exempts exactly the
+ * login page and the credential endpoints and NOTHING else.
  *
- * Every console page is guarded server-side by `requireAdminPage()` in
- * `src/app/admin/(protected)/layout.tsx`, and every console route handler
- * calls `getAdminEmail()` itself — exactly as when it ran standalone with no
- * middleware in front of it at all.
+ * ── Why the proxy now gates the rest of the console ──────────────────────
+ *
+ * It used to let every `/admin/**` request through untouched, on the reasoning
+ * that `requireAdminPage()` in `src/app/admin/(protected)/layout.tsx` guards
+ * the pages and each route handler calls `getAdminEmail()`.
+ *
+ * That reasoning was wrong for PAGES, and the failure was silent. A layout
+ * `redirect()` does not prevent the page segment from rendering: the App
+ * Router renders layout and page CONCURRENTLY, so by the time the redirect is
+ * emitted the page's RSC payload already exists and Next attaches it to the
+ * 307 response. A browser follows the Location header and discards the body,
+ * which is exactly why this was invisible in manual testing — but `curl`, a
+ * crawler, a proxy log or any non-browser client reads the body and gets the
+ * fully-rendered admin page. Measured on production before this fix:
+ * `/admin/users` returned 307 with 51 KB containing 16 real user email
+ * addresses; `/admin/beta-applications` leaked applicant emails; the console's
+ * review pages would have leaked reviewer emails, their submitting IP and the
+ * internal moderation note.
+ *
+ * The only place that can stop a page rendering is BEFORE rendering starts,
+ * which is here. So the proxy now requires a cryptographically valid admin
+ * session for every console path except the login surfaces, and returns
+ * without ever invoking the route.
+ *
+ * DEFENCE IN DEPTH, not replacement. This checks the JWT only — signature,
+ * issuer, audience, expiry. It deliberately does NOT re-check the
+ * `admin_users` allow-list, because that is a database read and the proxy runs
+ * on every request. `requireAdminPage()` and `getAdminEmail()` still run
+ * afterwards and still do that check, so revoking an operator still takes
+ * effect on their very next request even though their cookie is still
+ * cryptographically valid.
  *
  * Matched as exact-or-slash on purpose: a bare `startsWith("/admin")` would
  * also swallow a future `/administrators` route and silently make it public.
  */
 function isPlatformConsole(pathname: string): boolean {
   return pathname === "/admin" || pathname.startsWith("/admin/");
+}
+
+/**
+ * The console surfaces that must stay reachable WITHOUT a session, because
+ * they are how a session is obtained in the first place.
+ *
+ * Deliberately an exact allow-list rather than a prefix: `/admin/api/auth/`
+ * covers request-otp, verify-otp, google and logout, and nothing else under
+ * `/admin` is public. A new console route is therefore protected by default,
+ * which is the direction a mistake should fall.
+ */
+function isConsolePublic(pathname: string): boolean {
+  return (
+    pathname === "/admin" ||
+    pathname === "/admin/" ||
+    pathname.startsWith("/admin/api/auth/")
+  );
+}
+
+/**
+ * True when the request carries a valid, unexpired platform-admin session.
+ *
+ * Signature + issuer + audience + expiry only. See the note on defence in
+ * depth above: the allow-list re-check stays in `getAdminEmail()`.
+ */
+async function hasAdminSession(req: NextRequest): Promise<boolean> {
+  const token = req.cookies.get(ADMIN_COOKIE)?.value;
+  if (!token) return false;
+  const raw = process.env.ADMIN_SESSION_SECRET || process.env.JWT_SECRET;
+  if (!raw) return false;
+  try {
+    await jwtVerify(token, new TextEncoder().encode(raw), {
+      issuer: ADMIN_ISSUER,
+      audience: ADMIN_AUDIENCE,
+      algorithms: ["HS256"],
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function isPublic(pathname: string): boolean {
@@ -205,6 +307,25 @@ export async function proxy(req: NextRequest) {
   // supplied, so `requireAdminPage()` re-validates this as a console path
   // before putting it in a redirect.
   if (isPlatformConsole(pathname)) {
+    if (!isConsolePublic(pathname) && !(await hasAdminSession(req))) {
+      // A route handler gets JSON so its contract stays "401 + error body"
+      // rather than becoming a redirect its client cannot follow. Note this
+      // is belt-and-braces: every console handler already calls
+      // getAdminEmail() and 401s on its own.
+      if (pathname.startsWith("/admin/api/")) {
+        return NextResponse.json(
+          { ok: false, error: { code: "UNAUTHORIZED", message: "Not signed in" } },
+          { status: 401 },
+        );
+      }
+      // A page gets the console login, preserving where they were going —
+      // the same destination `requireAdminPage()` used to redirect to, except
+      // that now nothing has rendered, so the response carries no body.
+      const url = new URL("/admin", req.url);
+      const target = pathname + search;
+      if (target && target !== "/admin") url.searchParams.set("next", target);
+      return NextResponse.redirect(url);
+    }
     const headers = new Headers(req.headers);
     headers.set("x-console-path", pathname + search);
     return NextResponse.next({ request: { headers } });

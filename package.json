@@ -33,7 +33,9 @@
     "test:smoke:ui": "cross-env TRACETXN_TEST_MODE=smoke PLAYWRIGHT_USE_DEV=1 playwright test --ui",
     "test:smoke:report": "playwright show-report reports/playwright-html",
     "test:all": "npm run test:unit && npm run test:integration && npm run test:smoke:build",
-    "prepare": "husky"
+    "prepare": "husky",
+    "seed:blog": "tsx --env-file=.env.local scripts/seed-blog.ts",
+    "seed:blog:prod": "tsx scripts/seed-blog.ts"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx}": [

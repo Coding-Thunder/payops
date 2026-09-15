@@ -2,6 +2,7 @@ import "server-only";
 
 import { connectMongo } from "@/console/server/db/mongoose";
 import { AdminNote, Types } from "@/console/server/db/models";
+import { assertConsoleAdmin } from "@/console/server/auth/session";
 
 /**
  * Internal ops notes attached to any console entity. Append + delete only
@@ -49,6 +50,7 @@ export async function listNotes(
   subjectType: string,
   subjectId: string,
 ): Promise<NoteRow[]> {
+  await assertConsoleAdmin();
   if (!isNoteSubject(subjectType) || !subjectId) return [];
   await connectMongo();
   const docs = await AdminNote.find({ subjectType, subjectId })
@@ -64,6 +66,7 @@ export async function addNote(input: {
   body: string;
   authorEmail: string;
 }): Promise<{ ok: boolean; message?: string; note?: NoteRow }> {
+  await assertConsoleAdmin();
   if (!isNoteSubject(input.subjectType)) {
     return { ok: false, message: "Invalid subject type" };
   }
@@ -84,6 +87,7 @@ export async function addNote(input: {
 }
 
 export async function deleteNote(id: string): Promise<boolean> {
+  await assertConsoleAdmin();
   if (!Types.ObjectId.isValid(id)) return false;
   await connectMongo();
   const res = await AdminNote.deleteOne({ _id: new Types.ObjectId(id) });

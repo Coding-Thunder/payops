@@ -18,6 +18,10 @@ import { LoadingButton } from "@/components/ui/loading-button";
 import { TurnstileWidget } from "@/components/common/turnstile-widget";
 import { quotationSchema, type QuotationInput } from "@/lib/validation";
 import { api, ApiClientError } from "@/lib/api-client";
+import {
+  DATA_LAYER_EVENTS,
+  pushDataLayerEvent,
+} from "@/lib/analytics/data-layer";
 
 /**
  * Quotation form, bare body, no section chrome.
@@ -101,6 +105,10 @@ export function QuotationFormBody({
         ...values,
         cfToken: cfToken ?? undefined,
       });
+      // After the server accepted and stored it. No reference id, no name,
+      // no email — `result.id` is a record identifier and identifiers do not
+      // go in the dataLayer.
+      pushDataLayerEvent(DATA_LAYER_EVENTS.CONTACT_SUBMITTED);
       setState({ kind: "ok", ref: result.id });
       form.reset();
       setCfToken(null);

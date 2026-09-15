@@ -8,6 +8,7 @@ import { BetaApplication, type BetaApplicationDoc } from "@/console/server/db/mo
 import { recordAdminAction } from "@/console/server/audit";
 import { normalizeEmail } from "@/console/server/auth/allowlist";
 import { sendBetaInvitationEmail } from "@/console/server/email/mailer";
+import { assertConsoleAdmin } from "@/console/server/auth/session";
 
 /**
  * Beta Applications review — the admin side. Approving generates a
@@ -34,6 +35,18 @@ function activationUrl(rawToken: string): string {
   return `${base}/activate?token=${rawToken}`;
 }
 
+/** Attribution as the admin UI consumes it: every field present, nulls for
+ *  what was not captured, so the view never has to guess. */
+export interface BetaAppAttribution {
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
+  utmTerm: string | null;
+  utmContent: string | null;
+  referrer: string | null;
+  landingPage: string | null;
+}
+
 export interface BetaAppRow {
   id: string;
   fullName: string;
@@ -51,6 +64,38 @@ export interface BetaAppRow {
   activatedAt: string | null;
   inviteExpiresAt: string | null;
   lastInviteError: string | null;
+  /** Null for a direct visit, and for every lead predating attribution. */
+  attribution: BetaAppAttribution | null;
+}
+
+/**
+ * Normalise the stored sub-document for display.
+ *
+ * The console reads this collection with `strict: false`, so the value is
+ * whatever the database holds — including shapes written before the field
+ * existed. Every field is coerced to `string | null` here so the view can
+ * render it without type-guarding, and a row of all-nulls collapses to null
+ * so "no attribution" and "empty attribution" look the same to the admin.
+ *
+ * Values originate from an anonymous visitor's browser. They are DISPLAY
+ * DATA: never used in a query, a decision, or a link the admin can click.
+ */
+function toAttribution(
+  raw: BetaApplicationDoc["attribution"],
+): BetaAppAttribution | null {
+  if (!raw || typeof raw !== "object") return null;
+  const str = (v: unknown): string | null =>
+    typeof v === "string" && v.trim() ? v.trim().slice(0, 300) : null;
+  const out: BetaAppAttribution = {
+    utmSource: str(raw.utmSource),
+    utmMedium: str(raw.utmMedium),
+    utmCampaign: str(raw.utmCampaign),
+    utmTerm: str(raw.utmTerm),
+    utmContent: str(raw.utmContent),
+    referrer: str(raw.referrer),
+    landingPage: str(raw.landingPage),
+  };
+  return Object.values(out).some((v) => v !== null) ? out : null;
 }
 
 function toRow(d: BetaApplicationDoc): BetaAppRow {
@@ -73,6 +118,7 @@ function toRow(d: BetaApplicationDoc): BetaAppRow {
       ? d.invite.expiresAt.toISOString()
       : null,
     lastInviteError: d.lastInviteError ?? null,
+    attribution: toAttribution(d.attribution),
   };
 }
 
@@ -90,6 +136,7 @@ export async function listBetaApplications(opts: {
   page?: number;
   pageSize?: number;
 }): Promise<ListBetaResult> {
+  await assertConsoleAdmin();
   await connectMongo();
   const page = Math.max(1, opts.page ?? 1);
   const pageSize = Math.min(100, Math.max(1, opts.pageSize ?? 25));
@@ -119,6 +166,7 @@ export async function listBetaApplications(opts: {
 export async function getBetaApplication(
   id: string,
 ): Promise<BetaAppRow | null> {
+  await assertConsoleAdmin();
   await connectMongo();
   if (!/^[a-f0-9]{24}$/i.test(id)) return null;
   const doc = await BetaApplication.findById(id).lean<BetaApplicationDoc>();
@@ -126,6 +174,7 @@ export async function getBetaApplication(
 }
 
 export async function countPendingApplications(): Promise<number> {
+  await assertConsoleAdmin();
   await connectMongo();
   return BetaApplication.countDocuments({ status: "PENDING" });
 }
@@ -141,6 +190,7 @@ export async function approveBetaApplication(
   actorEmail: string,
   ip: string | null,
 ): Promise<{ status: string; emailed: boolean; error: string | null }> {
+  await assertConsoleAdmin();
   await connectMongo();
 
   const { raw, hash } = generateInviteToken();
@@ -256,6 +306,7 @@ export async function rejectBetaApplication(
   note: string | undefined,
   ip: string | null,
 ): Promise<void> {
+  await assertConsoleAdmin();
   await connectMongo();
   const app = await BetaApplication.findById(id);
   if (!app) throw new Error("Application not found");
@@ -283,6 +334,7 @@ export async function setBetaAdminNote(
   actorEmail: string,
   ip: string | null,
 ): Promise<void> {
+  await assertConsoleAdmin();
   await connectMongo();
   const app = await BetaApplication.findById(id);
   if (!app) throw new Error("Application not found");

@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Sans, Geist, Geist_Mono } from "next/font/google";
 
+import { AttributionCapture } from "@/components/analytics/attribution-capture";
 import { ClarityAnalytics } from "@/components/analytics/clarity-analytics";
+import { GoogleTagManager } from "@/components/analytics/google-tag-manager";
 import { AppProviders } from "@/components/providers/app-providers";
 import { env } from "@/lib/env";
 import {
@@ -171,7 +173,24 @@ export default function RootLayout({
         className="min-h-full bg-background text-foreground"
         suppressHydrationWarning
       >
+        {/* Google Tag Manager, first thing in <body> so the snippet runs
+            during HTML parse and the noscript iframe sits exactly where
+            Google's install instructions place it. Site-wide by explicit
+            decision — read the warning in `@/lib/analytics/gtm` before adding
+            any tag, because this container also loads on authenticated and
+            token-bearing routes. Renders null when
+            NEXT_PUBLIC_GTM_CONTAINER_ID is unset. */}
+        <GoogleTagManager
+          containerId={env.public.NEXT_PUBLIC_GTM_CONTAINER_ID ?? null}
+        />
         <AppProviders>{children}</AppProviders>
+        {/* First-touch marketing attribution. Renders nothing and makes no
+            network call — it only records, in first-party sessionStorage,
+            which page and campaign the visitor arrived on, so a lead that
+            converts three pages later is still credited correctly. Refuses
+            to record on token-bearing and authenticated routes; see
+            `@/lib/analytics/attribution`. */}
+        <AttributionCapture />
         {/* Microsoft Clarity. Mounted once here so there is a single
             injection site, but it loads on the public marketing routes
             ONLY — see the allow-list and the reasoning in

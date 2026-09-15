@@ -7,6 +7,7 @@ import {
   type Pagination,
   type PageResult,
 } from "@/console/server/pagination";
+import { assertConsoleAdmin } from "@/console/server/auth/session";
 
 export interface WaitlistRow {
   id: string;
@@ -23,6 +24,7 @@ export interface WaitlistRow {
 export async function listWaitlist(
   p: Pagination,
 ): Promise<PageResult<WaitlistRow>> {
+  await assertConsoleAdmin();
   await connectMongo();
   const filter: Record<string, unknown> = { source: "waitlist" };
   const [docs, total] = await Promise.all([

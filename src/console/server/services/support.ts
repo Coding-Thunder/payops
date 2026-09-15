@@ -7,6 +7,7 @@ import {
   generateResetToken,
 } from "@/console/server/auth/reset-token";
 import { sendAccessLinkEmail } from "@/console/server/email/mailer";
+import { assertConsoleAdmin } from "@/console/server/auth/session";
 
 /**
  * Support actions that operate on main-app users. These trigger existing
@@ -28,6 +29,7 @@ export interface SupportResult {
 export async function sendUserPasswordReset(
   id: string,
 ): Promise<SupportResult> {
+  await assertConsoleAdmin();
   if (!Types.ObjectId.isValid(id)) return { ok: false, message: "Invalid id" };
   await connectMongo();
   const u = await User.findById(new Types.ObjectId(id))

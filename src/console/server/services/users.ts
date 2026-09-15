@@ -7,6 +7,7 @@ import {
   type Pagination,
   type PageResult,
 } from "@/console/server/pagination";
+import { assertConsoleAdmin } from "@/console/server/auth/session";
 
 export interface UserRow {
   id: string;
@@ -23,6 +24,7 @@ export async function listUsers(
   p: Pagination,
   search?: string,
 ): Promise<PageResult<UserRow>> {
+  await assertConsoleAdmin();
   await connectMongo();
   const filter: Record<string, unknown> = {};
   if (search && search.trim()) {
@@ -85,6 +87,7 @@ export async function setUserStatus(
   userId: string,
   status: UserStatus,
 ): Promise<UserStatus | null> {
+  await assertConsoleAdmin();
   if (!Types.ObjectId.isValid(userId)) return null;
   await connectMongo();
   const res = await User.updateOne(
@@ -103,6 +106,7 @@ export async function setUserStatus(
 export async function getUserGuardInfo(
   userId: string,
 ): Promise<{ email: string; isOrgOwner: boolean } | null> {
+  await assertConsoleAdmin();
   if (!Types.ObjectId.isValid(userId)) return null;
   await connectMongo();
   const oid = new Types.ObjectId(userId);
@@ -130,6 +134,7 @@ export interface UserDetail {
 }
 
 export async function getUserDetail(id: string): Promise<UserDetail | null> {
+  await assertConsoleAdmin();
   if (!Types.ObjectId.isValid(id)) return null;
   await connectMongo();
   const oid = new Types.ObjectId(id);

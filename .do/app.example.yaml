@@ -207,6 +207,15 @@ services:
         type: SECRET
         value: "0x4AAAAAA…"
 
+      # ──── OPTIONAL — Google Tag Manager ─────────────────────────────
+      # Container id (GTM-XXXXXXX). Not a secret (no `type: SECRET`).
+      # RUN_AND_BUILD_TIME because NEXT_PUBLIC_* is inlined at BUILD time:
+      # adding it after a build has no effect until the next deploy.
+      # Installed SITE-WIDE — see src/lib/analytics/gtm.ts.
+      - key: NEXT_PUBLIC_GTM_CONTAINER_ID
+        scope: RUN_AND_BUILD_TIME
+        value: ""
+
       # ──── OPTIONAL — Microsoft Clarity (DORMANT, leave blank) ───────
       # Public marketing pages only. Not a secret (no `type: SECRET`) —
       # the browser must receive it. RUN_AND_BUILD_TIME because

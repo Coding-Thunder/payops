@@ -5,6 +5,7 @@ import { getBetaApplication } from "@/console/server/services/beta-applications"
 import { Badge, Field, fmtDateTime } from "@/console/components/ui";
 import { BetaActions } from "@/console/components/beta-actions";
 import { ADMIN_BASE } from "@/console/lib/paths";
+import { requireAdminPage } from "@/console/server/auth/session";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,14 @@ export default async function BetaApplicationDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  // Defence in depth. `src/proxy.ts` already refuses this request without a
+  // valid admin session, so nothing should reach here unauthenticated — but a
+  // layout `redirect()` does NOT stop a page rendering (the App Router runs
+  // them concurrently and attaches the rendered payload to the 307), so the
+  // guard has to be awaited HERE, before any data is read, for this page to be
+  // safe on its own. Awaiting it first is the whole point: it must precede
+  // every query below.
+  await requireAdminPage();
   const { id } = await params;
   const app = await getBetaApplication(id);
   if (!app) notFound();
@@ -66,6 +75,47 @@ export default async function BetaApplicationDetailPage({
         />
         <Field label="Activated" value={fmtDateTime(app.activatedAt)} />
       </div>
+
+      {/* Where this lead came from. Absent for a direct visit and for every
+          application submitted before attribution shipped, so the panel is
+          hidden rather than rendering a grid of dashes.
+
+          Everything here is text an anonymous visitor's browser supplied. It
+          is rendered as TEXT ONLY — never as a link, never interpolated into
+          a query — because a referrer is an attacker-chosen URL and a
+          clickable one in an admin panel is a phishing target with an
+          authenticated admin on the other end. React escapes the content;
+          not linking it is the part React does not do for us. */}
+      {app.attribution ? (
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4">
+          <div className="text-[11px] uppercase tracking-wider text-[var(--muted)]">
+            Attribution
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <Field label="Source" value={app.attribution.utmSource ?? "—"} />
+            <Field label="Medium" value={app.attribution.utmMedium ?? "—"} />
+            <Field
+              label="Campaign"
+              value={app.attribution.utmCampaign ?? "—"}
+            />
+            <Field label="Term" value={app.attribution.utmTerm ?? "—"} />
+            <Field label="Content" value={app.attribution.utmContent ?? "—"} />
+            <Field
+              label="Landing page"
+              value={app.attribution.landingPage ?? "—"}
+            />
+          </div>
+          <div className="mt-4">
+            <div className="text-[11px] uppercase tracking-wider text-[var(--muted)]">
+              Referrer
+            </div>
+            {/* break-all: an untrusted URL must not blow out the layout. */}
+            <p className="mt-1 break-all text-[13px] text-slate-200">
+              {app.attribution.referrer ?? "Direct / none"}
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       <div className="rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4">
         <div className="text-[11px] uppercase tracking-wider text-[var(--muted)]">

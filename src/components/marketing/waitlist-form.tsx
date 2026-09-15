@@ -17,6 +17,11 @@ import {
   type BetaUserType as BetaUserTypeT,
 } from "@/lib/constants/beta";
 import { api, ApiClientError } from "@/lib/api-client";
+import { attributionForSubmit } from "@/lib/analytics/attribution";
+import {
+  DATA_LAYER_EVENTS,
+  pushDataLayerEvent,
+} from "@/lib/analytics/data-layer";
 
 /**
  * Join the Beta application. Posts to /api/beta/apply, which stores a PENDING
@@ -69,6 +74,25 @@ export function WaitlistForm({ turnstileSiteKey }: WaitlistFormProps) {
         clientsManaged: clientsManaged || undefined,
         challengeAnswer: challengeAnswer.trim() || undefined,
         cfToken: cfToken ?? undefined,
+        // Where this visitor came from, captured on their first page of the
+        // session. Read at SUBMIT time rather than at mount so it reflects
+        // the whole session, and sent with the lead rather than to an
+        // analytics endpoint — a blocked tracker must not cost attribution.
+        // `undefined` when there is nothing to report, so the field is
+        // omitted from the body entirely.
+        attribution: attributionForSubmit(),
+      });
+      // AFTER the await resolves, so the event means "the server stored an
+      // application", not "someone pressed the button". A rejected disposable
+      // address, a failed Turnstile challenge and a rate-limited retry all
+      // throw above this line and fire nothing — which is what keeps Google
+      // Ads bidding on outcomes rather than attempts.
+      //
+      // `userType` is a category from a fixed enum, and it is the only
+      // parameter: no name, no email, no business, no token. See the rules in
+      // `@/lib/analytics/data-layer`.
+      pushDataLayerEvent(DATA_LAYER_EVENTS.BETA_APPLICATION_SUBMITTED, {
+        user_type: userType,
       });
       setDone(true);
     } catch (err) {

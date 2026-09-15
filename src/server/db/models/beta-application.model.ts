@@ -31,6 +31,25 @@ export interface BetaInvite {
   usedAt: Date | null;
 }
 
+/**
+ * Where this lead came from. Captured on the visitor's FIRST page of the
+ * session and submitted with the form, so a visitor who lands from an ad and
+ * converts three pages later is still credited to the ad.
+ *
+ * Every field is untrusted client input: length-capped here and re-validated
+ * at the route. None of it is used for any auth, ownership or moderation
+ * decision — it is reporting data only.
+ */
+export interface LeadAttributionDoc {
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
+  utmTerm: string | null;
+  utmContent: string | null;
+  referrer: string | null;
+  landingPage: string | null;
+}
+
 export interface BetaApplicationDoc {
   fullName: string;
   email: string;
@@ -38,6 +57,8 @@ export interface BetaApplicationDoc {
   businessName: string | null;
   clientsManaged: string | null;
   challengeAnswer: string | null;
+  /** Marketing attribution. Null for a lead captured before this shipped. */
+  attribution: LeadAttributionDoc | null;
   status: BetaApplicationStatus;
   adminNote: string | null;
   reviewedByEmail: string | null;
@@ -64,6 +85,22 @@ const betaInviteSchema = new Schema<BetaInvite>(
   { _id: false },
 );
 
+/** Mirrors ATTRIBUTION_FIELD_MAX in `@/lib/analytics/attribution`. */
+const ATTRIBUTION_MAX = 300;
+
+const leadAttributionSchema = new Schema<LeadAttributionDoc>(
+  {
+    utmSource: { type: String, default: null, trim: true, maxlength: ATTRIBUTION_MAX },
+    utmMedium: { type: String, default: null, trim: true, maxlength: ATTRIBUTION_MAX },
+    utmCampaign: { type: String, default: null, trim: true, maxlength: ATTRIBUTION_MAX },
+    utmTerm: { type: String, default: null, trim: true, maxlength: ATTRIBUTION_MAX },
+    utmContent: { type: String, default: null, trim: true, maxlength: ATTRIBUTION_MAX },
+    referrer: { type: String, default: null, trim: true, maxlength: ATTRIBUTION_MAX },
+    landingPage: { type: String, default: null, trim: true, maxlength: ATTRIBUTION_MAX },
+  },
+  { _id: false },
+);
+
 const betaApplicationSchema = new Schema<BetaApplicationDoc>(
   {
     fullName: { type: String, required: true, trim: true, maxlength: 160 },
@@ -78,6 +115,7 @@ const betaApplicationSchema = new Schema<BetaApplicationDoc>(
     businessName: { type: String, default: null, trim: true, maxlength: 200 },
     clientsManaged: { type: String, default: null, trim: true, maxlength: 40 },
     challengeAnswer: { type: String, default: null, maxlength: 4000 },
+    attribution: { type: leadAttributionSchema, default: null },
     status: {
       type: String,
       enum: BETA_APPLICATION_STATUSES,

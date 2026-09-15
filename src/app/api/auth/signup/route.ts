@@ -22,8 +22,15 @@ export const dynamic = "force-dynamic";
  *
  * Bot protection: Turnstile pre-flight, then a tight rate limit (5
  * per 15 min per IP), paired with the per-failure audit row we get
- * via the standard `withApi` pipeline, this kills disposable-email
- * abuse without locking real founders out.
+ * via the standard `withApi` pipeline.
+ *
+ * That stops SCRIPTED abuse. It does nothing about disposable addresses —
+ * neither check ever looks at the domain, so one person with a throwaway
+ * inbox open walks straight through. This comment previously claimed the
+ * opposite and `yopmail.com` was accepted. Disposable domains are now
+ * rejected in `signupSchema` itself (see
+ * `@/lib/validation/disposable-email`), which is server-side and shared by
+ * every signup path rather than bolted onto this one route.
  *
  * Phase 4 is the FIRST public-write endpoint. Everything else is
  * either auth-gated or signature-gated. The rate limit + Turnstile

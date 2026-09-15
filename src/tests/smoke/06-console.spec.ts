@@ -43,12 +43,21 @@ test.describe("platform console", () => {
     await expect(page).toHaveURL(/\/admin\?next=%2Fadmin%2Fdashboard$/);
   });
 
-  test("the console API is namespaced under /admin/api and 404s otherwise", async ({
+  test("the console API is namespaced under /admin/api, and does not disclose which routes exist", async ({
     request,
   }) => {
     // `/admin/api/health` was a leftover probe from when the console was its
-    // own DigitalOcean app. The merged app has one health endpoint.
-    expect((await request.get("/admin/api/health")).status()).toBe(404);
+    // own DigitalOcean app. The merged app has one health endpoint, at
+    // `/api/health`, and `/admin/api/health` does not exist.
+    //
+    // It answers 401, not 404. `src/proxy.ts` now refuses every unauthenticated
+    // `/admin/api/*` request before routing, which is what stops an anonymous
+    // caller mapping the console by probing for 404-vs-405 — and, far more
+    // importantly, is the same gate that stopped protected pages shipping
+    // their rendered body with a 307. A 404 here would mean the request had
+    // reached the router, which is exactly what must not happen.
+    expect((await request.get("/admin/api/health")).status()).toBe(401);
+    // The real health endpoint is public and unaffected.
     expect((await request.get("/api/health")).status()).toBe(200);
   });
 

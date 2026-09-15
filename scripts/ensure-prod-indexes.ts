@@ -15,6 +15,19 @@
  *   - client_files            { orgId, customerId, deletedAt, createdAt }
  *                             + { orgId, orderId, createdAt } PARTIAL
  *   - client_links            the same pair (Files & Links list views)
+ *   - blog_posts              { slug: 1 } UNIQUE + { status, publishedAt }
+ *                             + { updatedAt } — public index, detail read and
+ *                             admin list. New collection, so the unique index
+ *                             cannot meet pre-existing duplicates and needs no
+ *                             dedupe pass.
+ *   - reviews                 { status, approvedAt } + { status, createdAt }
+ *                             + { authorEmail, createdAt } — public list, the
+ *                             moderation queue, and the repeat-submitter check.
+ *
+ * Both of the above are picked up automatically: the loop iterates every model
+ * registered by the barrel import below, so exporting a model from
+ * `src/server/db/models/index.ts` is what enrols it here. Nothing to add by
+ * hand.
  *
  * NOTE on file BYTES: uploaded files live in the GridFS bucket
  * `client_files` (collections `client_files.files` / `.chunks`), which is

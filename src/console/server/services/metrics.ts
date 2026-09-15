@@ -2,6 +2,7 @@ import "server-only";
 
 import { connectMongo } from "@/console/server/db/mongoose";
 import { Organization, Quotation, User, Types } from "@/console/server/db/models";
+import { assertConsoleAdmin } from "@/console/server/auth/session";
 
 const DAY = 24 * 60 * 60 * 1000;
 const TRIAL_MS = 15 * DAY;
@@ -29,6 +30,7 @@ export interface DashboardMetrics {
 }
 
 export async function getDashboardMetrics(): Promise<DashboardMetrics> {
+  await assertConsoleAdmin();
   const conn = await connectMongo();
   const now = new Date();
   const recentCutoff = new Date(now.getTime() - RECENT_MS);

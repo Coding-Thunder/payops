@@ -17,6 +17,8 @@ import { LogoLockup } from "@/components/brand/logo";
  * free private beta (see the Terms manual-review flags). Re-add it to
  * the Legal column if paid plans / paying customers exist.
  */
+import { LINKEDIN_URL } from "@/components/marketing/seo/structured-data";
+
 export function BrandFooter() {
   const year = new Date().getUTCFullYear();
   return (
@@ -26,8 +28,8 @@ export function BrandFooter() {
           <div className="max-w-sm">
             <LogoLockup size="md" />
             <p className="mt-4 text-[13px] leading-relaxed text-muted-foreground">
-              One permanent, searchable record for every client. Built
-              for agencies and freelancers.
+              One permanent, searchable record for every client. Built for
+              agencies and freelancers.
             </p>
             <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-border bg-white px-3 py-1 text-[11px] text-muted-foreground">
               <span
@@ -48,6 +50,24 @@ export function BrandFooter() {
               { label: "Pricing", href: "/pricing" },
             ]}
           />
+          {/* The client-management cluster, so every marketing and legal page
+              that renders this footer links into the pillar and its spokes. */}
+          <FooterColumn
+            title="Client management"
+            links={[
+              { label: "Client management", href: "/client-management" },
+              {
+                label: "Client management software",
+                href: "/client-management-software",
+              },
+              { label: "For agencies", href: "/agency-client-management" },
+              {
+                label: "Client communication",
+                href: "/client-communication-management",
+              },
+              { label: "Client records", href: "/client-record-management" },
+            ]}
+          />
           <FooterColumn
             title="Get started"
             links={[
@@ -60,6 +80,7 @@ export function BrandFooter() {
             links={[
               { label: "Security", href: "/security" },
               { label: "Contact", href: "/contact" },
+              { label: "LinkedIn", href: LINKEDIN_URL },
             ]}
           />
           <FooterColumn
@@ -78,8 +99,8 @@ export function BrandFooter() {
             © {year} TraceTxn · All rights reserved
           </p>
           <p className="text-[11px] text-muted-foreground">
-            Built for agencies, freelancers, and studios that keep every
-            client in one place.
+            Built for agencies, freelancers, and studios that keep every client
+            in one place.
           </p>
         </div>
       </div>
@@ -101,12 +122,26 @@ function FooterColumn({ title, links }: FooterColumnProps) {
       <ul className="mt-4 space-y-2.5">
         {links.map((l) => (
           <li key={l.label}>
-            <Link
-              href={l.href}
-              className="text-[13px] text-foreground/85 transition-colors hover:text-foreground"
-            >
-              {l.label}
-            </Link>
+            {/* An absolute href is an external profile (LinkedIn today): render a
+    plain anchor so the router does not prefetch it, and keep the
+    referrer off. Generic so the next external link is handled too. */}
+            {l.href.startsWith("http") ? (
+              <a
+                href={l.href}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[13px] text-foreground/85 transition-colors hover:text-foreground"
+              >
+                {l.label}
+              </a>
+            ) : (
+              <Link
+                href={l.href}
+                className="text-[13px] text-foreground/85 transition-colors hover:text-foreground"
+              >
+                {l.label}
+              </Link>
+            )}
           </li>
         ))}
       </ul>

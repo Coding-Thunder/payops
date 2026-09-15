@@ -9,7 +9,11 @@ import {
 } from "@/lib/constants/beta";
 import { ValidationError } from "@/lib/errors";
 import type { RequestContext } from "@/server/api/request-context";
-import { BetaApplication, type BetaApplicationDoc } from "@/server/db/models";
+import {
+  BetaApplication,
+  type BetaApplicationDoc,
+  type LeadAttributionDoc,
+} from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 
 import { signupFounder, type SignupResult } from "./signup.service";
@@ -45,6 +49,12 @@ export interface SubmitBetaInput {
   businessName?: string | null;
   clientsManaged?: string | null;
   challengeAnswer?: string | null;
+  /**
+   * Where the lead came from. Validated and length-capped at the route
+   * (`attributionSchema`) before it reaches here. Reporting data only — it
+   * never influences status, approval, or any other decision below.
+   */
+  attribution?: LeadAttributionDoc | null;
 }
 
 /**
@@ -75,6 +85,7 @@ export async function submitApplication(
       businessName: input.businessName?.trim() || null,
       clientsManaged: input.clientsManaged?.trim() || null,
       challengeAnswer: input.challengeAnswer?.trim() || null,
+      attribution: input.attribution ?? null,
       status: BetaApplicationStatus.PENDING,
     });
   } catch (err) {

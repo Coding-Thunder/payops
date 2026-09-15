@@ -17,6 +17,10 @@ import { Label } from "@/components/ui/label";
 import { LoadingButton } from "@/components/ui/loading-button";
 import { TurnstileWidget } from "@/components/common/turnstile-widget";
 import { api, ApiClientError } from "@/lib/api-client";
+import {
+  DATA_LAYER_EVENTS,
+  pushDataLayerEvent,
+} from "@/lib/analytics/data-layer";
 import { getFirebaseAuth, isFirebaseConfigured } from "@/lib/firebase/client";
 
 /**
@@ -93,6 +97,29 @@ export function FirebaseAuthForm({
           inviteCode: inviteCode ?? undefined,
         },
       );
+      /**
+       * Conversion event, fired only on a successful session exchange —
+       * the request above throws for a failed sign-in, a rejected Turnstile
+       * token, or a refused invite, and none of those reach this line.
+       *
+       * Only in `signup` mode: a returning user signing in is not a
+       * conversion, and counting it would train Ads bidding on logins.
+       *
+       * KNOWN LIMITATION, stated rather than hidden. The next line is a hard
+       * navigation, and the destination (`/app/**`) is a route where CSP
+       * blocks GTM — so this push has one chance to be processed before the
+       * document unloads. Ads tags send via a beacon, which browsers
+       * generally complete during unload, but delivery is not guaranteed.
+       *
+       * That is an acceptable trade here because signup is NOT the ad-driven
+       * conversion during the private beta: self-serve signup is invite-only
+       * (`signupInviteAccepted`), so no ad click reaches this form. The
+       * reliable, ad-facing conversion is `beta_application_submitted` on
+       * /waitlist, which fires on a page that does not navigate away.
+       */
+      if (mode === "signup") {
+        pushDataLayerEvent(DATA_LAYER_EVENTS.SIGNUP_COMPLETED);
+      }
       // Hard navigation (not router.replace) so the browser issues a
       // fresh request that carries the newly-set session cookie. A soft
       // client-side navigation reuses the current document's auth

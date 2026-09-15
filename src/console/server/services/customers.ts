@@ -7,6 +7,7 @@ import {
   type Pagination,
   type PageResult,
 } from "@/console/server/pagination";
+import { assertConsoleAdmin } from "@/console/server/auth/session";
 
 /**
  * Customers (Client Profiles) — cross-tenant client visibility. The list
@@ -101,6 +102,7 @@ export async function listCustomers(
   p: Pagination,
   f: CustomerFilters = {},
 ): Promise<PageResult<CustomerRow>> {
+  await assertConsoleAdmin();
   await connectMongo();
   const filter = buildFilter(f);
   const sort =
@@ -129,6 +131,7 @@ export interface CustomerStats {
 export async function getCustomerStats(
   f: CustomerFilters = {},
 ): Promise<CustomerStats> {
+  await assertConsoleAdmin();
   await connectMongo();
   const base = buildFilter(f);
   // Single $facet pass instead of three separate counts (shared prod cluster).
@@ -190,6 +193,7 @@ export interface CustomerProfile extends CustomerRow {
 export async function getCustomerById(
   id: string,
 ): Promise<CustomerProfile | null> {
+  await assertConsoleAdmin();
   if (!Types.ObjectId.isValid(id)) return null;
   await connectMongo();
   const oid = new Types.ObjectId(id);
@@ -316,6 +320,7 @@ export async function listCustomersForExport(
   f: CustomerFilters = {},
   cap = 5000,
 ): Promise<CustomerRow[]> {
+  await assertConsoleAdmin();
   await connectMongo();
   const filter = buildFilter(f);
   const sort =

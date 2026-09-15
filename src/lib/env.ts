@@ -182,6 +182,13 @@ const clientSchema = z.object({
    *  public marketing routes listed in `@/lib/analytics/clarity`. */
   NEXT_PUBLIC_CLARITY_PROJECT_ID: z.string().optional(),
 
+  /** Google Tag Manager container id (`GTM-XXXXXXX`). Public by necessity —
+   *  the browser must receive it — and non-secret: it names a container, it
+   *  authorises nothing. Optional, and that is the kill switch: when unset no
+   *  snippet is rendered and nothing leaves the browser. NOTE this one is
+   *  installed SITE-WIDE, unlike Clarity; see `@/lib/analytics/gtm`. */
+  NEXT_PUBLIC_GTM_CONTAINER_ID: z.string().optional(),
+
   /** Firebase Web SDK config, public values, safe to ship to the
    *  browser. All five must be set together; if any is missing the
    *  Firebase auth UI falls back to "feature unavailable" and the
@@ -222,6 +229,7 @@ function parseClient(): ClientEnv {
       process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
     NEXT_PUBLIC_TURNSTILE_SITE_KEY: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
     NEXT_PUBLIC_CLARITY_PROJECT_ID: process.env.NEXT_PUBLIC_CLARITY_PROJECT_ID,
+    NEXT_PUBLIC_GTM_CONTAINER_ID: process.env.NEXT_PUBLIC_GTM_CONTAINER_ID,
     NEXT_PUBLIC_FIREBASE_API_KEY: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
     NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:
       process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,

@@ -2,6 +2,11 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 
 import { BetaUserType } from "@/lib/constants/beta";
+import {
+  attributionForStorage,
+  attributionSchema,
+} from "@/lib/validation/attribution";
+import { disposableEmailRefinement } from "@/lib/validation/disposable-email";
 import { getRequestContext } from "@/server/api/request-context";
 import { jsonOk, withApi } from "@/server/api/respond";
 import { verifyTurnstile } from "@/server/auth/turnstile";
@@ -19,7 +24,14 @@ export const dynamic = "force-dynamic";
  */
 const applySchema = z.object({
   fullName: z.string().trim().min(2, "Please enter your name").max(160),
-  email: z.string().trim().toLowerCase().email("Enter a valid email").max(254),
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .email("Enter a valid email")
+    .max(254)
+    // Server-side, so a client that skips the form cannot bypass it.
+    .refine(...disposableEmailRefinement),
   userType: z.enum([
     BetaUserType.FREELANCER,
     BetaUserType.AGENCY_OWNER,
@@ -29,6 +41,11 @@ const applySchema = z.object({
   clientsManaged: z.string().trim().max(40).optional(),
   challengeAnswer: z.string().trim().max(4000).optional(),
   cfToken: z.string().max(2048).optional(),
+  // Marketing attribution, captured client-side. Optional by design: a direct
+  // visit has none, and a lead must never be lost over reporting metadata.
+  // Each field is length-capped by `attributionSchema`; unknown keys are
+  // stripped, so a crafted body cannot add fields to the stored document.
+  attribution: attributionSchema.nullish(),
 });
 
 export const POST = withApi(
@@ -45,6 +62,7 @@ export const POST = withApi(
       businessName: input.businessName || null,
       clientsManaged: input.clientsManaged || null,
       challengeAnswer: input.challengeAnswer || null,
+      attribution: attributionForStorage(input.attribution),
     });
 
     // Constant response — never reveals whether this email already applied.

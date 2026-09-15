@@ -24,6 +24,7 @@ import {
   ORDER_STATUSES,
   PAYMENT_GATEWAY_KEYS,
 } from "@/lib/constants/enums";
+import { assertConsoleAdmin } from "@/console/server/auth/session";
 
 export const GATEWAYS = PAYMENT_GATEWAY_KEYS;
 export { ORDER_STATUSES };
@@ -164,6 +165,7 @@ export async function listOrders(
   p: Pagination,
   f: OrderFilters = {},
 ): Promise<PageResult<OrderRow>> {
+  await assertConsoleAdmin();
   await connectMongo();
   const filter = buildFilter(f);
   const sort =
@@ -193,6 +195,7 @@ export interface OrderStats {
 }
 
 export async function getOrderStats(f: OrderFilters = {}): Promise<OrderStats> {
+  await assertConsoleAdmin();
   await connectMongo();
   const base = buildFilter(f);
   // One $facet pass instead of five separate countDocuments — the console
@@ -280,6 +283,7 @@ export interface OrderDetail extends OrderRow {
 }
 
 export async function getOrderById(id: string): Promise<OrderDetail | null> {
+  await assertConsoleAdmin();
   if (!Types.ObjectId.isValid(id)) return null;
   await connectMongo();
   const oid = new Types.ObjectId(id);
@@ -363,6 +367,7 @@ export async function listOrdersForExport(
   f: OrderFilters = {},
   cap = 5000,
 ): Promise<OrderRow[]> {
+  await assertConsoleAdmin();
   await connectMongo();
   const filter = buildFilter(f);
   const sort =

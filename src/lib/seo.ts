@@ -46,6 +46,18 @@ export const KEYWORDS = [
   "client workflow software",
 ];
 
+/* Client-management SEO cluster — defined in `./seo-routes` (which imports
+ * nothing) so `src/proxy.ts` can share it. Re-exported here so `@/lib/seo`
+ * remains the single import site for page code. */
+export {
+  CLIENT_MANAGEMENT_PATH,
+  CLIENT_MANAGEMENT_SPOKES,
+  SEO_LANDING_PAGES,
+  SEO_LANDING_PATHS,
+  landingPage,
+  type SeoLandingPage,
+} from "./seo-routes";
+
 /** Absolute URL for `path` ("/", "/features", …). */
 export function absoluteUrl(path: string): string {
   if (path === "/") return `${SITE_URL}/`;

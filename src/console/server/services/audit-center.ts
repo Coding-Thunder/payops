@@ -7,6 +7,7 @@ import {
   type Pagination,
   type PageResult,
 } from "@/console/server/pagination";
+import { assertConsoleAdmin } from "@/console/server/auth/session";
 
 /**
  * Audit Center — one screen over the two audit trails the platform keeps:
@@ -166,6 +167,7 @@ export async function listAudit(
   p: Pagination,
   f: AuditFilters = {},
 ): Promise<PageResult<AuditRow>> {
+  await assertConsoleAdmin();
   await connectMongo();
   if (source === "console") {
     const filter = consoleFilter(f);
@@ -195,6 +197,7 @@ export async function getAuditById(
   source: AuditSource,
   id: string,
 ): Promise<AuditDetail | null> {
+  await assertConsoleAdmin();
   if (!Types.ObjectId.isValid(id)) return null;
   await connectMongo();
   if (source === "console") {
@@ -228,6 +231,7 @@ export async function listAuditForExport(
   f: AuditFilters = {},
   cap = 5000,
 ): Promise<AuditRow[]> {
+  await assertConsoleAdmin();
   await connectMongo();
   if (source === "console") {
     const docs = await AdminAudit.find(consoleFilter(f))

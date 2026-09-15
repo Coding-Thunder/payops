@@ -8,6 +8,8 @@ import { SiteWordmark } from "@/components/brand/site-wordmark";
  * 404s — it's a re-skin of the site map, not a new one.
  */
 
+import { LINKEDIN_URL } from "@/components/marketing/seo/structured-data";
+
 const COLUMNS: { title: string; links: { href: string; label: string }[] }[] = [
   {
     title: "Product",
@@ -19,10 +21,36 @@ const COLUMNS: { title: string; links: { href: string; label: string }[] }[] = [
     ],
   },
   {
+    // The client-management cluster. The homepage must link to the pillar
+    // (see the internal-linking requirement); putting the spokes here too
+    // makes the cluster reachable from every page that renders this footer,
+    // with each link carrying its own descriptive anchor rather than one
+    // phrase repeated.
+    title: "Client management",
+    links: [
+      { href: "/client-management", label: "Client management" },
+      {
+        href: "/client-management-software",
+        label: "Client management software",
+      },
+      { href: "/agency-client-management", label: "For agencies" },
+      {
+        href: "/client-communication-management",
+        label: "Client communication",
+      },
+      { href: "/client-record-management", label: "Client records" },
+      { href: "/blog", label: "Blog" },
+      { href: "/reviews", label: "Reviews" },
+    ],
+  },
+  {
     title: "Company",
     links: [
       { href: "/security", label: "Security" },
       { href: "/contact", label: "Contact" },
+      // Official company page. Same URL as Organization.sameAs in
+      // `seo/structured-data`; kept in one place there.
+      { href: LINKEDIN_URL, label: "LinkedIn" },
       { href: "/signup", label: "Join the beta" },
       { href: "/login", label: "Sign in" },
     ],
@@ -60,12 +88,26 @@ export function SiteFooter() {
               <ul className="mt-4 space-y-2.5">
                 {col.links.map((l) => (
                   <li key={l.label}>
-                    <Link
-                      href={l.href}
-                      className="text-[13.5px] text-white/55 transition-colors hover:text-white"
-                    >
-                      {l.label}
-                    </Link>
+                    {/* An absolute href is an external profile (LinkedIn today): render a
+    plain anchor so the router does not prefetch it, and keep the
+    referrer off. Generic so the next external link is handled too. */}
+                    {l.href.startsWith("http") ? (
+                      <a
+                        href={l.href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[13.5px] text-white/55 transition-colors hover:text-white"
+                      >
+                        {l.label}
+                      </a>
+                    ) : (
+                      <Link
+                        href={l.href}
+                        className="text-[13.5px] text-white/55 transition-colors hover:text-white"
+                      >
+                        {l.label}
+                      </Link>
+                    )}
                   </li>
                 ))}
               </ul>

@@ -59,6 +59,12 @@ interface StructuredDataProps {
   description?: string;
 }
 
+/**
+ * Official TraceTxn LinkedIn company page. Single source of truth so the
+ * Organization `sameAs` entry and the footer links cannot disagree.
+ */
+export const LINKEDIN_URL = "https://www.linkedin.com/company/tracetxn/";
+
 export function StructuredData({
   baseUrl,
   brand = SITE_NAME,
@@ -83,6 +89,10 @@ export function StructuredData({
         description,
         foundingDate: "2025",
         founder: { "@id": `${url}/#founder` },
+        // Official company profiles. `sameAs` is how a search engine ties
+        // this Organization node to the same entity elsewhere; only verified,
+        // first-party profiles belong here.
+        sameAs: [LINKEDIN_URL],
         contactPoint: [
           {
             "@type": "ContactPoint",

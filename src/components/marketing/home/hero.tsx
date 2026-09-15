@@ -56,9 +56,9 @@ export function Hero() {
             transition={{ duration: 0.6, delay: 0.06, ease: EASE }}
             className="mt-6 font-display text-[42px] font-semibold leading-[1.04] tracking-[-0.03em] text-white sm:text-[54px] lg:text-[58px]"
           >
-            One permanent record
+            Client management for
             <br />
-            for every client.
+            your entire client relationship.
           </motion.h1>
 
           <motion.p
@@ -67,8 +67,12 @@ export function Hero() {
             transition={{ duration: 0.6, delay: 0.14, ease: EASE }}
             className="mt-6 text-[16.5px] leading-relaxed text-white/60"
           >
-            Invoices, payments, approvals, files, and the entire history of the
-            relationship — in one searchable place. So when a client resurfaces
+            TraceTxn is client management software for agencies and service
+            businesses. Client communication, files, orders, invoices,
+            payments, notes and the entire relationship history live in one
+            permanent, searchable client record — not spread across a CRM
+            built for chasing leads, a project tool that never sees the money,
+            and an inbox only one person can read. So when a client resurfaces
             six months later, you already have the answer.
           </motion.p>
 
