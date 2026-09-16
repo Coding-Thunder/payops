@@ -52,6 +52,10 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
     greeting: input.greeting,
     intro: input.intro,
     note: input.note,
+    // The preview's whole job is to show what will actually be sent, so it
+    // must see the operator's collection choice too. Without it an operator
+    // could select Manual and still be looking at a Stripe checkout CTA.
+    manualCollection: input.collection === "MANUAL",
   });
   const html = await render(<PaymentRequestEmail {...props} />);
   return jsonOk({ html });

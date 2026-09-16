@@ -47,6 +47,7 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [redirecting, setRedirecting] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
   const [fallbackUrl, setFallbackUrl] = useState<string | null>(null);
   const fallbackTimer = useRef<number | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -142,11 +143,12 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
       if (next.paymentUrl) {
         startRedirect(next.paymentUrl);
       } else {
-        // No checkout URL on record — rare, but surface it cleanly rather
-        // than silently leaving the customer on a finished form.
-        setError(
-          "Your acknowledgement was recorded, but no payment link is currently available. Please contact support.",
-        );
+        // No checkout URL is NOT an error. It is exactly what a manual
+        // collection looks like: the customer's job was to confirm, and the
+        // operator takes the payment separately. Telling them to "contact
+        // support" at the moment they successfully finished would read as a
+        // failure and generate calls about a booking that is fine.
+        setConfirmed(true);
         setSubmitting(false);
       }
     } catch (err) {
@@ -161,6 +163,10 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
 
   if (redirecting) {
     return <RedirectingShell fallbackUrl={fallbackUrl} branding={branding} />;
+  }
+
+  if (confirmed) {
+    return <ConfirmedShell view={view} branding={branding} />;
   }
 
   return (
@@ -341,6 +347,43 @@ function SummaryBlock({ view }: { view: PublicConsentView }) {
           }
         />
       </dl>
+    </div>
+  );
+}
+
+/**
+ * Terminal success state for a booking with no checkout link — a manual
+ * collection. The customer has done everything asked of them.
+ */
+function ConfirmedShell({
+  view,
+  branding,
+}: {
+  view: PublicConsentView;
+  branding: BrandingDTO;
+}) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white px-6 py-10 text-center shadow-sm sm:px-8">
+      <div className="mx-auto flex size-10 items-center justify-center rounded-full bg-emerald-50">
+        <ShieldCheckIcon className="size-5 text-emerald-600" aria-hidden />
+      </div>
+      <h1 className="mt-4 text-xl font-semibold tracking-tight text-slate-900">
+        Thank you — your booking is confirmed
+      </h1>
+      <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-slate-600">
+        We have recorded your confirmation for {view.brandName}. Our team will
+        take care of the payment with you directly — there is nothing further
+        for you to do here.
+      </p>
+      <p className="mt-4 text-[11px] text-slate-500">
+        Questions?{" "}
+        <a
+          href={`mailto:${branding.supportEmail}`}
+          className="text-slate-600 underline-offset-2 hover:underline"
+        >
+          {branding.supportEmail}
+        </a>
+      </p>
     </div>
   );
 }

@@ -27,6 +27,8 @@ import { toast } from "@/components/ui/sonner";
 import { useActivityFeed } from "@/hooks/use-activity-feed";
 import { orderQueryKey } from "@/hooks/use-order-query";
 import { api, ApiClientError } from "@/lib/api-client";
+import { formatCurrency, formatDateTime } from "@/lib/format";
+import { McoEditDialog } from "@/components/features/orders/mco-edit-dialog";
 import { DomainEventType } from "@/lib/constants/events";
 import { cn } from "@/lib/utils";
 import type { OrderDTO } from "@/types";
@@ -111,6 +113,15 @@ export function EmailComposer({
     { key: string; label: string; enabled: boolean }[]
   >([]);
   const [chosenGateway, setChosenGateway] = React.useState<string | null>(null);
+  /**
+   * How the operator intends to collect. MANUAL is not a gateway — the
+   * domain keeps that distinction (`SUPPORTED` in resolve-gateway lists only
+   * STRIPE and PAYPAL, and `initiatePayment` refuses MANUAL) — but it IS one
+   * of the three answers to "how would you like to pay?", so it belongs in
+   * the same decision. Leaving it out sent operators hunting for it on
+   * another screen mid-call.
+   */
+  const [manualCollection, setManualCollection] = React.useState(false);
   const enabledProviders = React.useMemo(
     () => providers.filter((p) => p.enabled),
     [providers],
@@ -187,7 +198,10 @@ export function EmailComposer({
       setPreviewLoading(true);
       setPreviewError(null);
       try {
-        const body = buildPayload(draft, order);
+        const body = {
+          ...buildPayload(draft, order),
+          collection: manualCollection ? "MANUAL" : "GATEWAY",
+        };
         const { html: rendered } = await api.post<{ html: string }>(
           `/api/orders/${order.id}/payment-request-preview`,
           body,
@@ -209,19 +223,28 @@ export function EmailComposer({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [draft, order, sentAt]);
+    // `manualCollection` is a dependency so switching method re-renders the
+    // preview immediately; `order` covers a booking edit, so a re-priced
+    // amount can never linger in the pane.
+  }, [draft, order, sentAt, manualCollection]);
 
   async function handleSend() {
     setSending(true);
     try {
-      const body = buildPayload(draft, order);
+      const body = {
+        ...buildPayload(draft, order),
+        collection: manualCollection ? "MANUAL" : "GATEWAY",
+      };
       await api.post(`/api/orders/${order.id}/send-payment-request`, body);
       const at = new Date().toISOString();
       setSentAt(at);
       onSent?.(at);
-      toast.success("Email sent", {
-        description: `Sent to ${body.customer?.email ?? order.customer.email}`,
-      });
+      toast.success(
+        manualCollection ? "Consent request sent" : "Payment request sent",
+        {
+          description: `Sent to ${body.customer?.email ?? order.customer.email}`,
+        },
+      );
       await queryClient.invalidateQueries({ queryKey: orderQueryKey(order.id) });
       router.refresh();
     } catch (err) {
@@ -287,6 +310,54 @@ export function EmailComposer({
           paidAt={paidAt}
           onCopyLink={copyLink}
         />
+
+        {/* The customer can change their mind mid-call, and before this the
+            operator had to leave the page, find the order, edit it and come
+            back — losing the composed draft on the way. Editing happens
+            here, on the same order, and the page refreshes so the amount
+            below is never the pre-edit figure. */}
+        <Card>
+          <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
+            <div className="space-y-0.5">
+              <CardTitle className="text-[13px] tracking-tight">
+                Booking
+              </CardTitle>
+              <p className="font-mono text-[11px] text-muted-foreground">
+                {order.orderNumber}
+              </p>
+            </div>
+            <McoEditDialog order={order} />
+          </CardHeader>
+          <CardContent className="space-y-1 text-[12px]">
+            <SummaryRow
+              label="Vehicle"
+              value={`${order.vehicle.company} ${order.vehicle.type}`}
+            />
+            <SummaryRow label="Pick-up" value={formatDateTime(order.trip.pickupDate)} />
+            <SummaryRow label="Drop-off" value={formatDateTime(order.trip.dropoffDate)} />
+            <SummaryRow
+              label="Amount"
+              value={formatCurrency(order.pricing.amount, order.pricing.currency)}
+              strong
+            />
+          </CardContent>
+        </Card>
+
+        {/* A link issued at an earlier amount must never be sent as if it
+            were current. `priceRevision` is the order's own record that the
+            amount moved; the backend supersedes the session, and this says
+            so where the operator is about to act. */}
+        {(order.payment.priceRevision ?? 0) > 0 && !order.payment.paymentUrl ? (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-900">
+            <p className="font-medium">This booking was re-priced.</p>
+            <p className="mt-0.5">
+              The previous payment link was superseded and can no longer be
+              sent. Generate a new link for{" "}
+              {formatCurrency(order.pricing.amount, order.pricing.currency)}, or
+              choose Manual charge.
+            </p>
+          </div>
+        ) : null}
 
         <Card>
           <CardHeader>
@@ -421,8 +492,14 @@ export function EmailComposer({
                   "coming soon", which on a PayPal brand told the operator
                   the money was going somewhere it was not. Once the link is
                   generated the selector locks and shows what was used. */}
-              <Field label="Payment gateway">
-                {order.payment.gateway ? (
+              {/* The operator's real question is "how would you like to
+                  pay — Stripe, PayPal or manual?", so all three live in one
+                  decision. Manual is labelled as a METHOD rather than a
+                  gateway because the domain genuinely separates them: it is
+                  not in `SUPPORTED`, `initiatePayment` refuses it, and it
+                  settles money rather than routing it. */}
+              <Field label="Payment method">
+                {order.payment.gateway && !manualCollection ? (
                   <div className="rounded-md border border-input bg-muted/40 px-3 py-2 text-sm">
                     {GATEWAY_LABEL[order.payment.gateway] ??
                       order.payment.gateway}
@@ -440,7 +517,12 @@ export function EmailComposer({
                      is signposting, not enforcement. */
                   <div
                     role="radiogroup"
-                    aria-label="Payment gateway"
+                    // Must match the visible "Payment method" label. It read
+                    // "Payment gateway", so a screen-reader user heard a
+                    // different name than the one on screen — and heard
+                    // Manual described as a gateway, which is the framing
+                    // this control deliberately moved away from.
+                    aria-label="Payment method"
                     className="space-y-1.5"
                   >
                     {providers.map((p) => (
@@ -456,9 +538,17 @@ export function EmailComposer({
                           type="radio"
                           name="payment-gateway"
                           value={p.key}
-                          checked={chosenGateway === p.key}
+                          // Manual and a gateway are mutually exclusive and
+                          // share one radio group, so a gateway is only
+                          // checked while Manual is not — otherwise two
+                          // inputs in the group claim to be selected and the
+                          // browser keeps whichever it saw last.
+                          checked={!manualCollection && chosenGateway === p.key}
                           disabled={!p.enabled}
-                          onChange={() => setChosenGateway(p.key)}
+                          onChange={() => {
+                            setChosenGateway(p.key);
+                            setManualCollection(false);
+                          }}
                           className="accent-foreground"
                         />
                         <span className={p.enabled ? "" : "line-through"}>
@@ -471,25 +561,91 @@ export function EmailComposer({
                         )}
                       </label>
                     ))}
+                    <label
+                      className="flex cursor-pointer items-center gap-2.5 rounded-md border border-input px-3 py-2 text-sm hover:bg-muted/40"
+                    >
+                      <input
+                        type="radio"
+                        name="payment-gateway"
+                        value="MANUAL"
+                        checked={manualCollection}
+                        onChange={() => setManualCollection(true)}
+                        className="accent-foreground"
+                      />
+                      <span>Manual charge</span>
+                      <span className="ml-auto text-[10.5px] text-muted-foreground">
+                        No payment link
+                      </span>
+                    </label>
                   </div>
                 )}
               </Field>
+
+              {manualCollection ? (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-900">
+                  <p className="font-medium">
+                    The customer will not receive a payment link.
+                  </p>
+                  <p className="mt-0.5">
+                    They get a booking review and consent request. Once they
+                    confirm, take the card on your terminal and then use{" "}
+                    <span className="font-medium">Record manual payment</span>{" "}
+                    on the order to settle it. Never enter card details here.
+                  </p>
+                </div>
+              ) : null}
 
               {/* Two-step CTA — generate link first, send second. Once a
                   link exists the generate button flips to a disabled
                   "Link generated" affordance (re-running would orphan
                   the existing session on the gateway side) and the
                   send button takes over as the primary action. */}
+              {/* What the operator is about to send, stated before they
+                  send it. Amount comes from the order, so it is whatever the
+                  latest edit left it at — never a stale figure. */}
+              <div className="rounded-md border border-border bg-surface-1 px-3 py-2 text-[12px] space-y-0.5">
+                <SummaryRow label="To" value={draft.customerEmail || order.customer.email} />
+                <SummaryRow
+                  label="Amount"
+                  value={formatCurrency(order.pricing.amount, order.pricing.currency)}
+                  strong
+                />
+                <SummaryRow
+                  label="Method"
+                  value={
+                    manualCollection
+                      ? "Manual charge"
+                      : (chosenGateway && GATEWAY_LABEL[chosenGateway]) ??
+                        (order.payment.gateway
+                          ? GATEWAY_LABEL[order.payment.gateway] ?? order.payment.gateway
+                          : "—")
+                  }
+                />
+                <SummaryRow
+                  label="Customer does"
+                  value={
+                    manualCollection
+                      ? "Reviews and confirms the booking"
+                      : "Confirms, then pays online"
+                  }
+                />
+              </div>
+
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-[11.5px] text-muted-foreground">
                   {previewLoading
                     ? "Updating preview…"
-                    : order.payment.paymentUrl
-                      ? "Link ready — send the email when you're done editing."
-                      : "Generate the payment link to enable sending."}
+                    : manualCollection
+                      ? "No link is generated — the customer is asked to confirm only."
+                      : order.payment.paymentUrl
+                        ? "Link ready — send the email when you're done editing."
+                        : "Generate the payment link to enable sending."}
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
-                  {order.payment.paymentUrl ? (
+                  {/* Manual has no link step at all, so the generate button
+                      is absent rather than disabled — a greyed-out control
+                      reads as "broken", which is the wrong story. */}
+                  {manualCollection ? null : order.payment.paymentUrl ? (
                     <Button
                       type="button"
                       variant="outline"
@@ -513,10 +669,10 @@ export function EmailComposer({
                     onClick={handleSend}
                     loading={sending}
                     loadingText="Sending"
-                    disabled={!order.payment.paymentUrl}
+                    disabled={!manualCollection && !order.payment.paymentUrl}
                   >
                     <SendIcon className="size-3.5" />
-                    Send payment request
+                    {manualCollection ? "Send consent request" : "Send payment request"}
                   </LoadingButton>
                 </div>
               </div>
@@ -587,6 +743,25 @@ interface FieldProps {
   label: string;
   hint?: string;
   children: React.ReactNode;
+}
+
+function SummaryRow({
+  label,
+  value,
+  strong = false,
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={strong ? "font-semibold tabular-nums" : "font-medium"}>
+        {value}
+      </span>
+    </div>
+  );
 }
 
 function Field({ label, hint, children }: FieldProps) {

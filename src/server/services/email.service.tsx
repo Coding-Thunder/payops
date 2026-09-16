@@ -358,6 +358,12 @@ export interface PaymentRequestOverrides {
   /** Optional override for the recipient address. Empty = use order's
    *  customer email. */
   toOverride?: string | null;
+  /**
+   * The operator will collect on an external terminal, so this send must
+   * carry NO payment link and must not imply one is coming. The customer is
+   * asked to review and consent; the money is recorded afterwards.
+   */
+  manualCollection?: boolean;
 }
 
 /**
@@ -450,7 +456,23 @@ export async function composePaymentRequestProps(
     ? PAYMENT_GATEWAY_LABELS[order.payment.gateway as PaymentGatewayKey]
     : null;
   const payLabel = `Pay ${formatMoney(order.pricing.amount, order.pricing.currency)} securely with ${gatewayLabel ?? "our secure checkout"} →`;
-  const primaryCta = alreadyConsented && checkoutUrl
+  // A manual send must never offer checkout, even if a superseded link is
+  // still on the record — that link is exactly what must not be paid.
+  const primaryCta = overrides.manualCollection
+    ? consentUrl
+      ? {
+          url: consentUrl,
+          label: "Review & Confirm Booking",
+          // Deliberately NOT the generic consent message. A customer on this
+          // path gets no link and no way to pay, so silence about what
+          // happens next reads as an unfinished booking. It names no
+          // processor, asks for no card details, and does not imply the
+          // customer pays online.
+          helperText:
+            "Please review and confirm your booking details. Once you confirm, our team will arrange payment with you separately — there is nothing to pay on this page.",
+        }
+      : null
+    : alreadyConsented && checkoutUrl
     ? {
         url: checkoutUrl,
         label: payLabel,
@@ -501,7 +523,12 @@ export async function composePaymentRequestProps(
     paymentUrl: checkoutUrl,
     gatewayLabel,
     greeting: overrides.greeting ?? tpl?.greeting ?? null,
-    intro: overrides.intro ?? tpl?.intro ?? null,
+    intro:
+      overrides.intro ??
+      tpl?.intro ??
+      (overrides.manualCollection
+        ? "Please review the booking details below and confirm them. Once you have confirmed, our team will arrange payment with you separately."
+        : null),
     note: overrides.note ?? tpl?.note ?? null,
     cancellationPolicy: order.policy?.text ?? "",
     cancellationPolicyVersion: order.policy?.version ?? undefined,
@@ -556,7 +583,8 @@ export async function sendPaymentRequestEmail(
   overrides: PaymentRequestOverrides = {},
   context?: SendPaymentRequestContext,
 ): Promise<{ id: string | null; consentToken: string | null }> {
-  if (!order.payment.paymentUrl) {
+  // A manual collection has no link by definition — that is the point of it.
+  if (!order.payment.paymentUrl && !overrides.manualCollection) {
     throw new Error(
       "Order has no payment link yet — generate the link via the email composer before sending the request.",
     );

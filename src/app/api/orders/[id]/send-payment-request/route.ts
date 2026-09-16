@@ -58,15 +58,24 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
   }
 
   // 2. Strict gate — payment link must exist before we email about it.
-  if (order.status === OrderStatus.NOT_INITIATED) {
+  //    A MANUAL collection is the deliberate exception: there is no link and
+  //    the email only asks the customer to review and consent, so an order
+  //    that has never been initiated is exactly the normal case.
+  const manualCollection = input.collection === "MANUAL";
+  if (order.status === OrderStatus.NOT_INITIATED && !manualCollection) {
     throw new ConflictError(
       "Generate a payment link before sending the request email.",
     );
   }
+  if (order.status === OrderStatus.PAID) {
+    throw new ConflictError("Cannot send a request — order is already paid.");
+  }
+  // A failed or expired gateway attempt is precisely when an operator falls
+  // back to collecting manually, so that path stays open; only the gateway
+  // path still refuses, because its link is dead.
   if (
-    order.status === OrderStatus.PAID ||
-    order.status === OrderStatus.FAILED ||
-    order.status === OrderStatus.EXPIRED
+    !manualCollection &&
+    (order.status === OrderStatus.FAILED || order.status === OrderStatus.EXPIRED)
   ) {
     throw new ConflictError(
       `Cannot send a request — order is ${order.status.toLowerCase()}.`,
@@ -81,6 +90,7 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
       greeting: input.greeting,
       intro: input.intro,
       note: input.note,
+      manualCollection,
     },
     { actor, request: reqCtx },
   );
