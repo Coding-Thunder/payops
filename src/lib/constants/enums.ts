@@ -112,8 +112,20 @@ export const AuditAction = {
   ORDER_ARCHIVED: "ORDER_ARCHIVED",
   ORDER_DELETED: "ORDER_DELETED",
   ORDER_PAYMENT_LINK_REGENERATED: "ORDER_PAYMENT_LINK_REGENERATED",
+  /** A bulk XLSX export of charging data left the system. */
+  ORDER_EXPORTED: "ORDER_EXPORTED",
 
   PAYMENT_SUCCEEDED: "PAYMENT_SUCCEEDED",
+  /** A gateway reported success on a session this order has moved on from
+   *  (superseded by a re-price or a gateway switch), or on a second session
+   *  after the order was already settled. Real money may have moved, so it
+   *  is never discarded — it is recorded, the order is flagged, and an
+   *  operator reconciles it. */
+  PAYMENT_COMPETING_SESSION: "PAYMENT_COMPETING_SESSION",
+  /** An operator recorded a payment collected OUTSIDE PayOps — on a physical
+   *  terminal, by bank transfer, in cash. PayOps records the confirmation;
+   *  it never touches the card. */
+  MANUAL_PAYMENT_RECORDED: "MANUAL_PAYMENT_RECORDED",
   PAYMENT_FAILED: "PAYMENT_FAILED",
   PAYMENT_EXPIRED: "PAYMENT_EXPIRED",
 

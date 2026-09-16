@@ -139,6 +139,32 @@ export interface OrderPayment {
   /** When the gateway session was generated (NOT_INITIATED →
    *  LINK_GENERATED). Null while the order is still in draft. */
   initiatedAt: string | null;
+  /** Method label for a payment taken outside PayOps ("Card terminal").
+   *  Never card data. Null for gateway payments. */
+  manualMethod: string | null;
+  /** Operator-supplied reference for an offline payment. Validated on the
+   *  way in so it can never be a card number. */
+  manualReference: string | null;
+  /** How many times the collectable amount has changed. */
+  priceRevision: number;
+  /** Every checkout session ever opened on this order, oldest first, so an
+   *  operator can see that a Stripe attempt failed before a PayPal one was
+   *  tried. Read-only history — the live attempt is the flat fields above. */
+  attempts: OrderPaymentAttempt[];
+}
+
+/** One historical checkout session. */
+export interface OrderPaymentAttempt {
+  gateway: PaymentGatewayKey;
+  sessionId: string | null;
+  amount: number;
+  currency: string;
+  status: OrderStatus;
+  failureReason: string | null;
+  /** Why it stopped being current, or null if it never was superseded. */
+  supersededReason: "GATEWAY_SWITCHED" | "REPRICED" | null;
+  supersededAt: string | null;
+  createdAt: string;
 }
 
 export interface OrderCreator {

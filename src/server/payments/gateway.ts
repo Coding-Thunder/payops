@@ -50,6 +50,18 @@ export interface CreatePaymentSessionInput {
    *  webhook. Used to recover the order id when client_reference_id
    *  isn't enough. */
   metadata: Record<string, string>;
+  /**
+   * How many times this order's collectable amount has changed.
+   *
+   * Threaded into the gateway's idempotency key. Without it, re-pricing an
+   * order and asking for a new session replays the ORIGINAL session at the
+   * ORIGINAL amount — the key is derived from the order id alone, and the
+   * order id does not change when the price does.
+   *
+   * Absent or 0 must produce the exact key used before this field existed,
+   * so every order that has never been re-priced behaves identically.
+   */
+  priceRevision?: number;
 }
 
 export interface CreatedPaymentSession {

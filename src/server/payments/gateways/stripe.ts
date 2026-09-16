@@ -116,6 +116,21 @@ function mapStripeDisputeOutcome(
   }
 }
 
+/**
+ * The Stripe idempotency key for a checkout session.
+ *
+ * Exported so the revision rule is asserted directly in tests rather than
+ * inferred from a whole-payload snapshot.
+ */
+export function idempotencyKeyFor(input: {
+  orderId: string;
+  priceRevision?: number;
+}): string {
+  const base = `order:${input.orderId}:checkout`;
+  const rev = input.priceRevision ?? 0;
+  return rev > 0 ? `${base}:r${rev}` : base;
+}
+
 /** The two secrets a Stripe account needs. Held per organization in the
  *  credential vault; falls back to the deployment env. */
 export interface StripeCredentials {
@@ -200,7 +215,18 @@ export function createStripeGateway(
         // returns the same Stripe session rather than creating a second
         // orphan. The service-layer guard prevents this in practice;
         // belt-and-suspenders.
-        idempotencyKey: `order:${input.orderId}:checkout`,
+        //
+        // The revision suffix is what makes a re-price safe. The key is
+        // otherwise derived from the order id alone, which does NOT change
+        // when the amount does — so without this, asking Stripe for a
+        // session after a re-price replays the original session at the
+        // original price, or fails with idempotency_key_in_use. Either way
+        // the customer could be charged the old amount.
+        //
+        // Revision 0 (and the absent case) deliberately yields the exact
+        // key used before this existed, so an order that has never been
+        // re-priced is byte-identical to today.
+        idempotencyKey: idempotencyKeyFor(input),
       },
     );
 

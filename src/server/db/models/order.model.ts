@@ -120,6 +120,54 @@ export interface OrderDoc extends OrganizationScoped {
     failureReason?: string | null;
     confirmationEmailSentAt?: Date | null;
     processedWebhookEventIds: string[];
+    /**
+     * Append-only history of every checkout session ever opened on this
+     * order, including the one currently live.
+     *
+     * `payment` above stays the CURRENT attempt and remains the source of
+     * truth for every existing reader — the DTO, the webhook `$set`, the
+     * emails, the evidence chain. Promoting this array to source-of-truth
+     * would mean rewriting ~30 read sites and the DTO contract, which is the
+     * payment-state-machine rewrite this work is not allowed to do.
+     *
+     * It exists because two things can now move the current attempt: an
+     * operator switching gateway after a decline, and an operator re-pricing
+     * an order whose link is already out. Both supersede a session that may
+     * STILL BE PAYABLE — `failOrder` never expires a session, and a Stripe
+     * decline happens inside a checkout session that stays open. Without a
+     * record of which sessions are dead, a late webhook for a superseded
+     * session is indistinguishable from the live one, and the money it
+     * represents gets applied at the wrong amount or silently swallowed.
+     */
+    attempts?: Array<{
+      gateway: PaymentGatewayKey;
+      /** Gateway-side session id. Null if session creation itself failed. */
+      sessionId?: string | null;
+      paymentIntentId?: string | null;
+      checkoutUrl?: string | null;
+      /** What THIS attempt was asked to collect. Kept per-attempt so a
+       *  re-price cannot retroactively change what an old link was for. */
+      amount: number;
+      currency: string;
+      /** Terminal state of this attempt, or PAYMENT_PENDING while live. */
+      status: OrderStatus;
+      failureReason?: string | null;
+      /** Why this attempt stopped being current. Null while it is current. */
+      supersededReason?: "GATEWAY_SWITCHED" | "REPRICED" | null;
+      supersededAt?: Date | null;
+      createdAt: Date;
+    }>;
+    /**
+     * Bumped every time the collectable amount changes. Threaded into the
+     * gateway idempotency key so a re-priced order mints a genuinely new
+     * session instead of replaying the old one at the old price.
+     */
+    priceRevision?: number;
+    /** Set only by a recorded offline payment. Deliberately separate from
+     *  `gateway`, which is a merchant-account pin that must survive on a
+     *  FAILED order so disputes still route to the right account. */
+    manualMethod?: string | null;
+    manualReference?: string | null;
   };
   createdBy: {
     userId: Types.ObjectId;
@@ -294,6 +342,29 @@ const termsAcknowledgementSchema = new Schema(
   { _id: false },
 );
 
+/** One checkout session's worth of history. Append-only: nothing here is
+ *  ever mutated except to stamp `superseded*` when it stops being current. */
+const paymentAttemptSchema = new Schema(
+  {
+    gateway: { type: String, enum: PAYMENT_GATEWAY_KEYS, required: true },
+    sessionId: { type: String, default: null },
+    paymentIntentId: { type: String, default: null },
+    checkoutUrl: { type: String, default: null },
+    amount: { type: Number, required: true, min: 0 },
+    currency: { type: String, required: true },
+    status: { type: String, enum: ORDER_STATUSES, required: true },
+    failureReason: { type: String, default: null },
+    supersededReason: {
+      type: String,
+      enum: ["GATEWAY_SWITCHED", "REPRICED", null],
+      default: null,
+    },
+    supersededAt: { type: Date, default: null },
+    createdAt: { type: Date, required: true },
+  },
+  { _id: false },
+);
+
 const paymentSchema = new Schema(
   {
     gateway: {
@@ -313,6 +384,15 @@ const paymentSchema = new Schema(
     failureReason: { type: String, default: null },
     confirmationEmailSentAt: { type: Date, default: null },
     processedWebhookEventIds: { type: [String], default: [] },
+    // Additive and defaulted, so every order written before this field
+    // existed reads back as an empty history rather than undefined. No
+    // migration and no backfill: an order with no recorded attempts simply
+    // has no superseded session, which is exactly true of every order
+    // created before a switch or a re-price was possible.
+    attempts: { type: [paymentAttemptSchema], default: [] },
+    priceRevision: { type: Number, default: 0, min: 0 },
+    manualMethod: { type: String, default: null, maxlength: 40 },
+    manualReference: { type: String, default: null, maxlength: 120 },
   },
   { _id: false },
 );

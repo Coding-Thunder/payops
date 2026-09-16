@@ -10,6 +10,8 @@ import {
   OrderEvidenceActorType,
   OrderEvidenceEventType,
   OrderStatus,
+  PaymentGatewayKey,
+  UserRole,
 } from "@/lib/constants/enums";
 import { DomainEventType } from "@/lib/constants/events";
 import { logger } from "@/lib/logger";
@@ -228,13 +230,84 @@ interface PaidTransitionInput {
    *  one from the session + a timestamp. Same key applied twice is a
    *  no-op. */
   eventId: string;
-  sessionId: string;
+  sessionId: string | null;
   paymentIntentId: string | null;
   /** Stripe minor-unit amount. When null we fall back to the order's
    *  pricing.amount — same defensive default the original webhook used. */
   amountTotal: number | null;
   paidAtMs: number;
-  source: "webhook" | "reconcile";
+  /** "manual" is an operator recording money that arrived outside any
+   *  gateway. It carries no session, so `sessionId` is null on that path. */
+  source: "webhook" | "reconcile" | "manual";
+  /** The real human who recorded this, when there is one. Webhooks have no
+   *  actor; a manual payment must never be attributed to "the system". */
+  actor?: {
+    userId: string;
+    name: string;
+    role: UserRole;
+  } | null;
+  /** Free-text method label for a manual payment ("Card terminal", "Bank
+   *  transfer"). Never card data. */
+  manualMethod?: string | null;
+  /** Operator-supplied reference. Validated upstream to reject anything
+   *  shaped like a card number. */
+  manualReference?: string | null;
+}
+
+/**
+ * Which attempt an inbound gateway event belongs to.
+ *
+ *  current    — the session the order is currently pointing at.
+ *  superseded — a session this order has explicitly moved on from, because
+ *               the operator switched gateway or re-priced. The money is
+ *               real, but it is NOT what this order is now asking for.
+ *  unknown    — neither. A legacy order with no recorded attempts, or an
+ *               event for a session this order never owned.
+ *
+ * This distinction does not exist anywhere else in the system, and without
+ * it a superseded session is indistinguishable from the live one. That was
+ * harmless while the gateway pin made a second attempt impossible; it stops
+ * being harmless the moment an operator can switch gateway after a decline.
+ *
+ * Two facts make it load-bearing rather than theoretical:
+ *   - `failOrder` never expires the gateway session, and a Stripe decline
+ *     happens INSIDE a checkout session that stays open, so a FAILED order
+ *     routinely still holds a payable link.
+ *   - `applyCheckoutPaid`'s guard is `status: { $ne: PAID }`, which a
+ *     superseded session passes cleanly.
+ *
+ * Pure on purpose: the decision is testable without a database.
+ */
+export type AttemptClassification = "current" | "superseded" | "unknown";
+
+export function classifyPaymentSession(
+  payment: Pick<OrderDoc["payment"], "stripeSessionId" | "attempts">,
+  sessionId: string | null | undefined,
+): AttemptClassification {
+  if (!sessionId) return "unknown";
+
+  // An explicit supersede record BEATS the current pointer, and the order
+  // matters. `repriceOrder` and the gateway switch deliberately keep
+  // `stripeSessionId` so a late webhook or a dispute stays routable to the
+  // attempt that produced it — which means the pointer can still name a
+  // session the order has moved on from. Checking the pointer first would
+  // then classify a superseded session as current and wave the stale payment
+  // straight through to PAID.
+  // `.some`, not `.find`. The same session id can legitimately appear more
+  // than once in the history — the switch records the incoming attempt, and a
+  // later re-price or fallback records it again on the way out — so
+  // first-match would happily return the copy that had not yet been stood
+  // down and classify a dead session as live. One superseding record is
+  // enough: a session that has been superseded never becomes current again.
+  const superseded = (payment.attempts ?? []).some(
+    (a) => a.sessionId === sessionId && a.supersededAt,
+  );
+  if (superseded) return "superseded";
+
+  if (payment.stripeSessionId && payment.stripeSessionId === sessionId) {
+    return "current";
+  }
+  return "unknown";
 }
 
 /**
@@ -253,11 +326,153 @@ interface PaidTransitionInput {
  *  3. `isAlreadyPaid` snapshot   — domain event + email skipped when
  *     the order was already PAID prior to this call
  */
+/**
+ * A gateway reported success on a session that is not the one this order is
+ * currently collecting on.
+ *
+ * Two ways to get here, and the money is real in both:
+ *   - the session was SUPERSEDED (the amount changed, or the operator moved
+ *     to another gateway) and the customer paid the old link anyway;
+ *   - the order is already PAID and a DIFFERENT session also succeeded —
+ *     the genuine double-charge, which two live links make possible.
+ *
+ * Neither can be swallowed and neither can be applied. Applying would settle
+ * the order at an amount nobody currently owes; swallowing would lose a real
+ * payment. So it is recorded as an attempt, the order is flagged for a human,
+ * and an audit row names what happened. This is the operationally visible
+ * outcome the invariant demands — the system never silently reaches a wrong
+ * PAID state, and it never silently drops money either.
+ *
+ * Refunding is deliberately not attempted: `PaymentGateway` exposes no refund
+ * method, so the resolution is an operator action, not an automated one.
+ */
+async function recordCompetingPayment(
+  order: OrderDocument,
+  input: PaidTransitionInput,
+  kind: "superseded-session" | "already-settled",
+): Promise<ProcessEventResult> {
+  const gatewayKey = order.payment.gateway ?? "STRIPE";
+
+  // No transaction: this path performs one flag-and-record update rather
+  // than a multi-document state transition, and the unique index on
+  // `gatewayEventId` is the idempotency primitive either way.
+  const claimed = await tryClaimGatewayEvent(
+    {
+      gatewayEventId: input.eventId,
+      gateway: gatewayKey,
+      orderId: String(order._id),
+    },
+    null,
+  );
+  // Same delivery twice is still a no-op: idempotency applies to this path
+  // exactly as it does to the success path.
+  if (!claimed) {
+    return { handled: true, duplicate: true, orderId: String(order._id) };
+  }
+
+  const amount =
+    typeof input.amountTotal === "number"
+      ? input.amountTotal / 100
+      : order.pricing.amount;
+
+  const note =
+    kind === "superseded-session"
+      ? `A payment of ${amount} ${order.pricing.currency} succeeded on a superseded checkout session (${input.sessionId}). The order's current amount is ${order.pricing.amount}. Reconcile or refund manually.`
+      : `A second payment of ${amount} ${order.pricing.currency} succeeded on session ${input.sessionId} after this order was already settled. Reconcile or refund manually.`;
+
+  await Order.updateOne(
+    { _id: order._id },
+    {
+      $set: {
+        "risk.flagged": true,
+        "risk.flaggedNote": note,
+        "risk.flaggedAt": new Date(),
+      },
+      $push: {
+        "payment.attempts": {
+          gateway: gatewayKey,
+          sessionId: input.sessionId ?? null,
+          paymentIntentId: input.paymentIntentId ?? null,
+          checkoutUrl: null,
+          amount,
+          currency: order.pricing.currency,
+          // The attempt genuinely succeeded at the gateway. Recording it as
+          // PAID keeps the history truthful; the ORDER is what stays unpaid.
+          status: OrderStatus.PAID,
+          failureReason: null,
+          supersededReason: null,
+          supersededAt: new Date(),
+          createdAt: new Date(input.paidAtMs),
+        },
+        "payment.processedWebhookEventIds": {
+          $each: [input.eventId],
+          $slice: -50,
+        },
+      },
+    },
+  );
+
+  await recordAudit({
+    action: AuditAction.PAYMENT_COMPETING_SESSION,
+    entityType: AuditEntity.ORDER,
+    entityId: String(order._id),
+    request: null,
+    metadata: {
+      kind,
+      sessionId: input.sessionId,
+      paymentIntentId: input.paymentIntentId,
+      amount,
+      currency: order.pricing.currency,
+      currentOrderAmount: order.pricing.amount,
+      currentSessionId: order.payment.stripeSessionId ?? null,
+      orderStatus: order.status,
+      source: input.source,
+    },
+  });
+
+  logger.error("payments.competing_session", {
+    orderId: String(order._id),
+    kind,
+    sessionId: input.sessionId,
+    amount,
+    currentOrderAmount: order.pricing.amount,
+  });
+
+  return {
+    handled: true,
+    duplicate: false,
+    orderId: String(order._id),
+    reason: `competing_payment:${kind}`,
+  };
+}
+
 export async function applyCheckoutPaid(
   order: OrderDocument,
   input: PaidTransitionInput,
 ): Promise<ProcessEventResult> {
   const gatewayKey = order.payment.gateway ?? "STRIPE";
+
+  // ─── Stale / competing session gate ────────────────────────────────────
+  // Runs BEFORE the transition, and inside this function rather than at each
+  // caller, so every path to PAID — Stripe webhook, PayPal webhook, and the
+  // reconcile endpoint — inherits it without having to remember to.
+  const classification = classifyPaymentSession(order.payment, input.sessionId);
+  if (classification === "superseded") {
+    return recordCompetingPayment(order, input, "superseded-session");
+  }
+  // A second, different session succeeding on an order that is already
+  // settled is the double-charge case that two live links make possible.
+  // `classification === "unknown"` is required here so a legitimate retry of
+  // the SAME session stays on the ordinary idempotent path.
+  if (
+    order.status === OrderStatus.PAID &&
+    classification === "unknown" &&
+    input.sessionId &&
+    order.payment.stripeSessionId &&
+    input.sessionId !== order.payment.stripeSessionId
+  ) {
+    return recordCompetingPayment(order, input, "already-settled");
+  }
 
   type TxOutcome =
     | { duplicate: true }
@@ -316,6 +531,18 @@ export async function applyCheckoutPaid(
           "payment.paymentIntentId":
             input.paymentIntentId ?? (order.payment.paymentIntentId ?? null),
           "payment.failureReason": null,
+          ...(input.source === "manual"
+            ? {
+                // MANUAL is stamped only here, on a payment that actually
+                // settled offline. It is never written speculatively, so a
+                // FAILED order keeps its real merchant-account pin and
+                // disputes still route correctly.
+                "payment.gateway": PaymentGatewayKey.MANUAL,
+                "payment.manualMethod": input.manualMethod ?? null,
+                "payment.manualReference": input.manualReference ?? null,
+                "payment.checkoutUrl": null,
+              }
+            : {}),
         },
         $push: {
           "payment.processedWebhookEventIds": {
@@ -337,12 +564,27 @@ export async function applyCheckoutPaid(
     // 3. Audit + evidence (in-tx; failure aborts everything).
     await recordAudit(
       {
+        // Always PAYMENT_SUCCEEDED: money did arrive, whatever route it
+        // took. The separate MANUAL_PAYMENT_RECORDED row written by
+        // `recordManualPayment` says WHO recorded it and why — two rows
+        // with two distinct meanings, rather than one row overloaded.
         action: AuditAction.PAYMENT_SUCCEEDED,
         entityType: AuditEntity.PAYMENT,
         entityId: String(updated._id),
+        // A webhook has no human behind it; a manual payment does, and
+        // recording it as "nobody" would defeat the point of the audit row.
+        actor: input.actor
+          ? {
+              userId: input.actor.userId,
+              name: input.actor.name,
+              role: input.actor.role,
+            }
+          : undefined,
         metadata: {
           orderNumber: updated.orderNumber,
           sessionId: input.sessionId,
+          manualMethod: input.manualMethod ?? null,
+          manualReference: input.manualReference ?? null,
           amountReceived,
           currency: updated.pricing.currency,
           eventId: input.eventId,
