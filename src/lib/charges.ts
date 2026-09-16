@@ -31,6 +31,29 @@ function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * The timing a charge line defaults to, given its position in the breakdown.
+ *
+ * The first line is what the payment link collects, so it defaults to
+ * PREPAID. Everything after it is a supplementary line — an upgrade, a fuel
+ * option, an extra driver — and in this operation those are settled at the
+ * counter, so they default to DUE_AT_COUNTER.
+ *
+ * This is a DEFAULT, never a constraint: the operator can set any line to
+ * either timing, and an explicit choice always wins. It exists because the
+ * production data shows operators doing this by hand — 12 counter-charge
+ * lines typed across four different spellings of "Due at Counter" — which is
+ * a default waiting to be written down.
+ *
+ * Exported from here rather than duplicated in the form because this module
+ * is already the shared client+server home for charge arithmetic; the form's
+ * preview and the server's validation must resolve the same way or the
+ * operator sees one thing and the order stores another.
+ */
+export function defaultTimingForIndex(index: number): PaymentTiming {
+  return index === 0 ? PaymentTiming.PREPAID : PaymentTiming.DUE_AT_COUNTER;
+}
+
 type ChargeLike = Pick<OrderCharge, "name" | "amount" | "timing">;
 
 /**

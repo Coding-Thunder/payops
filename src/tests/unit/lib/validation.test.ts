@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   archiveOrderSchema,
   changePasswordSchema,
+  chargesEditArraySchema,
   createOrderSchema,
   createUserSchema,
   flagOrderSchema,
   loginSchema,
+  recordManualPaymentSchema,
   resetUserPasswordSchema,
   updateSettingsSchema,
 } from "@/lib/validation";
@@ -232,5 +234,148 @@ describe("misc order schemas", () => {
       resetUserPasswordSchema.safeParse({ newPassword: "Hunter2Hunter2" })
         .success,
     ).toBe(true);
+  });
+});
+
+/**
+ * Second-and-later charge lines default to DUE_AT_COUNTER.
+ *
+ * The default lives in the schema rather than only in the form because the
+ * form is not the only writer: an API client, an importer or a replayed
+ * request all reach `createOrderSchema` directly. Production shows operators
+ * doing this by hand today — counter lines typed across four different
+ * spellings of "Due at Counter" — so the rule is being followed manually
+ * already; this only writes it down.
+ */
+describe("charge timing defaults by position", () => {
+  const line = (name: string, amount: number, timing?: string) =>
+    timing === undefined ? { name, amount } : { name, amount, timing };
+
+  function parseCharges(charges: unknown[]) {
+    const result = createOrderSchema.safeParse({
+      ...validCreateOrderInput(),
+      charges,
+    });
+    if (!result.success) return { ok: false as const, error: result.error };
+    return { ok: true as const, charges: result.data.charges };
+  }
+
+  it("defaults the FIRST line to PREPAID when timing is omitted", () => {
+    const r = parseCharges([line("Rental cost", 249.99)]);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.charges[0].timing).toBe("PREPAID");
+  });
+
+  it("defaults the SECOND and later lines to DUE_AT_COUNTER", () => {
+    const r = parseCharges([
+      line("Rental cost", 249.99),
+      line("Fuel option", 40),
+      line("Extra driver", 25),
+    ]);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.charges.map((c) => c.timing)).toEqual([
+        "PREPAID",
+        "DUE_AT_COUNTER",
+        "DUE_AT_COUNTER",
+      ]);
+    }
+  });
+
+  it("never overrides an explicit choice — a prepaid second line survives", () => {
+    // The whole point of a default: the operator can always say otherwise.
+    const r = parseCharges([
+      line("Rental cost", 249.99, "PREPAID"),
+      line("Insurance", 60, "PREPAID"),
+    ]);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.charges.map((c) => c.timing)).toEqual(["PREPAID", "PREPAID"]);
+  });
+
+  it("leaves the first charge's existing behaviour untouched", () => {
+    // An explicitly counter-billed first line stays counter-billed, and is
+    // then correctly rejected for having nothing to collect online.
+    const r = parseCharges([line("Rental cost", 249.99, "DUE_AT_COUNTER")]);
+    expect(r.ok).toBe(false);
+  });
+
+  it("still requires one positive prepaid line after defaulting", () => {
+    // Defaulting runs BEFORE the refine, so a lone omitted-timing line is
+    // resolved to PREPAID and passes, while a counter-only set does not.
+    const counterOnly = parseCharges([
+      line("Rental cost", 249.99, "DUE_AT_COUNTER"),
+      line("Fuel option", 40),
+    ]);
+    expect(counterOnly.ok).toBe(false);
+  });
+});
+
+describe("chargesEditArraySchema (the edit path)", () => {
+  it("requires an explicit timing — it must NOT re-default by position", () => {
+    // This is the interaction guard. If the edit path reused the create
+    // array, removing a line above would silently reclassify the lines below
+    // it by their new index. Editing must say what it means.
+    const r = chargesEditArraySchema.safeParse([
+      { name: "Rental cost", amount: 249.99, timing: "PREPAID" },
+      { name: "Insurance", amount: 60 },
+    ]);
+    expect(r.success).toBe(false);
+  });
+
+  it("keeps an explicitly prepaid second line prepaid", () => {
+    const r = chargesEditArraySchema.safeParse([
+      { name: "Rental cost", amount: 249.99, timing: "PREPAID" },
+      { name: "Insurance", amount: 60, timing: "PREPAID" },
+    ]);
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.map((c) => c.timing)).toEqual(["PREPAID", "PREPAID"]);
+  });
+
+  it("enforces the same prepaid-line requirement as create", () => {
+    const r = chargesEditArraySchema.safeParse([
+      { name: "Counter only", amount: 60, timing: "DUE_AT_COUNTER" },
+    ]);
+    expect(r.success).toBe(false);
+  });
+});
+
+/**
+ * PayOps must never hold a card number, and the likeliest way one arrives is
+ * an operator pasting it into a free-text reference box. The guard strips
+ * separators before counting, and only rejects all-digit strings — a
+ * terminal auth code must still be accepted, or operators will leave the
+ * field blank instead.
+ */
+describe("recordManualPaymentSchema — the reference must not be a card number", () => {
+  const base = { method: "Card terminal" };
+  const ok = (reference: string) =>
+    recordManualPaymentSchema.safeParse({ ...base, reference }).success;
+
+  it("rejects a bare 16-digit PAN", () => {
+    expect(ok("4111111111111111")).toBe(false);
+  });
+
+  it("rejects a PAN with spaces or dashes", () => {
+    expect(ok("4111 1111 1111 1111")).toBe(false);
+    expect(ok("4111-1111-1111-1111")).toBe(false);
+  });
+
+  it("rejects across the whole 13–19 digit card range", () => {
+    expect(ok("4".repeat(13))).toBe(false);
+    expect(ok("4".repeat(19))).toBe(false);
+  });
+
+  it("accepts a terminal authorisation code", () => {
+    expect(ok("AUTH-004521")).toBe(true);
+    expect(ok("TXN 99887766")).toBe(true);
+  });
+
+  it("accepts a short numeric receipt number", () => {
+    // 6 digits is not a card number and is a perfectly ordinary reference.
+    expect(ok("004521")).toBe(true);
+  });
+
+  it("requires a reference at all", () => {
+    expect(recordManualPaymentSchema.safeParse({ ...base, reference: "" }).success).toBe(false);
   });
 });

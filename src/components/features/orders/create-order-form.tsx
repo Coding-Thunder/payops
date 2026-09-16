@@ -52,7 +52,7 @@ import {
   createOrderSchema,
   type CreateOrderInput,
 } from "@/lib/validation";
-import { summarizeCharges } from "@/lib/charges";
+import { defaultTimingForIndex, summarizeCharges } from "@/lib/charges";
 import { formatCurrency } from "@/lib/format";
 import type { OrderDTO, ProviderDTO } from "@/types";
 import { ProviderSelector } from "@/components/features/providers";
@@ -623,7 +623,10 @@ export function CreateOrderForm({
                   chargeFields.append({
                     name: "",
                     amount: 0,
-                    timing: PaymentTiming.PREPAID,
+                    // Position decides the default, matching what the server
+                    // resolves for an omitted timing. The operator can change
+                    // it on the row; this only sets where the row starts.
+                    timing: defaultTimingForIndex(chargeFields.fields.length),
                   })
                 }
                 disabled={isSubmitting}
