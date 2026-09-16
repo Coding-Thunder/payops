@@ -18,6 +18,8 @@ import {
 } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { CopyButton } from "@/components/common/copy-button";
+import { ManualPaymentDialog } from "@/components/features/orders/manual-payment-dialog";
+import { SwitchGatewayDialog } from "@/components/features/orders/switch-gateway-dialog";
 import { OrderStatusBadge } from "@/components/common/status-badges";
 import { toast } from "@/components/ui/sonner";
 import { api, ApiClientError } from "@/lib/api-client";
@@ -46,6 +48,12 @@ export function OrderPaymentCard({
 
   const isPaid = order.status === OrderStatus.PAID;
   const isPending = order.status === OrderStatus.PAYMENT_PENDING;
+  // A generated link is shareable whether or not the request email has gone
+  // out yet. Gating the link display on PAYMENT_PENDING alone hid the link
+  // an operator had just generated — including the new one a gateway switch
+  // produces, which lands the order at LINK_GENERATED.
+  const hasShareableLink =
+    isPending || order.status === OrderStatus.LINK_GENERATED;
   const isNotInitiated = order.status === OrderStatus.NOT_INITIATED;
   const isFailedOrExpired =
     order.status === OrderStatus.FAILED ||
@@ -193,7 +201,7 @@ export function OrderPaymentCard({
           </Alert>
         ) : null}
 
-        {isPending && order.payment.paymentUrl ? (
+        {hasShareableLink && order.payment.paymentUrl ? (
           <div className="space-y-3">
             <div className="rounded-md border border-border bg-muted/40 p-3">
               <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -242,6 +250,19 @@ export function OrderPaymentCard({
           >
             Generate a new payment link
           </LoadingButton>
+        ) : null}
+
+        {/* Stripe declined → offer PayPal on the SAME order. Hidden once the
+            order is settled: a second payable link against a paid order is
+            precisely the double charge this must not create. */}
+        {!isPaid && !isNotInitiated ? (
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <SwitchGatewayDialog order={order} />
+            {/* The offline fallback, offered alongside the gateway switch —
+                which is exactly the decision point the operator is at when
+                a gateway has just declined. Hidden once settled. */}
+            <ManualPaymentDialog order={order} />
+          </div>
         ) : null}
       </CardContent>
     </Card>

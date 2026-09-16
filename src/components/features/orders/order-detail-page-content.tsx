@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
 
 import { ArchiveOrderButton } from "@/components/features/orders/archive-order-button";
+import { McoEditDialog } from "@/components/features/orders/mco-edit-dialog";
 import { ConfirmationNumberCard } from "@/components/features/orders/confirmation-number-card";
 import { OrderConsentCard } from "@/components/features/orders/order-consent-card";
 import { OrderDetailsCard } from "@/components/features/orders/order-details-card";
@@ -126,6 +127,11 @@ export function OrderDetailPageContent({
     order.state === RecordState.ACTIVE &&
     order.status !== OrderStatus.PAID;
   const canFlagRisk = roleHasPermission(role, Permission.ORDER_UPDATE);
+  // MCO edits are money-adjacent, so they ride the same admin-only
+  // permission the service re-checks. An archived order is read-only.
+  const canEditOrder =
+    roleHasPermission(role, Permission.ORDER_UPDATE) &&
+    order.state !== RecordState.ARCHIVED;
 
   const needsPaymentLink = order.status === OrderStatus.NOT_INITIATED;
   const inFlight =
@@ -157,6 +163,7 @@ export function OrderDetailPageContent({
             {order.risk.flagged ? (
               <Badge variant="destructive">Flagged</Badge>
             ) : null}
+            {canEditOrder ? <McoEditDialog order={order} /> : null}
             {canFlagRisk ? <RiskFlagDialog order={order} /> : null}
             {canArchive ? <ArchiveOrderButton orderId={order.id} /> : null}
           </div>

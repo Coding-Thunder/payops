@@ -30,19 +30,24 @@ import { resolveProvider } from "@/lib/constants/providers";
 import { summarizeCharges } from "@/lib/charges";
 import { logger } from "@/lib/logger";
 import { publishEvent } from "@/server/events/bus";
-import { Order, type OrderDoc } from "@/server/db/models";
+import { Order, type OrderDoc, type OrderDocument } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 import {
   belongsToScope,
   organizationStamp,
   withOrganizationScope,
 } from "@/server/db/organization-filter";
-import { getRequestOrganizationScope } from "@/server/auth/organization";
+import { getRequestOrganizationScope,
+  getOrganization,
+} from "@/server/auth/organization";
 import { resolvePublicBrand } from "@/server/email/identity";
 import type {
   ArchiveOrderInput,
   CreateOrderInput,
   ListOrdersQuery,
+  ChargeInput,
+  ModifyOrderInput,
+  RecordManualPaymentInput,
 } from "@/lib/validation";
 import type { OrderDTO, PaginatedResult } from "@/types";
 
@@ -51,7 +56,7 @@ import type {
   CreatedPaymentSession,
   SessionStatus,
 } from "@/server/payments/gateway";
-import { getGatewayForOrganization } from "@/server/payments/resolve-gateway";
+import { enabledProvidersOf, getGatewayForOrganization } from "@/server/payments/resolve-gateway";
 import { recordAudit } from "./audit.service";
 import { captureEvidenceSafe } from "./evidence.service";
 import { getSettings } from "./settings.service";
@@ -190,6 +195,22 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
       initiatedAt: doc.payment.initiatedAt
         ? doc.payment.initiatedAt.toISOString()
         : null,
+      manualMethod: doc.payment.manualMethod ?? null,
+      manualReference: doc.payment.manualReference ?? null,
+      priceRevision: doc.payment.priceRevision ?? 0,
+      // `.lean()` skips Mongoose defaults, so an order written before the
+      // attempts array existed genuinely arrives without it.
+      attempts: (doc.payment.attempts ?? []).map((a) => ({
+        gateway: a.gateway,
+        sessionId: a.sessionId ?? null,
+        amount: a.amount,
+        currency: a.currency,
+        status: a.status,
+        failureReason: a.failureReason ?? null,
+        supersededReason: a.supersededReason ?? null,
+        supersededAt: a.supersededAt ? a.supersededAt.toISOString() : null,
+        createdAt: a.createdAt ? a.createdAt.toISOString() : new Date(0).toISOString(),
+      })),
     },
     // Guarded the same way `policy` is a few lines below. The schema marks
     // `createdBy` required, but a row written before it existed — or by any
@@ -626,6 +647,7 @@ export async function initiatePayment(
   let session: CreatedPaymentSession;
   try {
     session = await gateway.createSession({
+      priceRevision: doc.payment.priceRevision ?? 0,
       orderId: String(doc._id),
       orderNumber: doc.orderNumber,
       amount: doc.pricing.amount,
@@ -848,12 +870,20 @@ function describeProductDescription(input: ProductDescriptionInput): string {
 
 // ---------- Listing / fetching ----------
 
-export async function listOrders(
+/**
+ * The authoritative Mongo filter behind the order list: state, status,
+ * booking type, the STAFF own-orders narrowing, the escaped-regex search and
+ * the date range, with tenancy composed on last.
+ *
+ * Exported so the XLSX export runs the IDENTICAL query rather than a second
+ * hand-written one. A duplicate filter is how an export quietly stops
+ * honouring the STAFF narrowing or the organization scope and starts
+ * emitting rows its caller may not see in the UI.
+ */
+export async function buildOrderListFilter(
   query: ListOrdersQuery,
   ctx: OrderContext,
-): Promise<PaginatedResult<OrderDTO>> {
-  await connectMongo();
-  await warmProviderLogoCache();
+): Promise<Record<string, unknown>> {
   const scope = await getRequestOrganizationScope();
   const filter: Record<string, unknown> = {};
   filter.state = query.state ?? RecordState.ACTIVE;
@@ -890,7 +920,16 @@ export async function listOrders(
   // Tenancy last, composed under `$and`. The search box above may already
   // own the top-level `$or`; assigning a second one would silently drop
   // whichever lost the key collision.
-  const scoped = withOrganizationScope(filter, scope);
+  return withOrganizationScope(filter, scope);
+}
+
+export async function listOrders(
+  query: ListOrdersQuery,
+  ctx: OrderContext,
+): Promise<PaginatedResult<OrderDTO>> {
+  await connectMongo();
+  await warmProviderLogoCache();
+  const scoped = await buildOrderListFilter(query, ctx);
 
   const { page, pageSize } = query;
   const [items, total] = await Promise.all([
@@ -1119,6 +1158,7 @@ export async function regeneratePaymentLink(
   let session: CreatedPaymentSession;
   try {
     session = await gateway.createSession({
+      priceRevision: doc.payment.priceRevision ?? 0,
       orderId: String(doc._id),
       orderNumber: doc.orderNumber,
       // Regeneration reuses the snapshot already attached to the order —
@@ -1767,4 +1807,765 @@ export async function listAtRiskOrders(): Promise<OrderDTO[]> {
     .limit(100)
     .lean<(OrderDoc & { _id: Types.ObjectId })[]>();
   return docs.map(orderToDTO);
+}
+
+/**
+ * Re-price an existing order — the "MCO amount" edit.
+ *
+ * The collectable amount is `pricing.amount`, which is by definition the sum
+ * of the PREPAID lines in `charges[]` (see `summarizeCharges`). So editing
+ * the amount IS editing the charge breakdown; there is no second field and
+ * no separate document, and writing one would put two numbers in the system
+ * that can disagree.
+ *
+ * SAME ORDER, ALWAYS. Nothing here creates an order, and `_id` /
+ * `orderNumber` are never touched.
+ *
+ * The hard part is not the arithmetic, it is the session that is already in
+ * the customer's inbox. Three verified facts shape this:
+ *
+ *  1. `failOrder` never expires the gateway session, and a Stripe decline
+ *     happens inside a checkout session that stays OPEN. A FAILED order
+ *     therefore routinely still holds a payable link.
+ *  2. `expireSession` cannot report success — Stripe's adapter swallows
+ *     errors and returns void, and PayPal has no cancel for an unapproved
+ *     order at all (its adapter is a deliberate logged no-op).
+ *  3. `applyCheckoutPaid`'s serialization guard is `status: { $ne: PAID }`,
+ *     which a payment on the OLD session passes cleanly.
+ *
+ * Together those mean the old link cannot be reliably killed, so this does
+ * not pretend to kill it. It instead makes the old session *identifiable*:
+ * the superseded attempt is recorded with the amount it was for, and
+ * `classifyPaymentSession` lets the webhook recognise a payment arriving on
+ * it. Best-effort expiry is still attempted, because when it does work it is
+ * strictly better.
+ *
+ * `priceRevision` is bumped so the next session gets a genuinely new gateway
+ * idempotency key. Without that, asking Stripe for a new session replays the
+ * original at the ORIGINAL price.
+ */
+export async function repriceOrder(
+  id: string,
+  input: { charges: ChargeInput[]; reason?: string },
+  ctx: OrderContext,
+): Promise<OrderDTO> {
+  await connectMongo();
+  if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
+  const doc = await Order.findById(id);
+  if (!doc) throw new NotFoundError("Order not found");
+  await assertOrderInScope(doc);
+
+  // Money mutation: admin-only, and not merely "can view all".
+  if (!roleHasPermission(ctx.actor.role, Permission.ORDER_UPDATE)) {
+    throw new ForbiddenError("You are not allowed to change an order's amount");
+  }
+
+  // A settled payment is historical fact. Re-pricing it would leave the
+  // gateway's record and ours disagreeing about what was collected, and this
+  // codebase has no refund or incremental-capture path to reconcile the
+  // difference (the PaymentGateway interface exposes neither).
+  if (doc.status === OrderStatus.PAID) {
+    throw new ConflictError(
+      "This order is already paid. Its amount can no longer be changed.",
+    );
+  }
+  if (doc.state === RecordState.ARCHIVED) {
+    throw new ConflictError("Cannot change the amount on an archived order");
+  }
+
+  const summary = summarizeCharges(input.charges);
+  if (summary.prepaid <= 0) {
+    throw new ValidationError(
+      "At least one prepaid charge is required to collect payment",
+    );
+  }
+
+  const previousAmount = doc.pricing.amount;
+  const previousCharges = (doc.charges ?? []).map((c) => ({
+    name: c.name,
+    amount: c.amount,
+    timing: c.timing,
+  }));
+
+  // A no-op edit must not burn a price revision or supersede a live session
+  // the customer is mid-checkout on.
+  const unchanged =
+    summary.prepaid === previousAmount &&
+    JSON.stringify(previousCharges) === JSON.stringify(summary.charges);
+  if (unchanged) {
+    return orderToDTO(doc.toObject() as OrderDoc & { _id: Types.ObjectId });
+  }
+
+  // Is there a session out there that could still take money at the OLD
+  // amount? `checkoutUrl` is the honest test: it is what the customer was
+  // actually sent, and it survives `failOrder`.
+  const hadLiveSession = Boolean(
+    doc.payment.checkoutUrl || doc.payment.stripeSessionId,
+  );
+
+  if (hadLiveSession) {
+    // Record the outgoing attempt BEFORE mutating, with the amount it was
+    // for. This is what makes a late webhook on it recognisable instead of
+    // silently applying at the new price.
+    doc.payment.attempts = [
+      ...(doc.payment.attempts ?? []),
+      {
+        gateway: (doc.payment.gateway ?? PaymentGatewayKey.STRIPE) as PaymentGatewayKey,
+        sessionId: doc.payment.stripeSessionId ?? null,
+        paymentIntentId: doc.payment.paymentIntentId ?? null,
+        checkoutUrl: doc.payment.checkoutUrl ?? null,
+        amount: previousAmount,
+        currency: doc.pricing.currency,
+        status: doc.payment.status,
+        failureReason: doc.payment.failureReason ?? null,
+        supersededReason: "REPRICED",
+        supersededAt: new Date(),
+        createdAt: doc.payment.initiatedAt ?? doc.createdAt ?? new Date(),
+      },
+    ];
+
+    // Best-effort only, and deliberately not trusted: Stripe's adapter
+    // swallows errors and returns void, PayPal cannot cancel an unapproved
+    // order at all. The recorded attempt above is the real protection.
+    if (doc.payment.stripeSessionId) {
+      try {
+        const gateway = await resolveGatewayForOrder(doc, null);
+        await gateway.expireSession(doc.payment.stripeSessionId);
+      } catch (err) {
+        logger.warn("orders.reprice_expire_failed", {
+          orderId: String(doc._id),
+          sessionId: doc.payment.stripeSessionId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    // Drop the customer-facing link so no surface keeps advertising a URL
+    // that collects the wrong amount. The ids are KEPT: a dispute or a late
+    // webhook still has to be routable to the attempt that created it.
+    doc.payment.checkoutUrl = null;
+    doc.payment.expiresAt = null;
+    // Status deliberately NOT reset to NOT_INITIATED. That would re-open
+    // `initiatePayment`'s `{status: NOT_INITIATED}` filter and make the
+    // order look like one that had never been billed, while an old payable
+    // link is still in the wild.
+    doc.payment.status = OrderStatus.FAILED;
+    doc.payment.failureReason = "Superseded by an amount change";
+    doc.status = OrderStatus.FAILED;
+  }
+
+  doc.charges = summary.charges;
+  doc.pricing.amount = summary.prepaid;
+  doc.payment.priceRevision = (doc.payment.priceRevision ?? 0) + 1;
+  await doc.save();
+
+  await recordAudit({
+    action: AuditAction.ORDER_UPDATED,
+    entityType: AuditEntity.ORDER,
+    entityId: String(doc._id),
+    actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+    request: ctx.request ?? null,
+    metadata: {
+      action: "amount_changed",
+      fromAmount: previousAmount,
+      toAmount: summary.prepaid,
+      currency: doc.pricing.currency,
+      fromCharges: previousCharges,
+      toCharges: summary.charges,
+      priceRevision: doc.payment.priceRevision,
+      supersededLiveSession: hadLiveSession,
+      reason: input.reason ?? null,
+    },
+  });
+
+  return orderToDTO(doc.toObject() as OrderDoc & { _id: Types.ObjectId });
+}
+
+/**
+ * Record the current checkout session as superseded and stand it down.
+ *
+ * Shared by the two things that can invalidate a live link: an amount change
+ * and an MCO change that re-prices. Extracted so both behave identically —
+ * a second copy of this is how one of them quietly stops recording the old
+ * amount.
+ *
+ * Returns whether there was anything to supersede.
+ */
+async function supersedeCurrentAttempt(
+  doc: OrderDocument,
+  reason: "GATEWAY_SWITCHED" | "REPRICED",
+  previousAmount: number,
+): Promise<boolean> {
+  const hadLiveSession = Boolean(
+    doc.payment.checkoutUrl || doc.payment.stripeSessionId,
+  );
+  if (!hadLiveSession) return false;
+
+  doc.payment.attempts = [
+    ...(doc.payment.attempts ?? []),
+    {
+      gateway: (doc.payment.gateway ?? PaymentGatewayKey.STRIPE) as PaymentGatewayKey,
+      sessionId: doc.payment.stripeSessionId ?? null,
+      paymentIntentId: doc.payment.paymentIntentId ?? null,
+      checkoutUrl: doc.payment.checkoutUrl ?? null,
+      amount: previousAmount,
+      currency: doc.pricing.currency,
+      status: doc.payment.status,
+      failureReason: doc.payment.failureReason ?? null,
+      supersededReason: reason,
+      supersededAt: new Date(),
+      createdAt: doc.payment.initiatedAt ?? doc.createdAt ?? new Date(),
+    },
+  ];
+
+  if (doc.payment.stripeSessionId) {
+    try {
+      const gateway = await resolveGatewayForOrder(doc, null);
+      await gateway.expireSession(doc.payment.stripeSessionId);
+    } catch (err) {
+      logger.warn("orders.supersede_expire_failed", {
+        orderId: String(doc._id),
+        sessionId: doc.payment.stripeSessionId,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  doc.payment.checkoutUrl = null;
+  doc.payment.expiresAt = null;
+  doc.payment.status = OrderStatus.FAILED;
+  doc.payment.failureReason =
+    reason === "REPRICED"
+      ? "Superseded by an amount change"
+      : "Superseded by a gateway change";
+  doc.status = OrderStatus.FAILED;
+  return true;
+}
+
+/** One field's before/after, for the audit trail. */
+interface FieldChange {
+  field: string;
+  from: unknown;
+  to: unknown;
+}
+
+/**
+ * MCO — apply a customer-requested change to an EXISTING booking.
+ *
+ * "MCO" here is a business operation, not an entity: the customer rings up
+ * and asks for a different car, a later return date, a corrected email. The
+ * order is amended in place. Nothing in this function creates an order, and
+ * `_id` / `orderNumber` are never assigned to.
+ *
+ * LIFECYCLE RULES ARE PER-FIELD, not a blanket status gate. A blanket
+ * "NOT_INITIATED only" rule would defeat the requirement outright, since the
+ * archetypal MCO — "extend my return date" — happens mid-rental, long after
+ * the link was paid. So:
+ *
+ *   descriptive fields (customer, vehicle, trip)
+ *       editable at ANY lifecycle point, including PAID. They describe the
+ *       booking, and the booking genuinely changed. They feed FUTURE links,
+ *       consent and evidence; they never rewrite an existing one.
+ *
+ *   money (charges / pricing.amount)
+ *       refused once PAID. A settled transaction is historical fact, and
+ *       this codebase has no refund or incremental-capture path to reconcile
+ *       a difference — `PaymentGateway` exposes neither.
+ *
+ * Historical accuracy is preserved by construction: consent snapshots and
+ * evidence rows are append-only and are not touched here, so a receipt keeps
+ * showing what the customer actually agreed to at the time.
+ */
+export async function applyOrderModification(
+  id: string,
+  input: ModifyOrderInput,
+  ctx: OrderContext,
+): Promise<{ order: OrderDTO; changes: FieldChange[]; amountChanged: boolean }> {
+  await connectMongo();
+  if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
+  const doc = await Order.findById(id);
+  if (!doc) throw new NotFoundError("Order not found");
+  await assertOrderInScope(doc);
+
+  if (!roleHasPermission(ctx.actor.role, Permission.ORDER_UPDATE)) {
+    throw new ForbiddenError("You are not allowed to modify this order");
+  }
+  if (doc.state === RecordState.ARCHIVED) {
+    throw new ConflictError("Cannot modify an archived order");
+  }
+
+  const changes: FieldChange[] = [];
+  const track = (field: string, from: unknown, to: unknown) => {
+    if (from instanceof Date || to instanceof Date) {
+      const f = from instanceof Date ? from.toISOString() : from;
+      const t = to instanceof Date ? to.toISOString() : to;
+      if (f !== t) changes.push({ field, from: f, to: t });
+      return;
+    }
+    if (from !== to) changes.push({ field, from, to });
+  };
+
+  // ─── Customer ──────────────────────────────────────────────────────────
+  if (input.customer) {
+    for (const key of ["name", "email", "phone"] as const) {
+      const next = input.customer[key];
+      if (next === undefined) continue;
+      track(`customer.${key}`, doc.customer[key], next);
+      doc.customer[key] = next;
+    }
+  }
+
+  // ─── Vehicle ───────────────────────────────────────────────────────────
+  if (input.vehicle) {
+    for (const key of ["company", "type"] as const) {
+      const next = input.vehicle[key];
+      if (next === undefined) continue;
+      track(`vehicle.${key}`, doc.vehicle[key], next);
+      doc.vehicle[key] = next;
+    }
+  }
+
+  // ─── Trip (dates carry both day and time) ──────────────────────────────
+  if (input.trip) {
+    if (input.trip.pickupDate !== undefined) {
+      track("trip.pickupDate", doc.trip.pickupDate, new Date(input.trip.pickupDate));
+      doc.trip.pickupDate = new Date(input.trip.pickupDate);
+    }
+    if (input.trip.dropoffDate !== undefined) {
+      track("trip.dropoffDate", doc.trip.dropoffDate, new Date(input.trip.dropoffDate));
+      doc.trip.dropoffDate = new Date(input.trip.dropoffDate);
+    }
+    for (const key of ["pickupLocation", "dropoffLocation"] as const) {
+      const next = input.trip[key];
+      if (next === undefined) continue;
+      track(`trip.${key}`, doc.trip[key] ?? null, next);
+      doc.trip[key] = next;
+    }
+    // Same invariant creation enforces: a booking cannot end before it starts.
+    if (doc.trip.dropoffDate <= doc.trip.pickupDate) {
+      throw new ValidationError("Drop-off must be after pick-up");
+    }
+  }
+
+  // ─── Money, if this change re-prices the booking ────────────────────────
+  const previousAmount = doc.pricing.amount;
+  let amountChanged = false;
+  let supersededLiveSession = false;
+
+  if (input.charges) {
+    const summary = summarizeCharges(input.charges);
+    if (summary.prepaid <= 0) {
+      throw new ValidationError(
+        "At least one prepaid charge is required to collect payment",
+      );
+    }
+    if (summary.prepaid !== previousAmount) {
+      // Money is the one thing a settled order will not give up.
+      if (doc.status === OrderStatus.PAID) {
+        throw new ConflictError(
+          "This order is already paid. Its amount can no longer be changed.",
+        );
+      }
+      amountChanged = true;
+      supersededLiveSession = await supersedeCurrentAttempt(
+        doc,
+        "REPRICED",
+        previousAmount,
+      );
+      doc.payment.priceRevision = (doc.payment.priceRevision ?? 0) + 1;
+      track("pricing.amount", previousAmount, summary.prepaid);
+    }
+    doc.charges = summary.charges;
+    doc.pricing.amount = summary.prepaid;
+  }
+
+  if (changes.length === 0) {
+    return {
+      order: orderToDTO(doc.toObject() as OrderDoc & { _id: Types.ObjectId }),
+      changes: [],
+      amountChanged: false,
+    };
+  }
+
+  await doc.save();
+
+  await recordAudit({
+    action: AuditAction.ORDER_UPDATED,
+    entityType: AuditEntity.ORDER,
+    entityId: String(doc._id),
+    actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+    request: ctx.request ?? null,
+    metadata: {
+      action: "mco_modified",
+      orderNumber: doc.orderNumber,
+      changes,
+      amountChanged,
+      supersededLiveSession,
+      priceRevision: doc.payment.priceRevision ?? 0,
+      reason: input.reason ?? null,
+    },
+  });
+
+  return {
+    order: orderToDTO(doc.toObject() as OrderDoc & { _id: Types.ObjectId }),
+    changes,
+    amountChanged,
+  };
+}
+
+/**
+ * REQ-2 — move an unpaid order to a DIFFERENT gateway, keeping the same order.
+ *
+ * The customer's Stripe card declined; the operator offers PayPal instead.
+ * Order #123 stays Order #123: nothing here creates an order, and `_id` /
+ * `orderNumber` are never assigned to.
+ *
+ * WHY THIS BYPASSES `resolveGatewayForOrder`. That helper treats an existing
+ * `payment.gateway` as authoritative and refuses to trade it, because the
+ * session, the webhook that settles it and the money all live in one
+ * merchant account — swapping it underneath a live session is how an earlier
+ * bug minted a Stripe session over a PayPal order. That rule is right for
+ * every implicit path and is left untouched. This is the one EXPLICIT path
+ * where an operator has decided to change gateway, so it resolves the target
+ * directly via `getGatewayForOrganization` — which still resolves credentials
+ * from the order's own organization, so the cross-brand settlement hole the
+ * pin exists to close stays closed.
+ *
+ * DOUBLE-PAYMENT POSITION, stated honestly. The outgoing session cannot be
+ * reliably killed: Stripe's `expireSession` swallows errors and returns void,
+ * PayPal has no cancel for an unapproved order, and a declined Stripe payment
+ * happens INSIDE a session that stays open. So two payable links can briefly
+ * coexist. Rather than pretend otherwise, the outgoing attempt is recorded as
+ * superseded, and `applyCheckoutPaid`'s gate turns any success on it into a
+ * flagged, audited competing payment instead of a second settlement. The
+ * first success to arrive establishes the payment state; the second is
+ * preserved for an operator to reconcile.
+ */
+export async function switchOrderGateway(
+  id: string,
+  input: { gateway: PaymentGatewayKey },
+  ctx: OrderContext,
+): Promise<{ order: OrderDTO; checkoutUrl: string }> {
+  await connectMongo();
+  if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
+  const doc = await Order.findById(id);
+  if (!doc) throw new NotFoundError("Order not found");
+  await assertOrderInScope(doc);
+
+  // ORDER_UPDATE (admin-only), NOT ORDER_REGENERATE_LINK — which STAFF also
+  // holds. Regenerating a link re-opens the SAME merchant relationship;
+  // switching gateway opens a second payable link on a DIFFERENT merchant
+  // account while the old one may still be live. That is the same class of
+  // action as re-pricing, so it carries the same permission.
+  if (!roleHasPermission(ctx.actor.role, Permission.ORDER_UPDATE)) {
+    throw new ForbiddenError("You are not allowed to change this order's gateway");
+  }
+  // A settled order has nothing left to collect, and issuing a second payable
+  // link against it is exactly the double-charge this feature must not create.
+  if (doc.status === OrderStatus.PAID) {
+    throw new ConflictError("Order is already paid");
+  }
+  if (doc.state === RecordState.ARCHIVED) {
+    throw new ConflictError("Cannot change the gateway on an archived order");
+  }
+  if (doc.payment.gateway === input.gateway) {
+    throw new ConflictError(
+      `This order is already on ${input.gateway}. Regenerate the link instead.`,
+    );
+  }
+
+  const orgId = doc.organizationId ? String(doc.organizationId) : null;
+  // Throws PaymentProviderNotEnabledError / NotConfiguredError when the
+  // organization has not switched the target on — a loud refusal rather than
+  // a silent fallback to whatever is configured.
+  const gateway = await getGatewayForOrganization(orgId, {
+    kind: "requested",
+    provider: input.gateway,
+  });
+
+  const previousGateway = doc.payment.gateway ?? null;
+  const previousAmount = doc.pricing.amount;
+
+  // Stand the outgoing attempt down BEFORE opening the new one, so a success
+  // arriving in between is already classifiable as superseded.
+  await supersedeCurrentAttempt(doc, "GATEWAY_SWITCHED", previousAmount);
+  await doc.save();
+
+  const settings = await getSettings();
+  const expiresAt = new Date(
+    Date.now() + settings.paymentExpiryHours * 60 * 60 * 1000,
+  );
+  const publicBrand = await resolvePublicBrand(orgId, await getBranding());
+  const productName = describeProductName({
+    bookingType: doc.bookingType,
+    provider: doc.provider?.id ?? resolveProvider(undefined).id,
+    vehicle: { company: doc.vehicle.company, type: doc.vehicle.type },
+  });
+  const description = describeProductDescription({
+    trip: {
+      pickupDate: doc.trip.pickupDate.toISOString(),
+      dropoffDate: doc.trip.dropoffDate.toISOString(),
+      pickupLocation: doc.trip.pickupLocation ?? null,
+      dropoffLocation: doc.trip.dropoffLocation ?? null,
+    },
+  });
+
+  let session: CreatedPaymentSession;
+  try {
+    session = await gateway.createSession({
+      // The switch itself changes the idempotency key via the gateway, but
+      // carrying the revision keeps a re-priced order from replaying an old
+      // session on the NEW gateway either.
+      priceRevision: doc.payment.priceRevision ?? 0,
+      orderId: String(doc._id),
+      orderNumber: doc.orderNumber,
+      amount: doc.pricing.amount,
+      currency: doc.pricing.currency,
+      customer: doc.customer,
+      productName,
+      description,
+      imageUrls: doc.vehicle.imageUrl ? [doc.vehicle.imageUrl] : undefined,
+      successUrl: settings.successRedirectUrl,
+      cancelUrl: settings.cancelRedirectUrl,
+      expiresAt,
+      metadata: {
+        orderId: String(doc._id),
+        orderNumber: doc.orderNumber,
+        bookingType: doc.bookingType,
+        actorId: ctx.actor.id,
+        actorEmail: ctx.actor.email,
+        appName: publicBrand.brandName,
+      },
+    });
+  } catch (err) {
+    logger.error("orders.gateway_switch_failed", {
+      orderId: String(doc._id),
+      from: previousGateway,
+      to: input.gateway,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    // The outgoing attempt is already recorded as superseded and its link is
+    // down. That is the safe direction to fail in: the order collects
+    // nothing until a link is successfully issued, rather than having two.
+    throw new PaymentError(
+      `Could not create the ${gateway.label} payment session for this order`,
+      err,
+    );
+  }
+
+  const initiatedAt = new Date();
+  doc.payment.gateway = input.gateway;
+  doc.payment.stripeSessionId = session.sessionId;
+  doc.payment.checkoutUrl = session.url;
+  doc.payment.paymentIntentId = null;
+  doc.payment.status = OrderStatus.LINK_GENERATED;
+  doc.payment.failureReason = null;
+  doc.payment.expiresAt = expiresAt;
+  doc.payment.initiatedAt = initiatedAt;
+  doc.status = OrderStatus.LINK_GENERATED;
+  // The incoming attempt joins the history immediately, so the order's own
+  // record shows both the failed Stripe try and the live PayPal one.
+  doc.payment.attempts = [
+    ...(doc.payment.attempts ?? []),
+    {
+      gateway: input.gateway,
+      sessionId: session.sessionId,
+      paymentIntentId: null,
+      checkoutUrl: session.url,
+      amount: doc.pricing.amount,
+      currency: doc.pricing.currency,
+      status: OrderStatus.LINK_GENERATED,
+      failureReason: null,
+      supersededReason: null,
+      supersededAt: null,
+      createdAt: initiatedAt,
+    },
+  ];
+  await doc.save();
+
+  await recordAudit({
+    action: AuditAction.ORDER_PAYMENT_LINK_REGENERATED,
+    entityType: AuditEntity.ORDER,
+    entityId: String(doc._id),
+    actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+    request: ctx.request ?? null,
+    metadata: {
+      action: "gateway_switched",
+      orderNumber: doc.orderNumber,
+      fromGateway: previousGateway,
+      toGateway: input.gateway,
+      amount: doc.pricing.amount,
+      currency: doc.pricing.currency,
+      newSessionId: session.sessionId,
+    },
+  });
+
+  publishEvent({
+    type: DomainEventType.ORDER_LINK_REGENERATED,
+    audience: { kind: "all" },
+    actor: { id: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+    payload: {
+      orderId: String(doc._id),
+      orderNumber: doc.orderNumber,
+      gateway: input.gateway,
+    },
+  });
+
+  return {
+    order: orderToDTO(doc.toObject() as OrderDoc & { _id: Types.ObjectId }),
+    checkoutUrl: session.url,
+  };
+}
+
+/**
+ * The gateways this order could be switched to.
+ *
+ * `current` is what it collects on today; `options` excludes that one and
+ * anything the order's organization has not enabled. MANUAL is excluded
+ * because it is not a checkout gateway — offline payment is recorded, never
+ * linked to.
+ */
+export async function getOrderGatewayOptions(
+  id: string,
+): Promise<{ current: PaymentGatewayKey | null; options: PaymentGatewayKey[] }> {
+  await connectMongo();
+  if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
+  const doc = await Order.findById(id).lean<OrderDoc & { _id: Types.ObjectId }>();
+  if (!doc) throw new NotFoundError("Order not found");
+  await assertOrderInScope(doc);
+
+  const org = await getOrganization();
+  const enabled = enabledProvidersOf({
+    payments: (org as unknown as { payments?: { enabledProviders?: PaymentGatewayKey[]; provider?: PaymentGatewayKey } }).payments,
+  }) as PaymentGatewayKey[];
+
+  const current = (doc.payment.gateway as PaymentGatewayKey | null) ?? null;
+  return {
+    current,
+    options: enabled.filter(
+      (g) => g !== current && g !== PaymentGatewayKey.MANUAL,
+    ),
+  };
+}
+
+/**
+ * REQ-3 — record a payment that was collected OUTSIDE PayOps.
+ *
+ * The card is charged on a physical terminal, by bank transfer, or in cash.
+ * PayOps never sees it. This function records the confirmation and nothing
+ * else: no gateway call, no session, no fabricated transaction. That is why
+ * `MANUAL` is not in the gateway registry's SUPPORTED list and never will be
+ * — it is a bookkeeping outcome, not a checkout provider.
+ *
+ * DOUBLE-PAYMENT SAFETY, enforced here and not merely warned about in the UI.
+ * A FAILED order routinely still holds a payable link: `failOrder` changes
+ * three status fields and never expires the session, and a Stripe decline
+ * happens inside a checkout session that stays open. So "the order failed"
+ * is NOT evidence that no money can still arrive. Before settling, any live
+ * session is explicitly stood down and recorded as superseded, which makes a
+ * later success on it classifiable — `applyCheckoutPaid`'s gate then turns it
+ * into a flagged competing payment instead of a second settlement.
+ *
+ * CONSENT is required exactly as it is for a gateway payment. The manual path
+ * changes how money moves, not whether the customer agreed to the terms.
+ */
+export async function recordManualPayment(
+  id: string,
+  input: RecordManualPaymentInput,
+  ctx: OrderContext,
+): Promise<OrderDTO> {
+  await connectMongo();
+  if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
+  const doc = await Order.findById(id);
+  if (!doc) throw new NotFoundError("Order not found");
+  await assertOrderInScope(doc);
+
+  if (!roleHasPermission(ctx.actor.role, Permission.ORDER_UPDATE)) {
+    throw new ForbiddenError("You are not allowed to record payments");
+  }
+  if (doc.state === RecordState.ARCHIVED) {
+    throw new ConflictError("Cannot record a payment on an archived order");
+  }
+  // Idempotent by state: a second recording finds the order already settled
+  // and refuses rather than stacking a duplicate payment.
+  if (doc.status === OrderStatus.PAID) {
+    throw new ConflictError("This order is already paid");
+  }
+  if (doc.pricing.amount <= 0) {
+    throw new ValidationError("This order has nothing to collect");
+  }
+
+  // Consent is not waived by paying offline.
+  if (doc.consent?.status !== ConsentStatus.RECEIVED) {
+    throw new ConflictError(
+      "The customer has not completed consent yet. Send the consent request and wait for their signature before recording payment.",
+    );
+  }
+
+  // Stand down anything still payable BEFORE settling, so a race with a
+  // customer paying the old link lands on the superseded path.
+  const supersededLiveSession = await supersedeCurrentAttempt(
+    doc,
+    "GATEWAY_SWITCHED",
+    doc.pricing.amount,
+  );
+  if (supersededLiveSession) await doc.save();
+
+  const fresh = await Order.findById(id);
+  if (!fresh) throw new NotFoundError("Order not found");
+
+  // The full prepaid amount, always. Partial and split payments are out of
+  // scope, and passing `amountTotal: null` makes the recorded figure equal
+  // `pricing.amount` by construction rather than by trusting an input.
+  const result = await applyCheckoutPaid(fresh, {
+    eventId: `manual:${String(fresh._id)}:${fresh.payment.priceRevision ?? 0}`,
+    sessionId: null,
+    paymentIntentId: null,
+    amountTotal: null,
+    paidAtMs: Date.now(),
+    source: "manual",
+    actor: {
+      userId: ctx.actor.id,
+      name: ctx.actor.name,
+      role: ctx.actor.role,
+    },
+    manualMethod: input.method,
+    manualReference: input.reference,
+  });
+
+  if (result.duplicate) {
+    throw new ConflictError("This payment has already been recorded");
+  }
+
+  // MANUAL has no gateway session, so the pointer must stop naming one.
+  // Leaving the old session id in place makes `classifyPaymentSession` read
+  // a dead Stripe session as the order's CURRENT one, which is exactly how a
+  // late payment on it slipped past the gate. The session survives in
+  // `attempts` for dispute routing; only the "what are we collecting on now"
+  // pointer is cleared.
+  await Order.updateOne(
+    { _id: fresh._id },
+    { $set: { "payment.stripeSessionId": null, "payment.checkoutUrl": null } },
+  );
+
+  await recordAudit({
+    action: AuditAction.MANUAL_PAYMENT_RECORDED,
+    entityType: AuditEntity.ORDER,
+    entityId: String(fresh._id),
+    actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+    request: ctx.request ?? null,
+    metadata: {
+      orderNumber: fresh.orderNumber,
+      amount: fresh.pricing.amount,
+      currency: fresh.pricing.currency,
+      method: input.method,
+      reference: input.reference,
+      notes: input.notes ?? null,
+      supersededLiveSession,
+      priceRevision: fresh.payment.priceRevision ?? 0,
+    },
+  });
+
+  const after = await Order.findById(id).lean<OrderDoc & { _id: Types.ObjectId }>();
+  return orderToDTO(after!);
 }

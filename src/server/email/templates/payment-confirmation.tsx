@@ -270,11 +270,16 @@ export function PaymentConfirmationEmail({
             lineHeight: "16px",
           }}
         >
+          {/* The card sentence is scoped to the gateway branch on purpose.
+              It rendered unconditionally before, which made it a false
+              statement on any payment we did not process — most obviously a
+              manual payment, where the card is charged on an external
+              terminal and PayOps never sees it. Claiming to encrypt card
+              details we never received is both untrue and the kind of
+              assurance a customer could reasonably rely on. */}
           {gatewayLabel
-            ? `Payment processed securely by ${gatewayLabel} — PCI-DSS Level 1 certified.`
-            : "Payment processed securely."}{" "}
-          Your card details are encrypted end-to-end and never stored on our
-          servers.
+            ? `Payment processed securely by ${gatewayLabel} — PCI-DSS Level 1 certified. Your card details are encrypted end-to-end and never stored on our servers.`
+            : "This payment was recorded by our team. No card details are held in this system."}
         </Text>
       </Section>
 

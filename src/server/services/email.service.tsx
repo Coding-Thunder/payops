@@ -10,7 +10,7 @@ import {
   EmailKind,
   OrderEvidenceActorType,
   OrderEvidenceEventType,
-  type PaymentGatewayKey,
+  PaymentGatewayKey,
   type UserRole,
 } from "@/lib/constants/enums";
 import { PaymentGatewayLabel as PAYMENT_GATEWAY_LABELS } from "@/lib/constants/labels";
@@ -280,9 +280,16 @@ export async function sendPaymentConfirmationEmail(
     cancellationPolicyVersion: order.policy?.version ?? undefined,
     // The receipt asserted "processed securely by Stripe — PCI-DSS Level 1"
     // to every brand. Say who actually took the money, or say nothing.
-    gatewayLabel: order.payment.gateway
-      ? PAYMENT_GATEWAY_LABELS[order.payment.gateway as PaymentGatewayKey]
-      : null,
+    // MANUAL is deliberately mapped to null rather than "Manual invoice".
+    // `gatewayLabel` drives the "processed securely by X — PCI-DSS" and
+    // card-encryption copy, and none of that is true of money taken on an
+    // external terminal. Null selects the accurate alternative wording, and
+    // keeps the confirmation free of any gateway name, exactly as an offline
+    // payment requires.
+    gatewayLabel:
+      order.payment.gateway && order.payment.gateway !== PaymentGatewayKey.MANUAL
+        ? PAYMENT_GATEWAY_LABELS[order.payment.gateway as PaymentGatewayKey]
+        : null,
   };
   const html = await render(<PaymentConfirmationEmail {...props} />);
   const text = await render(<PaymentConfirmationEmail {...props} />, {
