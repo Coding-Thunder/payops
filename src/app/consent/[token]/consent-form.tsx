@@ -6,7 +6,7 @@ import { ShieldCheckIcon } from "lucide-react";
 import { api, ApiClientError } from "@/lib/api-client";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BookingTypeLabel } from "@/lib/constants/labels";
-import { formatCurrency, formatDateTime } from "@/lib/format";
+import { formatCurrency, formatDateTimeUtc } from "@/lib/format";
 import type { BrandingDTO, PublicConsentView } from "@/types";
 
 interface ConsentFormProps {
@@ -49,6 +49,7 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
   const [redirecting, setRedirecting] = useState(false);
   const [fallbackUrl, setFallbackUrl] = useState<string | null>(null);
   const fallbackTimer = useRef<number | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   /** Imperative redirect with safety net. Browsers handle
    *  `location.replace` asynchronously; on mobile the navigation can
@@ -86,11 +87,41 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
     };
   }, []);
 
+  /**
+   * Adopt a value the browser put in the field without telling React.
+   *
+   * React 19's `initInput` deliberately skips writing its value into the DOM
+   * during hydration, and dispatches no synthetic change for text that is
+   * already there. Autofill and password managers routinely assign `.value`
+   * directly, and this field invites exactly that — it is `autoComplete="name"`
+   * with the customer's own name as the placeholder. The result is a customer
+   * looking at their name in the box while `signature` state is still "",
+   * being told to "type your full name".
+   *
+   * Reading the element is the authoritative fix: the DOM is where the value
+   * actually is. Called on mount for pre-hydration autofill, and again at
+   * submit for anything assigned later.
+   */
+  const adoptDomValue = useCallback((): string => {
+    const dom = inputRef.current?.value ?? "";
+    if (dom && dom !== signature) {
+      setSignature(dom);
+      return dom;
+    }
+    return signature;
+  }, [signature]);
+
+  useEffect(() => {
+    adoptDomValue();
+    // Mount only: later changes arrive through onChange like normal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (submitting || redirecting) return;
 
-    const trimmed = signature.trim();
+    const trimmed = adoptDomValue().trim();
     if (trimmed.length < 2) {
       setError("Please type your full name as your digital signature.");
       return;
@@ -173,6 +204,7 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
           </label>
           <input
             id="signedName"
+            ref={inputRef}
             type="text"
             value={signature}
             onChange={(e) => setSignature(e.target.value)}
@@ -296,16 +328,16 @@ function SummaryBlock({ view }: { view: PublicConsentView }) {
           label="Pick-up"
           value={
             snapshot.pickupLocation
-              ? `${formatDateTime(snapshot.pickupDate)} · ${snapshot.pickupLocation}`
-              : formatDateTime(snapshot.pickupDate)
+              ? `${formatDateTimeUtc(snapshot.pickupDate)} · ${snapshot.pickupLocation}`
+              : formatDateTimeUtc(snapshot.pickupDate)
           }
         />
         <DetailRow
           label="Drop-off"
           value={
             snapshot.dropoffLocation
-              ? `${formatDateTime(snapshot.dropoffDate)} · ${snapshot.dropoffLocation}`
-              : formatDateTime(snapshot.dropoffDate)
+              ? `${formatDateTimeUtc(snapshot.dropoffDate)} · ${snapshot.dropoffLocation}`
+              : formatDateTimeUtc(snapshot.dropoffDate)
           }
         />
       </dl>
