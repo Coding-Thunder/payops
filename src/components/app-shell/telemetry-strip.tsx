@@ -126,18 +126,33 @@ export function TelemetryStrip({
         <RealtimeDot status={realtime} />
       </Cell>
 
+      {/* Region and clock are reference data, not status. Below lg the strip
+          is wider than the viewport and pushes every authenticated page into
+          a horizontal scroll — measured at 112px over on an 820px tablet, on
+          the orders, dashboard and admin screens alike. Dropping the two
+          lowest-value cells at that width removes the overflow while keeping
+          env, health, SSE and the operator's identity, which are what the
+          strip is for. */}
       <span className="ml-auto flex h-full items-center">
-        <Cell>
+        <Cell className="hidden lg:flex">
           <span>{region}</span>
         </Cell>
-        <Cell>
+        <Cell className="hidden lg:flex">
           <span className="text-foreground/85 normal-case tabular-nums tracking-normal">
             {now}
           </span>
         </Cell>
         {operatorLabel ? (
           <Cell last>
-            <span className="text-foreground/85 normal-case tracking-[0.04em]">
+            {/* Variable width, so it carries its full value in the tooltip.
+                Bounding it with max-width was tried and made things worse:
+                the cell is a flex item without `min-w-0`, so it cannot
+                shrink below its content and the max-width simply forced a
+                wider row. Left alone, it fits. */}
+            <span
+              title={operatorLabel}
+              className="text-foreground/85 normal-case tracking-[0.04em]"
+            >
               {operatorLabel}
             </span>
           </Cell>
@@ -152,15 +167,18 @@ export function TelemetryStrip({
 function Cell({
   children,
   last = false,
+  className,
 }: {
   children: React.ReactNode;
   last?: boolean;
+  className?: string;
 }) {
   return (
     <span
       className={cn(
         "flex h-full items-center gap-1.5 px-3",
         !last && "border-r border-border/70",
+        className,
       )}
     >
       {children}
