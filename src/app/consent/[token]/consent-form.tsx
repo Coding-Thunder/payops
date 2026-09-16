@@ -169,6 +169,33 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
     return <ConfirmedShell view={view} branding={branding} />;
   }
 
+  // States where the form must not be offered again. A used link used to
+  // show the signature form a second time — even on a paid booking — and an
+  // outdated request could still be signed.
+  if (view.orderPaid) {
+    return (
+      <NoticeShell
+        branding={branding}
+        title="This booking is already paid"
+        body="Thank you — there is nothing further to do. Your confirmation email has the details."
+      />
+    );
+  }
+  if (view.outdated) {
+    return (
+      <NoticeShell
+        branding={branding}
+        title="This request has been updated"
+        body="The booking changed after this email was sent. Please use the most recent email we sent you to review and confirm the current details."
+      />
+    );
+  }
+  if (view.alreadyConfirmedAt && !view.paymentUrl) {
+    return <ConfirmedShell view={view} branding={branding} />;
+  }
+
+  const manual = view.collection === "MANUAL";
+
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="bg-gradient-to-br from-slate-50 via-white to-white px-6 pt-8 pb-6 sm:px-8 sm:pt-10">
@@ -180,8 +207,9 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
           Hi {view.customerName.split(" ")[0]},
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-slate-600">
-          Review the details below, sign with your full name, and you&apos;ll
-          continue to {view.brandName}&apos;s secure Stripe checkout.
+          {manual
+            ? "Review the details below and sign with your full name. Our team will then arrange payment with you — there is nothing to pay on this page."
+            : `Review the details below, sign with your full name, and you'll continue to ${view.brandName}'s secure checkout.`}
         </p>
       </div>
 
@@ -253,15 +281,17 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
               <Spinner />
               Confirming…
             </>
+          ) : manual ? (
+            "Confirm booking"
           ) : (
             "Confirm & Continue to Payment"
           )}
         </button>
 
         <p className="text-center text-[11px] text-slate-500">
-          You&apos;ll be taken directly to Stripe Checkout to complete
-          payment. Your timestamp and IP are recorded against this booking
-          as evidence of consent.{" "}
+          {manual
+            ? "Your timestamp and IP are recorded against this booking as evidence of consent. "
+            : "You'll be taken to secure checkout to complete payment. Your timestamp and IP are recorded against this booking as evidence of consent. "}
           <a
             href={`mailto:${branding.supportEmail}`}
             className="text-slate-600 underline-offset-2 hover:underline"
@@ -371,9 +401,42 @@ function ConfirmedShell({
         Thank you — your booking is confirmed
       </h1>
       <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-slate-600">
-        We have recorded your confirmation for {view.brandName}. Our team will
-        take care of the payment with you directly — there is nothing further
-        for you to do here.
+        {view.collection === "MANUAL"
+          ? `We have recorded your confirmation for ${view.brandName}. Our team will take care of the payment with you directly — there is nothing further for you to do here.`
+          : `We have recorded your confirmation for ${view.brandName}. We will email you a secure payment link to complete your booking.`}
+      </p>
+      <p className="mt-4 text-[11px] text-slate-500">
+        Questions?{" "}
+        <a
+          href={`mailto:${branding.supportEmail}`}
+          className="text-slate-600 underline-offset-2 hover:underline"
+        >
+          {branding.supportEmail}
+        </a>
+      </p>
+    </div>
+  );
+}
+
+function NoticeShell({
+  title,
+  body,
+  branding,
+}: {
+  title: string;
+  body: string;
+  branding: BrandingDTO;
+}) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white px-6 py-10 text-center shadow-sm sm:px-8">
+      <div className="mx-auto flex size-10 items-center justify-center rounded-full bg-slate-100">
+        <ShieldCheckIcon className="size-5 text-slate-600" aria-hidden />
+      </div>
+      <h1 className="mt-4 text-xl font-semibold tracking-tight text-slate-900">
+        {title}
+      </h1>
+      <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-slate-600">
+        {body}
       </p>
       <p className="mt-4 text-[11px] text-slate-500">
         Questions?{" "}
@@ -408,7 +471,7 @@ function RedirectingShell({
         </h1>
         <p className="mt-1.5 max-w-md text-sm text-slate-600">
           We&apos;ve recorded your acknowledgement. You&apos;re being taken
-          straight to Stripe Checkout to complete payment.
+          straight to secure checkout to complete payment.
         </p>
         {fallbackUrl ? (
           <div className="mt-6 w-full max-w-sm rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-left">
@@ -416,7 +479,7 @@ function RedirectingShell({
               Redirect failed.
             </p>
             <p className="mt-1 text-[11px] text-amber-800">
-              Your browser didn&apos;t open Stripe automatically. Continue
+              Your browser didn&apos;t open the checkout automatically. Continue
               securely below.
             </p>
             <a

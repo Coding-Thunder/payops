@@ -25,6 +25,9 @@ interface DateTimePickerProps {
   className?: string;
   id?: string;
   ariaInvalid?: boolean;
+  /** Forwarded by `<FormControl>` so the field's error is read out when the
+   *  trigger is focused. */
+  "aria-describedby"?: string;
 }
 
 const TRIGGER_FORMAT_DESKTOP = "EEE, d MMM yyyy · HH:mm";
@@ -45,6 +48,7 @@ export function DateTimePicker({
   className,
   id,
   ariaInvalid,
+  "aria-describedby": ariaDescribedBy,
 }: DateTimePickerProps) {
   const parsed = React.useMemo(() => {
     if (!value) return null;
@@ -102,6 +106,7 @@ export function DateTimePicker({
           variant="outline"
           disabled={disabled}
           aria-invalid={ariaInvalid}
+          aria-describedby={ariaDescribedBy}
           className={cn(
             "w-full justify-start text-left font-normal tabular-nums",
             !parsed && "text-muted-foreground",
@@ -122,9 +127,14 @@ export function DateTimePicker({
           "rounded-xl border border-border/60",
           "shadow-[0_8px_24px_-8px_rgba(15,23,42,0.18),0_2px_6px_-2px_rgba(15,23,42,0.08)]",
         )}
-        onOpenAutoFocus={(e) => e.preventDefault()}
+        // Focus moves INTO the calendar so the date can be chosen with the
+        // keyboard (arrow keys + Enter). Cancelling the auto-focus left focus
+        // on the trigger, and since the popover renders at the end of the
+        // document, Tab never reached the days: keyboard-only operators
+        // could not pick a date at all.
       >
         <Calendar
+          autoFocus
           mode="single"
           selected={parsed ?? undefined}
           onSelect={onSelectDate}

@@ -85,11 +85,15 @@ export function summarizeCharges(
     };
   }
 
+  // Sum the ROUNDED lines — the same figures the customer is shown. Summing
+  // the raw amounts and rounding once could make the lines a customer reads
+  // add up to a cent more (or less) than the payment link charges.
   let prepaid = 0;
   let dueAtCounter = 0;
   for (const c of list) {
-    if (c.timing === PaymentTiming.DUE_AT_COUNTER) dueAtCounter += c.amount;
-    else prepaid += c.amount;
+    const amount = round2(c.amount);
+    if (c.timing === PaymentTiming.DUE_AT_COUNTER) dueAtCounter += amount;
+    else prepaid += amount;
   }
   prepaid = round2(prepaid);
   dueAtCounter = round2(dueAtCounter);

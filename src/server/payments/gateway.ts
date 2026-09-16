@@ -62,6 +62,41 @@ export interface CreatePaymentSessionInput {
    * so every order that has never been re-priced behaves identically.
    */
   priceRevision?: number;
+  /**
+   * Which checkout attempt this is for the order, counted by the attempts
+   * already recorded in `payment.attempts[]`.
+   *
+   * The price revision alone is not enough. Regenerating a link, or switching
+   * back to a gateway, asks for a NEW session at an UNCHANGED revision — and
+   * with the same key the gateway either refuses the call (the parameters
+   * differ) or hands back the session that was just expired. Every attempt
+   * that replaces a session records the outgoing one first, so this ordinal
+   * is strictly increasing per session.
+   *
+   * Absent or 0 keeps the key used before this field existed, so an order's
+   * first session is unchanged.
+   */
+  attempt?: number;
+}
+
+/**
+ * The idempotency key for creating a checkout session, shared by every
+ * gateway adapter so they cannot drift apart.
+ *
+ *   order:<id>:checkout            first attempt, never re-priced
+ *   order:<id>:checkout:r<rev>     after a re-price
+ *   …:a<n>                         the n-th replacement session
+ */
+export function checkoutRequestKey(input: {
+  orderId: string;
+  priceRevision?: number;
+  attempt?: number;
+}): string {
+  const base = `order:${input.orderId}:checkout`;
+  const rev = input.priceRevision ?? 0;
+  const attempt = input.attempt ?? 0;
+  const withRev = rev > 0 ? `${base}:r${rev}` : base;
+  return attempt > 0 ? `${withRev}:a${attempt}` : withRev;
 }
 
 export interface CreatedPaymentSession {

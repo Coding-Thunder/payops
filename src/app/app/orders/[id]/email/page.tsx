@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { EmailComposePageContent } from "@/components/features/orders/email-compose-page-content";
-import { Permission } from "@/lib/constants/permissions";
+import { Permission, roleHasPermission } from "@/lib/constants/permissions";
 import { ForbiddenError, NotFoundError } from "@/lib/errors";
 import { requirePermission } from "@/server/auth/session";
 import { getOrderById } from "@/server/services/order.service";
@@ -30,5 +30,10 @@ export default async function EmailComposeRoute({
     if (err instanceof ForbiddenError) notFound();
     throw err;
   }
-  return <EmailComposePageContent orderId={id} />;
+  return (
+    <EmailComposePageContent
+      orderId={id}
+      canEditOrder={roleHasPermission(user.role, Permission.ORDER_UPDATE)}
+    />
+  );
 }

@@ -33,6 +33,9 @@ interface ProviderSelectorProps {
   placeholder?: string;
   /** Optional id wired up by `<FormControl>` / `<Label htmlFor>`. */
   id?: string;
+  /** Forwarded by `<FormControl>` so the field's description and error are
+   *  read out when the trigger is focused. */
+  "aria-describedby"?: string;
 }
 
 /**
@@ -48,6 +51,7 @@ export function ProviderSelector({
   invalid,
   placeholder = "Select a rental provider",
   id,
+  "aria-describedby": ariaDescribedBy,
 }: ProviderSelectorProps) {
   const [open, setOpen] = useState(false);
   const selected = value ? providers.find((p) => p.key === value) ?? null : null;
@@ -62,6 +66,7 @@ export function ProviderSelector({
           role="combobox"
           aria-expanded={open}
           aria-invalid={invalid || undefined}
+          aria-describedby={ariaDescribedBy}
           disabled={disabled}
           className={cn(
             "h-12 w-full justify-between px-3 font-normal",

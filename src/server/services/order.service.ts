@@ -28,9 +28,15 @@ import { roleHasPermission, Permission } from "@/lib/constants/permissions";
 import { DomainEventType } from "@/lib/constants/events";
 import { resolveProvider } from "@/lib/constants/providers";
 import { summarizeCharges } from "@/lib/charges";
+import { hasCustomerConsent } from "@/lib/consent";
 import { logger } from "@/lib/logger";
 import { publishEvent } from "@/server/events/bus";
-import { Order, type OrderDoc, type OrderDocument } from "@/server/db/models";
+import {
+  Order,
+  Organization,
+  type OrderDoc,
+  type OrderDocument,
+} from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 import {
   belongsToScope,
@@ -258,6 +264,7 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
         ? doc.consent.verifiedAt.toISOString()
         : null,
       method: (doc.consent?.method as ConsentMethod | null | undefined) ?? null,
+      collectionMethod: doc.consent?.collectionMethod ?? null,
     },
     dispute: doc.dispute
       ? {
@@ -592,6 +599,19 @@ export async function initiatePayment(
     doc.payment.stripeSessionId &&
     doc.payment.checkoutUrl
   ) {
+    // Asking for a DIFFERENT gateway than the one already holding a live
+    // link used to return that link silently, so an operator who picked
+    // PayPal was told a link was ready when it was still Stripe. Moving
+    // gateways is its own action, with its own safeguards.
+    if (
+      options.gateway &&
+      doc.payment.gateway &&
+      options.gateway !== doc.payment.gateway
+    ) {
+      throw new ConflictError(
+        `This order already has a ${doc.payment.gateway} payment link. Use "Try another gateway" on the order page to move it to ${options.gateway}.`,
+      );
+    }
     return {
       order: orderToDTO(
         doc.toObject({ getters: false }) as OrderDoc & { _id: Types.ObjectId },
@@ -648,6 +668,7 @@ export async function initiatePayment(
   try {
     session = await gateway.createSession({
       priceRevision: doc.payment.priceRevision ?? 0,
+      attempt: (doc.payment.attempts ?? []).length,
       orderId: String(doc._id),
       orderNumber: doc.orderNumber,
       amount: doc.pricing.amount,
@@ -692,7 +713,16 @@ export async function initiatePayment(
 
   const result: TxOut = await withTx(async (txSession) => {
     const updated = await Order.findOneAndUpdate(
-      { _id: doc._id, status: OrderStatus.NOT_INITIATED },
+      {
+        _id: doc._id,
+        status: OrderStatus.NOT_INITIATED,
+        // The session above was created for THIS amount. A re-price landing
+        // meanwhile must make this write miss, or the order would go live
+        // on a link that collects an amount it no longer asks for. The
+        // raced branch below cancels the orphaned session.
+        "pricing.amount": doc.pricing.amount,
+        "payment.priceRevision": revisionCondition(doc),
+      },
       {
         $set: {
           status: OrderStatus.LINK_GENERATED,
@@ -785,7 +815,7 @@ export async function initiatePayment(
   if (result.kind === "raced") {
     // Another concurrent call flipped us out of NOT_INITIATED. Bin the
     // brand-new orphan gateway session and return the existing state.
-    void gateway.expireSession(session.sessionId);
+    await cancelOrphanSession(doc._id, gateway, session.sessionId);
     const racedDoc = await Order.findById(id).lean<
       OrderDoc & { _id: Types.ObjectId }
     >();
@@ -1141,24 +1171,42 @@ export async function regeneratePaymentLink(
     Date.now() + settings.paymentExpiryHours * 60 * 60 * 1000,
   );
 
-  // Expire the previous session. Stripe cancels it; PayPal has no cancel for
-  // an unapproved order and its adapter logs a deliberate no-op.
-  if (doc.payment.stripeSessionId) {
-    try {
-      await gateway.expireSession(doc.payment.stripeSessionId);
-    } catch (err) {
-      logger.warn("orders.previous_session_expire_failed", {
-        sessionId: doc.payment.stripeSessionId,
-        gateway: gateway.key,
-        err: err instanceof Error ? err.message : String(err),
-      });
-    }
+  // Record the outgoing session BEFORE replacing it, then expire it.
+  //
+  // This used to expire the old session without recording it. The pointer
+  // then moved to the new session and nothing remembered the old one, so a
+  // late success on it classified as "unknown" and settled the order at
+  // whatever amount it reported — and the customer's real payment on the
+  // NEW link was then dropped as a duplicate. `supersedeCurrentAttempt`
+  // records it (skipping a session a re-price already recorded) and does the
+  // best-effort expire.
+  //
+  // Persisted immediately, in the same safe direction as a gateway switch:
+  // if the new session cannot be created, the order shows no link rather
+  // than advertising one that was just cancelled.
+  const readRevision = revisionCondition(doc);
+  const readAmount = doc.pricing.amount;
+  const readRegenerateUpdatedAt = doc.updatedAt;
+  const supersededNow = await supersedeCurrentAttempt(
+    doc,
+    "REGENERATED",
+    doc.pricing.amount,
+  );
+  if (supersededNow) {
+    await saveIfUnchanged(doc, {
+      status: { $ne: OrderStatus.PAID },
+      "payment.priceRevision": readRevision,
+      "pricing.amount": readAmount,
+      // Two regenerate clicks racing: only one may proceed to mint a session.
+      updatedAt: readRegenerateUpdatedAt,
+    });
   }
 
   let session: CreatedPaymentSession;
   try {
     session = await gateway.createSession({
       priceRevision: doc.payment.priceRevision ?? 0,
+      attempt: (doc.payment.attempts ?? []).length,
       orderId: String(doc._id),
       orderNumber: doc.orderNumber,
       // Regeneration reuses the snapshot already attached to the order —
@@ -1222,8 +1270,29 @@ export async function regeneratePaymentLink(
   // Transactional: order save + audit + evidence. The Stripe session
   // is already created above — if the tx aborts we don't roll it back
   // but the next regenerate call will expire-and-replace it.
+  const regenerateSavedAt = doc.updatedAt;
   await withTx(async (txSession) => {
-    await doc.save(sessionOpt(txSession));
+    try {
+      // Nothing may have moved since the session was created: a payment, a
+      // re-price or a second regenerate would each make this link wrong.
+      await saveIfUnchanged(
+        doc,
+        {
+          status: { $ne: OrderStatus.PAID },
+          "payment.priceRevision": readRevision,
+          "pricing.amount": readAmount,
+          updatedAt: regenerateSavedAt,
+        },
+        {
+          session: txSession,
+          message:
+            "This order changed while the new link was being created. The new link was cancelled — reload and try again.",
+        },
+      );
+    } catch (err) {
+      await cancelOrphanSession(doc._id, gateway, session.sessionId);
+      throw err;
+    }
 
     await recordAudit(
       {
@@ -1651,6 +1720,9 @@ export async function reconcileOrderPayment(
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
   const doc = await Order.findById(id);
   if (!doc) throw new NotFoundError("Order not found");
+  // Same tenancy rule as every other order route; this was the one path
+  // without it.
+  await assertOrderInScope(doc);
 
   if (ctx?.actor) {
     const canSeeAll = roleHasPermission(
@@ -1896,68 +1968,29 @@ export async function repriceOrder(
     return orderToDTO(doc.toObject() as OrderDoc & { _id: Types.ObjectId });
   }
 
-  // Is there a session out there that could still take money at the OLD
-  // amount? `checkoutUrl` is the honest test: it is what the customer was
-  // actually sent, and it survives `failOrder`.
-  const hadLiveSession = Boolean(
-    doc.payment.checkoutUrl || doc.payment.stripeSessionId,
+  // Stand down any session that could still take money at the OLD amount,
+  // recording it with the amount it was for so a late webhook on it is
+  // recognisable. Shared with every other supersede path, which also stops a
+  // second re-price from recording the same dead session twice. The ids stay
+  // on the order: a dispute or a late webhook must remain routable.
+  //
+  // Status deliberately NOT reset to NOT_INITIATED. That would re-open
+  // `initiatePayment`'s `{status: NOT_INITIATED}` filter and make the order
+  // look like one that had never been billed, while an old payable link is
+  // still in the wild.
+  const readUpdatedAt = doc.updatedAt;
+  const hadLiveSession = await supersedeCurrentAttempt(
+    doc,
+    "REPRICED",
+    previousAmount,
   );
-
-  if (hadLiveSession) {
-    // Record the outgoing attempt BEFORE mutating, with the amount it was
-    // for. This is what makes a late webhook on it recognisable instead of
-    // silently applying at the new price.
-    doc.payment.attempts = [
-      ...(doc.payment.attempts ?? []),
-      {
-        gateway: (doc.payment.gateway ?? PaymentGatewayKey.STRIPE) as PaymentGatewayKey,
-        sessionId: doc.payment.stripeSessionId ?? null,
-        paymentIntentId: doc.payment.paymentIntentId ?? null,
-        checkoutUrl: doc.payment.checkoutUrl ?? null,
-        amount: previousAmount,
-        currency: doc.pricing.currency,
-        status: doc.payment.status,
-        failureReason: doc.payment.failureReason ?? null,
-        supersededReason: "REPRICED",
-        supersededAt: new Date(),
-        createdAt: doc.payment.initiatedAt ?? doc.createdAt ?? new Date(),
-      },
-    ];
-
-    // Best-effort only, and deliberately not trusted: Stripe's adapter
-    // swallows errors and returns void, PayPal cannot cancel an unapproved
-    // order at all. The recorded attempt above is the real protection.
-    if (doc.payment.stripeSessionId) {
-      try {
-        const gateway = await resolveGatewayForOrder(doc, null);
-        await gateway.expireSession(doc.payment.stripeSessionId);
-      } catch (err) {
-        logger.warn("orders.reprice_expire_failed", {
-          orderId: String(doc._id),
-          sessionId: doc.payment.stripeSessionId,
-          err: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-
-    // Drop the customer-facing link so no surface keeps advertising a URL
-    // that collects the wrong amount. The ids are KEPT: a dispute or a late
-    // webhook still has to be routable to the attempt that created it.
-    doc.payment.checkoutUrl = null;
-    doc.payment.expiresAt = null;
-    // Status deliberately NOT reset to NOT_INITIATED. That would re-open
-    // `initiatePayment`'s `{status: NOT_INITIATED}` filter and make the
-    // order look like one that had never been billed, while an old payable
-    // link is still in the wild.
-    doc.payment.status = OrderStatus.FAILED;
-    doc.payment.failureReason = "Superseded by an amount change";
-    doc.status = OrderStatus.FAILED;
-  }
 
   doc.charges = summary.charges;
   doc.pricing.amount = summary.prepaid;
   doc.payment.priceRevision = (doc.payment.priceRevision ?? 0) + 1;
-  await doc.save();
+  const retiredConsent =
+    summary.prepaid !== previousAmount ? retireConsentForNewAmount(doc) : null;
+  await saveIfUnchanged(doc, { updatedAt: readUpdatedAt });
 
   await recordAudit({
     action: AuditAction.ORDER_UPDATED,
@@ -1974,6 +2007,7 @@ export async function repriceOrder(
       toCharges: summary.charges,
       priceRevision: doc.payment.priceRevision,
       supersededLiveSession: hadLiveSession,
+      consentReset: retiredConsent,
       reason: input.reason ?? null,
     },
   });
@@ -1991,14 +2025,83 @@ export async function repriceOrder(
  *
  * Returns whether there was anything to supersede.
  */
+/**
+ * Save an order only if it is still in the state this operation read.
+ *
+ * Money-moving operations read an order, do slow work (a gateway call), then
+ * write. Without a condition, a payment or a re-price landing in between is
+ * silently overwritten: a PAID order written back to FAILED, a live link
+ * minted at an amount that is no longer owed. `where` is added to the save's
+ * filter, so the write simply does not happen when the order moved, and the
+ * operator is told to retry against the current state.
+ */
+async function saveIfUnchanged(
+  doc: OrderDocument,
+  where: Record<string, unknown>,
+  opts: { session?: import("mongoose").ClientSession | null; message?: string } = {},
+): Promise<void> {
+  const d = doc as unknown as { $where?: Record<string, unknown> | null };
+  d.$where = where;
+  try {
+    await doc.save(sessionOpt(opts.session ?? null));
+  } catch (err) {
+    if (err instanceof Error && err.name === "DocumentNotFoundError") {
+      throw new ConflictError(
+        opts.message ??
+          "This order changed while your action was being processed. Reload it and try again.",
+      );
+    }
+    throw err;
+  } finally {
+    d.$where = null;
+  }
+}
+
+/**
+ * Cancel a session this call created but could not attach to the order.
+ *
+ * Only when the order is not pointing at it: a gateway's idempotency can
+ * hand two racing calls the SAME session, and expiring it then would cancel
+ * the link the winning call just attached.
+ */
+async function cancelOrphanSession(
+  orderId: Types.ObjectId | string,
+  gateway: { expireSession(id: string): Promise<void> },
+  sessionId: string,
+): Promise<void> {
+  const current = await Order.findById(orderId)
+    .select("payment.stripeSessionId")
+    .lean<{ payment?: { stripeSessionId?: string | null } } | null>();
+  if (current?.payment?.stripeSessionId === sessionId) return;
+  await gateway.expireSession(sessionId).catch(() => undefined);
+}
+
+/** The `priceRevision` value as stored, for use in a save condition. A
+ *  never-repriced legacy order may have no field at all. */
+function revisionCondition(
+  doc: OrderDocument,
+): number | { $in: Array<number | null> } {
+  const rev = doc.payment.priceRevision ?? 0;
+  return rev === 0 ? { $in: [0, null] } : rev;
+}
+
 async function supersedeCurrentAttempt(
   doc: OrderDocument,
-  reason: "GATEWAY_SWITCHED" | "REPRICED",
+  reason: "GATEWAY_SWITCHED" | "REPRICED" | "REGENERATED",
   previousAmount: number,
 ): Promise<boolean> {
-  const hadLiveSession = Boolean(
-    doc.payment.checkoutUrl || doc.payment.stripeSessionId,
-  );
+  // The pointer is deliberately kept after a supersede (late webhooks and
+  // disputes must stay routable), so "has a session id" alone does not mean
+  // "has a LIVE session". Without this check a second re-price recorded the
+  // same dead session again, at an amount it was never created for.
+  const pointerAlreadyRecorded =
+    Boolean(doc.payment.stripeSessionId) &&
+    (doc.payment.attempts ?? []).some(
+      (a) => a.sessionId === doc.payment.stripeSessionId && a.supersededAt,
+    );
+  const hadLiveSession =
+    Boolean(doc.payment.checkoutUrl) ||
+    (Boolean(doc.payment.stripeSessionId) && !pointerAlreadyRecorded);
   if (!hadLiveSession) return false;
 
   doc.payment.attempts = [
@@ -2037,7 +2140,9 @@ async function supersedeCurrentAttempt(
   doc.payment.failureReason =
     reason === "REPRICED"
       ? "Superseded by an amount change"
-      : "Superseded by a gateway change";
+      : reason === "REGENERATED"
+        ? "Replaced by a regenerated link"
+        : "Superseded by a gateway change";
   doc.status = OrderStatus.FAILED;
   return true;
 }
@@ -2080,7 +2185,13 @@ export async function applyOrderModification(
   id: string,
   input: ModifyOrderInput,
   ctx: OrderContext,
-): Promise<{ order: OrderDTO; changes: FieldChange[]; amountChanged: boolean }> {
+): Promise<{
+  order: OrderDTO;
+  changes: FieldChange[];
+  amountChanged: boolean;
+  consentReset: boolean;
+  checkoutDetailsChanged: boolean;
+}> {
   await connectMongo();
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
   const doc = await Order.findById(id);
@@ -2093,6 +2204,21 @@ export async function applyOrderModification(
   if (doc.state === RecordState.ARCHIVED) {
     throw new ConflictError("Cannot modify an archived order");
   }
+
+  // The operator's edit was made against a specific version of the order.
+  // If anyone — a colleague, a webhook, another tab — has written since, the
+  // values this request carries may be the stale ones it was opened with,
+  // and applying them would silently undo that newer change.
+  const STALE_EDIT_MESSAGE =
+    "This order was changed after you opened it. Reload the page to see the latest version, then make your change again.";
+  if (
+    input.expectedUpdatedAt &&
+    doc.updatedAt &&
+    doc.updatedAt.toISOString() !== new Date(input.expectedUpdatedAt).toISOString()
+  ) {
+    throw new ConflictError(STALE_EDIT_MESSAGE);
+  }
+  const readUpdatedAt = doc.updatedAt;
 
   const changes: FieldChange[] = [];
   const track = (field: string, from: unknown, to: unknown) => {
@@ -2115,6 +2241,32 @@ export async function applyOrderModification(
     }
   }
 
+  // ─── Provider (branding) ───────────────────────────────────────────────
+  //
+  // Re-snapshotted from the catalog rather than trusted from the request, so
+  // an unknown or disabled key is refused the same way creation refuses it.
+  //
+  // Refused outright once the order is PAID: by then the snapshot is what the
+  // customer actually saw on their receipt, and that receipt is the document
+  // most likely to be attached to a chargeback. Re-branding it after the fact
+  // would make our own evidence contradict the customer's copy.
+  if (input.provider && input.provider !== doc.provider?.id) {
+    if (doc.status === OrderStatus.PAID) {
+      throw new ConflictError(
+        "This order is already paid. Its rental provider can no longer be changed.",
+      );
+    }
+    const snapshot = await buildProviderSnapshotFromKey(input.provider);
+    track("provider", doc.provider?.id ?? null, snapshot.id);
+    doc.provider = {
+      id: snapshot.id,
+      name: snapshot.name,
+      logo: snapshot.logo,
+      primaryColor: snapshot.primaryColor ?? null,
+      onPrimaryColor: snapshot.onPrimaryColor ?? null,
+    };
+  }
+
   // ─── Vehicle ───────────────────────────────────────────────────────────
   if (input.vehicle) {
     for (const key of ["company", "type"] as const) {
@@ -2122,6 +2274,19 @@ export async function applyOrderModification(
       if (next === undefined) continue;
       track(`vehicle.${key}`, doc.vehicle[key], next);
       doc.vehicle[key] = next;
+    }
+    // Kept out of the loop above for a plain typing reason: over a union key
+    // whose members have different value types (`string` vs `string | null`),
+    // `doc.vehicle[key] = next` does not narrow. The `!== undefined` guard is
+    // the same one the loop uses, and it is what makes "did not mention the
+    // photo" mean "leave the photo alone" rather than "clear it".
+    if (input.vehicle.imageUrl !== undefined) {
+      track(
+        "vehicle.imageUrl",
+        doc.vehicle.imageUrl ?? null,
+        input.vehicle.imageUrl,
+      );
+      doc.vehicle.imageUrl = input.vehicle.imageUrl;
     }
   }
 
@@ -2159,6 +2324,17 @@ export async function applyOrderModification(
         "At least one prepaid charge is required to collect payment",
       );
     }
+    // Snapshot the breakdown BEFORE the assignment further down, or this
+    // compares the array to itself. Both sides go through `summarizeCharges`
+    // so the comparison is like-for-like: the stored lines are Mongoose
+    // subdocuments carrying their own `_id`, which differs on every save, and
+    // a legacy order with no `charges[]` needs its single synthesised line or
+    // the diff reads as a phantom `[] → [Rental cost]`.
+    const previousCharges = summarizeCharges(
+      doc.charges,
+      doc.pricing.amount,
+    ).charges;
+
     if (summary.prepaid !== previousAmount) {
       // Money is the one thing a settled order will not give up.
       if (doc.status === OrderStatus.PAID) {
@@ -2175,6 +2351,42 @@ export async function applyOrderModification(
       doc.payment.priceRevision = (doc.payment.priceRevision ?? 0) + 1;
       track("pricing.amount", previousAmount, summary.prepaid);
     }
+
+    // A breakdown can move without the prepaid TOTAL moving: renaming a line,
+    // re-timing one, splitting 500 into 300 + 200, or editing a due-at-counter
+    // line — which is the most common non-money booking change there is, and
+    // is exactly what the customer's charge table shows them.
+    //
+    // Recorded separately because the block above only ever tracked
+    // `pricing.amount`. With no change recorded, the early return below fired
+    // before `doc.save()` and the edit was discarded — while the response,
+    // built from the already-mutated in-memory document, reported it applied.
+    //
+    // Pushed directly rather than through `track()`: that helper compares with
+    // `!==`, which on two arrays is reference inequality and always true.
+    //
+    // Deliberately NOT a supersession trigger. `summary.prepaid !==
+    // previousAmount` remains the only thing that stands down a live payment
+    // session or bumps the price revision — renaming a line must not kill a
+    // checkout link the customer is part-way through.
+    const breakdownChanged =
+      JSON.stringify(previousCharges) !== JSON.stringify(summary.charges);
+    if (breakdownChanged) {
+      // The guard above covers the total; this covers the lines behind it.
+      // Without it, fixing the silent discard would newly ALLOW rewriting a
+      // settled order's breakdown, which is the opposite of the intent.
+      if (doc.status === OrderStatus.PAID) {
+        throw new ConflictError(
+          "This order is already paid. Its charge breakdown can no longer be changed.",
+        );
+      }
+      changes.push({
+        field: "charges",
+        from: previousCharges,
+        to: summary.charges,
+      });
+    }
+
     doc.charges = summary.charges;
     doc.pricing.amount = summary.prepaid;
   }
@@ -2184,10 +2396,39 @@ export async function applyOrderModification(
       order: orderToDTO(doc.toObject() as OrderDoc & { _id: Types.ObjectId }),
       changes: [],
       amountChanged: false,
+      consentReset: false,
+      checkoutDetailsChanged: false,
     };
   }
 
-  await doc.save();
+  // A live checkout page was built from a snapshot of these fields: the
+  // product name (provider, vehicle), its description (trip dates and
+  // places) and the prefilled email. Editing them does not stand the link
+  // down — the amount is unchanged, and killing a link the customer may be
+  // part-way through is worse — but the operator must be told the customer
+  // will still see the old wording until a new link is generated.
+  const linkIsLive =
+    !amountChanged &&
+    Boolean(doc.payment?.checkoutUrl) &&
+    (doc.status === OrderStatus.LINK_GENERATED ||
+      doc.status === OrderStatus.PAYMENT_PENDING);
+  const checkoutDetailsChanged =
+    linkIsLive &&
+    changes.some(
+      (c) =>
+        c.field === "provider" ||
+        c.field === "customer.email" ||
+        c.field === "vehicle.company" ||
+        c.field === "vehicle.type" ||
+        c.field.startsWith("trip."),
+    );
+
+  const retiredConsent = amountChanged ? retireConsentForNewAmount(doc) : null;
+
+  // Written only if nothing has touched the order since it was read — see
+  // `saveIfUnchanged`. A payment settling in between would otherwise be
+  // overwritten back to FAILED by a re-price.
+  await saveIfUnchanged(doc, { updatedAt: readUpdatedAt }, { message: STALE_EDIT_MESSAGE });
 
   await recordAudit({
     action: AuditAction.ORDER_UPDATED,
@@ -2203,6 +2444,28 @@ export async function applyOrderModification(
       supersededLiveSession,
       priceRevision: doc.payment.priceRevision ?? 0,
       reason: input.reason ?? null,
+      consentReset: retiredConsent,
+      checkoutDetailsChanged,
+    },
+  });
+
+  // Any other tab or payment-request page open on this order is now showing
+  // the old version. Without this it kept offering the old amount and
+  // details until someone reloaded it.
+  publishEvent({
+    type: DomainEventType.ORDER_UPDATED,
+    audience: {
+      kind: "creator",
+      userId: doc.createdBy?.userId ? String(doc.createdBy.userId) : ctx.actor.id,
+    },
+    actor: { id: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+    payload: {
+      orderId: String(doc._id),
+      orderNumber: doc.orderNumber,
+      customerName: doc.customer.name,
+      amountChanged,
+      checkoutDetailsChanged,
+      updatedAt: doc.updatedAt?.toISOString() ?? null,
     },
   });
 
@@ -2210,7 +2473,44 @@ export async function applyOrderModification(
     order: orderToDTO(doc.toObject() as OrderDoc & { _id: Types.ObjectId }),
     changes,
     amountChanged,
+    consentReset: Boolean(retiredConsent),
+    checkoutDetailsChanged,
   };
+}
+
+/**
+ * A customer's consent covers the amount they were shown. When the amount
+ * to collect changes, that consent no longer covers it.
+ *
+ * Before this, a consent given at $500 stayed in force after a re-price to
+ * $650: the customer's old confirmation page forwarded them to the $650
+ * checkout, a re-send told them "you already confirmed", a manual payment
+ * of $650 was recorded against the $500 consent, and the evidence pack cited
+ * a consent for a different amount than was charged.
+ *
+ * The order's pointer is returned to NOT_REQUESTED so the next payment
+ * request asks for a fresh confirmation. The old consent record is kept
+ * untouched as history. Returns what was retired, for the audit trail, or
+ * null when there was nothing to retire.
+ */
+function retireConsentForNewAmount(
+  doc: OrderDocument,
+): { status: string; consentId: string | null } | null {
+  const status = doc.consent?.status ?? ConsentStatus.NOT_REQUESTED;
+  if (status === ConsentStatus.NOT_REQUESTED) return null;
+  const consentId = doc.consent?.currentConsentId
+    ? String(doc.consent.currentConsentId)
+    : null;
+  doc.consent = {
+    status: ConsentStatus.NOT_REQUESTED,
+    currentConsentId: null,
+    requestedAt: null,
+    receivedAt: null,
+    verifiedAt: null,
+    method: null,
+    collectionMethod: null,
+  } as unknown as typeof doc.consent;
+  return { status, consentId };
 }
 
 /**
@@ -2288,8 +2588,20 @@ export async function switchOrderGateway(
 
   // Stand the outgoing attempt down BEFORE opening the new one, so a success
   // arriving in between is already classifiable as superseded.
+  //
+  // Conditional on the order being exactly as read. Two switch requests that
+  // raced each used to succeed and each issue a live session; a payment
+  // landing between the read and this write used to be overwritten.
+  const readUpdatedAt = doc.updatedAt;
+  const readRevision = revisionCondition(doc);
+  const hadLinkBeforeSwitch = Boolean(doc.payment.checkoutUrl);
   await supersedeCurrentAttempt(doc, "GATEWAY_SWITCHED", previousAmount);
-  await doc.save();
+  await saveIfUnchanged(doc, {
+    status: { $ne: OrderStatus.PAID },
+    updatedAt: readUpdatedAt,
+    "payment.priceRevision": readRevision,
+  });
+  const supersededAt = doc.updatedAt;
 
   const settings = await getSettings();
   const expiresAt = new Date(
@@ -2317,6 +2629,7 @@ export async function switchOrderGateway(
       // carrying the revision keeps a re-priced order from replaying an old
       // session on the NEW gateway either.
       priceRevision: doc.payment.priceRevision ?? 0,
+      attempt: (doc.payment.attempts ?? []).length,
       orderId: String(doc._id),
       orderNumber: doc.orderNumber,
       amount: doc.pricing.amount,
@@ -2347,8 +2660,11 @@ export async function switchOrderGateway(
     // The outgoing attempt is already recorded as superseded and its link is
     // down. That is the safe direction to fail in: the order collects
     // nothing until a link is successfully issued, rather than having two.
+    // Say so — the operator otherwise assumes the old link still works.
     throw new PaymentError(
-      `Could not create the ${gateway.label} payment session for this order`,
+      hadLinkBeforeSwitch
+        ? `Could not create the ${gateway.label} payment session. The previous payment link has already been cancelled — generate a new link or record a manual payment.`
+        : `Could not create the ${gateway.label} payment session for this order`,
       err,
     );
   }
@@ -2381,7 +2697,19 @@ export async function switchOrderGateway(
       createdAt: initiatedAt,
     },
   ];
-  await doc.save();
+  try {
+    await saveIfUnchanged(
+      doc,
+      { status: { $ne: OrderStatus.PAID }, updatedAt: supersededAt },
+      {
+        message:
+          "This order changed while the new payment link was being created. The new link was cancelled — reload and try again.",
+      },
+    );
+  } catch (err) {
+    await cancelOrphanSession(doc._id, gateway, session.sessionId);
+    throw err;
+  }
 
   await recordAudit({
     action: AuditAction.ORDER_PAYMENT_LINK_REGENERATED,
@@ -2434,9 +2762,21 @@ export async function getOrderGatewayOptions(
   if (!doc) throw new NotFoundError("Order not found");
   await assertOrderInScope(doc);
 
+  // `getOrganization()` is a SUMMARY (id, slug, names) and carries no payment
+  // settings. Reading `.payments` off it always yielded undefined, so the
+  // enabled list collapsed to the Stripe default and "Try another gateway"
+  // never offered PayPal to any organization. Load the settings themselves.
   const org = await getOrganization();
+  const orgPayments = await Organization.findById(org.id)
+    .select("payments")
+    .lean<{
+      payments?: {
+        enabledProviders?: PaymentGatewayKey[];
+        provider?: PaymentGatewayKey;
+      };
+    } | null>();
   const enabled = enabledProvidersOf({
-    payments: (org as unknown as { payments?: { enabledProviders?: PaymentGatewayKey[]; provider?: PaymentGatewayKey } }).payments,
+    payments: orgPayments?.payments ?? null,
   }) as PaymentGatewayKey[];
 
   const current = (doc.payment.gateway as PaymentGatewayKey | null) ?? null;
@@ -2496,7 +2836,7 @@ export async function recordManualPayment(
   }
 
   // Consent is not waived by paying offline.
-  if (doc.consent?.status !== ConsentStatus.RECEIVED) {
+  if (!hasCustomerConsent(doc.consent?.status as ConsentStatus | undefined)) {
     throw new ConflictError(
       "The customer has not completed consent yet. Send the consent request and wait for their signature before recording payment.",
     );
@@ -2504,12 +2844,26 @@ export async function recordManualPayment(
 
   // Stand down anything still payable BEFORE settling, so a race with a
   // customer paying the old link lands on the superseded path.
+  const readUpdatedAt = doc.updatedAt;
   const supersededLiveSession = await supersedeCurrentAttempt(
     doc,
     "GATEWAY_SWITCHED",
     doc.pricing.amount,
   );
-  if (supersededLiveSession) await doc.save();
+  // Conditional: a gateway payment (or a second recording) that settled the
+  // order after it was read must not be written back over with FAILED —
+  // which is how two concurrent recordings used to leave a paid order FAILED
+  // and re-open it to a fresh payment link.
+  if (supersededLiveSession) {
+    await saveIfUnchanged(
+      doc,
+      { status: { $ne: OrderStatus.PAID }, updatedAt: readUpdatedAt },
+      {
+        message:
+          "This order changed while you were recording the payment. Reload it — it may already be paid.",
+      },
+    );
+  }
 
   const fresh = await Order.findById(id);
   if (!fresh) throw new NotFoundError("Order not found");
@@ -2548,6 +2902,40 @@ export async function recordManualPayment(
     { $set: { "payment.stripeSessionId": null, "payment.checkoutUrl": null } },
   );
 
+  // A terminal authorisation or transfer reference identifies one
+  // collection. Finding it on another paid order most often means the same
+  // money is being recorded against two bookings. It is not refused — one
+  // transfer can genuinely cover two bookings — but the order is flagged so
+  // someone reconciles it, instead of both orders silently reading as paid.
+  const referenceReusedOn = await Order.find(
+    withOrganizationScope(
+      {
+        _id: { $ne: fresh._id },
+        status: OrderStatus.PAID,
+        "payment.manualReference": input.reference,
+      },
+      await getRequestOrganizationScope(),
+    ),
+  )
+    .select("orderNumber")
+    .limit(5)
+    .lean<Array<{ orderNumber: string }>>();
+  if (referenceReusedOn.length > 0) {
+    const others = referenceReusedOn.map((o) => o.orderNumber).join(", ");
+    const note = `Payment reference "${input.reference}" is also recorded on ${others}. Check this is not the same payment recorded twice.`;
+    const previous = fresh.risk?.flagged ? fresh.risk.flaggedNote : null;
+    await Order.updateOne(
+      { _id: fresh._id },
+      {
+        $set: {
+          "risk.flagged": true,
+          "risk.flaggedNote": (previous ? `${previous}\n\n${note}` : note).slice(0, 2000),
+          "risk.flaggedAt": new Date(),
+        },
+      },
+    );
+  }
+
   await recordAudit({
     action: AuditAction.MANUAL_PAYMENT_RECORDED,
     entityType: AuditEntity.ORDER,
@@ -2563,6 +2951,7 @@ export async function recordManualPayment(
       notes: input.notes ?? null,
       supersededLiveSession,
       priceRevision: fresh.payment.priceRevision ?? 0,
+      referenceReusedOn: referenceReusedOn.map((o) => o.orderNumber),
     },
   });
 

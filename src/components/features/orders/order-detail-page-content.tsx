@@ -2,10 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
+import { ArrowLeftIcon, ArrowRightIcon, PencilIcon } from "lucide-react";
 
 import { ArchiveOrderButton } from "@/components/features/orders/archive-order-button";
-import { McoEditDialog } from "@/components/features/orders/mco-edit-dialog";
 import { ConfirmationNumberCard } from "@/components/features/orders/confirmation-number-card";
 import { OrderConsentCard } from "@/components/features/orders/order-consent-card";
 import { OrderDetailsCard } from "@/components/features/orders/order-details-card";
@@ -38,6 +37,7 @@ import {
 import { useOrderQuery } from "@/hooks/use-order-query";
 import { useReconcilePayment } from "@/hooks/use-reconcile-payment";
 import { ApiClientError } from "@/lib/api-client";
+import { hasCustomerConsent } from "@/lib/consent";
 import { ConsentStatus, OrderStatus, RecordState } from "@/lib/constants/enums";
 import type { UserRole } from "@/lib/constants/enums";
 import { Permission, roleHasPermission } from "@/lib/constants/permissions";
@@ -134,6 +134,11 @@ export function OrderDetailPageContent({
     order.state !== RecordState.ARCHIVED;
 
   const needsPaymentLink = order.status === OrderStatus.NOT_INITIATED;
+  // A request sent for manual collection leaves the order NOT_INITIATED on
+  // purpose — there is no link to generate. Telling the operator to "compose
+  // a payment request" then contradicted the decision they had already made.
+  const manualRequested =
+    needsPaymentLink && order.consent.collectionMethod === "MANUAL";
   const inFlight =
     needsPaymentLink ||
     order.status === OrderStatus.PAYMENT_PENDING ||
@@ -163,7 +168,14 @@ export function OrderDetailPageContent({
             {order.risk.flagged ? (
               <Badge variant="destructive">Flagged</Badge>
             ) : null}
-            {canEditOrder ? <McoEditDialog order={order} /> : null}
+            {canEditOrder ? (
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/app/orders/${order.id}/edit`}>
+                  <PencilIcon className="size-3.5" />
+                  Edit order
+                </Link>
+              </Button>
+            ) : null}
             {canFlagRisk ? <RiskFlagDialog order={order} /> : null}
             {canArchive ? <ArchiveOrderButton orderId={order.id} /> : null}
           </div>
@@ -184,7 +196,24 @@ export function OrderDetailPageContent({
         </CardContent>
       </Card>
 
-      {needsPaymentLink ? (
+      {manualRequested ? (
+        <Alert>
+          <AlertTitle>Manual payment requested</AlertTitle>
+          <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              {hasCustomerConsent(order.consent.status)
+                ? "The customer confirmed the booking. Once you have collected the payment, use Record manual payment in the Payment panel."
+                : `A booking confirmation request was sent to ${order.customer.email}. Once the customer confirms and you have collected the payment, use Record manual payment in the Payment panel.`}
+            </span>
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/app/orders/${order.id}/email`}>
+                Open payment request
+                <ArrowRightIcon className="size-3.5" />
+              </Link>
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : needsPaymentLink ? (
         <Alert>
           <AlertTitle>Order ready — payment not initiated yet</AlertTitle>
           <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

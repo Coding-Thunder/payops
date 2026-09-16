@@ -186,6 +186,8 @@ describe("when PayPal is enabled", () => {
   it("moves an order to PAID on PAYMENT.CAPTURE.COMPLETED", async () => {
     const order = await createOrder({
       status: OrderStatus.PAYMENT_PENDING,
+      // The capture fixture is for 150.00; the order must be collecting that.
+      pricing: { amount: 150, currency: "USD" },
       payment: {
         gateway: PaymentGatewayKey.PAYPAL,
         stripeSessionId: "PAYPAL-ORDER-1",

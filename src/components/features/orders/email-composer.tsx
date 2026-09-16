@@ -1,12 +1,14 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   CheckCircle2Icon,
   CopyIcon,
   ExternalLinkIcon,
   Loader2Icon,
+  PencilIcon,
   SendIcon,
 } from "lucide-react";
 
@@ -28,8 +30,9 @@ import { useActivityFeed } from "@/hooks/use-activity-feed";
 import { orderQueryKey } from "@/hooks/use-order-query";
 import { api, ApiClientError } from "@/lib/api-client";
 import { formatCurrency, formatDateTime } from "@/lib/format";
-import { McoEditDialog } from "@/components/features/orders/mco-edit-dialog";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { DomainEventType } from "@/lib/constants/events";
+import { OrderStatus } from "@/lib/constants/enums";
 import { cn } from "@/lib/utils";
 import type { OrderDTO } from "@/types";
 
@@ -44,6 +47,9 @@ interface EmailComposerProps {
    *  parent (the dedicated /email screen) surface a "Continue to Order"
    *  CTA without lifting the entire send state out of the composer. */
   onSent?: (sentAtIso: string) => void;
+  /** Whether the viewer may edit orders. STAFF may send requests but not
+   *  edit; offering them an Edit link only led to an error page. */
+  canEditOrder?: boolean;
 }
 
 interface DraftState {
@@ -99,6 +105,7 @@ export function EmailComposer({
   initialHtml,
   defaultSubject,
   onSent,
+  canEditOrder = true,
 }: EmailComposerProps) {
   const router = useRouter();
   // Providers this organization may actually use. The server has the final
@@ -153,7 +160,55 @@ export function EmailComposer({
   const [draft, setDraft] = React.useState<DraftState>(() =>
     buildDraft(order, defaultSubject),
   );
+  // What the draft was filled from. When the order changes underneath the
+  // composer (an edit in another tab, a background refetch), fields the
+  // operator has NOT touched follow the order; fields they typed are kept.
+  // Without this the composer kept the pre-edit name and email on screen,
+  // mailed the old address, and wrote the old values back onto the order.
+  const [draftBase, setDraftBase] = React.useState<DraftState>(() =>
+    buildDraft(order, defaultSubject),
+  );
+  const freshBase = buildDraft(order, defaultSubject);
+  const draftKeys = Object.keys(freshBase) as Array<keyof DraftState>;
+  if (draftKeys.some((k) => freshBase[k] !== draftBase[k])) {
+    const next = { ...draft };
+    for (const k of draftKeys) {
+      if (draft[k] === draftBase[k]) next[k] = freshBase[k];
+    }
+    setDraft(next);
+    setDraftBase(freshBase);
+  }
+  const sendingRef = React.useRef(false);
+  const generatingRef = React.useRef(false);
+
+  // Where the order's payment actually stands — this, not "is there a URL on
+  // record", decides what the operator may do next. A failed or expired
+  // order keeps its old URL, and the page used to present that dead link as
+  // ready to send.
+  const isPaid =
+    order.status === OrderStatus.PAID || Boolean(order.payment.paidAt);
+  const linkLive =
+    Boolean(order.payment.paymentUrl) &&
+    (order.status === OrderStatus.LINK_GENERATED ||
+      order.status === OrderStatus.PAYMENT_PENDING);
+  const linkDead =
+    order.status === OrderStatus.FAILED || order.status === OrderStatus.EXPIRED;
+  const pinnedGateway =
+    order.payment.gateway && order.payment.gateway !== "MANUAL"
+      ? order.payment.gateway
+      : null;
+  // Once an order is on a gateway, that is the gateway a new link is made
+  // on; moving to another one is the order page's "Try another gateway".
+  const effectiveGateway = pinnedGateway ?? chosenGateway;
   const [html, setHtml] = React.useState(initialHtml);
+  // Editing the order is a separate page now, and this draft is component
+  // state — leaving drops whatever the operator has typed. The draft is
+  // deliberately NOT carried across: it holds customer details copied from
+  // the order, and restoring it after an edit would put the pre-edit name
+  // or email back in front of the operator. So instead, ask first.
+  const draftDirty = draftKeys.some((k) => draft[k] !== draftBase[k]);
+  const [confirmEditOpen, setConfirmEditOpen] = React.useState(false);
+  const editHref = `/app/orders/${order.id}/edit`;
   const [previewLoading, setPreviewLoading] = React.useState(false);
   const [previewError, setPreviewError] = React.useState<string | null>(null);
   const [sending, setSending] = React.useState(false);
@@ -199,7 +254,7 @@ export function EmailComposer({
       setPreviewError(null);
       try {
         const body = {
-          ...buildPayload(draft, order),
+          ...buildPayload(draft, draftBase),
           collection: manualCollection ? "MANUAL" : "GATEWAY",
         };
         const { html: rendered } = await api.post<{ html: string }>(
@@ -226,23 +281,32 @@ export function EmailComposer({
     // `manualCollection` is a dependency so switching method re-renders the
     // preview immediately; `order` covers a booking edit, so a re-priced
     // amount can never linger in the pane.
-  }, [draft, order, sentAt, manualCollection]);
+  }, [draft, draftBase, order, sentAt, manualCollection]);
 
   async function handleSend() {
+    // A second click in the same tick must not send a second email: the
+    // disabled state only lands on the next render.
+    if (sendingRef.current) return;
+    sendingRef.current = true;
     setSending(true);
     try {
       const body = {
-        ...buildPayload(draft, order),
+        ...buildPayload(draft, draftBase),
         collection: manualCollection ? "MANUAL" : "GATEWAY",
       };
-      await api.post(`/api/orders/${order.id}/send-payment-request`, body);
+      const res = await api.post<{ order: OrderDTO }>(
+        `/api/orders/${order.id}/send-payment-request`,
+        body,
+      );
       const at = new Date().toISOString();
       setSentAt(at);
       onSent?.(at);
       toast.success(
         manualCollection ? "Consent request sent" : "Payment request sent",
         {
-          description: `Sent to ${body.customer?.email ?? order.customer.email}`,
+          // The address the server actually used, not what this screen
+          // believed the address to be.
+          description: `Sent to ${res?.order?.customer?.email ?? body.customer?.email ?? order.customer.email}`,
         },
       );
       await queryClient.invalidateQueries({ queryKey: orderQueryKey(order.id) });
@@ -252,6 +316,7 @@ export function EmailComposer({
         err instanceof ApiClientError ? err.message : "Could not send email";
       toast.error(msg);
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   }
@@ -261,17 +326,27 @@ export function EmailComposer({
    *  email dispatch so the agent's gateway choice + intent are
    *  unambiguous (and switching gateways later is just a dropdown). */
   async function handleGenerateLink() {
+    if (generatingRef.current) return;
+    generatingRef.current = true;
     setGenerating(true);
     try {
-      // Only send a gateway when the operator genuinely chose between
-      // several. The server ignores anything the organization has not
-      // enabled, so this is a preference, never an instruction.
-      await api.post(
-        `/api/orders/${order.id}/generate-payment-link`,
-        enabledProviders.length > 1 && chosenGateway
-          ? { gateway: chosenGateway }
-          : {},
-      );
+      if (linkDead && pinnedGateway) {
+        // A failed, expired or re-priced order needs a REPLACEMENT link on
+        // the gateway it is pinned to. The first-link endpoint refuses those
+        // orders, which left the operator stuck on this page right after
+        // being told to "generate a new payment link".
+        await api.post(`/api/orders/${order.id}/regenerate-link`, {});
+      } else {
+        // Only send a gateway when the operator genuinely chose between
+        // several. The server ignores anything the organization has not
+        // enabled, so this is a preference, never an instruction.
+        await api.post(
+          `/api/orders/${order.id}/generate-payment-link`,
+          enabledProviders.length > 1 && effectiveGateway
+            ? { gateway: effectiveGateway }
+            : {},
+        );
+      }
       toast.success("Payment link generated", {
         description: `Order ${order.orderNumber} is ready to send.`,
       });
@@ -284,6 +359,7 @@ export function EmailComposer({
           : "Could not generate payment link";
       toast.error(msg);
     } finally {
+      generatingRef.current = false;
       setGenerating(false);
     }
   }
@@ -311,11 +387,10 @@ export function EmailComposer({
           onCopyLink={copyLink}
         />
 
-        {/* The customer can change their mind mid-call, and before this the
-            operator had to leave the page, find the order, edit it and come
-            back — losing the composed draft on the way. Editing happens
-            here, on the same order, and the page refreshes so the amount
-            below is never the pre-edit figure. */}
+        {/* The customer can change their mind mid-call. Edit order opens the
+            same form that created the order, amends THIS order, and returns
+            here with the saved order already in the query cache — so the
+            amount below is never the pre-edit figure. */}
         <Card>
           <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
             <div className="space-y-0.5">
@@ -326,7 +401,36 @@ export function EmailComposer({
                 {order.orderNumber}
               </p>
             </div>
-            <McoEditDialog order={order} />
+            {canEditOrder ? (
+              <>
+            <Button asChild variant="outline" size="sm">
+              <Link
+                href={editHref}
+                onNavigate={(event) => {
+                  if (!draftDirty || sentAt) return;
+                  event.preventDefault();
+                  setConfirmEditOpen(true);
+                }}
+              >
+                <PencilIcon className="size-3.5" />
+                Edit order
+              </Link>
+            </Button>
+            <ConfirmDialog
+              open={confirmEditOpen}
+              onOpenChange={setConfirmEditOpen}
+              title="Leave this email draft?"
+              description="Edit order opens the full order form. The subject, greeting, intro, note and customer details you have changed here will not be kept."
+              confirmLabel="Edit order anyway"
+              cancelLabel="Keep drafting"
+              tone="warning"
+              onConfirm={() => {
+                setConfirmEditOpen(false);
+                router.push(editHref);
+              }}
+            />
+              </>
+            ) : null}
           </CardHeader>
           <CardContent className="space-y-1 text-[12px]">
             <SummaryRow
@@ -347,7 +451,9 @@ export function EmailComposer({
             were current. `priceRevision` is the order's own record that the
             amount moved; the backend supersedes the session, and this says
             so where the operator is about to act. */}
-        {(order.payment.priceRevision ?? 0) > 0 && !order.payment.paymentUrl ? (
+        {!isPaid &&
+        !linkLive &&
+        order.payment.failureReason === "Superseded by an amount change" ? (
           <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-900">
             <p className="font-medium">This booking was re-priced.</p>
             <p className="mt-0.5">
@@ -499,10 +605,14 @@ export function EmailComposer({
                   not in `SUPPORTED`, `initiatePayment` refuses it, and it
                   settles money rather than routing it. */}
               <Field label="Payment method">
-                {order.payment.gateway && !manualCollection ? (
+                {isPaid ? (
+                  // Settled: the method is history, not a choice.
                   <div className="rounded-md border border-input bg-muted/40 px-3 py-2 text-sm">
-                    {GATEWAY_LABEL[order.payment.gateway] ??
-                      order.payment.gateway}
+                    Paid ·{" "}
+                    {order.payment.gateway
+                      ? (GATEWAY_LABEL[order.payment.gateway] ??
+                        order.payment.gateway)
+                      : "—"}
                   </div>
                 ) : providers.length === 0 ? (
                   <div className="rounded-md border border-input bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
@@ -543,8 +653,15 @@ export function EmailComposer({
                           // checked while Manual is not — otherwise two
                           // inputs in the group claim to be selected and the
                           // browser keeps whichever it saw last.
-                          checked={!manualCollection && chosenGateway === p.key}
-                          disabled={!p.enabled}
+                          checked={!manualCollection && effectiveGateway === p.key}
+                          // The choice stays open after a failure — the order
+                          // used to lock to its gateway and hide Manual — but
+                          // a DIFFERENT gateway is the order page's "Try
+                          // another gateway", which stands the old link down.
+                          disabled={
+                            !p.enabled ||
+                            (pinnedGateway !== null && p.key !== pinnedGateway)
+                          }
                           onChange={() => {
                             setChosenGateway(p.key);
                             setManualCollection(false);
@@ -554,11 +671,15 @@ export function EmailComposer({
                         <span className={p.enabled ? "" : "line-through"}>
                           {p.label}
                         </span>
-                        {p.enabled ? null : (
+                        {!p.enabled ? (
                           <span className="ml-auto rounded-sm bg-muted px-1.5 py-0.5 text-[10.5px] font-medium uppercase tracking-wide">
                             Coming soon
                           </span>
-                        )}
+                        ) : pinnedGateway !== null && p.key !== pinnedGateway ? (
+                          <span className="ml-auto text-[10.5px] text-muted-foreground">
+                            Use “Try another gateway” on the order
+                          </span>
+                        ) : null}
                       </label>
                     ))}
                     <label
@@ -592,6 +713,14 @@ export function EmailComposer({
                     <span className="font-medium">Record manual payment</span>{" "}
                     on the order to settle it. Never enter card details here.
                   </p>
+                  {linkLive && pinnedGateway ? (
+                    <p className="mt-1.5 font-medium">
+                      This order still has a live{" "}
+                      {GATEWAY_LABEL[pinnedGateway] ?? pinnedGateway} payment
+                      link. If the customer pays it, do not charge them again —
+                      check the order before recording a manual payment.
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -615,10 +744,9 @@ export function EmailComposer({
                   value={
                     manualCollection
                       ? "Manual charge"
-                      : (chosenGateway && GATEWAY_LABEL[chosenGateway]) ??
-                        (order.payment.gateway
-                          ? GATEWAY_LABEL[order.payment.gateway] ?? order.payment.gateway
-                          : "—")
+                      : effectiveGateway
+                        ? (GATEWAY_LABEL[effectiveGateway] ?? effectiveGateway)
+                        : "—"
                   }
                 />
                 <SummaryRow
@@ -633,19 +761,23 @@ export function EmailComposer({
 
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-[11.5px] text-muted-foreground">
-                  {previewLoading
-                    ? "Updating preview…"
-                    : manualCollection
-                      ? "No link is generated — the customer is asked to confirm only."
-                      : order.payment.paymentUrl
-                        ? "Link ready — send the email when you're done editing."
-                        : "Generate the payment link to enable sending."}
+                  {isPaid
+                    ? "This order is paid — there is nothing to send."
+                    : previewLoading
+                      ? "Updating preview…"
+                      : manualCollection
+                        ? "No link is generated — the customer is asked to confirm only."
+                        : linkLive
+                          ? "Link ready — send the email when you're done editing."
+                          : linkDead && pinnedGateway
+                            ? "The previous link can no longer be paid. Generate a new one to send."
+                            : "Generate the payment link to enable sending."}
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
                   {/* Manual has no link step at all, so the generate button
                       is absent rather than disabled — a greyed-out control
                       reads as "broken", which is the wrong story. */}
-                  {manualCollection ? null : order.payment.paymentUrl ? (
+                  {isPaid || manualCollection ? null : linkLive ? (
                     <Button
                       type="button"
                       variant="outline"
@@ -662,18 +794,24 @@ export function EmailComposer({
                       loadingText="Generating"
                       variant="outline"
                     >
-                      Generate payment link
+                      {linkDead && pinnedGateway
+                        ? "Generate a new payment link"
+                        : "Generate payment link"}
                     </LoadingButton>
                   )}
-                  <LoadingButton
-                    onClick={handleSend}
-                    loading={sending}
-                    loadingText="Sending"
-                    disabled={!manualCollection && !order.payment.paymentUrl}
-                  >
-                    <SendIcon className="size-3.5" />
-                    {manualCollection ? "Send consent request" : "Send payment request"}
-                  </LoadingButton>
+                  {isPaid ? null : (
+                    <LoadingButton
+                      onClick={handleSend}
+                      loading={sending}
+                      loadingText="Sending"
+                      // A gateway request needs a link the customer can
+                      // actually pay; a dead one is not "ready".
+                      disabled={!manualCollection && !linkLive}
+                    >
+                      <SendIcon className="size-3.5" />
+                      {manualCollection ? "Send consent request" : "Send payment request"}
+                    </LoadingButton>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -719,15 +857,22 @@ export function EmailComposer({
   );
 }
 
-function buildPayload(draft: DraftState, order: OrderDTO) {
+/**
+ * The send request. Customer fields are included ONLY when the operator
+ * edited them in this composer — compared against what the draft was filled
+ * from, not against the order as it is now. Comparing against the current
+ * order made every field that had changed elsewhere look like an edit, so an
+ * untouched composer sent the stale values and reverted the correction.
+ */
+function buildPayload(draft: DraftState, base: DraftState) {
   const customerPatch: Record<string, string> = {};
-  if (draft.customerName.trim() && draft.customerName !== order.customer.name) {
+  if (draft.customerName.trim() && draft.customerName !== base.customerName) {
     customerPatch.name = draft.customerName.trim();
   }
-  if (draft.customerEmail.trim() && draft.customerEmail !== order.customer.email) {
+  if (draft.customerEmail.trim() && draft.customerEmail !== base.customerEmail) {
     customerPatch.email = draft.customerEmail.trim();
   }
-  if (draft.customerPhone.trim() && draft.customerPhone !== order.customer.phone) {
+  if (draft.customerPhone.trim() && draft.customerPhone !== base.customerPhone) {
     customerPatch.phone = draft.customerPhone.trim();
   }
   return {

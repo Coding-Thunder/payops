@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { PaymentTiming } from "@/lib/constants/enums";
+
 import {
   archiveOrderSchema,
   changePasswordSchema,
@@ -144,11 +146,24 @@ describe("createOrderSchema", () => {
     if (r.success) expect(r.data.customer.name).toBe("Ada");
   });
 
-  it("accepts a near-floor amount (>= $0.50) that still has cents", () => {
-    // Sub-50¢ inputs fail at the Stripe boundary, not the schema —
-    // the schema only enforces > 0, so this stays here as a guard.
+  it("refuses a prepaid total below the 0.50 floor with a field error", () => {
+    // This used to be accepted here and refused by the order model's own
+    // minimum, which surfaced to the operator as an HTTP 500 "Something went
+    // wrong". The floor is now a validation rule with a real message.
     const r = createOrderSchema.safeParse(belowMinimumAmountInput());
-    expect(r.success).toBe(true);
+    expect(r.success).toBe(false);
+    expect(JSON.stringify(r.error?.issues)).toMatch(/at least 0\.50/);
+  });
+
+  it("accepts a prepaid total exactly at, or just above, the floor", () => {
+    for (const amount of [0.5, 0.51]) {
+      const r = createOrderSchema.safeParse(
+        validCreateOrderInput({
+          charges: [{ name: "Rental cost", amount, timing: PaymentTiming.PREPAID }],
+        }),
+      );
+      expect(r.success).toBe(true);
+    }
   });
 
   it("requires a well-formed rental provider key (existence is enforced server-side)", () => {

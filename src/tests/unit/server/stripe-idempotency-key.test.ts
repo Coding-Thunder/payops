@@ -40,3 +40,31 @@ describe("idempotencyKeyFor", () => {
     );
   });
 });
+
+/**
+ * A replacement session at the SAME price (regenerated link, switching back
+ * to a gateway) needs its own key too. With the revision alone, real Stripe
+ * returned the just-expired session or refused the call — and the PayPal
+ * adapter, which used the order id alone, replayed the original-amount order
+ * even after a re-price.
+ */
+describe("idempotencyKeyFor — replacement attempts", () => {
+  it("adds the attempt ordinal only once there is one", () => {
+    expect(idempotencyKeyFor({ orderId: "ord_1", attempt: 0 })).toBe(
+      "order:ord_1:checkout",
+    );
+    expect(idempotencyKeyFor({ orderId: "ord_1", attempt: 1 })).toBe(
+      "order:ord_1:checkout:a1",
+    );
+    expect(
+      idempotencyKeyFor({ orderId: "ord_1", priceRevision: 2, attempt: 3 }),
+    ).toBe("order:ord_1:checkout:r2:a3");
+  });
+
+  it("gives every attempt at one revision its own key", () => {
+    const keys = [0, 1, 2, 3].map((attempt) =>
+      idempotencyKeyFor({ orderId: "ord_1", priceRevision: 1, attempt }),
+    );
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+});

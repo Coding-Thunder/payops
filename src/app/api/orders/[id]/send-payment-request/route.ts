@@ -47,20 +47,17 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
   const input = sendPaymentRequestSchema.parse(body);
   const reqCtx = await getRequestContext();
 
-  // 1. Patch customer if edited.
   let order = await getOrderById(id, { actor });
-  if (input.customer && Object.keys(input.customer).length > 0) {
-    const patched = await updateOrderCustomer(id, input.customer, {
-      actor,
-      request: reqCtx,
-    });
-    order = patched.order;
-  }
 
-  // 2. Strict gate — payment link must exist before we email about it.
+  // 1. Strict gate — payment link must exist before we email about it.
   //    A MANUAL collection is the deliberate exception: there is no link and
   //    the email only asks the customer to review and consent, so an order
   //    that has never been initiated is exactly the normal case.
+  //
+  //    The gates run BEFORE the customer patch below. They used to run after
+  //    it, so a send refused because the order was already paid (or its link
+  //    was dead) had still rewritten the customer's name and email — and the
+  //    receipt then went to an address that was never confirmed.
   const manualCollection = input.collection === "MANUAL";
   if (order.status === OrderStatus.NOT_INITIATED && !manualCollection) {
     throw new ConflictError(
@@ -80,6 +77,15 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
     throw new ConflictError(
       `Cannot send a request — order is ${order.status.toLowerCase()}.`,
     );
+  }
+
+  // 2. Patch customer if edited — only once the send is known to proceed.
+  if (input.customer && Object.keys(input.customer).length > 0) {
+    const patched = await updateOrderCustomer(id, input.customer, {
+      actor,
+      request: reqCtx,
+    });
+    order = patched.order;
   }
 
   // 3. Send.

@@ -44,13 +44,26 @@ export async function apiRequest<T>(
     body: body !== undefined ? JSON.stringify(body) : undefined,
   };
   const res = await fetch(path, init);
+
+  // `fetch` follows redirects on its own. An API call only lands on the
+  // login page when the session has ended, and without this check that page
+  // came back as a successful response to whatever the operator submitted.
+  if (res.redirected && isLoginUrl(res.url)) {
+    throw new ApiClientError(401, {
+      code: "UNAUTHORIZED",
+      message: "Your session has ended. Sign in again to continue.",
+    });
+  }
+
   const text = await res.text();
   let parsed: unknown = null;
+  let malformed = false;
   if (text.length > 0) {
     try {
       parsed = JSON.parse(text);
     } catch {
       parsed = null;
+      malformed = true;
     }
   }
 
@@ -65,6 +78,16 @@ export async function apiRequest<T>(
     throw new ApiClientError(res.status, errBody);
   }
 
+  // A success the client cannot read is not a success it can report: the
+  // caller would otherwise show "saved" for a response it never understood.
+  if (malformed) {
+    throw new ApiClientError(res.status, {
+      code: "BAD_RESPONSE",
+      message:
+        "The server sent a response that could not be read. Reload the page to check whether your change was saved.",
+    });
+  }
+
   if (
     parsed &&
     typeof parsed === "object" &&
@@ -74,6 +97,14 @@ export async function apiRequest<T>(
     return (parsed as { data: T }).data;
   }
   return parsed as T;
+}
+
+function isLoginUrl(url: string): boolean {
+  try {
+    return new URL(url).pathname === "/login";
+  } catch {
+    return false;
+  }
 }
 
 export const api = {

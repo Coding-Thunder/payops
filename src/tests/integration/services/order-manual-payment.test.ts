@@ -195,3 +195,82 @@ describe("recordManualPayment — refusals", () => {
     ).rejects.toThrow();
   });
 });
+
+/**
+ * Consent the way a customer actually gives it: through the hosted page.
+ *
+ * The tests above set `consent.status` directly, which hid a defect: the
+ * hosted page moves the order straight to VERIFIED, and the manual-payment
+ * gate accepted only RECEIVED — so every manual booking whose customer had
+ * confirmed was refused at the final step.
+ */
+describe("recordManualPayment — after real hosted-page consent", () => {
+  async function orderWithHostedConsent(amount = 500) {
+    const { requestConsent, recordConsentFromToken } = await import(
+      "@/server/services/consent.service"
+    );
+    const { order } = await createOrder(
+      validCreateOrderInput({ charges: lines(amount) }),
+      ctx(),
+    );
+    const requested = await requestConsent(
+      {
+        orderId: order.id,
+        customerEmail: order.customer.email,
+        customerName: order.customer.name,
+        consentMessage:
+          "I confirm that I understand and agree to proceed with this booking.",
+        consentEmailSubject: "Please confirm your booking",
+        snapshot: {
+          bookingType: order.bookingType,
+          provider: order.provider.name,
+          vehicle: `${order.vehicle.company} • ${order.vehicle.type}`,
+          pickupDate: order.trip.pickupDate,
+          dropoffDate: order.trip.dropoffDate,
+          amount: order.pricing.amount,
+          currency: order.pricing.currency,
+          paymentLinkRef: null,
+        },
+      },
+      { actor: admin, appUrl: "http://127.0.0.1:3100" },
+    );
+    return { order, requested, recordConsentFromToken };
+  }
+
+  it("records the payment once the customer has confirmed", async () => {
+    const { order, requested, recordConsentFromToken } =
+      await orderWithHostedConsent(500);
+    const view = await recordConsentFromToken(
+      {
+        token: requested.token,
+        acknowledgement: requested.consent.consentMessage,
+        signedName: "Ada Lovelace",
+      },
+      { branding: { brandName: "Test Brand" }, request: null },
+    );
+    // The hosted page verifies on submission — this is the state the
+    // manual-payment gate has to accept.
+    expect(view.status).toBe(ConsentStatus.VERIFIED);
+
+    await recordManualPayment(order.id, good, ctx());
+
+    const raw = await Order.findById(order.id).lean<{
+      status: string;
+      payment: { amountReceived: number };
+    }>();
+    expect(raw!.status).toBe(OrderStatus.PAID);
+    expect(raw!.payment.amountReceived).toBe(500);
+  });
+
+  it("still refuses while the consent request is only pending", async () => {
+    const { order } = await orderWithHostedConsent(500);
+    const raw = await Order.findById(order.id).lean<{
+      consent: { status: string };
+    }>();
+    expect(raw!.consent.status).toBe(ConsentStatus.REQUESTED);
+
+    await expect(recordManualPayment(order.id, good, ctx())).rejects.toThrow(
+      /consent/i,
+    );
+  });
+});

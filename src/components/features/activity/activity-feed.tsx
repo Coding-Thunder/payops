@@ -108,6 +108,14 @@ const VISUALS: Record<DomainEventType, EventVisual> = {
     href: (e) =>
       e.payload.orderId ? `/app/orders/${e.payload.orderId}` : null,
   },
+  [DomainEventType.ORDER_UPDATED]: {
+    icon: RefreshCcwIcon,
+    tone: "bg-surface-1 text-muted-foreground ring-border",
+    title: "Order updated",
+    description: (e) => `${e.payload.orderNumber ?? ""}`,
+    href: (e) =>
+      e.payload.orderId ? `/app/orders/${e.payload.orderId}` : null,
+  },
   [DomainEventType.ORDER_ARCHIVED]: {
     icon: ArchiveIcon,
     tone: "bg-surface-1 text-muted-foreground ring-border",

@@ -52,6 +52,14 @@ export interface PaymentConsentDoc extends OrganizationScoped {
    *  if we tweak the copy later, the record still reflects what the
    *  customer actually agreed to. */
   consentMessage: string;
+  /**
+   * How the operator intends to collect: through a gateway checkout, or
+   * MANUAL (taken off-system by the team). A manual consent must never hand
+   * the customer a checkout link, even when the order still holds one from
+   * an earlier attempt. Absent on records written before this field existed,
+   * which were all gateway requests.
+   */
+  collectionMethod?: "GATEWAY" | "MANUAL" | null;
   /** Subject line of the email that asked for consent (or that the
    *  customer's mailto reply was prefilled with). Useful evidence. */
   consentEmailSubject?: string | null;
@@ -189,6 +197,12 @@ const paymentConsentSchema = new Schema<PaymentConsentDoc>(
       type: String,
       required: true,
       maxlength: 1000,
+    },
+    // Not `collection`: that name is reserved on Mongoose documents.
+    collectionMethod: {
+      type: String,
+      enum: ["GATEWAY", "MANUAL", null],
+      default: "GATEWAY",
     },
     consentEmailSubject: {
       type: String,

@@ -29,6 +29,8 @@ import { formatCurrency } from "@/lib/format";
 
 interface EmailComposePageContentProps {
   orderId: string;
+  /** Whether the viewer may edit orders (ORDER_UPDATE). */
+  canEditOrder?: boolean;
 }
 
 /**
@@ -50,6 +52,7 @@ interface EmailComposePageContentProps {
  */
 export function EmailComposePageContent({
   orderId,
+  canEditOrder = true,
 }: EmailComposePageContentProps) {
   const router = useRouter();
   const { data: order, error, isLoading } = useOrderQuery(orderId);
@@ -129,7 +132,7 @@ export function EmailComposePageContent({
         <CardHeader>
           <CardTitle className="text-base">Order summary</CardTitle>
           <CardDescription>
-            Frozen at creation. Edit customer fields from the composer below.
+            The order as currently saved. Use Edit order below to change it.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -163,6 +166,7 @@ export function EmailComposePageContent({
           order.provider?.name ?? "rental"
         } payment • ${order.orderNumber}`}
         onSent={(at) => setSentAt(at)}
+        canEditOrder={canEditOrder}
       />
 
       <div className="flex justify-end">

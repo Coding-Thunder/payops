@@ -69,6 +69,9 @@ export interface PaymentRequestEmailProps {
    *  in the trust line ("Payment processed securely via Stripe"). When
    *  omitted, the trust line falls back to a gateway-agnostic phrasing. */
   gatewayLabel?: string | null;
+  /** Manual collection: the team arranges payment off-system, so the email
+   *  must not describe an online card payment. */
+  manualCollection?: boolean;
 
   /** All four are editable by the agent in the composer; if empty / null the
    *  template falls back to the code-default copy. */
@@ -144,8 +147,11 @@ export function PaymentRequestEmail({
   consentMailto,
   consentRequired,
   gatewayLabel,
+  manualCollection,
 }: PaymentRequestEmailProps) {
-  const preview = `Complete payment for ${orderNumber} — ${amount}`;
+  const preview = manualCollection
+    ? `Please confirm your booking ${orderNumber}`
+    : `Complete payment for ${orderNumber} — ${amount}`;
   const policyParagraphs = cancellationPolicy
     ? cancellationPolicy.split(/\n+/).filter((p) => p.trim().length > 0)
     : [];
@@ -169,7 +175,10 @@ export function PaymentRequestEmail({
 
   return (
     <EmailLayout preview={preview}>
-      <EmailHeader brandName={brandName} eyebrow="Payment requested" />
+      <EmailHeader
+        brandName={brandName}
+        eyebrow={manualCollection ? "Please confirm your booking" : "Payment requested"}
+      />
 
       <SuccessBanner
         label="Action required"
@@ -193,7 +202,8 @@ export function PaymentRequestEmail({
                 textTransform: "uppercase",
               }}
             >
-              You pay today
+              {/* Nothing is paid online on a manual request. */}
+              {manualCollection ? "Booking amount" : "You pay today"}
             </Text>
             <Text
               style={{
@@ -456,9 +466,13 @@ export function PaymentRequestEmail({
             lineHeight: "16px",
           }}
         >
-          {gatewayLabel
-            ? `Payment processed securely via ${gatewayLabel}. Your card details are encrypted end-to-end and never stored on our servers.`
-            : "Payment processed securely. Your card details are encrypted end-to-end and never stored on our servers."}
+          {manualCollection
+            ? // Nothing is paid online on this path, so no processor is named
+              // and no online-card promise is made.
+              "Our team will contact you to arrange payment. We will never ask you to send card details by email."
+            : gatewayLabel
+              ? `Payment processed securely via ${gatewayLabel}. Your card details are encrypted end-to-end and never stored on our servers.`
+              : "Payment processed securely. Your card details are encrypted end-to-end and never stored on our servers."}
         </Text>
       </Section>
 

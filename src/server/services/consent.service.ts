@@ -8,6 +8,7 @@ import {
   type BookingType,
   ConsentMethod,
   ConsentStatus,
+  OrderStatus,
   type Currency,
   OrderEvidenceActorType,
   OrderEvidenceEventType,
@@ -114,6 +115,8 @@ export interface RequestConsentInput {
   consentMessage: string;
   consentEmailSubject: string | null;
   snapshot: PaymentConsentSnapshot;
+  /** GATEWAY (default) or MANUAL collection. */
+  collection?: "GATEWAY" | "MANUAL";
 }
 
 export interface RequestConsentResult {
@@ -152,6 +155,7 @@ export async function requestConsent(
     throw new NotFoundError("Order not found");
   }
 
+  const collection = input.collection ?? "GATEWAY";
   const existing =
     order.consent?.currentConsentId &&
     order.consent.status === ConsentStatus.REQUESTED
@@ -173,7 +177,9 @@ export async function requestConsent(
     charges: input.snapshot.charges ?? [],
     dueAtCounter: input.snapshot.dueAtCounter ?? 0,
     total: input.snapshot.total ?? input.snapshot.amount,
-    paymentLinkRef: input.snapshot.paymentLinkRef ?? null,
+    // A manual request has no link to refer to, whatever the order holds.
+    paymentLinkRef:
+      collection === "MANUAL" ? null : (input.snapshot.paymentLinkRef ?? null),
   };
 
   let doc: PaymentConsentDoc & { _id: Types.ObjectId };
@@ -184,6 +190,7 @@ export async function requestConsent(
     existing.customerName = input.customerName;
     existing.consentMessage = input.consentMessage;
     existing.consentEmailSubject = input.consentEmailSubject;
+    existing.collectionMethod = collection;
     existing.snapshot = persistedSnapshot;
     existing.requestedAt = new Date();
     await existing.save();
@@ -200,6 +207,7 @@ export async function requestConsent(
       customerName: input.customerName,
       consentMessage: input.consentMessage,
       consentEmailSubject: input.consentEmailSubject,
+      collectionMethod: collection,
       snapshot: persistedSnapshot,
       requestedAt: new Date(),
     });
@@ -217,12 +225,14 @@ export async function requestConsent(
       status: ConsentStatus.REQUESTED,
       currentConsentId: doc._id,
       requestedAt: doc.requestedAt,
+      collectionMethod: collection,
     };
     await order.save();
   } else {
     // Already received — still track that we re-requested in case ops needs
     // to see the resend history, but keep the dominant status.
     order.consent.requestedAt = doc.requestedAt;
+    order.consent.collectionMethod = collection;
     await order.save();
   }
 
@@ -324,6 +334,21 @@ export async function getPublicConsentView(
     supportEmail: branding.supportEmail ?? "",
     supportPhone: branding.supportPhone ?? "",
   });
+  // What the customer may be sent on to. Previously this was the order's
+  // checkout URL, unconditionally — so a MANUAL request handed out a Stripe
+  // link left over from an earlier attempt, a request confirmed at the old
+  // amount forwarded the customer to the new-amount checkout, and a dead or
+  // already-paid session was offered as the next step.
+  const collection = doc.collectionMethod === "MANUAL" ? "MANUAL" : "GATEWAY";
+  const outdated = Boolean(order) && doc.snapshot.amount !== order!.pricing.amount;
+  const orderPaid = order?.status === OrderStatus.PAID;
+  const payable =
+    order?.status === OrderStatus.LINK_GENERATED ||
+    order?.status === OrderStatus.PAYMENT_PENDING;
+  const checkoutFor =
+    collection === "GATEWAY" && !outdated && payable
+      ? (order?.payment?.checkoutUrl ?? null)
+      : null;
   return {
     status: doc.status as ConsentStatus,
     customerName: doc.customerName,
@@ -350,8 +375,11 @@ export async function getPublicConsentView(
       total: doc.snapshot.total ?? doc.snapshot.amount,
       paymentLinkRef: doc.snapshot.paymentLinkRef ?? null,
     },
-    paymentUrl: order?.payment?.checkoutUrl ?? null,
+    paymentUrl: checkoutFor,
     alreadyConfirmedAt: doc.receivedAt ? doc.receivedAt.toISOString() : null,
+    collection,
+    outdated,
+    orderPaid,
   };
 }
 
@@ -391,6 +419,24 @@ export async function recordConsentFromToken(
     return getPublicConsentView(input.token, ctx.branding);
   }
 
+  // A confirmation only counts for the booking as it stands. A request sent
+  // before the amount changed describes a different booking, and a paid
+  // booking needs nothing further — accepting either used to record a
+  // consent that did not match what was, or had been, charged.
+  const orderNow = await Order.findById(doc.orderId)
+    .select("status pricing.amount")
+    .lean<{ status: string; pricing: { amount: number } } | null>();
+  if (orderNow?.status === OrderStatus.PAID) {
+    throw new ConflictError(
+      "This booking has already been paid. Nothing further is needed.",
+    );
+  }
+  if (orderNow && orderNow.pricing.amount !== doc.snapshot.amount) {
+    throw new ConflictError(
+      "This request has been updated since it was sent. Please use the most recent email we sent you.",
+    );
+  }
+
   // First-time transition: a signature IS required. The UI enforces this
   // client-side; the server re-checks so a hand-rolled curl can't slip
   // an empty signature past us.
@@ -416,7 +462,9 @@ export async function recordConsentFromToken(
   await doc.save();
 
   await Order.updateOne(
-    { _id: doc.orderId },
+    // Still the amount this consent is for: a re-price landing in between
+    // must not have this confirmation stand for the new amount.
+    { _id: doc.orderId, "pricing.amount": doc.snapshot.amount },
     {
       $set: {
         "consent.status": ConsentStatus.VERIFIED,

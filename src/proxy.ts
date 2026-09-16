@@ -121,11 +121,11 @@ export async function proxy(req: NextRequest) {
     : null;
 
   if (!token || !secret) {
-    return redirectToLogin(req, pathname + search);
+    return signInRequired(req, pathname + search);
   }
 
   const payload = await verifyToken(token, secret);
-  if (!payload) return redirectToLogin(req, pathname + search);
+  if (!payload) return signInRequired(req, pathname + search);
 
   if (isAdmin(pathname) && payload.role === "STAFF") {
     if (pathname.startsWith("/api/")) {
@@ -178,3 +178,25 @@ export const config = {
     "/((?!_next/static|_next/image|favicon.ico|assets|providers|branding|marketing|static|api/webhooks/stripe).*)",
   ],
 };
+
+/**
+ * A page gets sent to sign-in. An API call gets a 401 it can act on: a
+ * redirect is followed silently by `fetch`, so a form submitted after the
+ * session ended received the login page's HTML with a 200 and reported the
+ * save as a success — or as an unexplained failure — with nothing saved.
+ */
+function signInRequired(req: NextRequest, next: string) {
+  if (req.nextUrl.pathname.startsWith("/api/")) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Your session has ended. Sign in again to continue.",
+        },
+      },
+      { status: 401 },
+    );
+  }
+  return redirectToLogin(req, next);
+}

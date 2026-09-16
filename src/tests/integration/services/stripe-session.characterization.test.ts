@@ -216,14 +216,14 @@ describe("regeneratePaymentLink -> Stripe (now via the gateway)", () => {
     );
   });
 
-  it("reuses the SAME idempotency key as the original session", async () => {
-    // Recorded because it is a live hazard, not because it is desirable.
-    // Against real Stripe an idempotency key is honoured for 24h, so a
-    // regenerate inside that window returns the ORIGINAL session (with its
-    // original expiry) instead of a fresh one — or 400s if any parameter
-    // changed. The in-process stub does not deduplicate, so no test can
-    // observe the real consequence. Verify against Stripe directly before
-    // changing anything on this path.
+  it("gives a regenerated session its own idempotency key", async () => {
+    // This used to pin the SAME key for the original and the regenerated
+    // session, recorded as a live hazard: against real Stripe a key is
+    // honoured for 24h, so a regenerate inside that window returned the
+    // original (just-expired) session, or failed outright because the
+    // parameters differed. A regenerate now records the session it replaces
+    // and uses the next attempt ordinal, so the key is new; the FIRST
+    // session's key is unchanged.
     const { actor, order } = await orderWithImage(null);
     await regeneratePaymentLink(order.id, { actor });
 
@@ -233,7 +233,7 @@ describe("regeneratePaymentLink -> Stripe (now via the gateway)", () => {
     );
     expect(keys).toEqual([
       `order:${order.id}:checkout`,
-      `order:${order.id}:checkout`,
+      `order:${order.id}:checkout:a1`,
     ]);
   });
 

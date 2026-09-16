@@ -6,6 +6,7 @@
 
 export const DomainEventType = {
   ORDER_CREATED: "order:created",
+  ORDER_UPDATED: "order:updated",
   ORDER_EMAIL_SENT: "order:email_sent",
   ORDER_CONSENT_RECEIVED: "order:consent_received",
   ORDER_PAID: "order:paid",
@@ -32,6 +33,7 @@ export const DomainEventType = {
  */
 export const ORDER_LIFECYCLE_EVENT_TYPES = new Set<string>([
   "order:created",
+  "order:updated",
   "order:email_sent",
   "order:consent_received",
   "order:paid",

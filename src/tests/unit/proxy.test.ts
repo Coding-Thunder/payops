@@ -41,3 +41,22 @@ describe("proxy auth gate — public customer surfaces", () => {
     expect(res.headers.get("location")).toContain("/login");
   });
 });
+
+describe("proxy auth gate — API calls without a session", () => {
+  it("answers 401 JSON instead of redirecting to the login page", async () => {
+    const res = await proxy(reqFor("/api/orders"));
+    expect(res.status).toBe(401);
+    expect(res.headers.get("location")).toBeNull();
+    const body = await res.json();
+    expect(body.error.code).toBe("UNAUTHORIZED");
+  });
+
+  it("does the same for an invalid session cookie", async () => {
+    const req = new NextRequest(new URL("https://app.example.com/api/orders/x/modify"), {
+      method: "POST",
+      headers: { cookie: `${process.env.COOKIE_NAME || "payops_session"}=not-a-jwt` },
+    });
+    const res = await proxy(req);
+    expect(res.status).toBe(401);
+  });
+});

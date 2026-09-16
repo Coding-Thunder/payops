@@ -162,6 +162,39 @@ function handleError(err: unknown): NextResponse {
     return jsonError(err.statusCode, err.code, err.message, err.details);
   }
 
+  // A body that is not JSON at all. `req.json()` throws a SyntaxError, which
+  // used to fall through to the 500 below and tell the caller the SERVER had
+  // failed.
+  if (err instanceof SyntaxError) {
+    return jsonError(400, "BAD_REQUEST", "The request body is not valid JSON.");
+  }
+
+  // A database-level validation failure (for example a limit the request
+  // schema does not repeat). The operator gets the field and the reason
+  // instead of "Something went wrong".
+  if (
+    err instanceof Error &&
+    err.name === "ValidationError" &&
+    "errors" in err &&
+    err.errors &&
+    typeof err.errors === "object"
+  ) {
+    const issues = Object.entries(
+      err.errors as Record<string, { message?: string }>,
+    ).map(([path, e]) => ({
+      path,
+      message: e?.message ?? "Invalid value",
+      code: "invalid",
+    }));
+    logger.warn("api.model_validation_error", { issues });
+    return jsonError(
+      422,
+      "VALIDATION_ERROR",
+      issues[0]?.message ?? "Invalid request data",
+      { issues },
+    );
+  }
+
   if (err instanceof Error) {
     logger.error("api.unhandled_error", { message: err.message });
     return jsonError(500, "INTERNAL_ERROR", "Something went wrong");

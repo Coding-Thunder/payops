@@ -12,12 +12,99 @@ import {
 import { PROVIDER_KEY_REGEX } from "@/lib/constants/providers";
 import { defaultTimingForIndex } from "@/lib/charges";
 
+import { CARD_DATA_MESSAGE, containsCardData } from "./card-data";
+
+/**
+ * An ISO 8601 date-time as the date pickers produce it.
+ *
+ * `Date.parse` alone is too forgiving to be the server's rule: it reads "1"
+ * as the year 2001 and silently rolls 30 February into 2 March. The UI can
+ * produce neither, so anything that does not start with a real calendar date
+ * is refused rather than reinterpreted.
+ */
 const isoDateString = z
   .string()
   .min(1, "Date is required")
-  .refine((v) => !Number.isNaN(Date.parse(v)), "Enter a valid date");
+  .refine((v) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v);
+    if (!m) return false;
+    const t = Date.parse(v);
+    if (Number.isNaN(t)) return false;
+    const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+    // The calendar part must exist as written (no rollover).
+    const probe = new Date(Date.UTC(y, mo - 1, d));
+    if (
+      probe.getUTCFullYear() !== y ||
+      probe.getUTCMonth() !== mo - 1 ||
+      probe.getUTCDate() !== d
+    ) {
+      return false;
+    }
+    return y >= 2000 && y <= 2100;
+  }, "Enter a valid date");
 
 const phoneRegex = /^[+0-9()\-\s]{7,32}$/;
+
+/** A phone number needs digits, not just separators. */
+const hasEnoughDigits = (v: string) => (v.match(/\d/g) ?? []).length >= 7;
+
+/** Names are printed in emails and on receipts: no control characters, and
+ *  at least one visible letter or digit (a run of zero-width spaces is not a
+ *  name). */
+const isPrintableName = (v: string) =>
+  !/[\x00-\x1f\x7f\u200b-\u200d\u2060\ufeff]/.test(v) &&
+  /[\p{L}\p{N}]/u.test(v);
+
+/** RFC 5321 caps a mailbox at 254 characters; the database enforces the same
+ *  limit, so exceeding it must be a field error, not a 500. */
+const EMAIL_MAX = 254;
+
+/** Money is stored and charged to the cent. More precision than that used to
+ *  be accepted and rounded line by line, so the lines a customer saw could
+ *  add up to a cent more than the link charged. */
+const hasAtMostTwoDecimals = (v: number) =>
+  Math.abs(v * 100 - Math.round(v * 100)) < 1e-6;
+
+/** The smallest prepaid total a payment link can collect. The order model
+ *  enforces the same floor; checking it here turns a 500 into a field error. */
+const MIN_PREPAID_TOTAL = 0.5;
+
+/**
+ * Public URL of the vehicle photo.
+ *
+ * Defined once and shared by the create and MCO paths rather than written
+ * twice, because the two must agree on what "no image" means. The photo is
+ * read LIVE from this field by the payment-request email, the hosted
+ * checkout, the paid receipt and the dispute-evidence pack — so a definition
+ * that drifted between the two paths would end up showing a customer a car
+ * they never rented, with the correct make and model printed beside it.
+ *
+ * `.transform()` is the OUTERMOST link, so it runs even when the value is
+ * absent and coerces `undefined` to `null`. Every object embedding this field
+ * must therefore keep it inside a `.partial()`: without one, an MCO that
+ * sends a vehicle group and simply does not mention the image would WIPE the
+ * photo rather than leave it alone.
+ */
+const vehicleImageUrl = z
+  .string()
+  .trim()
+  .max(2048)
+  // Treat empty/whitespace as "no image" — Zod's url validator would
+  // otherwise reject "" and block the optional case.
+  .refine((v) => v === "" || /^https?:\/\//i.test(v), {
+    message: "Enter a valid http(s) image URL",
+  })
+  .optional()
+  .nullable()
+  .transform((v) => (v && v.length > 0 ? v : null));
+
+/** A rental provider's catalog key. Shared so an MCO cannot accept a key
+ *  shape that order creation would have refused. */
+const providerKey = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(PROVIDER_KEY_REGEX, "Select a rental provider");
 
 /** One line of the rental charge breakdown. `timing` is REQUIRED here: this
  *  is the canonical shape, used wherever a caller states every field
@@ -28,7 +115,8 @@ export const chargeInputSchema = z.object({
   amount: z
     .number({ error: "Enter a valid amount" })
     .positive("Amount must be greater than zero")
-    .max(1_000_000, "Amount looks unrealistic"),
+    .max(1_000_000, "Amount looks unrealistic")
+    .refine(hasAtMostTwoDecimals, "Use at most 2 decimal places"),
   timing: z.enum(PAYMENT_TIMINGS),
 });
 
@@ -42,6 +130,40 @@ const hasPositivePrepaidLine = (
 
 const PREPAID_REQUIRED_MESSAGE =
   "At least one prepaid charge is required to collect payment";
+
+const prepaidTotalAtLeastMinimum = (
+  lines: ReadonlyArray<{ timing: PaymentTiming; amount: number }>,
+) => {
+  const prepaid = lines
+    .filter((l) => l.timing === PaymentTiming.PREPAID)
+    .reduce((sum, l) => sum + l.amount, 0);
+  // A total with no prepaid line is reported by the rule above instead.
+  return prepaid <= 0 || prepaid + 1e-9 >= MIN_PREPAID_TOTAL;
+};
+
+const PREPAID_MINIMUM_MESSAGE =
+  "The prepaid total must be at least 0.50 — payment links cannot collect less";
+
+/** Customer contact fields, shared by create and edit so an edit can never
+ *  store what creation would have refused. */
+const customerName = z
+  .string()
+  .trim()
+  .min(2, "Customer name is required")
+  .max(120)
+  .refine(isPrintableName, "Enter the customer's name");
+const customerEmail = z
+  .string()
+  .trim()
+  .max(EMAIL_MAX, "Email address is too long")
+  .email("Enter a valid email")
+  .toLowerCase();
+const customerPhone = z
+  .string()
+  .trim()
+  .regex(phoneRegex, "Enter a valid phone number")
+  .max(32)
+  .refine(hasEnoughDigits, "Enter a valid phone number");
 
 /**
  * CREATE-path charge array: `timing` may be omitted and is then resolved by
@@ -66,7 +188,8 @@ export const chargesCreateArraySchema = z
       timing: line.timing ?? defaultTimingForIndex(index),
     })),
   )
-  .refine(hasPositivePrepaidLine, { message: PREPAID_REQUIRED_MESSAGE });
+  .refine(hasPositivePrepaidLine, { message: PREPAID_REQUIRED_MESSAGE })
+  .refine(prepaidTotalAtLeastMinimum, { message: PREPAID_MINIMUM_MESSAGE });
 
 /** EDIT-path charge array: every line states its own timing. Same size and
  *  prepaid rules as create, no positional defaulting. */
@@ -74,24 +197,17 @@ export const chargesEditArraySchema = z
   .array(chargeInputSchema)
   .min(1, "Add at least one charge")
   .max(20, "Too many charge lines")
-  .refine(hasPositivePrepaidLine, { message: PREPAID_REQUIRED_MESSAGE });
+  .refine(hasPositivePrepaidLine, { message: PREPAID_REQUIRED_MESSAGE })
+  .refine(prepaidTotalAtLeastMinimum, { message: PREPAID_MINIMUM_MESSAGE });
 
 export const createOrderSchema = z
   .object({
     bookingType: z.enum(BOOKING_TYPES),
-    provider: z
-      .string()
-      .trim()
-      .toUpperCase()
-      .regex(PROVIDER_KEY_REGEX, "Select a rental provider"),
+    provider: providerKey,
     customer: z.object({
-      name: z.string().trim().min(2, "Customer name is required").max(120),
-      email: z.string().email("Enter a valid email").toLowerCase(),
-      phone: z
-        .string()
-        .trim()
-        .regex(phoneRegex, "Enter a valid phone number")
-        .max(32),
+      name: customerName,
+      email: customerEmail,
+      phone: customerPhone,
     }),
     vehicle: z.object({
       company: z
@@ -100,18 +216,7 @@ export const createOrderSchema = z
         .min(2, "Car company is required")
         .max(80),
       type: z.string().trim().min(2, "Car type is required").max(80),
-      imageUrl: z
-        .string()
-        .trim()
-        .max(2048)
-        // Treat empty/whitespace as "no image" — Zod's url validator
-        // would otherwise reject "" and block the optional case.
-        .refine((v) => v === "" || /^https?:\/\//i.test(v), {
-          message: "Enter a valid http(s) image URL",
-        })
-        .optional()
-        .nullable()
-        .transform((v) => (v && v.length > 0 ? v : null)),
+      imageUrl: vehicleImageUrl,
     }),
     trip: z
       .object({
@@ -230,33 +335,62 @@ export type RepriceOrderInput = z.infer<typeof repriceOrderSchema>;
  * the re-price path so the payment-session rules apply; when absent the
  * amount is left completely alone.
  *
- * Deliberately NOT editable here: orderNumber, provider, currency, and
- * anything under `payment`. Those are either identity, a merchant-account
- * pin, or settled financial fact.
+ * Deliberately NOT editable here:
+ *   - orderNumber — identity. An MCO amends order #123; it never mints #124.
+ *   - currency — `pricing.currency` is written exactly once, at creation, and
+ *     supersession triggers on the AMOUNT alone. Switching GBP to USD at an
+ *     unchanged number would therefore supersede nothing: the customer's live
+ *     link would still collect GBP while every surface in the app said USD,
+ *     and because the gateway idempotency key is keyed on the price revision,
+ *     regenerating the link could not even mint a replacement session.
+ *     Making currency editable means widening the supersession trigger, which
+ *     is a payment-architecture change and belongs in its own piece of work.
+ *   - anything under `payment` — settled financial fact.
+ *
+ * `provider` IS editable, and the previous note here calling it "a
+ * merchant-account pin" was wrong. The rental provider is a BRANDING snapshot
+ * (Budget, Hertz); the payment gateway and its credentials resolve from the
+ * ORGANIZATION in `server/payments/resolve-gateway.ts` and never consult this
+ * field. Changing it re-brands the customer's emails and checkout, which is
+ * exactly what an operator needs when a booking moves supplier. The service
+ * still refuses it on a PAID order, because by then the snapshot is dispute
+ * evidence — a receipt has to show what the customer actually saw.
+ *
+ * Every object here is `strictObject`, so a field this flow does NOT support
+ * is REJECTED rather than silently dropped. Zod strips unknown keys by
+ * default, which meant a caller could post `currency` or `notes`, receive a
+ * 200 and a success toast, and have nothing change.
  */
 export const modifyOrderSchema = z
-  .object({
+  .strictObject({
+    /** Rental provider (branding). Re-snapshotted server-side from the
+     *  catalog, so a disabled or unknown key is refused rather than pinned. */
+    provider: providerKey.optional(),
     customer: z
-      .object({
-        name: z.string().trim().min(2, "Customer name is required").max(120),
-        email: z.string().email("Enter a valid email").toLowerCase(),
-        phone: z
-          .string()
-          .trim()
-          .regex(phoneRegex, "Enter a valid phone number")
-          .max(32),
+      .strictObject({
+        name: customerName,
+        email: customerEmail,
+        phone: customerPhone,
       })
       .partial()
       .optional(),
     vehicle: z
-      .object({
+      .strictObject({
         company: z.string().trim().min(2, "Car company is required").max(80),
         type: z.string().trim().min(2, "Car type is required").max(80),
+        // The car-library picker writes make, model and photo as one
+        // selection, so the photo has to travel with them. Without it the
+        // commonest MCO of all — "give me a different car" — updates the
+        // text and leaves the customer looking at the old vehicle.
+        //
+        // The `.partial()` below is load-bearing for this field: see the
+        // note on `vehicleImageUrl`.
+        imageUrl: vehicleImageUrl,
       })
       .partial()
       .optional(),
     trip: z
-      .object({
+      .strictObject({
         pickupDate: isoDateString,
         dropoffDate: isoDateString,
         pickupLocation: z
@@ -274,11 +408,25 @@ export const modifyOrderSchema = z
       .optional(),
     /** Present only when the change also re-prices the booking. */
     charges: chargesEditArraySchema.optional(),
-    /** What the customer asked for. Surfaces in the audit trail. */
-    reason: z.string().trim().max(500).optional(),
+    /** What the customer asked for. Surfaces in the audit trail — which is
+     *  exactly where card data must never land. */
+    reason: z
+      .string()
+      .trim()
+      .max(500)
+      .refine((v) => !containsCardData(v), CARD_DATA_MESSAGE)
+      .optional(),
+    /**
+     * Precondition, not an order field: the `updatedAt` of the order the
+     * operator was looking at. When the order has changed since, the edit is
+     * refused instead of silently writing values the operator never saw over
+     * a colleague's change.
+     */
+    expectedUpdatedAt: z.string().datetime().optional(),
   })
   .refine(
-    (v) => Boolean(v.customer || v.vehicle || v.trip || v.charges),
+    (v) =>
+      Boolean(v.customer || v.vehicle || v.trip || v.charges || v.provider),
     { message: "No changes supplied" },
   );
 
@@ -292,41 +440,43 @@ export const switchGatewaySchema = z.object({
 export type SwitchGatewayInput = z.infer<typeof switchGatewaySchema>;
 
 /**
- * Reference for a payment collected outside PayOps.
+ * A payment collected outside PayOps.
  *
- * The 13–19 digit rejection is a hard requirement, not a nicety: PayOps must
- * never hold a PAN, and the most likely way one arrives is an operator
- * pasting the card number into a free-text "reference" box. Separators are
- * stripped before counting so `4111 1111 1111 1111` and `4111-1111-1111-1111`
- * are caught too.
+ * PayOps must never hold card data, and every one of these three fields is
+ * free text an operator types while looking at a terminal. All three are
+ * checked (see `containsCardData`): the reference used to be the only one,
+ * and only for a value made entirely of digits, so card numbers typed into
+ * the method or notes — or into the reference alongside other words — were
+ * stored, audited and exported.
  *
- * It deliberately only rejects strings that are ALL digits once separators go
- * — a terminal auth code like `AUTH-004521` or `TXN 99887766` stays valid,
- * because blocking legitimate references would push operators toward leaving
+ * A real terminal reference such as `AUTH-004521` or `TXN 99887766` still
+ * passes: blocking legitimate references would push operators toward leaving
  * the field blank.
+ *
+ * `strictObject`: the amount is never an input. A manual payment always
+ * settles the full prepaid total, so an `amount` in the request is refused
+ * rather than silently ignored.
  */
-const looksLikeCardNumber = (value: string): boolean => {
-  const digitsOnly = value.replace(/[\s-]/g, "");
-  return /^\d{13,19}$/.test(digitsOnly);
-};
-
-export const recordManualPaymentSchema = z.object({
+export const recordManualPaymentSchema = z.strictObject({
   /** How the money was taken. A label, never card data. */
   method: z
     .string()
     .trim()
     .min(2, "Describe how the payment was taken")
-    .max(40),
+    .max(40)
+    .refine((v) => !containsCardData(v), CARD_DATA_MESSAGE),
   reference: z
     .string()
     .trim()
     .min(3, "A payment reference is required")
     .max(120)
-    .refine((v) => !looksLikeCardNumber(v), {
-      message:
-        "That looks like a card number. Enter the terminal reference or authorisation code instead — never card details.",
-    }),
-  notes: z.string().trim().max(500).optional(),
+    .refine((v) => !containsCardData(v), CARD_DATA_MESSAGE),
+  notes: z
+    .string()
+    .trim()
+    .max(500)
+    .refine((v) => !containsCardData(v), CARD_DATA_MESSAGE)
+    .optional(),
 });
 
 export type RecordManualPaymentInput = z.infer<typeof recordManualPaymentSchema>;

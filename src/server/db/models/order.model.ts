@@ -153,7 +153,7 @@ export interface OrderDoc extends OrganizationScoped {
       status: OrderStatus;
       failureReason?: string | null;
       /** Why this attempt stopped being current. Null while it is current. */
-      supersededReason?: "GATEWAY_SWITCHED" | "REPRICED" | null;
+      supersededReason?: "GATEWAY_SWITCHED" | "REPRICED" | "REGENERATED" | null;
       supersededAt?: Date | null;
       createdAt: Date;
     }>;
@@ -204,6 +204,8 @@ export interface OrderDoc extends OrganizationScoped {
     receivedAt?: Date | null;
     verifiedAt?: Date | null;
     method?: string | null;
+    /** How the latest request asked to be paid. Null before any request. */
+    collectionMethod?: "GATEWAY" | "MANUAL" | null;
   };
   /** Denormalised pointer to the latest Dispute. Null until the first
    *  chargeback lands. The full dispute history lives in the `disputes`
@@ -356,7 +358,10 @@ const paymentAttemptSchema = new Schema(
     failureReason: { type: String, default: null },
     supersededReason: {
       type: String,
-      enum: ["GATEWAY_SWITCHED", "REPRICED", null],
+      // REGENERATED: replaced by a fresh link at the same amount and on the
+      // same gateway. Recorded so a late success on the old session is
+      // recognised as superseded rather than settling the order.
+      enum: ["GATEWAY_SWITCHED", "REPRICED", "REGENERATED", null],
       default: null,
     },
     supersededAt: { type: Date, default: null },
@@ -456,6 +461,11 @@ const consentPointerSchema = new Schema(
     receivedAt: { type: Date, default: null },
     verifiedAt: { type: Date, default: null },
     method: { type: String, default: null, maxlength: 24 },
+    collectionMethod: {
+      type: String,
+      enum: ["GATEWAY", "MANUAL", null],
+      default: null,
+    },
   },
   { _id: false },
 );

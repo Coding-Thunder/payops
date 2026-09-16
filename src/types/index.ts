@@ -162,7 +162,7 @@ export interface OrderPaymentAttempt {
   status: OrderStatus;
   failureReason: string | null;
   /** Why it stopped being current, or null if it never was superseded. */
-  supersededReason: "GATEWAY_SWITCHED" | "REPRICED" | null;
+  supersededReason: "GATEWAY_SWITCHED" | "REPRICED" | "REGENERATED" | null;
   supersededAt: string | null;
   createdAt: string;
 }
@@ -199,6 +199,8 @@ export interface OrderConsentPointer {
   receivedAt: string | null;
   verifiedAt: string | null;
   method: ConsentMethod | null;
+  /** How the latest payment request asked to be paid; null before any. */
+  collectionMethod: "GATEWAY" | "MANUAL" | null;
 }
 
 export interface OrderDisputePointer {
@@ -337,8 +339,19 @@ export interface PublicConsentView {
   organizationId: string | null;
   consentMessage: string;
   snapshot: PaymentConsentSnapshot;
+  /** Where to pay, ONLY when this request is for gateway collection, is for
+   *  the amount the order is collecting now, and the order has a live link.
+   *  Null for manual requests, outdated requests and settled orders. */
   paymentUrl: string | null;
   alreadyConfirmedAt: string | null;
+  /** GATEWAY: the customer pays online after confirming. MANUAL: the team
+   *  arranges payment separately — the page must not promise a checkout. */
+  collection: "GATEWAY" | "MANUAL";
+  /** This request no longer matches the booking (the amount changed since
+   *  it was sent). The customer must use the most recent request. */
+  outdated: boolean;
+  /** The booking is already paid; nothing further is needed. */
+  orderPaid: boolean;
 }
 
 export interface ConsentSettings {

@@ -50,6 +50,27 @@ describe("apiRequest", () => {
     expect(err.code).toBe("INTERNAL_ERROR");
   });
 
+  it("reports an ended session when a call was redirected to the login page", async () => {
+    const page = new Response("<html>Sign in</html>", { status: 200 });
+    Object.defineProperty(page, "redirected", { value: true });
+    Object.defineProperty(page, "url", { value: "http://localhost/login?next=%2Fapi%2Forders" });
+    vi.stubGlobal("fetch", vi.fn(async () => page));
+    await expect(api.post("/api/orders", {})).rejects.toMatchObject({
+      status: 401,
+      code: "UNAUTHORIZED",
+    });
+  });
+
+  it("does not report an unreadable 200 as a success", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("<html>oops</html>", { status: 200 })),
+    );
+    await expect(api.post("/api/orders", {})).rejects.toMatchObject({
+      code: "BAD_RESPONSE",
+    });
+  });
+
   it("api.post forwards the body as JSON", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({ ok: true, data: { ok: true } }),

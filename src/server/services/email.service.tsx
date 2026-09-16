@@ -10,6 +10,7 @@ import {
   EmailKind,
   OrderEvidenceActorType,
   OrderEvidenceEventType,
+  OrderStatus,
   PaymentGatewayKey,
   type UserRole,
 } from "@/lib/constants/enums";
@@ -408,11 +409,22 @@ export async function composePaymentRequestProps(
     : order.provider;
   const effectiveConsentMessage =
     consent?.consentMessage ?? settings.consentMessage;
+  const manual = Boolean(overrides.manualCollection);
+  // A link is offered only while it can actually be paid, and never on a
+  // manual request. A FAILED or EXPIRED order keeps its old URL on record,
+  // and that URL used to reach the customer — in the button, the "pay by"
+  // date and the reply-by-email draft — including on manual requests.
+  const linkIsLive =
+    order.status === OrderStatus.LINK_GENERATED ||
+    order.status === OrderStatus.PAYMENT_PENDING;
+  const liveCheckoutUrl =
+    !manual && linkIsLive ? (order.payment.paymentUrl ?? null) : null;
   const consentMailto = buildConsentMailto({
     toEmail: identity.supportEmail,
     brandName: identity.brandName,
     order,
     consentMessage: effectiveConsentMessage,
+    paymentUrl: liveCheckoutUrl,
   });
 
   // Pick the single primary CTA. Consent-first by default; jump straight
@@ -423,7 +435,7 @@ export async function composePaymentRequestProps(
     order.consent?.status === ConsentStatus.VERIFIED;
   // Gateway-agnostic at the call site — `order.payment.paymentUrl` is
   // whatever the chosen gateway returned. Variable kept generic.
-  const checkoutUrl = order.payment.paymentUrl ?? "";
+  const checkoutUrl = liveCheckoutUrl ?? "";
   const consentRequired =
     consent?.consentRequired ?? settings.consentMode === ConsentMode.REQUIRED;
 
@@ -452,9 +464,11 @@ export async function composePaymentRequestProps(
   // here put the wrong processor on the single primary action of a PayPal
   // brand's email — the button said Stripe and opened PayPal, which is the
   // classic phishing tell.
-  const gatewayLabel = order.payment.gateway
-    ? PAYMENT_GATEWAY_LABELS[order.payment.gateway as PaymentGatewayKey]
-    : null;
+  // A manual request names no processor: nobody will pay through one.
+  const gatewayLabel =
+    !manual && order.payment.gateway
+      ? PAYMENT_GATEWAY_LABELS[order.payment.gateway as PaymentGatewayKey]
+      : null;
   const payLabel = `Pay ${formatMoney(order.pricing.amount, order.pricing.currency)} securely with ${gatewayLabel ?? "our secure checkout"} →`;
   // A manual send must never offer checkout, even if a superseded link is
   // still on the record — that link is exactly what must not be paid.
@@ -508,9 +522,11 @@ export async function composePaymentRequestProps(
     orderNumber: order.orderNumber,
     bookingType: order.bookingType,
     amount: formatMoney(order.pricing.amount, order.pricing.currency),
-    dueBy: order.payment.expiresAt
-      ? formatEmailDate(order.payment.expiresAt)
-      : null,
+    // A "pay by" date only means something for a link that can be paid.
+    dueBy:
+      liveCheckoutUrl && order.payment.expiresAt
+        ? formatEmailDate(order.payment.expiresAt)
+        : null,
     provider: providerForEmail,
     vehicle: order.vehicle,
     trip: {
@@ -522,6 +538,7 @@ export async function composePaymentRequestProps(
     chargeBreakdown: buildEmailChargeBreakdown(order),
     paymentUrl: checkoutUrl,
     gatewayLabel,
+    manualCollection: manual,
     greeting: overrides.greeting ?? tpl?.greeting ?? null,
     intro:
       overrides.intro ??
@@ -617,6 +634,7 @@ export async function sendPaymentRequestEmail(
           customerName: order.customer.name,
           consentMessage: settings.consentMessage,
           consentEmailSubject: subject,
+          collection: overrides.manualCollection ? "MANUAL" : "GATEWAY",
           snapshot: (() => {
             const s = summarizeCharges(order.charges, order.pricing.amount);
             return {
@@ -632,7 +650,9 @@ export async function sendPaymentRequestEmail(
               charges: s.charges,
               dueAtCounter: s.dueAtCounter,
               total: s.total,
-              paymentLinkRef: order.payment.paymentUrl,
+              paymentLinkRef: overrides.manualCollection
+                ? null
+                : order.payment.paymentUrl,
             };
           })(),
         },

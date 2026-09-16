@@ -14,7 +14,9 @@ import {
   UserRole,
 } from "@/lib/constants/enums";
 import { DomainEventType } from "@/lib/constants/events";
+import { ConflictError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
+import { toMinorUnits } from "@/server/payments/currency";
 import {
   Dispute,
   type DisputeDoc,
@@ -346,28 +348,53 @@ export function classifyPaymentSession(
  * Refunding is deliberately not attempted: `PaymentGateway` exposes no refund
  * method, so the resolution is an operator action, not an automated one.
  */
+type CompetingKind =
+  | "superseded-session"
+  | "already-settled"
+  | "unknown-session"
+  | "amount-mismatch"
+  | "state-changed";
+
+/** The gateway a session belongs to. Taken from the recorded attempt when
+ *  there is one: after a manual settlement the order's own gateway reads
+ *  MANUAL, and a late card payment must not be filed under it. */
+function gatewayOfSession(
+  order: OrderDocument,
+  sessionId: string | null,
+): string {
+  const attempt = sessionId
+    ? (order.payment.attempts ?? []).find((a) => a.sessionId === sessionId)
+    : undefined;
+  if (attempt?.gateway) return attempt.gateway;
+  const current = order.payment.gateway;
+  return current && current !== PaymentGatewayKey.MANUAL ? current : "STRIPE";
+}
+
 async function recordCompetingPayment(
   order: OrderDocument,
   input: PaidTransitionInput,
-  kind: "superseded-session" | "already-settled",
+  kind: CompetingKind,
+  opts: { alreadyClaimed?: boolean } = {},
 ): Promise<ProcessEventResult> {
-  const gatewayKey = order.payment.gateway ?? "STRIPE";
+  const gatewayKey = gatewayOfSession(order, input.sessionId);
 
   // No transaction: this path performs one flag-and-record update rather
   // than a multi-document state transition, and the unique index on
   // `gatewayEventId` is the idempotency primitive either way.
-  const claimed = await tryClaimGatewayEvent(
-    {
-      gatewayEventId: input.eventId,
-      gateway: gatewayKey,
-      orderId: String(order._id),
-    },
-    null,
-  );
-  // Same delivery twice is still a no-op: idempotency applies to this path
-  // exactly as it does to the success path.
-  if (!claimed) {
-    return { handled: true, duplicate: true, orderId: String(order._id) };
+  if (!opts.alreadyClaimed) {
+    const claimed = await tryClaimGatewayEvent(
+      {
+        gatewayEventId: input.eventId,
+        gateway: gatewayKey,
+        orderId: String(order._id),
+      },
+      null,
+    );
+    // Same delivery twice is still a no-op: idempotency applies to this path
+    // exactly as it does to the success path.
+    if (!claimed) {
+      return { handled: true, duplicate: true, orderId: String(order._id) };
+    }
   }
 
   const amount =
@@ -375,10 +402,14 @@ async function recordCompetingPayment(
       ? input.amountTotal / 100
       : order.pricing.amount;
 
-  const note =
-    kind === "superseded-session"
-      ? `A payment of ${amount} ${order.pricing.currency} succeeded on a superseded checkout session (${input.sessionId}). The order's current amount is ${order.pricing.amount}. Reconcile or refund manually.`
-      : `A second payment of ${amount} ${order.pricing.currency} succeeded on session ${input.sessionId} after this order was already settled. Reconcile or refund manually.`;
+  const notes: Record<CompetingKind, string> = {
+    "superseded-session": `A payment of ${amount} ${order.pricing.currency} succeeded on a superseded checkout session (${input.sessionId}). The order's current amount is ${order.pricing.amount}. Reconcile or refund manually.`,
+    "already-settled": `A second payment of ${amount} ${order.pricing.currency} succeeded on session ${input.sessionId} after this order was already settled. Reconcile or refund manually.`,
+    "unknown-session": `A payment of ${amount} ${order.pricing.currency} succeeded on session ${input.sessionId}, which is not a session this order issued. The order was left unpaid. Reconcile or refund manually.`,
+    "amount-mismatch": `A payment of ${amount} ${order.pricing.currency} succeeded on session ${input.sessionId}, but this order is collecting ${order.pricing.amount}. The order was left unpaid. Reconcile or refund manually.`,
+    "state-changed": `A payment of ${amount} ${order.pricing.currency} on session ${input.sessionId} arrived while the order was being changed (re-priced or moved to another gateway). The order was left unpaid. Reconcile or refund manually.`,
+  };
+  const note = notes[kind];
 
   await Order.updateOne(
     { _id: order._id },
@@ -474,10 +505,45 @@ export async function applyCheckoutPaid(
     return recordCompetingPayment(order, input, "already-settled");
   }
 
+  const fromGateway = input.source !== "manual";
+
+  // A session this order never issued must not settle it. Before a
+  // regenerated link recorded the session it replaced, this was exactly how
+  // a payment on the old link settled the order at whatever amount it
+  // reported — and the customer's real payment on the new link was then
+  // dropped as a duplicate. Orders with no current pointer keep the legacy
+  // behaviour.
+  if (
+    fromGateway &&
+    order.status !== OrderStatus.PAID &&
+    classification === "unknown" &&
+    input.sessionId &&
+    order.payment.stripeSessionId &&
+    input.sessionId !== order.payment.stripeSessionId
+  ) {
+    return recordCompetingPayment(order, input, "unknown-session");
+  }
+
+  // The money received must be the money this order is collecting. A
+  // "success" for a different amount is real money, but settling on it
+  // would mark the order fully paid when it is not (or overpaid): it is
+  // recorded and flagged for a human instead.
+  if (
+    fromGateway &&
+    order.status !== OrderStatus.PAID &&
+    typeof input.amountTotal === "number" &&
+    input.amountTotal !==
+      toMinorUnits(order.pricing.amount, order.pricing.currency)
+  ) {
+    return recordCompetingPayment(order, input, "amount-mismatch");
+  }
+
   type TxOutcome =
     | { duplicate: true }
+    | { duplicate: false; stateChanged: true }
     | {
         duplicate: false;
+        stateChanged?: false;
         didTransition: boolean;
         previousStatus: OrderStatus;
         updated: OrderDoc & { _id: Types.ObjectId };
@@ -516,11 +582,32 @@ export async function applyCheckoutPaid(
     //
     // The $push is capped at -50 via $slice so the legacy array stays
     // bounded over the order lifetime.
+    //
+    // The order must also still be the one the gates above approved: the
+    // same amount and, for a gateway payment, the same current session. A
+    // re-price, regenerate or gateway switch committing between those checks
+    // and this write used to let the payment settle an order that had moved
+    // on — at the old amount.
+    const stillApproved: Record<string, unknown> = {
+      "pricing.amount": order.pricing.amount,
+    };
+    if (fromGateway && input.sessionId && order.payment.stripeSessionId) {
+      stillApproved["payment.stripeSessionId"] = input.sessionId;
+      stillApproved["payment.attempts"] = {
+        $not: {
+          $elemMatch: {
+            sessionId: input.sessionId,
+            supersededAt: { $ne: null },
+          },
+        },
+      };
+    }
     const updated = await Order.findOneAndUpdate(
       {
         _id: order._id,
         status: { $ne: OrderStatus.PAID },
         "payment.processedWebhookEventIds": { $ne: input.eventId },
+        ...stillApproved,
       },
       {
         $set: {
@@ -555,10 +642,21 @@ export async function applyCheckoutPaid(
     ).lean<OrderDoc & { _id: Types.ObjectId }>();
 
     if (!updated) {
-      // Order is already PAID (another transition won the race).
-      // No audit, no evidence, no outbox enqueue — exactly one
-      // confirmation email lifecycle per order.
-      return { duplicate: true };
+      // Either the order is already PAID (another transition won the race —
+      // no audit, no evidence, no outbox enqueue: exactly one confirmation
+      // email lifecycle per order), or it changed underneath this payment.
+      const now = await Order.findById(order._id, null, sessionOpt(session))
+        .select("status payment.processedWebhookEventIds")
+        .lean<Pick<OrderDoc, "status"> & {
+          payment?: { processedWebhookEventIds?: string[] };
+        }>();
+      const alreadyApplied =
+        !now ||
+        now.status === OrderStatus.PAID ||
+        (now.payment?.processedWebhookEventIds ?? []).includes(input.eventId);
+      return alreadyApplied
+        ? { duplicate: true }
+        : { duplicate: false, stateChanged: true };
     }
 
     // 3. Audit + evidence (in-tx; failure aborts everything).
@@ -669,6 +767,22 @@ export async function applyCheckoutPaid(
     return { handled: true, duplicate: true, orderId: String(order._id) };
   }
 
+  if (outcome.stateChanged) {
+    // The order moved on between the checks and the write. The event is
+    // already claimed, so it is recorded here rather than retried.
+    if (!fromGateway) {
+      // An operator recording money: nothing arrived from a gateway, so there
+      // is nothing to file — tell them to look again at the current order.
+      throw new ConflictError(
+        "The order changed while the payment was being recorded. Reload it and check the amount before recording again.",
+      );
+    }
+    const fresh = await Order.findById(order._id);
+    return recordCompetingPayment(fresh ?? order, input, "state-changed", {
+      alreadyClaimed: true,
+    });
+  }
+
   if (outcome.didTransition) {
     logger.info("order.lifecycle.transition", {
       orderId: String(outcome.updated._id),
@@ -714,6 +828,106 @@ export async function applyCheckoutPaid(
 // 60s in-process drainer (plus restarts) retries on transient SMTP
 // failures. No more inline retry-on-duplicate-webhook footgun.
 
+/**
+ * Is this failure/expiry about a session the order has already moved on
+ * from? Such events arrive routinely: replacing a link expires the old
+ * session at the gateway, and the gateway then reports that expiry. Applied
+ * blindly, they knocked an order whose NEW link was live to EXPIRED/FAILED,
+ * and the operator could no longer send it.
+ */
+function isStaleSessionEvent(
+  order: OrderDocument,
+  event: VerifiedPaymentEvent,
+): boolean {
+  if (event.sessionId) {
+    const c = classifyPaymentSession(order.payment, event.sessionId);
+    if (c === "superseded") return true;
+    // "Unknown" only means stale when the order names a DIFFERENT current
+    // session. With no pointer at all there is nothing to be stale against,
+    // and the event keeps its previous meaning.
+    return c === "unknown" && Boolean(order.payment.stripeSessionId);
+  }
+  // A payment-intent event may carry no session id.
+  if (event.paymentIntentId) {
+    return (order.payment.attempts ?? []).some(
+      (a) => a.paymentIntentId === event.paymentIntentId && a.supersededAt,
+    );
+  }
+  return false;
+}
+
+/** Keeps the status write tied to the session the event is about, so a link
+ *  replaced between the read and the write is not failed by the old one. */
+function currentSessionCondition(
+  order: OrderDocument,
+  event: VerifiedPaymentEvent,
+): Record<string, unknown> {
+  return event.sessionId && order.payment.stripeSessionId
+    ? { "payment.stripeSessionId": event.sessionId }
+    : {};
+}
+
+/** Record a stale-session failure/expiry as history, without touching the
+ *  order's status. */
+async function recordStaleSessionEvent(
+  order: OrderDocument,
+  event: VerifiedPaymentEvent,
+  kind: "expired" | "failed",
+  reason?: string,
+): Promise<ProcessEventResult> {
+  const claimed = await tryClaimGatewayEvent(
+    {
+      gatewayEventId: event.eventId,
+      gateway: gatewayOfSession(order, event.sessionId),
+      orderId: String(order._id),
+    },
+    null,
+  );
+  if (!claimed) {
+    return { handled: true, duplicate: true, orderId: String(order._id) };
+  }
+  // No `updatedAt` bump: nothing about the order changed, and an operator
+  // editing it must not be told it was modified under them.
+  await Order.updateOne(
+    { _id: order._id },
+    {
+      $push: {
+        "payment.processedWebhookEventIds": {
+          $each: [event.eventId],
+          $slice: -50,
+        },
+      },
+    },
+    { timestamps: false },
+  );
+  await recordAudit({
+    action:
+      kind === "expired" ? AuditAction.PAYMENT_EXPIRED : AuditAction.PAYMENT_FAILED,
+    entityType: AuditEntity.PAYMENT,
+    entityId: String(order._id),
+    metadata: {
+      eventId: event.eventId,
+      sessionId: event.sessionId ?? null,
+      paymentIntentId: event.paymentIntentId ?? null,
+      reason: reason ?? event.reason ?? null,
+      staleSession: true,
+      currentSessionId: order.payment.stripeSessionId ?? null,
+    },
+  });
+  logger.info("payments.stale_session_event", {
+    orderId: String(order._id),
+    kind,
+    sessionId: event.sessionId,
+    currentSessionId: order.payment.stripeSessionId ?? null,
+  });
+  return {
+    handled: true,
+    duplicate: false,
+    orderId: String(order._id),
+    reason: `stale_session_${kind}`,
+  };
+}
+
 async function handleCheckoutExpired(
   event: VerifiedPaymentEvent,
   /** Organization whose endpoint received this delivery. Threaded rather
@@ -727,6 +941,9 @@ async function handleCheckoutExpired(
   }
   if (order.status === OrderStatus.PAID) {
     return { handled: true, duplicate: true, orderId: String(order._id) };
+  }
+  if (isStaleSessionEvent(order, event)) {
+    return recordStaleSessionEvent(order, event, "expired");
   }
 
   const gatewayKey = order.payment.gateway ?? "STRIPE";
@@ -751,6 +968,7 @@ async function handleCheckoutExpired(
         _id: order._id,
         status: { $ne: OrderStatus.PAID },
         "payment.processedWebhookEventIds": { $ne: event.eventId },
+        ...currentSessionCondition(order, event),
       },
       {
         $set: {
@@ -880,6 +1098,9 @@ async function failOrder(
   if (order.status === OrderStatus.PAID) {
     return { handled: true, duplicate: true, orderId: String(order._id) };
   }
+  if (isStaleSessionEvent(order, event)) {
+    return recordStaleSessionEvent(order, event, "failed", reason);
+  }
 
   const gatewayKey = order.payment.gateway ?? "STRIPE";
 
@@ -903,6 +1124,7 @@ async function failOrder(
         _id: order._id,
         status: { $ne: OrderStatus.PAID },
         "payment.processedWebhookEventIds": { $ne: event.eventId },
+        ...currentSessionCondition(order, event),
       },
       {
         $set: {

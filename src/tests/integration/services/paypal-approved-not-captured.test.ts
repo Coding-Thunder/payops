@@ -33,6 +33,10 @@ const actor = actorFor(UserRole.ADMIN);
 async function approvedButNotCaptured() {
   return createOrder({
     status: OrderStatus.PAYMENT_PENDING,
+    // The live order was a $0.50 test booking; the capture below is for
+    // that amount, and a capture for any other amount is now (correctly)
+    // refused as a mismatch rather than settled.
+    pricing: { amount: 0.5, currency: "USD" },
     payment: {
       gateway: PaymentGatewayKey.PAYPAL,
       stripeSessionId: "85N33701GC591621L",
@@ -120,6 +124,7 @@ describe("Stripe is unaffected", () => {
   it("still settles and labels a Stripe payment exactly as before", async () => {
     const doc = await createOrder({
       status: OrderStatus.PAYMENT_PENDING,
+      pricing: { amount: 150, currency: "USD" },
       payment: {
         gateway: PaymentGatewayKey.STRIPE,
         stripeSessionId: "cs_test_unchanged",

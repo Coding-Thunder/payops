@@ -44,6 +44,9 @@ interface CarLinkSelectorProps {
   disabled?: boolean;
   invalid?: boolean;
   id?: string;
+  /** Forwarded by `<FormControl>` so the field's description and error are
+   *  read out when the trigger is focused. */
+  "aria-describedby"?: string;
 }
 
 const DEBOUNCE_MS = 200;
@@ -62,6 +65,7 @@ export function CarLinkSelector({
   disabled,
   invalid,
   id,
+  "aria-describedby": ariaDescribedBy,
 }: CarLinkSelectorProps) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
@@ -148,6 +152,7 @@ export function CarLinkSelector({
             role="combobox"
             aria-expanded={open}
             aria-invalid={invalid || undefined}
+            aria-describedby={ariaDescribedBy}
             disabled={disabled}
             className={cn(
               "h-10 w-full justify-between px-3 font-normal",

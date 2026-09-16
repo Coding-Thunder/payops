@@ -21,7 +21,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/sonner";
 import { api, ApiClientError } from "@/lib/api-client";
-import { ConsentStatus, OrderStatus } from "@/lib/constants/enums";
+import { OrderStatus } from "@/lib/constants/enums";
+import { hasCustomerConsent } from "@/lib/consent";
 import { PaymentGatewayLabel } from "@/lib/constants/labels";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import type { OrderDTO } from "@/types";
@@ -49,7 +50,7 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
 
-  const consentReceived = order.consent?.status === ConsentStatus.RECEIVED;
+  const consentReceived = hasCustomerConsent(order.consent?.status);
   const alreadyPaid = order.status === OrderStatus.PAID;
   // A link the customer could still pay. `paymentUrl` is what they were
   // actually sent, and it survives a failure — which is exactly why this
@@ -63,14 +64,22 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
     setError(null);
     setSaving(true);
     try {
-      await api.post(`/api/orders/${order.id}/manual-payment`, {
-        method: method.trim(),
-        reference: reference.trim(),
-        notes: notes.trim() || undefined,
-      });
+      const result = await api.post<{ order: OrderDTO }>(
+        `/api/orders/${order.id}/manual-payment`,
+        {
+          method: method.trim(),
+          reference: reference.trim(),
+          notes: notes.trim() || undefined,
+        },
+      );
       // Only after the backend confirms. Nothing above this line implies
       // the order is paid.
       toast.success("Manual payment recorded. Confirmation email sent.");
+      if (result?.order?.risk?.flagged && result.order.risk.flaggedNote !== order.risk.flaggedNote) {
+        toast.warning("This order was flagged for review", {
+          description: result.order.risk.flaggedNote ?? undefined,
+        });
+      }
       setOpen(false);
       router.refresh();
     } catch (err) {

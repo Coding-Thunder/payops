@@ -255,12 +255,16 @@ export function OrderPaymentCard({
         {/* Stripe declined → offer PayPal on the SAME order. Hidden once the
             order is settled: a second payable link against a paid order is
             precisely the double charge this must not create. */}
-        {!isPaid && !isNotInitiated ? (
+        {!isPaid ? (
           <div className="flex flex-wrap items-center gap-2 pt-1">
-            <SwitchGatewayDialog order={order} />
+            {/* No gateway to switch away from until a link has existed. */}
+            {!isNotInitiated ? <SwitchGatewayDialog order={order} /> : null}
             {/* The offline fallback, offered alongside the gateway switch —
                 which is exactly the decision point the operator is at when
-                a gateway has just declined. Hidden once settled. */}
+                a gateway has just declined. Also offered on a never-initiated
+                order: that is what a pure manual booking looks like, and
+                hiding it there left the operator no way to record the
+                payment. Hidden once settled. */}
             <ManualPaymentDialog order={order} />
           </div>
         ) : null}

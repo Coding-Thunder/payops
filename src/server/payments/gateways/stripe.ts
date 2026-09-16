@@ -8,6 +8,7 @@ import { DisputeOutcome, DisputeStatus } from "@/lib/constants/enums";
 
 import { toMinorUnits } from "../currency";
 import { getStripeFor } from "../stripe";
+import { checkoutRequestKey } from "../gateway";
 import type {
   CreatePaymentSessionInput,
   CreatedPaymentSession,
@@ -125,10 +126,9 @@ function mapStripeDisputeOutcome(
 export function idempotencyKeyFor(input: {
   orderId: string;
   priceRevision?: number;
+  attempt?: number;
 }): string {
-  const base = `order:${input.orderId}:checkout`;
-  const rev = input.priceRevision ?? 0;
-  return rev > 0 ? `${base}:r${rev}` : base;
+  return checkoutRequestKey(input);
 }
 
 /** The two secrets a Stripe account needs. Held per organization in the

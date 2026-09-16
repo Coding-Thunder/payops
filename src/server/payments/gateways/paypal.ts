@@ -3,6 +3,7 @@ import "server-only";
 import { logger } from "@/lib/logger";
 
 import { toMinorUnits } from "../currency";
+import { checkoutRequestKey } from "../gateway";
 import type {
   CreatePaymentSessionInput,
   CreatedPaymentSession,
@@ -228,7 +229,12 @@ export function createPayPalGateway(
           // Same stable-key idea as the Stripe adapter: re-running this for
           // one order returns the original PayPal order instead of creating
           // a second one the customer could also pay.
-          "PayPal-Request-Id": `order:${input.orderId}:checkout`,
+          //
+          // The key carries the price revision and the attempt ordinal, as
+          // Stripe's does. Keyed on the order id alone, a new link after a
+          // re-price replayed the ORIGINAL PayPal order at the ORIGINAL
+          // amount, and a regenerated link returned the one just replaced.
+          "PayPal-Request-Id": checkoutRequestKey(input),
         },
         body: {
           intent: "CAPTURE",

@@ -45,10 +45,14 @@ describe("checkout.session.completed", () => {
       },
     });
 
+    // A real event names the session the order holds, for the amount it is
+    // collecting. (The fixture's default is a random session id, which a
+    // paid transition now correctly refuses to settle on.)
     const event = completedWebhook({
       orderId: String(order._id),
       orderNumber: order.orderNumber,
       amount: 199.5,
+      sessionId: "cs_test_completed_1",
     });
 
     const result = await processStripeEvent(event);
@@ -67,6 +71,7 @@ describe("checkout.session.completed", () => {
     const event = completedWebhook({
       orderId: String(order._id),
       orderNumber: order.orderNumber,
+      amount: 199.5,
     });
 
     const first = await processStripeEvent(event);
@@ -87,6 +92,7 @@ describe("checkout.session.completed", () => {
     const event = completedWebhook({
       orderId: String(order._id),
       orderNumber: order.orderNumber,
+      amount: 199.5,
     });
 
     // Two concurrent worker fires for the same event.
@@ -132,6 +138,7 @@ describe("checkout.session.completed", () => {
     const event = completedWebhook({
       orderId: String(order._id),
       orderNumber: order.orderNumber,
+      amount: 199.5,
     });
     event.eventId = "evt_test_retry_email";
 
@@ -179,6 +186,7 @@ describe("checkout.session.completed", () => {
       orderId: "BOGUS",
       orderNumber: order.orderNumber,
       sessionId: "cs_test_lookup_by_session",
+      amount: 199.5,
     });
 
     // The normalised event has no client_reference_id field — the
@@ -268,6 +276,7 @@ describe("audit trail", () => {
     const event = completedWebhook({
       orderId: String(order._id),
       orderNumber: order.orderNumber,
+      amount: 199.5,
     });
     await processStripeEvent(event);
     await processStripeEvent(event);
