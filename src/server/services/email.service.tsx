@@ -53,6 +53,7 @@ import {
 } from "./consent-token";
 import { buildAckUrl, generateAckToken } from "./ack-token";
 import { getSettings } from "./settings.service";
+import { paymentRequestSubject } from "@/lib/payment-request-subject";
 
 /** Build a presentation-ready (currency-formatted) charge breakdown for an
  *  order, used by both customer emails. Legacy orders (no `charges[]`) get a
@@ -86,6 +87,8 @@ interface SendArgs {
    * second lookup.
    */
   identity?: EmailIdentity | null;
+  /** Extra facts for the EMAIL_SENT audit row (e.g. manual vs gateway). */
+  auditMetadata?: Record<string, unknown>;
 }
 
 /** Reduce a full email to `a***@example.com` for logger output — keeps
@@ -182,6 +185,7 @@ async function sendEmail(
         to: args.to,
         messageId: info.messageId ?? null,
         response: info.response ?? null,
+        ...(args.auditMetadata ?? {}),
       },
     });
     return {
@@ -424,7 +428,6 @@ export async function composePaymentRequestProps(
     brandName: identity.brandName,
     order,
     consentMessage: effectiveConsentMessage,
-    paymentUrl: liveCheckoutUrl,
   });
 
   // Pick the single primary CTA. Consent-first by default; jump straight
@@ -560,9 +563,13 @@ export async function composePaymentRequestProps(
 export function defaultPaymentRequestSubject(
   order: OrderDTO,
   brandName: string,
+  manual = false,
 ): string {
-  const providerName = order.provider?.name ?? brandName;
-  return `Complete your ${providerName} payment • ${order.orderNumber}`;
+  return paymentRequestSubject(
+    order.provider?.name ?? brandName,
+    order.orderNumber,
+    manual,
+  );
 }
 
 export interface SendPaymentRequestContext {
@@ -623,7 +630,11 @@ export async function sendPaymentRequestEmail(
   const subject =
     overrides.subject?.trim() ||
     tpl?.subject?.trim() ||
-    defaultPaymentRequestSubject(order, subjectBrand.brandName);
+    defaultPaymentRequestSubject(
+      order,
+      subjectBrand.brandName,
+      Boolean(overrides.manualCollection),
+    );
 
   if (context?.actor) {
     try {
@@ -691,6 +702,11 @@ export async function sendPaymentRequestEmail(
     text,
     kind: EmailKind.PAYMENT_LINK,
     orderId: order.id,
+    // A manual request is a consent request with no link; the audit row
+    // must say so rather than read like a gateway payment-link email.
+    auditMetadata: {
+      collection: overrides.manualCollection ? "MANUAL" : "GATEWAY",
+    },
   });
 
   // Evidence chain: capture the rendered payment-request HTML the customer
@@ -724,7 +740,8 @@ export async function sendPaymentRequestEmail(
         supportPhone: props.supportPhone,
       },
       amount: props.amount,
-      gateway: order.payment.gateway ?? null,
+      collection: overrides.manualCollection ? "MANUAL" : "GATEWAY",
+      gateway: overrides.manualCollection ? null : (order.payment.gateway ?? null),
       gatewayLabel: props.gatewayLabel ?? null,
       cta: props.primaryCta
         ? {

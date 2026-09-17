@@ -22,10 +22,6 @@ export function buildConsentMailto(args: {
   brandName: string;
   order: OrderDTO;
   consentMessage: string;
-  /** A payment link to quote, only when it can still be paid. Taken from
-   *  the caller rather than the order: the order keeps dead and manual-
-   *  irrelevant links on record, and this draft goes to the customer. */
-  paymentUrl?: string | null;
 }): string {
   const { order } = args;
   const subject = `Acknowledgement • Order ${order.orderNumber}`;
@@ -41,7 +37,9 @@ export function buildConsentMailto(args: {
     `Pick-up: ${formatEmailDay(order.trip.pickupDate)}`,
     `Drop-off: ${formatEmailDay(order.trip.dropoffDate)}`,
     `Amount: ${order.pricing.amount.toFixed(2)} ${order.pricing.currency}`,
-    args.paymentUrl ? `Payment link: ${args.paymentUrl}` : "",
+    // No checkout link here: a link in the customer's own draft let them
+    // pay without ever confirming on the hosted page. The link the request
+    // was for is kept on the consent record instead.
     "",
     "Thank you,",
     order.customer.name,

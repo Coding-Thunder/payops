@@ -17,9 +17,9 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
-import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { useUnsavedChangesGuard } from "@/components/common/unsaved-changes-guard";
 import { hasCustomerConsent } from "@/lib/consent";
+import { outstandingHeldPayments } from "@/lib/payment-state";
 import { orderQueryKey } from "@/hooks/use-order-query";
 import { api, ApiClientError } from "@/lib/api-client";
 import { OrderStatus } from "@/lib/constants/enums";
@@ -32,6 +32,7 @@ import {
   CHANGED_FIELD_LABEL,
   diffOrder,
   orderToFormValues,
+  rebaseEdit,
   touchesCheckoutDetails,
   type OrderFormValues,
 } from "./order-form-model";
@@ -70,7 +71,6 @@ export function EditOrderForm({ order, providers }: EditOrderFormProps) {
   const [reason, setReason] = React.useState("");
   const [saved, setSaved] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
-  const [confirmReload, setConfirmReload] = React.useState(false);
   const savingRef = React.useRef(false);
 
   // The version of the order this form was filled from. Every comparison is
@@ -101,12 +101,25 @@ export function EditOrderForm({ order, providers }: EditOrderFormProps) {
 
   const guard = useUnsavedChangesGuard({ when: dirty, busy: saving });
 
+  // Moves the form onto the newer version WITHOUT discarding the operator's
+  // typing: their edits to fields nobody else touched are carried over.
   function loadLatest() {
+    const { values: next, kept, conflicts } = rebaseEdit(
+      form.getValues() as OrderFormValues,
+      baseline,
+      order,
+      { settled: order.status === OrderStatus.PAID },
+    );
     setBaseline(order);
-    form.reset(orderToFormValues(order));
-    setReason("");
+    form.reset(next);
     setServerError(null);
-    setConfirmReload(false);
+    if (conflicts.length > 0) {
+      toast.warning("Some of your edits were replaced", {
+        description: `${conflicts.map((f) => CHANGED_FIELD_LABEL[f]).join(", ")} also changed elsewhere — check the saved value before saving again.`,
+      });
+    } else if (kept.length > 0) {
+      toast.success("Loaded the latest version — your edits were kept.");
+    }
   }
 
   async function onSubmit(parsed: CreateOrderInput) {
@@ -143,8 +156,11 @@ export function EditOrderForm({ order, providers }: EditOrderFormProps) {
 
       setSaved(true);
       guard.release();
+      const heldNow = outstandingHeldPayments(result.order).length > 0;
       toast.success(
-        result.consentReset
+        heldNow
+          ? "Order updated. A payment is already held for this order — reconcile it on the order page before collecting again."
+          : result.consentReset
           ? "Order updated. The customer must confirm the new amount — send them a new payment request."
           : (result.amountChanged ?? amountChanged)
             ? "Order updated. Generate a new payment link for the new amount."
@@ -277,31 +293,21 @@ export function EditOrderForm({ order, providers }: EditOrderFormProps) {
           <AlertTitle>This order was updated elsewhere</AlertTitle>
           <AlertDescription className="space-y-2">
             <p>
-              Someone changed this order after you opened it. Saving now would
-              be refused so that their change is not overwritten. Load the
-              latest version, then make your change again.
+              Someone changed this order after you opened it. Load the latest
+              version to continue — your edits to fields they did not change
+              are kept.
             </p>
             <Button
               type="button"
               size="sm"
               variant="outline"
-              onClick={() => (dirty ? setConfirmReload(true) : loadLatest())}
+              onClick={loadLatest}
             >
               Load the latest version
             </Button>
           </AlertDescription>
         </Alert>
       ) : null}
-      <ConfirmDialog
-        open={confirmReload}
-        onOpenChange={setConfirmReload}
-        title="Discard your edits and load the latest version?"
-        description="The changes you have typed on this page will be cleared."
-        confirmLabel="Load latest"
-        cancelLabel="Keep my edits"
-        tone="warning"
-        onConfirm={loadLatest}
-      />
       <OrderForm
         mode="edit"
         form={form}
@@ -316,7 +322,9 @@ export function EditOrderForm({ order, providers }: EditOrderFormProps) {
           diff.amountChanged && hasLiveLink ? "Save & invalidate link" : "Save changes"
         }
         submittingLabel="Saving"
-        submitDisabled={diff.changed.length === 0}
+        // Saving against the old version is refused by the server; load the
+        // newer one first (the banner above offers it).
+        submitDisabled={diff.changed.length === 0 || changedElsewhere}
         locked={saved}
         beforeActions={beforeActions}
       />

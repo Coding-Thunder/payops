@@ -166,7 +166,7 @@ export async function buildOrderChargeExport(
   const orderCount = await Order.countDocuments(scoped);
   if (orderCount > EXPORT_MAX_ORDERS) {
     throw new ValidationError(
-      `That range covers ${orderCount.toLocaleString()} orders, which is more than this export can produce at once (${EXPORT_MAX_ORDERS.toLocaleString()}). Narrow the date range and try again.`,
+      `That range covers ${orderCount.toLocaleString()} orders, which is more than this export can produce at once (${EXPORT_MAX_ORDERS.toLocaleString()}). Narrow the search or the filters and try again.`,
     );
   }
 

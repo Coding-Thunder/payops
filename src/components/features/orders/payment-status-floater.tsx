@@ -11,11 +11,15 @@ import {
 import { useActivityFeed } from "@/hooks/use-activity-feed";
 import { DomainEventType } from "@/lib/constants/events";
 import { OrderStatus } from "@/lib/constants/enums";
+import { hasCustomerConsent } from "@/lib/consent";
+import { isOperatorSupersede, outstandingHeldPayments } from "@/lib/payment-state";
 import { cn } from "@/lib/utils";
 import type { OrderDTO } from "@/types";
 
 interface PaymentStatusFloaterProps {
   order: OrderDTO;
+  /** Recording a manual payment is an admin action. */
+  canRecordPayment?: boolean;
 }
 
 interface FloaterDescriptor {
@@ -38,7 +42,26 @@ const TONE_ICONS: Record<FloaterDescriptor["tone"], React.ElementType> = {
   expired: AlertTriangleIcon,
 };
 
-function describeOrder(order: OrderDTO): FloaterDescriptor {
+function describeOrder(order: OrderDTO, canRecordPayment: boolean): FloaterDescriptor {
+  if (order.status !== OrderStatus.PAID && outstandingHeldPayments(order).length > 0) {
+    return {
+      tone: "failed",
+      label: "Payment already received on an earlier link",
+      detail: "Do not charge the customer again until it is reconciled.",
+    };
+  }
+  const manual = order.consent?.collectionMethod === "MANUAL";
+  if (manual && order.status !== OrderStatus.PAID) {
+    return {
+      tone: "pending",
+      label: "Manual payment requested",
+      detail: hasCustomerConsent(order.consent.status)
+        ? canRecordPayment
+          ? `${order.customer.name} confirmed. Record the payment once you have collected it.`
+          : `${order.customer.name} confirmed. An admin records the payment once it is collected.`
+        : `Waiting for ${order.customer.name} to confirm the booking.`,
+    };
+  }
   switch (order.status) {
     case OrderStatus.PAID:
       return {
@@ -49,12 +72,30 @@ function describeOrder(order: OrderDTO): FloaterDescriptor {
           : "Payment has been confirmed.",
       };
     case OrderStatus.FAILED:
+      return isOperatorSupersede(order.payment.failureReason)
+        ? {
+            tone: "expired",
+            label: "New payment link needed",
+            detail: `${order.payment.failureReason}. Choose how to collect on the payment-request page.`,
+          }
+        : {
+            tone: "failed",
+            label: "Payment failed",
+            detail:
+              order.payment.failureReason ??
+              "The payment was declined. Choose how to collect next on the payment-request page.",
+          };
+    case OrderStatus.NOT_INITIATED:
       return {
-        tone: "failed",
-        label: "Payment failed",
-        detail:
-          order.payment.failureReason ??
-          "The payment was declined. Generate a new link or contact the customer.",
+        tone: "pending",
+        label: "Payment not requested yet",
+        detail: "Send a payment request from the payment-request page.",
+      };
+    case OrderStatus.LINK_GENERATED:
+      return {
+        tone: "pending",
+        label: "Payment link ready — not sent yet",
+        detail: `Send it so ${order.customer.name} can confirm and pay.`,
       };
     case OrderStatus.EXPIRED:
       return {
@@ -79,7 +120,10 @@ function describeOrder(order: OrderDTO): FloaterDescriptor {
  * ORDER_FAILED / ORDER_EXPIRED matching this order so the banner
  * flips the moment Stripe fires without waiting for a route refresh.
  */
-export function PaymentStatusFloater({ order }: PaymentStatusFloaterProps) {
+export function PaymentStatusFloater({
+  order,
+  canRecordPayment = true,
+}: PaymentStatusFloaterProps) {
   const { events } = useActivityFeed();
   const [override, setOverride] = React.useState<FloaterDescriptor | null>(
     null,
@@ -95,6 +139,10 @@ export function PaymentStatusFloater({ order }: PaymentStatusFloaterProps) {
         payload.orderId === order.id ||
         payload.orderNumber === order.orderNumber;
       if (!matchesOrder) continue;
+      // Only news the loaded order does not already reflect. An older
+      // "failed" event kept overriding the banner after the order had moved
+      // on (a new link, a switch, a manual request).
+      if (Date.parse(event.at) <= Date.parse(order.updatedAt)) continue;
       if (event.type === DomainEventType.ORDER_PAID) {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setOverride({
@@ -123,9 +171,9 @@ export function PaymentStatusFloater({ order }: PaymentStatusFloaterProps) {
         return;
       }
     }
-  }, [events, order.id, order.orderNumber]);
+  }, [events, order.id, order.orderNumber, order.updatedAt]);
 
-  const descriptor = override ?? describeOrder(order);
+  const descriptor = override ?? describeOrder(order, canRecordPayment);
   const Icon = TONE_ICONS[descriptor.tone];
 
   return (

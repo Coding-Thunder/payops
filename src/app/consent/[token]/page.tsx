@@ -3,7 +3,10 @@ import { notFound } from "next/navigation";
 import { PublicBrandChrome } from "@/components/public/public-brand-chrome";
 import { resolvePublicBrand } from "@/server/email/identity";
 import { getBranding } from "@/server/services/branding.service";
-import { getPublicConsentView } from "@/server/services/consent.service";
+import {
+  getPublicConsentView,
+  toPublicConsentPayload,
+} from "@/server/services/consent.service";
 import { AppError } from "@/lib/errors";
 
 import { ConsentForm } from "./consent-form";
@@ -38,7 +41,7 @@ export default async function ConsentPage({ params }: ConsentPageProps) {
   // Brand the chrome and the form's support links to the booking's
   // organization. `branding` remains the fallback the default organization
   // resolves to, so nothing about the incumbent brand's page changes.
-  const brand = await resolvePublicBrand(view.organizationId, branding);
+  const brand = await resolvePublicBrand(view.organizationId ?? null, branding);
   const brandedForForm = {
     ...branding,
     brandName: brand.brandName,
@@ -53,7 +56,7 @@ export default async function ConsentPage({ params }: ConsentPageProps) {
     <PublicBrandChrome brand={brand} eyebrow="Secure confirmation">
       <ConsentForm
         token={token}
-        initialView={view}
+        initialView={toPublicConsentPayload(view)}
         branding={brandedForForm}
       />
     </PublicBrandChrome>

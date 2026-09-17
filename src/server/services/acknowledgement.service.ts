@@ -94,7 +94,9 @@ export async function recordTermsAcknowledgement(
     ip: ctx.request?.ip ?? null,
     userAgent: ctx.request?.userAgent ?? null,
   };
-  await doc.save();
+  // Not an edit to anything an operator can change, so it must not make an
+  // open edit form's save look like it conflicts with someone else's.
+  await doc.save({ timestamps: false });
 
   await recordAudit({
     action: AuditAction.ORDER_UPDATED,

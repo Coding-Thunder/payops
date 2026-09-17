@@ -121,16 +121,34 @@ describe("regenerating a link records the session it replaces", () => {
   });
 
   it("the customer's payment on the NEW link still settles the order", async () => {
-    const { order, sessionId: oldSession } = await orderWithLink(500);
+    const { order } = await orderWithLink(500);
     await regeneratePaymentLink(order.id, ctx);
     const newSession = (await raw(order.id))!.payment.stripeSessionId!;
 
-    await processStripeEvent(paid(order, oldSession, 500));
     await processStripeEvent(paid(order, newSession, 500));
 
     const now = await raw(order.id);
     expect(now!.status).toBe(OrderStatus.PAID);
     expect(now!.payment.amountReceived).toBe(500);
+  });
+
+  it("once the old link has been paid, the new link is stopped and a second payment is held", async () => {
+    const { order, sessionId: oldSession } = await orderWithLink(500);
+    await regeneratePaymentLink(order.id, ctx);
+    const newSession = (await raw(order.id))!.payment.stripeSessionId!;
+
+    await processStripeEvent(paid(order, oldSession, 500));
+    const stopped = await raw(order.id);
+    expect(stopped!.payment.checkoutUrl).toBeNull();
+    expect(stopped!.status).toBe(OrderStatus.FAILED);
+
+    // Paying the stopped link as well would be a second charge: held, not
+    // settled.
+    const second = await processStripeEvent(paid(order, newSession, 500));
+    expect(second.reason).toMatch(/competing_payment/);
+    const now = await raw(order.id);
+    expect(now!.status).not.toBe(OrderStatus.PAID);
+    expect(now!.risk?.flagged).toBe(true);
   });
 
   it("gives every replacement session its own idempotency key", async () => {
@@ -197,6 +215,8 @@ describe("failure and expiry events only act on the current session", () => {
   it("an expiry for a replaced session leaves the live link alone", async () => {
     const { order, sessionId: oldSession } = await orderWithLink(500);
     await regeneratePaymentLink(order.id, ctx);
+    const before = (await raw(order.id))!.status;
+    expect(before).toBe(OrderStatus.LINK_GENERATED);
 
     const r = await processStripeEvent(
       expiredWebhook({
@@ -207,7 +227,7 @@ describe("failure and expiry events only act on the current session", () => {
     );
     expect(r.reason).toBe("stale_session_expired");
     const now = await raw(order.id);
-    expect(now!.status).toBe(OrderStatus.PAYMENT_PENDING);
+    expect(now!.status).toBe(before);
     expect(now!.payment.checkoutUrl).toBeTruthy();
   });
 
@@ -215,6 +235,7 @@ describe("failure and expiry events only act on the current session", () => {
     const { order, sessionId: oldSession } = await orderWithLink(500);
     await applyOrderModification(order.id, { charges: lines(650) }, ctx);
     await regeneratePaymentLink(order.id, ctx);
+    const before = (await raw(order.id))!.status;
 
     await processStripeEvent(
       asyncPaymentFailedWebhook({
@@ -224,7 +245,8 @@ describe("failure and expiry events only act on the current session", () => {
       }),
     );
     const now = await raw(order.id);
-    expect(now!.status).toBe(OrderStatus.PAYMENT_PENDING);
+    expect(now!.status).toBe(before);
+    expect(now!.status).not.toBe(OrderStatus.FAILED);
     expect(now!.pricing.amount).toBe(650);
   });
 

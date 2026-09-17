@@ -106,6 +106,10 @@ export interface OrderDoc extends OrganizationScoped {
      *  gateway returns as its session identifier. DTO surfaces it
      *  as the generic `paymentSessionId`. */
     stripeSessionId?: string | null;
+    /** Identifies the checkout the current session was created as (the
+     *  gateway request key). Carried in the payment's metadata so an event
+     *  that names no session can still be matched to its checkout. */
+    checkoutKey?: string | null;
     paymentIntentId?: string | null;
     checkoutUrl?: string | null;
     status: OrderStatus;
@@ -143,6 +147,7 @@ export interface OrderDoc extends OrganizationScoped {
       gateway: PaymentGatewayKey;
       /** Gateway-side session id. Null if session creation itself failed. */
       sessionId?: string | null;
+      checkoutKey?: string | null;
       paymentIntentId?: string | null;
       checkoutUrl?: string | null;
       /** What THIS attempt was asked to collect. Kept per-attempt so a
@@ -153,7 +158,22 @@ export interface OrderDoc extends OrganizationScoped {
       status: OrderStatus;
       failureReason?: string | null;
       /** Why this attempt stopped being current. Null while it is current. */
-      supersededReason?: "GATEWAY_SWITCHED" | "REPRICED" | "REGENERATED" | null;
+      supersededReason?:
+        | "GATEWAY_SWITCHED"
+        | "REPRICED"
+        | "REGENERATED"
+        | "PAYMENT_HELD"
+        | null;
+      /** Money a gateway reported that the order did not accept (a payment
+       *  on a stood-down link, or at the wrong amount). Held for an operator
+       *  to reconcile; never counted as the order's payment. */
+      held?: boolean;
+      /** When an operator dealt with the held payment (recorded it as this
+       *  order's payment, or cleared the flag after refunding it). */
+      heldReviewedAt?: Date | null;
+      /** Why the payment was held: on a stood-down link, an unknown one, the
+       *  wrong amount, a second payment after settlement, or during a change. */
+      heldKind?: string | null;
       supersededAt?: Date | null;
       createdAt: Date;
     }>;
@@ -163,6 +183,7 @@ export interface OrderDoc extends OrganizationScoped {
      * session instead of replaying the old one at the old price.
      */
     priceRevision?: number;
+    detailsChangedAt?: Date | null;
     /** Set only by a recorded offline payment. Deliberately separate from
      *  `gateway`, which is a merchant-account pin that must survive on a
      *  FAILED order so disputes still route to the right account. */
@@ -350,6 +371,7 @@ const paymentAttemptSchema = new Schema(
   {
     gateway: { type: String, enum: PAYMENT_GATEWAY_KEYS, required: true },
     sessionId: { type: String, default: null },
+    checkoutKey: { type: String, default: null, maxlength: 200 },
     paymentIntentId: { type: String, default: null },
     checkoutUrl: { type: String, default: null },
     amount: { type: Number, required: true, min: 0 },
@@ -361,10 +383,14 @@ const paymentAttemptSchema = new Schema(
       // REGENERATED: replaced by a fresh link at the same amount and on the
       // same gateway. Recorded so a late success on the old session is
       // recognised as superseded rather than settling the order.
-      enum: ["GATEWAY_SWITCHED", "REPRICED", "REGENERATED", null],
+      // PAYMENT_HELD: stopped because money already arrived on another link.
+      enum: ["GATEWAY_SWITCHED", "REPRICED", "REGENERATED", "PAYMENT_HELD", null],
       default: null,
     },
     supersededAt: { type: Date, default: null },
+    held: { type: Boolean, default: false },
+    heldReviewedAt: { type: Date, default: null },
+    heldKind: { type: String, default: null, maxlength: 40 },
     createdAt: { type: Date, required: true },
   },
   { _id: false },
@@ -378,6 +404,7 @@ const paymentSchema = new Schema(
       default: null,
     },
     stripeSessionId: { type: String, default: null, index: true, sparse: true },
+    checkoutKey: { type: String, default: null, maxlength: 200 },
     paymentIntentId: { type: String, default: null, index: true, sparse: true },
     checkoutUrl: { type: String, default: null },
     status: { type: String, enum: ORDER_STATUSES, required: true },
@@ -396,6 +423,7 @@ const paymentSchema = new Schema(
     // created before a switch or a re-price was possible.
     attempts: { type: [paymentAttemptSchema], default: [] },
     priceRevision: { type: Number, default: 0, min: 0 },
+    detailsChangedAt: { type: Date, default: null },
     manualMethod: { type: String, default: null, maxlength: 40 },
     manualReference: { type: String, default: null, maxlength: 120 },
   },

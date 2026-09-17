@@ -186,6 +186,10 @@ export interface VerifiedPaymentEvent {
    *  processor find the order even if the session id was rotated. */
   orderId: string | null;
   paymentIntentId: string | null;
+  /** The checkout the payment belongs to (see `checkoutRequestKey`), when
+   *  the gateway carried it back. Lets an event with no session id be
+   *  matched to the checkout it came from. */
+  checkoutKey?: string | null;
   /** Minor units. `null` when the gateway doesn't include it on this
    *  event type. */
   amountTotalMinor: number | null;

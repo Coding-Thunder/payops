@@ -29,6 +29,9 @@ export interface EmailChargeBreakdown {
 interface ChargeBreakdownProps {
   breakdown: EmailChargeBreakdown;
   title?: string;
+  /** Label for the prepaid total. Nothing is paid online on a manual
+   *  request or settlement, so those pass their own wording. */
+  prepaidLabel?: string;
   topPadding?: number;
   bottomPadding?: number;
 }
@@ -41,6 +44,7 @@ interface ChargeBreakdownProps {
 export function ChargeBreakdown({
   breakdown,
   title = "Charge summary",
+  prepaidLabel = "Amount paid online",
   topPadding = SPACE.xl,
   bottomPadding = SPACE.xs,
 }: ChargeBreakdownProps) {
@@ -65,7 +69,7 @@ export function ChargeBreakdown({
           ))
         : null}
 
-      <TotalRow label="Amount paid online" value={breakdown.prepaid} />
+      <TotalRow label={prepaidLabel} value={breakdown.prepaid} />
       {breakdown.dueAtCounter ? (
         <TotalRow
           label="Amount due at counter"

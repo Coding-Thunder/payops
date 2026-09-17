@@ -198,5 +198,14 @@ function signInRequired(req: NextRequest, next: string) {
       { status: 401 },
     );
   }
+  // The client router's own data request (a navigation, or the refresh a
+  // realtime event triggers). A redirect here is followed as an in-app
+  // navigation to the login page, which no leave prompt can intercept — a
+  // half-typed booking simply vanished. A plain 401 makes the router fall
+  // back to a full page load instead, which the browser's leave prompt does
+  // cover; that load then reaches the redirect below.
+  if (req.headers.get("rsc") === "1") {
+    return new NextResponse(null, { status: 401 });
+  }
   return redirectToLogin(req, next);
 }

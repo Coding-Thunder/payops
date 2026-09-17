@@ -134,7 +134,12 @@ describe("manual collection — consent request without a payment link", () => {
     );
 
     const html = await send(order.id, false);
-    expect(html).toMatch(/Agree &amp; Continue to Payment|checkout\.stripe\.com/i);
+    // Consent first, then the customer is sent on to checkout. The checkout
+    // URL is not in the email itself (nor in the reply-by-email draft).
+    expect(html).toMatch(/Review &amp; Confirm Booking/);
+    expect(html).toMatch(/\/consent\//);
+    expect(html).toMatch(/via Stripe/);
+    expect(html).not.toContain("checkout.stripe.com/c/pay/cs_live");
   });
 
   it("refuses a gateway send with no link, as before", async () => {
@@ -186,5 +191,42 @@ describe("manual collection — customer-facing wording", () => {
     );
     const html = await send(order.id, false);
     expect(html).not.toMatch(/arrange payment with you separately/i);
+  });
+});
+
+describe("manual collection — nothing reads as an online payment", () => {
+  it("labels the prepaid total without promising an online payment", async () => {
+    const order = await makeOrder();
+    const html = await send(order.id, true);
+    expect(html).not.toMatch(/Amount paid online/i);
+    expect(html).toMatch(/Amount to prepay/i);
+  });
+
+  it("uses a confirmation subject, not 'complete your payment'", async () => {
+    const order = await makeOrder();
+    await send(order.id, true);
+    const subject = String(sentMail[0]!.subject);
+    expect(subject).toMatch(/^Please confirm your .* booking/);
+    expect(subject).not.toMatch(/payment/i);
+  });
+
+  it("keeps the gateway subject and label on the gateway path", async () => {
+    const order = await makeOrder();
+    await Order.updateOne(
+      { _id: order.id },
+      {
+        $set: {
+          status: OrderStatus.LINK_GENERATED,
+          "payment.status": OrderStatus.LINK_GENERATED,
+          "payment.gateway": PaymentGatewayKey.STRIPE,
+          "payment.stripeSessionId": "cs_live",
+          "payment.checkoutUrl": "https://checkout.stripe.com/c/pay/cs_live",
+        },
+      },
+    );
+    const html = await send(order.id, false);
+    expect(html).toMatch(/Amount to pay online/i);
+    expect(html).not.toMatch(/Amount paid online/i);
+    expect(String(sentMail[0]!.subject)).toMatch(/^Complete your .* payment/);
   });
 });

@@ -205,12 +205,17 @@ async function processPendingEmail(
     // sent". Conditional on the field being null so re-drains (rare —
     // shouldn't happen given outbox status gating) can't ratchet
     // backwards.
+    //
+    // Bookkeeping only, so `updatedAt` is left alone: an operator editing
+    // the just-paid order would otherwise have their save refused as a
+    // conflicting change, for up to a minute after every payment.
     await Order.updateOne(
       {
         _id: doc.orderId,
         "payment.confirmationEmailSentAt": null,
       },
       { $set: { "payment.confirmationEmailSentAt": new Date() } },
+      { timestamps: false },
     );
     return;
   }

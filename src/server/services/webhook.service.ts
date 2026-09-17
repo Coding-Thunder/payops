@@ -16,6 +16,7 @@ import {
 import { DomainEventType } from "@/lib/constants/events";
 import { ConflictError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
+import { outstandingHeldPayments } from "@/lib/payment-state";
 import { toMinorUnits } from "@/server/payments/currency";
 import {
   Dispute,
@@ -28,6 +29,7 @@ import {
 import { connectMongo } from "@/server/db/mongoose";
 import { publishEvent } from "@/server/events/bus";
 import type { VerifiedPaymentEvent } from "@/server/payments/gateway";
+import { getGatewayForOrganization } from "@/server/payments/resolve-gateway";
 import {
   sessionOpt,
   tryClaimGatewayEvent,
@@ -152,6 +154,13 @@ async function findOrderForEvent(
       "payment.stripeSessionId": event.sessionId,
     });
     if (bySession) return bySession;
+    // A session the order has moved on from — after a manual settlement the
+    // pointer is cleared, but a late event must still reach its order (to be
+    // held, or refused capture), not vanish as "order not found".
+    const byHistory = await Order.findOne({
+      "payment.attempts.sessionId": event.sessionId,
+    });
+    if (byHistory) return byHistory;
   }
   if (event.paymentIntentId) {
     const byIntent = await Order.findOne({
@@ -411,30 +420,100 @@ async function recordCompetingPayment(
   };
   const note = notes[kind];
 
-  await Order.updateOne(
-    { _id: order._id },
+  // Did the money land on the link the order is presenting right now (at the
+  // wrong amount, or while the order was changing)? Then that session stays
+  // the current one — a later, correct payment on it must still settle — and
+  // only its link is retired below. Otherwise the session is recorded as
+  // superseded, so anything further on it is held too.
+  const onCurrentLink =
+    Boolean(input.sessionId) &&
+    order.payment.stripeSessionId === input.sessionId &&
+    (kind === "amount-mismatch" || kind === "state-changed") &&
+    classifyPaymentSession(order.payment, input.sessionId) === "current";
+
+  // A second payment on the session that settled the order.
+  const paidThroughThisSession =
+    kind === "already-settled" &&
+    Boolean(input.sessionId) &&
+    order.payment.stripeSessionId === input.sessionId;
+
+  // The same payment reported twice (Stripe sends more than one success
+  // event for a session) is one held payment, not two.
+  const alreadyHeld = (order.payment.attempts ?? []).some(
+    (a) =>
+      a.held &&
+      a.sessionId === (input.sessionId ?? null) &&
+      (a.paymentIntentId ?? null) === (input.paymentIntentId ?? null),
+  );
+
+  // Added to any note already on the order — a reused manual reference, an
+  // earlier competing payment, an operator's own flag — rather than
+  // replacing it, so no earlier warning disappears from the order.
+  if (!alreadyHeld) await Order.updateOne({ _id: order._id }, [
     {
       $set: {
         "risk.flagged": true,
-        "risk.flaggedNote": note,
-        "risk.flaggedAt": new Date(),
-      },
-      $push: {
-        "payment.attempts": {
-          gateway: gatewayKey,
-          sessionId: input.sessionId ?? null,
-          paymentIntentId: input.paymentIntentId ?? null,
-          checkoutUrl: null,
-          amount,
-          currency: order.pricing.currency,
-          // The attempt genuinely succeeded at the gateway. Recording it as
-          // PAID keeps the history truthful; the ORDER is what stays unpaid.
-          status: OrderStatus.PAID,
-          failureReason: null,
-          supersededReason: null,
-          supersededAt: new Date(),
-          createdAt: new Date(input.paidAtMs),
+        "risk.flaggedAt": "$$NOW",
+        "risk.flaggedNote": {
+          $let: {
+            vars: {
+              joined: {
+                $cond: [
+                  {
+                    $gt: [
+                      { $strLenCP: { $ifNull: ["$risk.flaggedNote", ""] } },
+                      0,
+                    ],
+                  },
+                  { $concat: ["$risk.flaggedNote", "\n\n", { $literal: note }] },
+                  { $literal: note },
+                ],
+              },
+            },
+            // The field holds 2000 characters; if the notes outgrow it, the
+            // oldest text is dropped so the newest warning stays whole.
+            in: {
+              $substrCP: [
+                "$$joined",
+                { $max: [0, { $subtract: [{ $strLenCP: "$$joined" }, 2000] }] },
+                2000,
+              ],
+            },
+          },
         },
+      },
+    },
+  ], { updatePipeline: true });
+
+  await Order.updateOne(
+    { _id: order._id },
+    {
+      $push: {
+        ...(alreadyHeld
+          ? {}
+          : {
+            "payment.attempts": {
+              gateway: gatewayKey,
+              sessionId: input.sessionId ?? null,
+              paymentIntentId: input.paymentIntentId ?? null,
+              checkoutUrl: null,
+              amount,
+              currency: order.pricing.currency,
+              // The attempt genuinely succeeded at the gateway. Recording it as
+              // PAID keeps the history truthful; the ORDER is what stays unpaid.
+              status: OrderStatus.PAID,
+              failureReason: null,
+              supersededReason: null,
+              // The session is only marked superseded when it really is one
+              // the order moved on from; money on the current (or already
+              // paid) link does not stand that link down.
+              supersededAt:
+                onCurrentLink || paidThroughThisSession ? null : new Date(),
+              held: true,
+              heldKind: kind,
+              createdAt: new Date(input.paidAtMs),
+            },
+          }),
         "payment.processedWebhookEventIds": {
           $each: [input.eventId],
           $slice: -50,
@@ -442,6 +521,76 @@ async function recordCompetingPayment(
       },
     },
   );
+
+  // Money has already been taken on this session, so it must stop being
+  // offered. When the competing payment landed on the link the order is
+  // still presenting, the order used to keep reading "awaiting payment" and
+  // kept that link up for the operator to copy and send again. Only the
+  // payable link is retired, and the order now reads as needing attention.
+  let linkRetired = false;
+  if (onCurrentLink) {
+    const stood = await Order.updateOne(
+      {
+        _id: order._id,
+        status: { $ne: OrderStatus.PAID },
+        "payment.stripeSessionId": input.sessionId,
+      },
+      {
+        $set: {
+          status: OrderStatus.FAILED,
+          "payment.status": OrderStatus.FAILED,
+          "payment.checkoutUrl": null,
+          "payment.expiresAt": null,
+          "payment.failureReason":
+            "A payment that does not match this order was received on its link. Reconcile it before collecting again.",
+        },
+      },
+    );
+    linkRetired = stood.modifiedCount > 0;
+  } else if (kind !== "already-settled") {
+    // The customer has paid on an earlier link while a newer one is still
+    // out. Leaving the newer link payable is how they came to be charged
+    // twice: it is stood down as well, and anything paid on it is held.
+    linkRetired = await standDownLiveLinkForHeldPayment(order);
+  }
+  if (linkRetired) {
+    publishEvent({
+      type: DomainEventType.ORDER_UPDATED,
+      audience: { kind: "admins" },
+      payload: {
+        orderId: String(order._id),
+        orderNumber: order.orderNumber,
+        customerName: order.customer?.name ?? null,
+      },
+    });
+  }
+
+  // The dispute evidence chain must show money that arrived, even when the
+  // order did not accept it.
+  if (!alreadyHeld) {
+    await captureEvidenceSafe({
+      orderId: String(order._id),
+      orderNumber: order.orderNumber,
+      eventType: OrderEvidenceEventType.PAYMENT_HELD,
+      occurredAt: new Date(input.paidAtMs),
+      actor: { type: OrderEvidenceActorType.GATEWAY, name: gatewayKey },
+      payload: {
+        kind,
+        gateway: gatewayKey,
+        paymentSessionId: input.sessionId ?? null,
+        paymentIntentId: input.paymentIntentId ?? null,
+        amount,
+        currency: order.pricing.currency,
+        orderAmount: order.pricing.amount,
+        gatewayEventId: input.eventId,
+        linkRetired,
+      },
+      refs: {
+        paymentSessionId: input.sessionId ?? null,
+        paymentIntentId: input.paymentIntentId ?? null,
+      },
+    });
+  }
 
   await recordAudit({
     action: AuditAction.PAYMENT_COMPETING_SESSION,
@@ -458,6 +607,7 @@ async function recordCompetingPayment(
       currentSessionId: order.payment.stripeSessionId ?? null,
       orderStatus: order.status,
       source: input.source,
+      linkRetired,
     },
   });
 
@@ -475,6 +625,109 @@ async function recordCompetingPayment(
     orderId: String(order._id),
     reason: `competing_payment:${kind}`,
   };
+}
+
+/** Why a live link was stopped after money arrived on an earlier one. */
+export const HELD_PAYMENT_STAND_DOWN_REASON =
+  "A payment was already received on an earlier link, so this link was stopped to avoid charging the customer twice. Reconcile it before collecting again.";
+
+async function standDownLiveLinkForHeldPayment(
+  order: OrderDocument,
+): Promise<boolean> {
+  const current = order.payment.stripeSessionId ?? null;
+  const live =
+    Boolean(current) &&
+    Boolean(order.payment.checkoutUrl) &&
+    (order.status === OrderStatus.LINK_GENERATED ||
+      order.status === OrderStatus.PAYMENT_PENDING);
+  if (!live || !current) return false;
+
+  const result = await Order.updateOne(
+    {
+      _id: order._id,
+      status: { $in: [OrderStatus.LINK_GENERATED, OrderStatus.PAYMENT_PENDING] },
+      "payment.stripeSessionId": current,
+    },
+    {
+      $set: {
+        status: OrderStatus.FAILED,
+        "payment.status": OrderStatus.FAILED,
+        "payment.checkoutUrl": null,
+        "payment.expiresAt": null,
+        "payment.failureReason": HELD_PAYMENT_STAND_DOWN_REASON,
+      },
+      $push: {
+        "payment.attempts": {
+          gateway: order.payment.gateway ?? PaymentGatewayKey.STRIPE,
+          sessionId: current,
+          checkoutKey: order.payment.checkoutKey ?? null,
+          paymentIntentId: order.payment.paymentIntentId ?? null,
+          checkoutUrl: order.payment.checkoutUrl ?? null,
+          amount: order.pricing.amount,
+          currency: order.pricing.currency,
+          status: order.status,
+          failureReason: null,
+          supersededReason: "PAYMENT_HELD",
+          supersededAt: new Date(),
+          held: false,
+          createdAt: order.payment.initiatedAt ?? new Date(),
+        },
+      },
+    },
+  );
+  if (result.modifiedCount === 0) return false;
+
+  // Best effort, as for every other stand-down: Stripe can cancel an open
+  // session, PayPal cannot (an approval is simply never captured — see
+  // `shouldCaptureApprovedOrder`).
+  try {
+    const gateway = await getGatewayForOrganization(
+      order.organizationId ? String(order.organizationId) : null,
+      {
+        kind: "pinned",
+        provider: (order.payment.gateway ?? PaymentGatewayKey.STRIPE) as PaymentGatewayKey,
+      },
+    );
+    await gateway.expireSession(current);
+  } catch (err) {
+    logger.warn("payments.held_stand_down_expire_failed", {
+      orderId: String(order._id),
+      sessionId: current,
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
+  return true;
+}
+
+/**
+ * Whether an approved PayPal order may be captured — the step that actually
+ * takes the customer's money.
+ *
+ * Only for the order's CURRENT checkout, on an unpaid order, with no
+ * unreconciled payment already held for it. The server used to capture any
+ * approval it verified: a customer who had already paid the full amount on
+ * the earlier Stripe link was charged a second time on PayPal.
+ */
+export async function shouldCaptureApprovedOrder(
+  event: VerifiedPaymentEvent,
+  organizationId: string | null,
+): Promise<{ capture: boolean; reason: string; orderId: string | null }> {
+  const order = await findOrderForEndpoint(organizationId, event);
+  if (!order) return { capture: false, reason: "order_not_found", orderId: null };
+  const orderId = String(order._id);
+  if (order.status === OrderStatus.PAID) {
+    return { capture: false, reason: "order_already_paid", orderId };
+  }
+  if (classifyPaymentSession(order.payment, event.sessionId) !== "current") {
+    return { capture: false, reason: "not_the_current_checkout", orderId };
+  }
+  if (!order.payment.checkoutUrl) {
+    return { capture: false, reason: "link_stood_down", orderId };
+  }
+  if (outstandingHeldPayments(order).length > 0) {
+    return { capture: false, reason: "payment_already_held", orderId };
+  }
+  return { capture: true, reason: "current_checkout", orderId };
 }
 
 export async function applyCheckoutPaid(
@@ -501,6 +754,20 @@ export async function applyCheckoutPaid(
     input.sessionId &&
     order.payment.stripeSessionId &&
     input.sessionId !== order.payment.stripeSessionId
+  ) {
+    return recordCompetingPayment(order, input, "already-settled");
+  }
+  // The same session paying a SECOND time — PayPal reports each capture with
+  // its own id, where a replay repeats the id. After settlement a different
+  // capture is more money, not a duplicate to ignore.
+  if (
+    order.status === OrderStatus.PAID &&
+    classification === "current" &&
+    input.source !== "manual" &&
+    input.paymentIntentId &&
+    order.payment.paymentIntentId &&
+    input.paymentIntentId !== order.payment.paymentIntentId &&
+    !(order.payment.processedWebhookEventIds ?? []).includes(input.eventId)
   ) {
     return recordCompetingPayment(order, input, "already-settled");
   }
@@ -640,6 +907,10 @@ export async function applyCheckoutPaid(
       },
       { ...sessionOpt(session), returnDocument: "after" },
     ).lean<OrderDoc & { _id: Types.ObjectId }>();
+
+    if (updated && fromGateway) {
+      await markLiveAttempt(updated._id, input.sessionId, OrderStatus.PAID, session);
+    }
 
     if (!updated) {
       // Either the order is already PAID (another transition won the race —
@@ -847,7 +1118,20 @@ function isStaleSessionEvent(
     // and the event keeps its previous meaning.
     return c === "unknown" && Boolean(order.payment.stripeSessionId);
   }
-  // A payment-intent event may carry no session id.
+  // A payment-intent event may carry no session id. The checkout key the
+  // payment was created with says which checkout it belongs to: any other
+  // than the order's current one is stale. Real Stripe sessions carry no
+  // payment-intent id until the customer pays, so matching on the intent
+  // alone missed a late decline on a replaced link — and failed the live one.
+  if (event.checkoutKey) {
+    const attempts = order.payment.attempts ?? [];
+    if (attempts.some((a) => a.checkoutKey === event.checkoutKey && a.supersededAt)) {
+      return true;
+    }
+    if (order.payment.checkoutKey && order.payment.checkoutKey !== event.checkoutKey) {
+      return true;
+    }
+  }
   if (event.paymentIntentId) {
     return (order.payment.attempts ?? []).some(
       (a) => a.paymentIntentId === event.paymentIntentId && a.supersededAt,
@@ -856,15 +1140,43 @@ function isStaleSessionEvent(
   return false;
 }
 
+/**
+ * Record the outcome on the attempt that is still live for this session.
+ * The switch path records the new attempt up front, and without this its
+ * history kept reading "link generated" after the order was paid or the
+ * payment failed. History only: nothing reads it to decide payment state.
+ */
+async function markLiveAttempt(
+  orderId: Types.ObjectId,
+  sessionId: string | null | undefined,
+  status: OrderStatus,
+  session: ClientSession | null,
+): Promise<void> {
+  if (!sessionId) return;
+  await Order.updateOne(
+    { _id: orderId, "payment.attempts.sessionId": sessionId },
+    { $set: { "payment.attempts.$[live].status": status } },
+    {
+      ...sessionOpt(session),
+      arrayFilters: [{ "live.sessionId": sessionId, "live.supersededAt": null }],
+      timestamps: false,
+    },
+  );
+}
+
 /** Keeps the status write tied to the session the event is about, so a link
  *  replaced between the read and the write is not failed by the old one. */
 function currentSessionCondition(
   order: OrderDocument,
   event: VerifiedPaymentEvent,
 ): Record<string, unknown> {
-  return event.sessionId && order.payment.stripeSessionId
-    ? { "payment.stripeSessionId": event.sessionId }
-    : {};
+  if (event.sessionId && order.payment.stripeSessionId) {
+    return { "payment.stripeSessionId": event.sessionId };
+  }
+  if (event.checkoutKey && order.payment.checkoutKey) {
+    return { "payment.checkoutKey": event.checkoutKey };
+  }
+  return {};
 }
 
 /** Record a stale-session failure/expiry as history, without touching the
@@ -986,6 +1298,7 @@ async function handleCheckoutExpired(
     ).lean<OrderDoc & { _id: Types.ObjectId }>();
 
     if (!updated) return { duplicate: true };
+    await markLiveAttempt(updated._id, event.sessionId, OrderStatus.EXPIRED, session);
 
     await recordAudit(
       {
@@ -1086,7 +1399,8 @@ async function handlePaymentFailed(
   }
   const reason =
     event.reason ??
-    `Payment intent ${event.paymentIntentId ?? "?"} failed`;
+    // Shown to the operator: say what happened, not the gateway's id.
+    "The payment was declined by the payment provider.";
   return failOrder(order, event, reason);
 }
 
@@ -1143,6 +1457,7 @@ async function failOrder(
     ).lean<OrderDoc & { _id: Types.ObjectId }>();
 
     if (!updated) return { duplicate: true };
+    await markLiveAttempt(updated._id, event.sessionId, OrderStatus.FAILED, session);
 
     await recordAudit(
       {

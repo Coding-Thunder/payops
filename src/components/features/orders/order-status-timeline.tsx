@@ -9,6 +9,7 @@ import {
 
 import { ConsentStatus, OrderStatus } from "@/lib/constants/enums";
 import { formatDateTime } from "@/lib/format";
+import { isOperatorSupersede, outstandingHeldPayments } from "@/lib/payment-state";
 import { cn } from "@/lib/utils";
 import type { OrderDTO } from "@/types";
 
@@ -193,10 +194,23 @@ function buildSteps(order: OrderDTO): Step[] {
   } else if (order.status === OrderStatus.FAILED) {
     paid = {
       key: "paid",
-      label: "Payment failed",
+      // An operator standing the link down (re-price, regenerate, switch) is
+      // not a failed payment; nobody tried to pay and was declined.
+      label:
+        outstandingHeldPayments(order).length > 0
+          ? "Payment held for review"
+          : order.consent?.collectionMethod === "MANUAL"
+          ? "Manual payment requested"
+          : isOperatorSupersede(order.payment.failureReason)
+            ? "New payment link needed"
+            : "Payment failed",
       when: null,
-      state: "failed",
-      helperText: order.payment.failureReason ?? undefined,
+      // A manual request is the next step in progress, not a failure.
+      state: order.consent?.collectionMethod === "MANUAL" ? "active" : "failed",
+      helperText:
+        order.consent?.collectionMethod === "MANUAL"
+          ? undefined
+          : (order.payment.failureReason ?? undefined),
     };
   } else if (order.status === OrderStatus.EXPIRED) {
     paid = {

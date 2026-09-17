@@ -147,6 +147,10 @@ export interface OrderPayment {
   manualReference: string | null;
   /** How many times the collectable amount has changed. */
   priceRevision: number;
+  /** Set when booking details the checkout page shows (provider, car,
+   *  trip, email) changed while the current link was out; cleared by a new
+   *  link. The link still charges the right amount, but reads out of date. */
+  detailsChangedAt: string | null;
   /** Every checkout session ever opened on this order, oldest first, so an
    *  operator can see that a Stripe attempt failed before a PayPal one was
    *  tried. Read-only history — the live attempt is the flat fields above. */
@@ -162,7 +166,23 @@ export interface OrderPaymentAttempt {
   status: OrderStatus;
   failureReason: string | null;
   /** Why it stopped being current, or null if it never was superseded. */
-  supersededReason: "GATEWAY_SWITCHED" | "REPRICED" | "REGENERATED" | null;
+  supersededReason:
+    | "GATEWAY_SWITCHED"
+    | "REPRICED"
+    | "REGENERATED"
+    | "PAYMENT_HELD"
+    | null;
+  /** Money the gateway took that the order did not accept — held for an
+   *  operator to reconcile (refund, or record as this order's payment). */
+  held: boolean;
+  heldReviewedAt: string | null;
+  heldKind:
+    | "superseded-session"
+    | "unknown-session"
+    | "amount-mismatch"
+    | "already-settled"
+    | "state-changed"
+    | null;
   supersededAt: string | null;
   createdAt: string;
 }
@@ -334,9 +354,11 @@ export interface PublicConsentView {
   customerEmail: string;
   /** The OWNING organization's brand, not the deployment's. */
   brandName: string;
-  /** Owning organization, so the page can brand its chrome to match the
-   *  email that sent the customer here. Null for pre-migration bookings. */
-  organizationId: string | null;
+  /** Owning organization, so the server-rendered page can brand its chrome
+   *  to match the email that sent the customer here. Null for pre-migration
+   *  bookings. Server-side only: `toPublicConsentPayload` removes it before
+   *  the view reaches the browser. */
+  organizationId?: string | null;
   consentMessage: string;
   snapshot: PaymentConsentSnapshot;
   /** Where to pay, ONLY when this request is for gateway collection, is for

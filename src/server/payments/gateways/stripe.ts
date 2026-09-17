@@ -207,6 +207,9 @@ export function createStripeGateway(
           metadata: {
             orderId: input.orderId,
             orderNumber: input.orderNumber,
+            // Payment-intent events carry no session id; this is how a
+            // decline is matched to the checkout it happened in.
+            checkoutKey: checkoutRequestKey(input),
           },
         },
       },
@@ -415,6 +418,8 @@ export function createStripeGateway(
       sessionId,
       orderId,
       paymentIntentId,
+      checkoutKey:
+        (paymentIntent?.metadata?.checkoutKey as string | undefined) ?? null,
       amountTotalMinor:
         typeof session?.amount_total === "number"
           ? session.amount_total

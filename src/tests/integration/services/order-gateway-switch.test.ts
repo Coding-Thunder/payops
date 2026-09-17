@@ -204,6 +204,36 @@ describe("switchOrderGateway — Stripe declined → PayPal", () => {
     expect(await Order.countDocuments({})).toBe(1);
   });
 
+  it("records the PayPal attempt as paid and keeps the Stripe one as history", async () => {
+    const order = await declinedStripeOrder(500);
+    await switchOrderGateway(order.id, { gateway: PaymentGatewayKey.PAYPAL }, ctx());
+    const doc = (await Order.findById(order.id))!;
+    const paypalSession = doc.payment.stripeSessionId!;
+    await applyCheckoutPaid(doc, {
+      eventId: "evt_pp_history",
+      sessionId: paypalSession,
+      paymentIntentId: null,
+      amountTotal: 50_000,
+      paidAtMs: Date.now(),
+      source: "webhook",
+    });
+    const raw = await Order.findById(order.id).lean<{
+      payment: {
+        attempts: Array<{
+          gateway: string;
+          sessionId: string;
+          status: string;
+          supersededReason: string | null;
+        }>;
+      };
+    }>();
+    const paypal = raw!.payment.attempts.filter((a) => a.sessionId === paypalSession);
+    expect(paypal.map((a) => a.status)).toEqual([OrderStatus.PAID]);
+    const stripe = raw!.payment.attempts.filter((a) => a.gateway === "STRIPE");
+    expect(stripe.length).toBeGreaterThan(0);
+    expect(stripe.every((a) => a.supersededReason === "GATEWAY_SWITCHED")).toBe(true);
+  });
+
   it("a late Stripe success after PayPal settled cannot double-pay", async () => {
     const order = await declinedStripeOrder(500);
     await switchOrderGateway(order.id, { gateway: PaymentGatewayKey.PAYPAL }, ctx());

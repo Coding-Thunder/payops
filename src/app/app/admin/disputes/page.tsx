@@ -35,6 +35,8 @@ import { formatCurrency, formatDateTime, formatRelative } from "@/lib/format";
 import { requirePermission } from "@/server/auth/session";
 import { listAtRiskOrders } from "@/server/services/order.service";
 import type { OrderDTO } from "@/types";
+import { PaymentGatewayLabel } from "@/lib/constants/labels";
+import { outstandingHeldPayments } from "@/lib/payment-state";
 
 export const metadata = { title: "Disputes" };
 export const dynamic = "force-dynamic";
@@ -46,11 +48,19 @@ interface RiskReason {
 
 function reasonsFor(order: OrderDTO): RiskReason[] {
   const out: RiskReason[] = [];
-  if (order.risk.flagged) {
-    out.push({ label: "Manually flagged", tone: "destructive" });
+  // A payment the order did not accept is raised by the system, not by an
+  // operator, and it is the reason most likely to mean money is owed back.
+  const held = outstandingHeldPayments(order).length > 0;
+  if (held) {
+    out.push({ label: "Payment held for review", tone: "destructive" });
+  } else if (order.risk.flagged) {
+    out.push({ label: "Flagged for review", tone: "destructive" });
   }
-  if (order.status === OrderStatus.FAILED) {
-    out.push({ label: "Stripe payment failed", tone: "destructive" });
+  if (order.status === OrderStatus.FAILED && !held) {
+    out.push({
+      label: `${order.payment.gateway ? (PaymentGatewayLabel[order.payment.gateway] ?? order.payment.gateway) : "Payment"} link failed`,
+      tone: "destructive",
+    });
   }
   if (order.status === OrderStatus.EXPIRED) {
     out.push({ label: "Checkout link expired", tone: "warning" });

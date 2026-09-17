@@ -60,3 +60,21 @@ describe("proxy auth gate — API calls without a session", () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe("proxy auth gate — the client router's own requests", () => {
+  it("answers a signed-out RSC request with a bare 401, not a redirect", async () => {
+    const req = new NextRequest(new URL("https://app.example.com/app/orders/create?_rsc=abc"), {
+      headers: { rsc: "1" },
+    });
+    const res = await proxy(req);
+    expect(res.status).toBe(401);
+    expect(res.headers.get("location")).toBeNull();
+    // Not a flight response, so the router falls back to a full page load.
+    expect(res.headers.get("content-type") ?? "").not.toContain("text/x-component");
+  });
+
+  it("still redirects the full page load that follows", async () => {
+    const res = await proxy(reqFor("/app/orders/create"));
+    expect(res.headers.get("location")).toContain("/login");
+  });
+});

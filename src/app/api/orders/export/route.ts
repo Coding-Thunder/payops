@@ -45,6 +45,9 @@ export const GET = withApi(
         // so there is no header-injection surface here.
         "Content-Disposition": `attachment; filename="${result.filename}"`,
         "Cache-Control": "no-store, private",
+        // How many orders the workbook covers, so the page can report it
+        // (and say "nothing matched" rather than download an empty sheet).
+        "X-Export-Order-Count": String(result.orderCount),
         "X-Content-Type-Options": "nosniff",
       },
     });

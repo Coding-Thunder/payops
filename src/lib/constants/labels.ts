@@ -129,6 +129,7 @@ export const OrderEvidenceEventLabel: Record<OrderEvidenceEventType, string> = {
   PAYMENT_EXPIRED: "Payment expired",
   REFUND_ISSUED: "Refund issued",
   ORDER_CANCELLED: "Order cancelled",
+  PAYMENT_HELD: "Payment held for review",
 };
 
 export const OrderEvidenceActorLabel: Record<OrderEvidenceActorType, string> = {

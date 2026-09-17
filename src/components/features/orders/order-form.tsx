@@ -218,6 +218,16 @@ export function OrderForm(props: OrderFormProps) {
   const chargesError =
     chargesErrors?.root?.message ?? chargesErrors?.message ?? null;
 
+  // RHF re-checks only the field that changed, never the list-level rule, so
+  // the message stayed up after the operator had fixed it. Re-run the list
+  // rule whenever the lines change while it is showing.
+  const chargesKey = JSON.stringify(watchedCharges ?? []);
+  React.useEffect(() => {
+    if (chargesError) void form.trigger("charges");
+    // Only a change to the lines should re-run it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chargesKey]);
+
   const isSubmitting = form.formState.isSubmitting;
   const busy = isSubmitting || Boolean(locked);
 
@@ -233,6 +243,16 @@ export function OrderForm(props: OrderFormProps) {
   // the first invalid control in reading order, which also covers the date
   // and provider pickers RHF holds no ref for.
   const formRef = React.useRef<HTMLFormElement>(null);
+
+  // A refusal from the server (a conflict, a lost session) leaves the page in
+  // place. Focus used to fall to <body> with the message off-screen; take the
+  // operator to it instead.
+  const serverErrorRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (!serverError) return;
+    serverErrorRef.current?.focus();
+    serverErrorRef.current?.scrollIntoView({ block: "center" });
+  }, [serverError]);
   const [focusRequest, setFocusRequest] = React.useState(0);
   const handledFocusRequest = React.useRef(0);
   React.useEffect(() => {
@@ -281,7 +301,12 @@ export function OrderForm(props: OrderFormProps) {
         aria-busy={busy || undefined}
       >
         {serverError ? (
-          <Alert variant="destructive">
+          <Alert
+            ref={serverErrorRef}
+            tabIndex={-1}
+            variant="destructive"
+            className="outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          >
             <AlertTitle>{serverErrorTitle}</AlertTitle>
             <AlertDescription>{serverError}</AlertDescription>
           </Alert>
@@ -831,6 +856,10 @@ export function OrderForm(props: OrderFormProps) {
                   type="button"
                   variant="outline"
                   size="sm"
+                  // Same reason as Save: the blur-validation message of the
+                  // field being left shifts this button between press and
+                  // release, and the click was lost.
+                  onMouseDown={(event) => event.preventDefault()}
                   onClick={() =>
                     chargeFields.append({
                       name: "",

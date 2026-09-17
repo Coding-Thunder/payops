@@ -44,6 +44,9 @@ interface CreateOrderApiResponse {
  * or null when the lookup found nothing it could trust — including when the
  * lookup itself failed.
  */
+/** When to look for an order whose create request failed without an answer. */
+const LOOKUP_DELAYS_MS = [0, 1500, 4000];
+
 interface UncertainOutcome {
   match: Pick<OrderDTO, "id" | "orderNumber"> | null;
   lookupFailed: boolean;
@@ -154,21 +157,20 @@ export function CreateOrderForm({
       }
 
       // The order may exist. Look before offering a retry that would mint
-      // a second one for the same booking.
-      let outcome: UncertainOutcome;
-      try {
-        const match = await findJustCreatedOrder(values, startedAt);
-        if (!match) {
-          submittingRef.current = false;
-          const message =
-            "The order was not created. Nothing was saved — please try again.";
-          setServerError(message);
-          toast.error(message);
-          return;
+      // a second one for the same booking. A miss proves nothing: after a
+      // gateway timeout the server can still be writing the order, so the
+      // lookup is repeated briefly and, even then, a miss is reported as
+      // "not found yet" — never as "not created".
+      let outcome: UncertainOutcome = { match: null, lookupFailed: false };
+      for (const waitMs of LOOKUP_DELAYS_MS) {
+        if (waitMs) await new Promise((r) => setTimeout(r, waitMs));
+        try {
+          const match = await findJustCreatedOrder(values, startedAt);
+          outcome = { match, lookupFailed: false };
+          if (match) break;
+        } catch {
+          outcome = { match: null, lookupFailed: true };
         }
-        outcome = { match, lookupFailed: false };
-      } catch {
-        outcome = { match: null, lookupFailed: true };
       }
       submittingRef.current = false;
       setUncertain(outcome);
@@ -197,7 +199,9 @@ export function CreateOrderForm({
         <p>
           {uncertain.match
             ? "The request failed, but an order you created moments ago has the same customer, provider and trip. Open it rather than creating the booking twice."
-            : "The request failed and the orders list could not be checked. Look for this booking in Orders before creating it again, or it may be created twice."}
+            : uncertain.lookupFailed
+              ? "The request failed and the orders list could not be checked. Look for this booking in Orders before creating it again, or it may be created twice."
+              : "The request failed and no matching order has appeared yet — but it may still be saving. Check Orders in a minute before creating it again, or it may be created twice."}
         </p>
         <div className="flex flex-wrap gap-2">
           {uncertain.match ? (

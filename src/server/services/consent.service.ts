@@ -119,6 +119,24 @@ export interface RequestConsentInput {
   collection?: "GATEWAY" | "MANUAL";
 }
 
+/**
+ * Whether a consent request has been replaced on its order — by a newer
+ * request, or because its confirmation was retired (the amount or the
+ * gateway changed). A replaced request can neither be confirmed nor send
+ * the customer on to checkout; only the latest request speaks for the order.
+ */
+function isReplacedRequest(
+  order: { consent?: { status?: string | null; currentConsentId?: unknown } | null } | null,
+  consentId: Types.ObjectId | string,
+): boolean {
+  if (!order) return false;
+  const current = order.consent?.currentConsentId
+    ? String(order.consent.currentConsentId)
+    : null;
+  if (current) return current !== String(consentId);
+  return (order.consent?.status ?? ConsentStatus.NOT_REQUESTED) === ConsentStatus.NOT_REQUESTED;
+}
+
 export interface RequestConsentResult {
   consent: PaymentConsentDTO;
   token: string;
@@ -156,11 +174,20 @@ export async function requestConsent(
   }
 
   const collection = input.collection ?? "GATEWAY";
-  const existing =
+  // An unanswered request is reused on a resend — but only for the same way
+  // of paying. Reusing a gateway request for a manual one turned the link in
+  // the earlier email into a confirmation of the manual request.
+  const pending =
     order.consent?.currentConsentId &&
     order.consent.status === ConsentStatus.REQUESTED
       ? await PaymentConsent.findById(order.consent.currentConsentId)
       : null;
+  const pendingCollection = pending
+    ? pending.collectionMethod === "MANUAL"
+      ? "MANUAL"
+      : "GATEWAY"
+    : null;
+  const existing = pending && pendingCollection === collection ? pending : null;
 
   // Single persisted snapshot shape, reused by the create + refresh paths so
   // the frozen record always carries locations + the full charge breakdown.
@@ -216,9 +243,23 @@ export async function requestConsent(
 
   // Point the order at the fresh request, but DO NOT downgrade a previous
   // RECEIVED/VERIFIED status — a re-send shouldn't erase prior consent.
-  const shouldPromote =
-    order.consent?.status !== ConsentStatus.RECEIVED &&
-    order.consent?.status !== ConsentStatus.VERIFIED;
+  //
+  // Unless that confirmation was for a different way of paying. A customer
+  // who agreed to "confirm, then pay online" has not agreed to the team
+  // arranging payment separately, and the reverse: the earlier confirmation
+  // used to stand for the new request, so a manual payment could be recorded
+  // before the customer had even opened it.
+  const alreadyConfirmed =
+    order.consent?.status === ConsentStatus.RECEIVED ||
+    order.consent?.status === ConsentStatus.VERIFIED;
+  let confirmedFor: "GATEWAY" | "MANUAL" | null = null;
+  if (alreadyConfirmed && order.consent?.currentConsentId) {
+    const confirmed = await PaymentConsent.findById(order.consent.currentConsentId)
+      .select("collectionMethod")
+      .lean<{ collectionMethod?: string | null } | null>();
+    confirmedFor = confirmed?.collectionMethod === "MANUAL" ? "MANUAL" : "GATEWAY";
+  }
+  const shouldPromote = !alreadyConfirmed || confirmedFor !== collection;
   if (shouldPromote) {
     order.consent = {
       ...order.consent,
@@ -226,6 +267,10 @@ export async function requestConsent(
       currentConsentId: doc._id,
       requestedAt: doc.requestedAt,
       collectionMethod: collection,
+      // A confirmation of something else is not carried over.
+      receivedAt: null,
+      verifiedAt: null,
+      method: null,
     };
     await order.save();
   } else {
@@ -252,6 +297,7 @@ export async function requestConsent(
       orderNumber: order.orderNumber,
       customerEmail: input.customerEmail,
       resend: Boolean(existing),
+      collection,
     },
   });
 
@@ -316,6 +362,21 @@ async function loadConsentByTokenOrThrow(token: string) {
  * trimmed view shape so we never leak audit metadata (IP, UA, verifier)
  * to the customer.
  */
+/**
+ * The view as it may leave the server. The organization id is an internal
+ * identifier the page needs only while rendering on the server; it has no
+ * business in the customer's browser or in the public JSON endpoint.
+ */
+export function toPublicConsentPayload(view: PublicConsentView): PublicConsentView {
+  const payload = { ...view };
+  delete payload.organizationId;
+  // The link the request was sent with is evidence, kept on the record. The
+  // page never uses it — `paymentUrl` is the only link it may follow — and
+  // once that link is stood down it must not sit in the page source.
+  payload.snapshot = { ...view.snapshot, paymentLinkRef: null };
+  return payload;
+}
+
 export async function getPublicConsentView(
   token: string,
   branding: { brandName: string; supportEmail?: string; supportPhone?: string },
@@ -340,7 +401,10 @@ export async function getPublicConsentView(
   // amount forwarded the customer to the new-amount checkout, and a dead or
   // already-paid session was offered as the next step.
   const collection = doc.collectionMethod === "MANUAL" ? "MANUAL" : "GATEWAY";
-  const outdated = Boolean(order) && doc.snapshot.amount !== order!.pricing.amount;
+  const outdated =
+    Boolean(order) &&
+    (doc.snapshot.amount !== order!.pricing.amount ||
+      isReplacedRequest(order, doc._id));
   const orderPaid = order?.status === OrderStatus.PAID;
   const payable =
     order?.status === OrderStatus.LINK_GENERATED ||
@@ -424,14 +488,22 @@ export async function recordConsentFromToken(
   // booking needs nothing further — accepting either used to record a
   // consent that did not match what was, or had been, charged.
   const orderNow = await Order.findById(doc.orderId)
-    .select("status pricing.amount")
-    .lean<{ status: string; pricing: { amount: number } } | null>();
+    .select("status pricing.amount consent")
+    .lean<{
+      status: string;
+      pricing: { amount: number };
+      consent?: { status?: string | null; currentConsentId?: unknown } | null;
+    } | null>();
   if (orderNow?.status === OrderStatus.PAID) {
     throw new ConflictError(
       "This booking has already been paid. Nothing further is needed.",
     );
   }
-  if (orderNow && orderNow.pricing.amount !== doc.snapshot.amount) {
+  if (
+    orderNow &&
+    (orderNow.pricing.amount !== doc.snapshot.amount ||
+      isReplacedRequest(orderNow, doc._id))
+  ) {
     throw new ConflictError(
       "This request has been updated since it was sent. Please use the most recent email we sent you.",
     );
@@ -464,7 +536,12 @@ export async function recordConsentFromToken(
   await Order.updateOne(
     // Still the amount this consent is for: a re-price landing in between
     // must not have this confirmation stand for the new amount.
-    { _id: doc.orderId, "pricing.amount": doc.snapshot.amount },
+    // …and still the request the order is waiting on.
+    {
+      _id: doc.orderId,
+      "pricing.amount": doc.snapshot.amount,
+      "consent.currentConsentId": doc._id,
+    },
     {
       $set: {
         "consent.status": ConsentStatus.VERIFIED,

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
@@ -35,6 +37,13 @@ export interface RateLimitConfig {
   max: number;
   /** Window length in ms. */
   windowMs: number;
+  /**
+   * "ip" ignores cookies. Use it for routes called before signing in (login,
+   * public forms): there the cookies are whatever the caller chooses, and
+   * keying on them let a script reset its own limit on every attempt.
+   * Default "session": the caller's IP plus their session.
+   */
+  keyBy?: "ip" | "session";
 }
 
 export interface WithApiOptions {
@@ -88,7 +97,7 @@ export function withApi<TArgs extends unknown[]>(
         if (options.rateLimit) {
           enforceRateLimit({
             route: options.rateLimit.route,
-            key: rateLimitKey(req),
+            key: rateLimitKey(req, options.rateLimit.keyBy ?? "session"),
             max: options.rateLimit.max,
             windowMs: options.rateLimit.windowMs,
           });
@@ -115,18 +124,42 @@ function shouldCheckBody(req: Request): boolean {
   );
 }
 
-/** Compose a rate-limit key from forwarded IP + the auth cookie value.
- *  Cookie content is hashed-by-prefix so it stays inside the in-process
- *  map without leaking session material on a Set-Cookie dump. */
-function rateLimitKey(req: Request): string {
+/**
+ * Compose a rate-limit key from the caller's IP and, for signed-in routes,
+ * a hash of their session token.
+ *
+ * It used to take the first 16 characters of the whole Cookie header —
+ * which is the cookie NAME, the same for everyone — so every operator
+ * behind one office IP shared each route's limit, while anyone could change
+ * their bucket by sending a different cookie. The token is hashed so no
+ * session material sits in the in-process map.
+ */
+function rateLimitKey(req: Request, keyBy: "ip" | "session"): string {
   const headers = req.headers;
-  const fwd =
+  // Cloudflare overwrites this header; the left end of X-Forwarded-For is
+  // whatever the client sent.
+  const ip =
+    headers.get("cf-connecting-ip")?.trim() ||
     headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     headers.get("x-real-ip") ||
     "unknown";
-  const cookie = headers.get("cookie") ?? "";
-  const sessionMarker = cookie.length > 0 ? cookie.slice(0, 16) : "anon";
-  return `${fwd}|${sessionMarker}`;
+  if (keyBy === "ip") return ip;
+  const token = sessionToken(headers.get("cookie") ?? "");
+  const session = token
+    ? createHash("sha256").update(token).digest("hex").slice(0, 24)
+    : "anon";
+  return `${ip}|${session}`;
+}
+
+function sessionToken(cookieHeader: string): string | null {
+  const name = process.env.COOKIE_NAME || "payops_session";
+  for (const part of cookieHeader.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq > 0 && part.slice(0, eq).trim() === name) {
+      return part.slice(eq + 1).trim() || null;
+    }
+  }
+  return null;
 }
 
 function shouldEnforceOrigin(
@@ -140,7 +173,15 @@ function shouldEnforceOrigin(
 
 function handleError(err: unknown): NextResponse {
   if (err instanceof ZodError) {
-    return jsonError(422, "VALIDATION_ERROR", "Invalid request data", {
+    // Lead with the first specific reason — "Enter a valid email" — rather
+    // than a generic line the operator cannot act on. Every issue is still
+    // in `details.issues` for callers that want them all.
+    const first = err.issues[0];
+    const more = err.issues.length - 1;
+    const message = first
+      ? `${first.message}${more > 0 ? ` (and ${more} more problem${more === 1 ? "" : "s"})` : ""}`
+      : "Invalid request data";
+    return jsonError(422, "VALIDATION_ERROR", message, {
       issues: err.issues.map((i) => ({
         path: i.path.join("."),
         message: i.message,

@@ -410,7 +410,9 @@ export function PaymentRequestEmail({
       {chargeBreakdown ? (
         <ChargeBreakdown
           breakdown={chargeBreakdown}
-          title="What you're paying"
+          title={manualCollection ? "Booking charges" : "What you're paying"}
+          // Nothing has been paid yet when this email is read.
+          prepaidLabel={manualCollection ? "Amount to prepay" : "Amount to pay online"}
           topPadding={SPACE.md}
         />
       ) : null}

@@ -26,7 +26,7 @@ export const POST = withApi(
     // 5 attempts per 5 min per caller — paired with the per-failure
     // audit row, this kills the credential-stuffing path without
     // locking out a real operator who fat-fingered their password.
-    rateLimit: { route: "auth-login", max: 5, windowMs: 5 * 60_000 },
+    rateLimit: { route: "auth-login", max: 5, windowMs: 5 * 60_000, keyBy: "ip" },
     bodyLimitBytes: 4 * 1024,
   },
 );

@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useRef, useState } from "react";
 import { ShieldAlertIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { api, ApiClientError } from "@/lib/api-client";
+import { orderQueryKey } from "@/hooks/use-order-query";
 import type { OrderDTO } from "@/types";
 
 interface RiskFlagDialogProps {
@@ -32,7 +34,9 @@ export function RiskFlagDialog({
   triggerVariant = "outline",
 }: RiskFlagDialogProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const [note, setNote] = useState(order.risk.flaggedNote ?? "");
 
   const isFlagged = order.risk.flagged;
@@ -49,6 +53,11 @@ export function RiskFlagDialog({
           : `Flagged ${order.orderNumber} for review`,
       );
       setOpen(false);
+      // The trigger's label changes with the flag; keep focus on it.
+      window.setTimeout(() => triggerRef.current?.focus(), 150);
+      // The order page reads the order through React Query; without this the
+      // held-payment alert stayed up after the flag was cleared.
+      void queryClient.invalidateQueries({ queryKey: orderQueryKey(order.id) });
       router.refresh();
     } catch (err) {
       toast.error(
@@ -62,6 +71,7 @@ export function RiskFlagDialog({
   return (
     <>
       <Button
+        ref={triggerRef}
         type="button"
         size="sm"
         variant={triggerVariant}
@@ -94,7 +104,15 @@ export function RiskFlagDialog({
         confirmLabel={isFlagged ? "Remove flag" : "Flag order"}
         onConfirm={onConfirm}
       >
-        {isFlagged ? null : (
+        {isFlagged ? (
+          order.risk.flaggedNote ? (
+            // What the flag says, before it is cleared — for a held payment
+            // this is the reason a refund may still be owed.
+            <p className="whitespace-pre-line rounded-md border border-border bg-muted/40 p-2 text-[12px]">
+              {order.risk.flaggedNote}
+            </p>
+          ) : null
+        ) : (
           <div className="space-y-1.5">
             <Label htmlFor="risk-note">Note (optional)</Label>
             <Textarea

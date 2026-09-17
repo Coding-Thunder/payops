@@ -82,13 +82,16 @@ export function asyncPaymentFailedWebhook(opts: {
 export function paymentIntentFailedWebhook(opts: {
   paymentIntentId: string;
   message?: string;
+  orderId?: string;
+  checkoutKey?: string;
 }): VerifiedPaymentEvent {
   return {
     eventId: nextEventId(),
     type: "payment.failed",
     sessionId: null,
-    orderId: null,
+    orderId: opts.orderId ?? null,
     paymentIntentId: opts.paymentIntentId,
+    checkoutKey: opts.checkoutKey ?? null,
     amountTotalMinor: null,
     occurredAtMs: Date.now(),
     reason: opts.message ?? "payment_intent failed",

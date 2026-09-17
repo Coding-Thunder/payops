@@ -25,8 +25,9 @@ interface EditOrderRouteProps {
  *
  * Gated on ORDER_UPDATE, the permission the modify service re-checks. An
  * archived order is read-only everywhere else in the app, so it is not
- * editable here either; both it and an order outside the operator's scope
- * render as not found rather than revealing that the id exists.
+ * editable here either: it redirects to the order page. An order outside
+ * the operator's scope renders as not found rather than revealing that the
+ * id exists.
  */
 export default async function EditOrderRoute({ params }: EditOrderRouteProps) {
   const { id } = await params;
@@ -47,7 +48,9 @@ export default async function EditOrderRoute({ params }: EditOrderRouteProps) {
     if (err instanceof NotFoundError || err instanceof ForbiddenError) notFound();
     throw err;
   }
-  if (order.state === RecordState.ARCHIVED) notFound();
+  // Archived while the form was open (the realtime refresh re-runs this):
+  // show the order, which says it is archived, not a bare "Page not found".
+  if (order.state === RecordState.ARCHIVED) redirect(`/app/orders/${order.id}`);
 
   const providers = await listActiveProviders();
   const emailHref = `/app/orders/${order.id}/email`;

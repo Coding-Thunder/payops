@@ -61,11 +61,33 @@ interface CachedToken {
 }
 const tokenCache = new Map<string, CachedToken>();
 
+/**
+ * The smoke/browser test server has no PayPal credentials or network, so
+ * it talks to an in-process stand-in instead — the same arrangement as the
+ * Stripe stub (`getStripeFor`). Only `PAYOPS_TEST_MODE=smoke` selects it.
+ */
+let smokeFetch: typeof fetch | null = null;
+function defaultFetch(...args: Parameters<typeof fetch>): ReturnType<typeof fetch> {
+  if (process.env.PAYOPS_TEST_MODE === "smoke") {
+    if (!smokeFetch) {
+      // Lazy CJS require keeps the stub out of the production code path.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { createPayPalStub } = require("@/tests/mocks/paypal-stub") as
+        typeof import("@/tests/mocks/paypal-stub");
+      smokeFetch = createPayPalStub({
+        appUrl: process.env.APP_URL ?? "http://127.0.0.1:3100",
+      }).fetch;
+    }
+    return smokeFetch(...args);
+  }
+  return fetch(...args);
+}
+
 /** Test seam mirroring `setStripeForTesting`: lets tests drive the HTTP
  *  layer without a network. Production never calls this. */
-let fetchImpl: typeof fetch = (...args) => fetch(...args);
+let fetchImpl: typeof fetch = defaultFetch;
 export function _setPayPalFetchForTesting(f: typeof fetch | null): void {
-  fetchImpl = f ?? ((...args) => fetch(...args));
+  fetchImpl = f ?? defaultFetch;
   tokenCache.clear();
 }
 
@@ -353,6 +375,10 @@ export function createPayPalGateway(
       // id on capture events. Dispute payloads nest it differently.
       const orderId =
         (resource.custom_id as string | undefined) ??
+        // Order events carry it on the purchase unit instead.
+        ((resource.purchase_units as { custom_id?: string }[] | undefined)?.[0]
+          ?.custom_id ??
+          undefined) ??
         ((resource.disputed_transactions as { custom?: string }[] | undefined)?.[0]
           ?.custom ??
           null);

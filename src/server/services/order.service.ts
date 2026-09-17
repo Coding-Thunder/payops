@@ -10,6 +10,7 @@ import {
   BookingType,
   ConsentMethod,
   ConsentStatus,
+  EmailKind,
   OrderEvidenceActorType,
   OrderEvidenceEventType,
   OrderStatus,
@@ -29,11 +30,18 @@ import { DomainEventType } from "@/lib/constants/events";
 import { resolveProvider } from "@/lib/constants/providers";
 import { summarizeCharges } from "@/lib/charges";
 import { hasCustomerConsent } from "@/lib/consent";
+import {
+  isOperatorSupersede,
+  outstandingHeldPayments,
+} from "@/lib/payment-state";
 import { logger } from "@/lib/logger";
 import { publishEvent } from "@/server/events/bus";
 import {
   Order,
   Organization,
+  PaymentConsent,
+  PendingEmail,
+  PendingEmailStatus,
   type OrderDoc,
   type OrderDocument,
 } from "@/server/db/models";
@@ -58,9 +66,10 @@ import type {
 import type { OrderDTO, PaginatedResult } from "@/types";
 
 import type { RequestContext } from "@/server/api/request-context";
-import type {
-  CreatedPaymentSession,
-  SessionStatus,
+import {
+  checkoutRequestKey,
+  type CreatedPaymentSession,
+  type SessionStatus,
 } from "@/server/payments/gateway";
 import { enabledProvidersOf, getGatewayForOrganization } from "@/server/payments/resolve-gateway";
 import { recordAudit } from "./audit.service";
@@ -204,6 +213,9 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
       manualMethod: doc.payment.manualMethod ?? null,
       manualReference: doc.payment.manualReference ?? null,
       priceRevision: doc.payment.priceRevision ?? 0,
+      detailsChangedAt: doc.payment.detailsChangedAt
+        ? doc.payment.detailsChangedAt.toISOString()
+        : null,
       // `.lean()` skips Mongoose defaults, so an order written before the
       // attempts array existed genuinely arrives without it.
       attempts: (doc.payment.attempts ?? []).map((a) => ({
@@ -214,6 +226,9 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
         status: a.status,
         failureReason: a.failureReason ?? null,
         supersededReason: a.supersededReason ?? null,
+        held: Boolean(a.held),
+        heldReviewedAt: a.heldReviewedAt ? a.heldReviewedAt.toISOString() : null,
+        heldKind: (a.heldKind ?? null) as OrderDTO["payment"]["attempts"][number]["heldKind"],
         supersededAt: a.supersededAt ? a.supersededAt.toISOString() : null,
         createdAt: a.createdAt ? a.createdAt.toISOString() : new Date(0).toISOString(),
       })),
@@ -580,6 +595,7 @@ export async function initiatePayment(
   if (doc.state === RecordState.ARCHIVED) {
     throw new ConflictError("Cannot initiate payment on an archived order");
   }
+  assertNoHeldPayment(doc);
   if (
     doc.status === OrderStatus.PAID ||
     doc.status === OrderStatus.FAILED ||
@@ -729,6 +745,20 @@ export async function initiatePayment(
           "payment.status": OrderStatus.LINK_GENERATED,
           "payment.gateway": gatewayKey,
           "payment.stripeSessionId": session.sessionId,
+          "payment.checkoutKey": checkoutKeyFor(doc),
+          "payment.detailsChangedAt": null,
+          // A manual confirmation does not cover a gateway payment.
+          ...(doc.consent?.collectionMethod === "MANUAL"
+            ? {
+                "consent.status": ConsentStatus.NOT_REQUESTED,
+                "consent.currentConsentId": null,
+                "consent.requestedAt": null,
+                "consent.receivedAt": null,
+                "consent.verifiedAt": null,
+                "consent.method": null,
+                "consent.collectionMethod": null,
+              }
+            : {}),
           "payment.checkoutUrl": session.url,
           "payment.expiresAt": session.expiresAt,
           "payment.paymentIntentId": session.paymentIntentId,
@@ -1145,6 +1175,7 @@ export async function regeneratePaymentLink(
   if (doc.state === RecordState.ARCHIVED) {
     throw new ConflictError("Cannot regenerate link on an archived order");
   }
+  assertNoHeldPayment(doc);
 
   const settings = await getSettings();
   // The merchant account that HOLDS the original session — resolved through
@@ -1249,13 +1280,23 @@ export async function regeneratePaymentLink(
       gateway: gateway.key,
       err: err instanceof Error ? err.message : String(err),
     });
-    throw new PaymentError("Could not regenerate the payment link", err);
+    // By now the customer's previous link has been stood down. Saying only
+    // "could not regenerate" let the operator believe it still worked.
+    throw new PaymentError(
+      supersededNow
+        ? "Could not create the new payment link. The previous link has already been cancelled — try again, or record a manual payment."
+        : "Could not regenerate the payment link",
+      err,
+    );
   }
 
   if (!session.url) {
     throw new PaymentError(`${gateway.label} did not return a checkout URL`);
   }
 
+  doc.payment.checkoutKey = checkoutKeyFor(doc);
+  doc.payment.detailsChangedAt = null;
+  retireManualConsentForGatewayLink(doc);
   doc.payment.stripeSessionId = session.sessionId;
   doc.payment.checkoutUrl = session.url;
   doc.payment.expiresAt = session.expiresAt;
@@ -1264,8 +1305,18 @@ export async function regeneratePaymentLink(
   // Pin the provider that actually holds this session, so a later reconcile
   // or webhook looks it up on the right merchant account.
   doc.payment.gateway = gateway.key;
-  doc.status = OrderStatus.PAYMENT_PENDING;
-  doc.payment.status = OrderStatus.PAYMENT_PENDING;
+  // The new link is "pending payment" only if the customer can already reach
+  // it: an outstanding gateway request's consent page forwards to the
+  // order's current link. With no request out (never sent, a manual one, or
+  // one retired by an amount change) the link still has to be sent, and
+  // PAYMENT_PENDING told the operator the customer already had it.
+  const regeneratedStatus =
+    doc.consent?.requestedAt && doc.consent?.collectionMethod !== "MANUAL"
+      ? OrderStatus.PAYMENT_PENDING
+      : OrderStatus.LINK_GENERATED;
+  const statusBeforeRegenerate = doc.status;
+  doc.status = regeneratedStatus;
+  doc.payment.status = regeneratedStatus;
 
   // Transactional: order save + audit + evidence. The Stripe session
   // is already created above — if the tx aborts we don't roll it back
@@ -1343,8 +1394,8 @@ export async function regeneratePaymentLink(
   logger.info("order.lifecycle.transition", {
     orderId: String(doc._id),
     orderNumber: doc.orderNumber,
-    previousState: doc.status,
-    nextState: OrderStatus.PAYMENT_PENDING,
+    previousState: statusBeforeRegenerate,
+    nextState: regeneratedStatus,
     transition: "link_regenerated",
     source: "service.order.regenerate_link",
     actor: ctx.actor.id,
@@ -1455,6 +1506,15 @@ export async function setOrderRiskFlag(
       flaggedAt: null,
       flaggedBy: null,
     };
+    // Clearing the flag is how an operator says a held payment has been
+    // reconciled (refunded). It must not come back if the order is flagged
+    // again for another reason.
+    const now = new Date();
+    for (const a of doc.payment.attempts ?? []) {
+      const heldPayment =
+        a.held || (a.status === OrderStatus.PAID && Boolean(a.supersededAt));
+      if (heldPayment && !a.heldReviewedAt) a.heldReviewedAt = now;
+    }
   }
   await doc.save();
 
@@ -1623,11 +1683,55 @@ export async function resendConfirmationEmail(
   // branding / customer email is reflected. This also appends a fresh
   // CONFIRMATION_EMAIL_SENT evidence event for the audit trail.
   const dto = orderToDTO(doc);
-  const sent = await sendPaymentConfirmationEmail(dto);
+
+  // The automatic confirmation may still be queued (it is sent in the
+  // background shortly after payment). Resending while it waited gave the
+  // customer two identical emails, so the queued one is held while this
+  // send runs and marked done once it succeeds.
+  const queued = await PendingEmail.find({
+    orderId: doc._id,
+    kind: EmailKind.PAYMENT_CONFIRMATION,
+    status: PendingEmailStatus.PENDING,
+  })
+    .select("_id")
+    .lean<Array<{ _id: Types.ObjectId }>>();
+  const heldIds = queued.map((q) => q._id);
+  if (heldIds.length > 0) {
+    await PendingEmail.updateMany(
+      { _id: { $in: heldIds }, status: PendingEmailStatus.PENDING },
+      { $set: { status: PendingEmailStatus.PROCESSING } },
+    );
+  }
+  let sent: Awaited<ReturnType<typeof sendPaymentConfirmationEmail>>;
+  try {
+    sent = await sendPaymentConfirmationEmail(dto);
+  } catch (err) {
+    if (heldIds.length > 0) {
+      await PendingEmail.updateMany(
+        { _id: { $in: heldIds }, status: PendingEmailStatus.PROCESSING },
+        { $set: { status: PendingEmailStatus.PENDING } },
+      );
+    }
+    throw err;
+  }
+  if (heldIds.length > 0) {
+    await PendingEmail.updateMany(
+      { _id: { $in: heldIds }, status: PendingEmailStatus.PROCESSING },
+      {
+        $set: {
+          status: PendingEmailStatus.SENT,
+          sentAt: new Date(),
+          lastError: "Sent by an operator's resend",
+        },
+      },
+    );
+  }
 
   await Order.updateOne(
     { _id: doc._id },
     { $set: { "payment.confirmationEmailSentAt": new Date() } },
+    // Bookkeeping: must not make an open edit form look out of date.
+    { timestamps: false },
   );
 
   await recordAudit({
@@ -1866,15 +1970,21 @@ export async function reconcileOrderPayment(
 export async function listAtRiskOrders(): Promise<OrderDTO[]> {
   await connectMongo();
   await warmProviderLogoCache();
-  const docs = await Order.find({
-    $or: [
-      { "risk.flagged": true },
+  // Scoped like every other order list; it was the one listing without it.
+  const docs = await Order.find(
+    withOrganizationScope(
       {
-        state: RecordState.ACTIVE,
-        status: { $in: [OrderStatus.FAILED, OrderStatus.EXPIRED] },
+        $or: [
+          { "risk.flagged": true },
+          {
+            state: RecordState.ACTIVE,
+            status: { $in: [OrderStatus.FAILED, OrderStatus.EXPIRED] },
+          },
+        ],
       },
-    ],
-  })
+      await getRequestOrganizationScope(),
+    ),
+  )
     .sort({ "risk.flagged": -1, updatedAt: -1 })
     .limit(100)
     .lean<(OrderDoc & { _id: Types.ObjectId })[]>();
@@ -1882,7 +1992,7 @@ export async function listAtRiskOrders(): Promise<OrderDTO[]> {
 }
 
 /**
- * Re-price an existing order — the "MCO amount" edit.
+ * Re-price an existing order — change the MCO (the amount charged now).
  *
  * The collectable amount is `pricing.amount`, which is by definition the sum
  * of the PREPAID lines in `charges[]` (see `summarizeCharges`). So editing
@@ -1984,12 +2094,15 @@ export async function repriceOrder(
     "REPRICED",
     previousAmount,
   );
+  if (summary.prepaid !== previousAmount) {
+    noteRepriceOnStoodDownLink(doc, hadLiveSession);
+  }
 
   doc.charges = summary.charges;
   doc.pricing.amount = summary.prepaid;
   doc.payment.priceRevision = (doc.payment.priceRevision ?? 0) + 1;
   const retiredConsent =
-    summary.prepaid !== previousAmount ? retireConsentForNewAmount(doc) : null;
+    summary.prepaid !== previousAmount ? retireConsent(doc) : null;
   await saveIfUnchanged(doc, { updatedAt: readUpdatedAt });
 
   await recordAudit({
@@ -2019,7 +2132,7 @@ export async function repriceOrder(
  * Record the current checkout session as superseded and stand it down.
  *
  * Shared by the two things that can invalidate a live link: an amount change
- * and an MCO change that re-prices. Extracted so both behave identically —
+ * and an order edit that re-prices. Extracted so both behave identically —
  * a second copy of this is how one of them quietly stops recording the old
  * amount.
  *
@@ -2044,6 +2157,10 @@ async function saveIfUnchanged(
   d.$where = where;
   try {
     await doc.save(sessionOpt(opts.session ?? null));
+    // Only now that the stand-down is recorded is the old session cancelled
+    // at the gateway. Inside a transaction the commit decides, so the
+    // expiry waits for a later, non-transactional save.
+    if (!opts.session) await expirePendingSessions(doc);
   } catch (err) {
     if (err instanceof Error && err.name === "DocumentNotFoundError") {
       throw new ConflictError(
@@ -2076,6 +2193,20 @@ async function cancelOrphanSession(
   await gateway.expireSession(sessionId).catch(() => undefined);
 }
 
+/**
+ * The key the order's NEXT checkout is created with — the same value the
+ * gateway adapter uses as its request key, computed from the same inputs
+ * (`priceRevision`, and the attempt ordinal = attempts recorded so far).
+ * Call it before the new attempt is appended.
+ */
+function checkoutKeyFor(doc: OrderDocument): string {
+  return checkoutRequestKey({
+    orderId: String(doc._id),
+    priceRevision: doc.payment.priceRevision ?? 0,
+    attempt: (doc.payment.attempts ?? []).length,
+  });
+}
+
 /** The `priceRevision` value as stored, for use in a save condition. A
  *  never-repriced legacy order may have no field at all. */
 function revisionCondition(
@@ -2085,10 +2216,46 @@ function revisionCondition(
   return rev === 0 ? { $in: [0, null] } : rev;
 }
 
+/**
+ * Sessions stood down in memory whose gateway expiry is waiting for the
+ * order write that records it. Expiring first meant a write that then lost
+ * a race left the order presenting a link the gateway had already killed.
+ */
+const pendingExpiry = new WeakMap<OrderDocument, string[]>();
+
+async function expirePendingSessions(doc: OrderDocument): Promise<void> {
+  const ids = pendingExpiry.get(doc);
+  if (!ids?.length) return;
+  pendingExpiry.delete(doc);
+  let gateway: { expireSession(id: string): Promise<void> };
+  try {
+    gateway = await resolveGatewayForOrder(doc, null);
+  } catch (err) {
+    logger.warn("orders.supersede_expire_failed", {
+      orderId: String(doc._id),
+      sessionIds: ids,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return;
+  }
+  for (const sessionId of ids) {
+    try {
+      await gateway.expireSession(sessionId);
+    } catch (err) {
+      logger.warn("orders.supersede_expire_failed", {
+        orderId: String(doc._id),
+        sessionId,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+}
+
 async function supersedeCurrentAttempt(
   doc: OrderDocument,
   reason: "GATEWAY_SWITCHED" | "REPRICED" | "REGENERATED",
   previousAmount: number,
+  opts: { failureReason?: string } = {},
 ): Promise<boolean> {
   // The pointer is deliberately kept after a supersede (late webhooks and
   // disputes must stay routable), so "has a session id" alone does not mean
@@ -2109,6 +2276,7 @@ async function supersedeCurrentAttempt(
     {
       gateway: (doc.payment.gateway ?? PaymentGatewayKey.STRIPE) as PaymentGatewayKey,
       sessionId: doc.payment.stripeSessionId ?? null,
+      checkoutKey: doc.payment.checkoutKey ?? null,
       paymentIntentId: doc.payment.paymentIntentId ?? null,
       checkoutUrl: doc.payment.checkoutUrl ?? null,
       amount: previousAmount,
@@ -2121,30 +2289,126 @@ async function supersedeCurrentAttempt(
     },
   ];
 
+  // Expired at the gateway once the caller's conditional save succeeds —
+  // see `saveIfUnchanged`. Every caller saves straight after this.
   if (doc.payment.stripeSessionId) {
-    try {
-      const gateway = await resolveGatewayForOrder(doc, null);
-      await gateway.expireSession(doc.payment.stripeSessionId);
-    } catch (err) {
-      logger.warn("orders.supersede_expire_failed", {
-        orderId: String(doc._id),
-        sessionId: doc.payment.stripeSessionId,
-        err: err instanceof Error ? err.message : String(err),
-      });
-    }
+    pendingExpiry.set(doc, [
+      ...(pendingExpiry.get(doc) ?? []),
+      doc.payment.stripeSessionId,
+    ]);
   }
 
   doc.payment.checkoutUrl = null;
   doc.payment.expiresAt = null;
   doc.payment.status = OrderStatus.FAILED;
   doc.payment.failureReason =
-    reason === "REPRICED"
+    opts.failureReason ??
+    (reason === "REPRICED"
       ? "Superseded by an amount change"
       : reason === "REGENERATED"
         ? "Replaced by a regenerated link"
-        : "Superseded by a gateway change";
+        : "Superseded by a gateway change");
   doc.status = OrderStatus.FAILED;
   return true;
+}
+
+/**
+ * Refuse to start collecting again while a payment the order did not accept
+ * is still waiting to be reconciled. Issuing and sending a new link at that
+ * point is exactly how a customer who had already paid got charged twice.
+ */
+export function assertNoHeldPayment(doc: Parameters<typeof outstandingHeldPayments>[0]): void {
+  if (outstandingHeldPayments(doc).length > 0) {
+    throw new ConflictError(HELD_PAYMENT_BLOCK_MESSAGE);
+  }
+}
+
+export const HELD_PAYMENT_BLOCK_MESSAGE =
+  "A payment was already received on an earlier link. Reconcile it first — refund it and clear the order's flag, or record it as this order's payment — before asking the customer to pay again.";
+
+/** A manual confirmation does not cover a gateway payment. When the order
+ *  moves back to a gateway link, that confirmation stops counting. */
+function retireManualConsentForGatewayLink(doc: OrderDocument): void {
+  if (doc.consent?.collectionMethod === "MANUAL") retireConsent(doc);
+}
+
+/** Why a link was stood down when the operator chose manual collection. */
+export const MANUAL_REQUEST_STAND_DOWN_REASON =
+  "Replaced by a manual payment request";
+
+/**
+ * The operator has chosen to collect manually: stop the order's gateway link
+ * from being payable before the customer is asked to confirm.
+ *
+ * A declined Stripe checkout stays open, and the order kept pointing at it,
+ * so a customer who retried in that tab settled the order online — silently,
+ * as the current session — while the operator was taking the same payment
+ * on the terminal. Stood down here, a payment on it is a flagged competing
+ * payment instead, and the old attempt stays in the history.
+ *
+ * Conditional on the order not having moved (a payment landing meanwhile is
+ * never overwritten). Returns whether anything was stood down.
+ */
+export async function standDownLinkForManualRequest(
+  id: string,
+  ctx: OrderContext,
+): Promise<boolean> {
+  await connectMongo();
+  if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
+  const doc = await Order.findById(id);
+  if (!doc) throw new NotFoundError("Order not found");
+  await assertOrderInScope(doc);
+  if (doc.status === OrderStatus.PAID) {
+    throw new ConflictError("Cannot send a request — order is already paid.");
+  }
+  if (!doc.payment.stripeSessionId && !doc.payment.checkoutUrl) return false;
+
+  const readUpdatedAt = doc.updatedAt;
+  const stoodDown = await supersedeCurrentAttempt(
+    doc,
+    "GATEWAY_SWITCHED",
+    doc.pricing.amount,
+    { failureReason: MANUAL_REQUEST_STAND_DOWN_REASON },
+  );
+  if (!stoodDown) return false;
+  await saveIfUnchanged(
+    doc,
+    { status: { $ne: OrderStatus.PAID }, updatedAt: readUpdatedAt },
+    {
+      message:
+        "This order changed while the manual request was being prepared. Reload it — it may already be paid.",
+    },
+  );
+  await recordAudit({
+    action: AuditAction.ORDER_UPDATED,
+    entityType: AuditEntity.ORDER,
+    entityId: String(doc._id),
+    actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+    request: ctx.request ?? null,
+    metadata: {
+      action: "link_stood_down_for_manual_request",
+      orderNumber: doc.orderNumber,
+      sessionId: doc.payment.stripeSessionId ?? null,
+      gateway: doc.payment.gateway ?? null,
+    },
+  });
+  return true;
+}
+
+/**
+ * A link that was already stood down (a regenerate or switch that failed, or
+ * lost a race) keeps that reason. Once the amount changes, the amount is why
+ * a new link is needed, and the payment-request page keys its "re-priced"
+ * guidance on exactly this reason.
+ */
+function noteRepriceOnStoodDownLink(doc: OrderDocument, supersededNow: boolean) {
+  if (supersededNow) return;
+  if (
+    doc.status === OrderStatus.FAILED &&
+    isOperatorSupersede(doc.payment.failureReason)
+  ) {
+    doc.payment.failureReason = "Superseded by an amount change";
+  }
 }
 
 /** One field's before/after, for the audit trail. */
@@ -2155,16 +2419,16 @@ interface FieldChange {
 }
 
 /**
- * MCO — apply a customer-requested change to an EXISTING booking.
+ * Order edit — apply a customer-requested change to an EXISTING booking.
  *
- * "MCO" here is a business operation, not an entity: the customer rings up
+ * An order edit is a business operation, not an entity: the customer rings up
  * and asks for a different car, a later return date, a corrected email. The
  * order is amended in place. Nothing in this function creates an order, and
  * `_id` / `orderNumber` are never assigned to.
  *
  * LIFECYCLE RULES ARE PER-FIELD, not a blanket status gate. A blanket
  * "NOT_INITIATED only" rule would defeat the requirement outright, since the
- * archetypal MCO — "extend my return date" — happens mid-rental, long after
+ * archetypal edit — "extend my return date" — happens mid-rental, long after
  * the link was paid. So:
  *
  *   descriptive fields (customer, vehicle, trip)
@@ -2348,6 +2612,7 @@ export async function applyOrderModification(
         "REPRICED",
         previousAmount,
       );
+      noteRepriceOnStoodDownLink(doc, supersededLiveSession);
       doc.payment.priceRevision = (doc.payment.priceRevision ?? 0) + 1;
       track("pricing.amount", previousAmount, summary.prepaid);
     }
@@ -2423,7 +2688,8 @@ export async function applyOrderModification(
         c.field.startsWith("trip."),
     );
 
-  const retiredConsent = amountChanged ? retireConsentForNewAmount(doc) : null;
+  if (checkoutDetailsChanged) doc.payment.detailsChangedAt = new Date();
+  const retiredConsent = amountChanged ? retireConsent(doc) : null;
 
   // Written only if nothing has touched the order since it was read — see
   // `saveIfUnchanged`. A payment settling in between would otherwise be
@@ -2437,6 +2703,8 @@ export async function applyOrderModification(
     actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
     request: ctx.request ?? null,
     metadata: {
+      // Stored label kept as-is so existing audit history still matches;
+      // it records an order edit (which may or may not change the MCO).
       action: "mco_modified",
       orderNumber: doc.orderNumber,
       changes,
@@ -2479,8 +2747,9 @@ export async function applyOrderModification(
 }
 
 /**
- * A customer's consent covers the amount they were shown. When the amount
- * to collect changes, that consent no longer covers it.
+ * A customer's consent covers the amount they were shown, and the way they
+ * were told they would pay. When either changes, that consent no longer
+ * covers it.
  *
  * Before this, a consent given at $500 stayed in force after a re-price to
  * $650: the customer's old confirmation page forwarded them to the $650
@@ -2493,7 +2762,7 @@ export async function applyOrderModification(
  * untouched as history. Returns what was retired, for the audit trail, or
  * null when there was nothing to retire.
  */
-function retireConsentForNewAmount(
+function retireConsent(
   doc: OrderDocument,
 ): { status: string; consentId: string | null } | null {
   const status = doc.consent?.status ?? ConsentStatus.NOT_REQUESTED;
@@ -2568,6 +2837,7 @@ export async function switchOrderGateway(
   if (doc.state === RecordState.ARCHIVED) {
     throw new ConflictError("Cannot change the gateway on an archived order");
   }
+  assertNoHeldPayment(doc);
   if (doc.payment.gateway === input.gateway) {
     throw new ConflictError(
       `This order is already on ${input.gateway}. Regenerate the link instead.`,
@@ -2578,12 +2848,36 @@ export async function switchOrderGateway(
   // Throws PaymentProviderNotEnabledError / NotConfiguredError when the
   // organization has not switched the target on — a loud refusal rather than
   // a silent fallback to whatever is configured.
-  const gateway = await getGatewayForOrganization(orgId, {
-    kind: "requested",
-    provider: input.gateway,
-  });
-
   const previousGateway = doc.payment.gateway ?? null;
+  // A refused switch is part of the payment history an operator (or a
+  // dispute) needs to see: "we tried PayPal and it was not available".
+  const auditSwitchFailure = (reason: string) =>
+    recordAudit({
+      action: AuditAction.ORDER_UPDATED,
+      entityType: AuditEntity.ORDER,
+      entityId: String(doc._id),
+      actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
+      request: ctx.request ?? null,
+      metadata: {
+        action: "gateway_switch_failed",
+        orderNumber: doc.orderNumber,
+        fromGateway: previousGateway,
+        toGateway: input.gateway,
+        reason: reason.slice(0, 500),
+      },
+    }).catch(() => undefined);
+
+  let gateway: Awaited<ReturnType<typeof getGatewayForOrganization>>;
+  try {
+    gateway = await getGatewayForOrganization(orgId, {
+      kind: "requested",
+      provider: input.gateway,
+    });
+  } catch (err) {
+    await auditSwitchFailure(err instanceof Error ? err.message : String(err));
+    throw err;
+  }
+
   const previousAmount = doc.pricing.amount;
 
   // Stand the outgoing attempt down BEFORE opening the new one, so a success
@@ -2657,6 +2951,7 @@ export async function switchOrderGateway(
       to: input.gateway,
       err: err instanceof Error ? err.message : String(err),
     });
+    await auditSwitchFailure(err instanceof Error ? err.message : String(err));
     // The outgoing attempt is already recorded as superseded and its link is
     // down. That is the safe direction to fail in: the order collects
     // nothing until a link is successfully issued, rather than having two.
@@ -2671,6 +2966,9 @@ export async function switchOrderGateway(
 
   const initiatedAt = new Date();
   doc.payment.gateway = input.gateway;
+  const switchedCheckoutKey = checkoutKeyFor(doc);
+  doc.payment.checkoutKey = switchedCheckoutKey;
+  doc.payment.detailsChangedAt = null;
   doc.payment.stripeSessionId = session.sessionId;
   doc.payment.checkoutUrl = session.url;
   doc.payment.paymentIntentId = null;
@@ -2679,6 +2977,10 @@ export async function switchOrderGateway(
   doc.payment.expiresAt = expiresAt;
   doc.payment.initiatedAt = initiatedAt;
   doc.status = OrderStatus.LINK_GENERATED;
+  // The customer confirmed a request that led to the OLD gateway's link.
+  // That confirmation does not stand for a payment on another gateway: the
+  // next request asks again, and the old request page stops forwarding.
+  const retiredConsent = retireConsent(doc);
   // The incoming attempt joins the history immediately, so the order's own
   // record shows both the failed Stripe try and the live PayPal one.
   doc.payment.attempts = [
@@ -2686,6 +2988,7 @@ export async function switchOrderGateway(
     {
       gateway: input.gateway,
       sessionId: session.sessionId,
+      checkoutKey: switchedCheckoutKey,
       paymentIntentId: null,
       checkoutUrl: session.url,
       amount: doc.pricing.amount,
@@ -2719,12 +3022,58 @@ export async function switchOrderGateway(
     request: ctx.request ?? null,
     metadata: {
       action: "gateway_switched",
+      consentReset: retiredConsent,
       orderNumber: doc.orderNumber,
       fromGateway: previousGateway,
       toGateway: input.gateway,
       amount: doc.pricing.amount,
       currency: doc.pricing.currency,
       newSessionId: session.sessionId,
+    },
+  });
+
+  // The dispute evidence chain must show the move too: which gateway took
+  // over, and the link it issued.
+  const switchActor = {
+    type: OrderEvidenceActorType.AGENT,
+    userId: ctx.actor.id,
+    name: ctx.actor.name,
+    email: ctx.actor.email,
+    role: ctx.actor.role,
+  };
+  await captureEvidenceSafe({
+    orderId: String(doc._id),
+    orderNumber: doc.orderNumber,
+    eventType: OrderEvidenceEventType.GATEWAY_SELECTED,
+    actor: switchActor,
+    request: ctx.request ?? null,
+    payload: {
+      gateway: input.gateway,
+      gatewayLabel: gateway.label,
+      previousGateway,
+      reason: "gateway_switched",
+      orderNumber: doc.orderNumber,
+    },
+  });
+  await captureEvidenceSafe({
+    orderId: String(doc._id),
+    orderNumber: doc.orderNumber,
+    eventType: OrderEvidenceEventType.PAYMENT_LINK_GENERATED,
+    occurredAt: initiatedAt,
+    actor: switchActor,
+    request: ctx.request ?? null,
+    payload: {
+      gateway: input.gateway,
+      paymentSessionId: session.sessionId,
+      checkoutUrl: session.url,
+      amount: doc.pricing.amount,
+      currency: doc.pricing.currency,
+      expiresAt: expiresAt.toISOString(),
+      replacedGateway: previousGateway,
+    },
+    refs: {
+      paymentSessionId: session.sessionId,
+      customerEmail: doc.customer.email,
     },
   });
 
@@ -2835,8 +3184,31 @@ export async function recordManualPayment(
     throw new ValidationError("This order has nothing to collect");
   }
 
-  // Consent is not waived by paying offline.
-  if (!hasCustomerConsent(doc.consent?.status as ConsentStatus | undefined)) {
+  // Money already held on an earlier link means this customer may have paid.
+  // Charging the card on the terminal as well would take it twice, so the
+  // operator must say they have checked it first.
+  const held = outstandingHeldPayments(doc);
+  if (held.length > 0 && !input.heldPaymentReviewed) {
+    const summary = held
+      .map((a) => `${a.amount} ${doc.pricing.currency} on ${a.gateway}`)
+      .join(", ");
+    throw new ConflictError(
+      `A payment was already received on an earlier link (${summary}). Check it — refund it, or record it as this order's payment — before recording another.`,
+    );
+  }
+
+  // Consent is not waived by paying offline. Recording a HELD payment as
+  // this order's payment is the exception that proves the rule: the
+  // customer confirmed a request and then paid it; a later change of
+  // gateway retired that confirmation on the order, but not the fact.
+  const consentOnRecord =
+    hasCustomerConsent(doc.consent?.status as ConsentStatus | undefined) ||
+    (held.length > 0 &&
+      (await PaymentConsent.exists({
+        orderId: doc._id,
+        status: { $in: [ConsentStatus.RECEIVED, ConsentStatus.VERIFIED] },
+      })) !== null);
+  if (!consentOnRecord) {
     throw new ConflictError(
       "The customer has not completed consent yet. Send the consent request and wait for their signature before recording payment.",
     );
@@ -2901,6 +3273,22 @@ export async function recordManualPayment(
     { _id: fresh._id },
     { $set: { "payment.stripeSessionId": null, "payment.checkoutUrl": null } },
   );
+  // The operator has dealt with the held payment(s) they were shown.
+  if (held.length > 0) {
+    const reviewedAt = new Date();
+    // Two passes: held payments carry the marker, older records are PAID
+    // attempts that were superseded.
+    for (const filter of [
+      { "h.held": true, "h.heldReviewedAt": null },
+      { "h.status": OrderStatus.PAID, "h.supersededAt": { $ne: null }, "h.heldReviewedAt": null },
+    ]) {
+      await Order.updateOne(
+        { _id: fresh._id },
+        { $set: { "payment.attempts.$[h].heldReviewedAt": reviewedAt } },
+        { arrayFilters: [filter], timestamps: false },
+      );
+    }
+  }
 
   // A terminal authorisation or transfer reference identifies one
   // collection. Finding it on another paid order most often means the same
@@ -2949,6 +3337,7 @@ export async function recordManualPayment(
       method: input.method,
       reference: input.reference,
       notes: input.notes ?? null,
+      heldPaymentReviewed: held.length > 0 ? true : undefined,
       supersededLiveSession,
       priceRevision: fresh.payment.priceRevision ?? 0,
       referenceReusedOn: referenceReusedOn.map((o) => o.orderNumber),

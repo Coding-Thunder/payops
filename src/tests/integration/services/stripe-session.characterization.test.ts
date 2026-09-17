@@ -68,7 +68,13 @@ function normalise(
 }
 
 /** Everything both builders agree on today. */
-function commonExpectation(images: { images: string[] } | Record<string, never>) {
+function commonExpectation(
+  images: { images: string[] } | Record<string, never>,
+  // The checkout the payment belongs to, carried on the payment intent so a
+  // decline (which names no session) can be matched to its checkout. It is
+  // the same value as the request's idempotency key.
+  checkoutKey = "order:<ORDER_ID>:checkout",
+) {
   return {
     mode: "payment",
     payment_method_types: ["card"],
@@ -106,6 +112,7 @@ function commonExpectation(images: { images: string[] } | Record<string, never>)
       metadata: {
         orderId: "<ORDER_ID>",
         orderNumber: "<ORDER_NUMBER>",
+        checkoutKey,
       },
     },
   };
@@ -212,7 +219,7 @@ describe("regeneratePaymentLink -> Stripe (now via the gateway)", () => {
     // Everything that could affect the charge — amount, currency, urls,
     // metadata, appName, the payment-intent description — is unchanged.
     expect(normalise(stripe.sessionsCreated[1]!.params, ids)).toEqual(
-      commonExpectation({ images: [] }),
+      commonExpectation({ images: [] }, "order:<ORDER_ID>:checkout:a1"),
     );
   });
 
@@ -254,6 +261,16 @@ describe("regeneratePaymentLink -> Stripe (now via the gateway)", () => {
     };
     const viaGateway = normalise(stripe.sessionsCreated[0]!.params, ids);
     const viaDirect = normalise(stripe.sessionsCreated[1]!.params, ids);
+    // Each checkout carries its own key; everything else is identical.
+    const keyOf = (p: unknown) => {
+      const meta = (p as { payment_intent_data: { metadata: Record<string, unknown> } })
+        .payment_intent_data.metadata;
+      const key = meta.checkoutKey;
+      delete meta.checkoutKey;
+      return key;
+    };
+    expect(keyOf(viaGateway)).toBe("order:<ORDER_ID>:checkout");
+    expect(keyOf(viaDirect)).toBe("order:<ORDER_ID>:checkout:a1");
     expect(viaDirect).toEqual(viaGateway);
     expect(
       (viaGateway as { payment_intent_data: { description: string } })

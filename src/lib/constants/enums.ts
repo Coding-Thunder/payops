@@ -217,6 +217,9 @@ export const OrderEvidenceEventType = {
   PAYMENT_EXPIRED: "PAYMENT_EXPIRED",
   REFUND_ISSUED: "REFUND_ISSUED",
   ORDER_CANCELLED: "ORDER_CANCELLED",
+  /** Money a gateway took that the order did not accept (a payment on a
+   *  stood-down link, a wrong amount, a second payment). Held for review. */
+  PAYMENT_HELD: "PAYMENT_HELD",
 } as const;
 export type OrderEvidenceEventType =
   (typeof OrderEvidenceEventType)[keyof typeof OrderEvidenceEventType];

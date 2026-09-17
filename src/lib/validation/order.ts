@@ -26,7 +26,13 @@ const isoDateString = z
   .string()
   .min(1, "Date is required")
   .refine((v) => {
-    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v);
+    // The whole string, not just its start: "2027-06-01 junk" used to pass
+    // and was stored four days later. A time must carry its zone, or the
+    // server's own time zone silently decides what it means.
+    const m =
+      /^(\d{4})-(\d{2})-(\d{2})(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2}))?$/.exec(
+        v,
+      );
     if (!m) return false;
     const t = Date.parse(v);
     if (Number.isNaN(t)) return false;
@@ -50,9 +56,10 @@ const hasEnoughDigits = (v: string) => (v.match(/\d/g) ?? []).length >= 7;
 
 /** Names are printed in emails and on receipts: no control characters, and
  *  at least one visible letter or digit (a run of zero-width spaces is not a
- *  name). */
+ *  name). The zero-width non-joiner and joiner (U+200C, U+200D) are allowed:
+ *  Persian and Indic names need them. */
 const isPrintableName = (v: string) =>
-  !/[\x00-\x1f\x7f\u200b-\u200d\u2060\ufeff]/.test(v) &&
+  !/[\x00-\x1f\x7f\u200b\u2060\ufeff]/.test(v) &&
   /[\p{L}\p{N}]/u.test(v);
 
 /** RFC 5321 caps a mailbox at 254 characters; the database enforces the same
@@ -72,7 +79,7 @@ const MIN_PREPAID_TOTAL = 0.5;
 /**
  * Public URL of the vehicle photo.
  *
- * Defined once and shared by the create and MCO paths rather than written
+ * Defined once and shared by the create and edit paths rather than written
  * twice, because the two must agree on what "no image" means. The photo is
  * read LIVE from this field by the payment-request email, the hosted
  * checkout, the paid receipt and the dispute-evidence pack — so a definition
@@ -81,7 +88,7 @@ const MIN_PREPAID_TOTAL = 0.5;
  *
  * `.transform()` is the OUTERMOST link, so it runs even when the value is
  * absent and coerces `undefined` to `null`. Every object embedding this field
- * must therefore keep it inside a `.partial()`: without one, an MCO that
+ * must therefore keep it inside a `.partial()`: without one, an edit that
  * sends a vehicle group and simply does not mention the image would WIPE the
  * photo rather than leave it alone.
  */
@@ -98,7 +105,7 @@ const vehicleImageUrl = z
   .nullable()
   .transform((v) => (v && v.length > 0 ? v : null));
 
-/** A rental provider's catalog key. Shared so an MCO cannot accept a key
+/** A rental provider's catalog key. Shared so an order edit cannot accept a key
  *  shape that order creation would have refused. */
 const providerKey = z
   .string()
@@ -111,7 +118,7 @@ const providerKey = z
  *  explicitly (notably the edit path, which must never have a timing chosen
  *  for it by position — see `chargesCreateArraySchema`). */
 export const chargeInputSchema = z.object({
-  name: z.string().trim().min(1, "Charge name is required").max(120),
+  name: z.string().trim().min(1, "Charge name is required").max(120, "Keep the charge name to 120 characters or fewer"),
   amount: z
     .number({ error: "Enter a valid amount" })
     .positive("Amount must be greater than zero")
@@ -144,25 +151,33 @@ const prepaidTotalAtLeastMinimum = (
 const PREPAID_MINIMUM_MESSAGE =
   "The prepaid total must be at least 0.50 — payment links cannot collect less";
 
-/** Customer contact fields, shared by create and edit so an edit can never
- *  store what creation would have refused. */
-const customerName = z
+/** RFC 5321 caps the part before "@" at 64 characters. Mail servers refuse
+ *  longer ones, so accepting it only produced a request nobody received. */
+const localPartFits = (v: string) => {
+  const at = v.lastIndexOf("@");
+  return at > 0 && at <= 64;
+};
+
+/** Customer contact fields, shared by create, edit and the payment-request
+ *  send, so no path can store what another would have refused. */
+export const customerName = z
   .string()
   .trim()
   .min(2, "Customer name is required")
-  .max(120)
+  .max(120, "Keep the name to 120 characters or fewer")
   .refine(isPrintableName, "Enter the customer's name");
-const customerEmail = z
+export const customerEmail = z
   .string()
   .trim()
   .max(EMAIL_MAX, "Email address is too long")
   .email("Enter a valid email")
+  .refine(localPartFits, "The part of the email before @ is too long")
   .toLowerCase();
-const customerPhone = z
+export const customerPhone = z
   .string()
   .trim()
   .regex(phoneRegex, "Enter a valid phone number")
-  .max(32)
+  .max(32, "Enter a valid phone number")
   .refine(hasEnoughDigits, "Enter a valid phone number");
 
 /**
@@ -214,8 +229,8 @@ export const createOrderSchema = z
         .string()
         .trim()
         .min(2, "Car company is required")
-        .max(80),
-      type: z.string().trim().min(2, "Car type is required").max(80),
+        .max(80, "Keep the car make to 80 characters or fewer"),
+      type: z.string().trim().min(2, "Car type is required").max(80, "Keep the car model to 80 characters or fewer"),
       imageUrl: vehicleImageUrl,
     }),
     trip: z
@@ -226,12 +241,12 @@ export const createOrderSchema = z
           .string()
           .trim()
           .min(2, "Pick-up location is required")
-          .max(200),
+          .max(200, "Keep the location to 200 characters or fewer"),
         dropoffLocation: z
           .string()
           .trim()
           .min(2, "Drop-off location is required")
-          .max(200),
+          .max(200, "Keep the location to 200 characters or fewer"),
       })
       .refine(
         (t) => new Date(t.pickupDate) < new Date(t.dropoffDate),
@@ -307,7 +322,7 @@ export const analyticsQuerySchema = z.object({
 export type AnalyticsQuery = z.infer<typeof analyticsQuerySchema>;
 
 /**
- * Re-price an existing order (the "MCO amount" edit).
+ * Re-price an existing order (change the MCO — the amount charged now).
  *
  * Reuses the EDIT array, which requires an explicit `timing` on every line.
  * It deliberately does not reuse the create array: that one resolves an
@@ -323,7 +338,7 @@ export const repriceOrderSchema = z.object({
 export type RepriceOrderInput = z.infer<typeof repriceOrderSchema>;
 
 /**
- * MCO — a customer-requested change to an existing booking.
+ * Order edit — a customer-requested change to an existing booking.
  *
  * Every group is optional: an operator changing only a phone number sends
  * only that. Each supplied group is validated with the SAME rules as order
@@ -336,7 +351,7 @@ export type RepriceOrderInput = z.infer<typeof repriceOrderSchema>;
  * amount is left completely alone.
  *
  * Deliberately NOT editable here:
- *   - orderNumber — identity. An MCO amends order #123; it never mints #124.
+ *   - orderNumber — identity. An edit amends order #123; it never mints #124.
  *   - currency — `pricing.currency` is written exactly once, at creation, and
  *     supersession triggers on the AMOUNT alone. Switching GBP to USD at an
  *     unchanged number would therefore supersede nothing: the customer's live
@@ -376,11 +391,11 @@ export const modifyOrderSchema = z
       .optional(),
     vehicle: z
       .strictObject({
-        company: z.string().trim().min(2, "Car company is required").max(80),
-        type: z.string().trim().min(2, "Car type is required").max(80),
+        company: z.string().trim().min(2, "Car company is required").max(80, "Keep the car make to 80 characters or fewer"),
+        type: z.string().trim().min(2, "Car type is required").max(80, "Keep the car model to 80 characters or fewer"),
         // The car-library picker writes make, model and photo as one
         // selection, so the photo has to travel with them. Without it the
-        // commonest MCO of all — "give me a different car" — updates the
+        // commonest edit of all — "give me a different car" — updates the
         // text and leaves the customer looking at the old vehicle.
         //
         // The `.partial()` below is load-bearing for this field: see the
@@ -397,12 +412,12 @@ export const modifyOrderSchema = z
           .string()
           .trim()
           .min(2, "Pick-up location is required")
-          .max(200),
+          .max(200, "Keep the location to 200 characters or fewer"),
         dropoffLocation: z
           .string()
           .trim()
           .min(2, "Drop-off location is required")
-          .max(200),
+          .max(200, "Keep the location to 200 characters or fewer"),
       })
       .partial()
       .optional(),
@@ -463,13 +478,13 @@ export const recordManualPaymentSchema = z.strictObject({
     .string()
     .trim()
     .min(2, "Describe how the payment was taken")
-    .max(40)
+    .max(40, "Keep this to 40 characters — e.g. Card terminal")
     .refine((v) => !containsCardData(v), CARD_DATA_MESSAGE),
   reference: z
     .string()
     .trim()
     .min(3, "A payment reference is required")
-    .max(120)
+    .max(120, "Keep the reference to 120 characters or fewer")
     .refine((v) => !containsCardData(v), CARD_DATA_MESSAGE),
   notes: z
     .string()
@@ -477,6 +492,10 @@ export const recordManualPaymentSchema = z.strictObject({
     .max(500)
     .refine((v) => !containsCardData(v), CARD_DATA_MESSAGE)
     .optional(),
+  /** The operator has checked a payment already held on an earlier link
+   *  (refunded it, or is recording it as this order's payment). Required
+   *  while one is outstanding — see `outstandingHeldPayments`. */
+  heldPaymentReviewed: z.boolean().optional(),
 });
 
 export type RecordManualPaymentInput = z.infer<typeof recordManualPaymentSchema>;

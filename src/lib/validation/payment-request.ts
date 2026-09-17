@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { customerEmail, customerName, customerPhone } from "./order";
+
 const trimmed = z
   .string()
   .trim()
@@ -15,8 +17,6 @@ const longerTrimmed = z
   .optional()
   .nullable()
   .transform((v) => (v && v.length > 0 ? v : null));
-
-const phoneRegex = /^[+0-9()\-\s]{7,32}$/;
 
 /**
  * Body for POST /api/orders/[id]/send-payment-request.
@@ -48,14 +48,11 @@ export const sendPaymentRequestSchema = z.object({
   note: longerTrimmed,
   customer: z
     .object({
-      name: z.string().trim().min(2).max(120).optional(),
-      email: z.string().email().toLowerCase().optional(),
-      phone: z
-        .string()
-        .trim()
-        .regex(phoneRegex, "Enter a valid phone number")
-        .max(32)
-        .optional(),
+      // The same rules the order form applies: this patch writes to the
+      // order, so it must not store what creating the order would refuse.
+      name: customerName.optional(),
+      email: customerEmail.optional(),
+      phone: customerPhone.optional(),
     })
     .optional(),
 });

@@ -41,7 +41,7 @@ export const POST = withApi(
     // Public + unauthenticated. Tight ceiling so a botnet can't flood
     // the DB or the internal sales inbox. 16 KB body cap is well above
     // the form payload size and below memory-DoS territory.
-    rateLimit: { route: "quotations", max: 5, windowMs: 5 * 60_000 },
+    rateLimit: { route: "quotations", max: 5, windowMs: 5 * 60_000, keyBy: "ip" },
     bodyLimitBytes: 16 * 1024,
   },
 );

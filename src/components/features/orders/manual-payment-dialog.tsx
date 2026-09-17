@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { BanknoteIcon, TriangleAlertIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,8 @@ import { toast } from "@/components/ui/sonner";
 import { api, ApiClientError } from "@/lib/api-client";
 import { OrderStatus } from "@/lib/constants/enums";
 import { hasCustomerConsent } from "@/lib/consent";
+import { heldPaymentSource, outstandingHeldPayments } from "@/lib/payment-state";
+import { orderQueryKey } from "@/hooks/use-order-query";
 import { PaymentGatewayLabel } from "@/lib/constants/labels";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import type { OrderDTO } from "@/types";
@@ -44,7 +47,9 @@ import type { OrderDTO } from "@/types";
 export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [method, setMethod] = useState("Card terminal");
   const [reference, setReference] = useState("");
@@ -56,11 +61,20 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
   // actually sent, and it survives a failure — which is exactly why this
   // warning matters.
   const hasLiveLink = Boolean(order.payment.paymentUrl);
+  // Money already taken on a link the order no longer uses. Charging the
+  // card as well would take it twice, so the operator confirms they have
+  // dealt with it — the server refuses the recording otherwise.
+  const held = outstandingHeldPayments(order);
+  const [heldReviewed, setHeldReviewed] = useState(false);
   const failedAttempts = (order.payment.attempts ?? []).filter(
-    (a) => a.status === OrderStatus.FAILED || a.supersededAt,
+    (a) => !a.held && (a.status === OrderStatus.FAILED || a.supersededAt),
   );
 
   async function onSubmit() {
+    // Three clicks in one event loop turn all got through before the
+    // disabled state rendered, sending three recordings.
+    if (savingRef.current) return;
+    savingRef.current = true;
     setError(null);
     setSaving(true);
     try {
@@ -70,17 +84,21 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
           method: method.trim(),
           reference: reference.trim(),
           notes: notes.trim() || undefined,
+          ...(held.length > 0 ? { heldPaymentReviewed: heldReviewed } : {}),
         },
       );
       // Only after the backend confirms. Nothing above this line implies
       // the order is paid.
-      toast.success("Manual payment recorded. Confirmation email sent.");
+      toast.success(
+        "Manual payment recorded. The confirmation email is on its way to the customer.",
+      );
       if (result?.order?.risk?.flagged && result.order.risk.flaggedNote !== order.risk.flaggedNote) {
         toast.warning("This order was flagged for review", {
           description: result.order.risk.flaggedNote ?? undefined,
         });
       }
       setOpen(false);
+      void queryClient.invalidateQueries({ queryKey: orderQueryKey(order.id) });
       router.refresh();
     } catch (err) {
       // A validation failure carries the specific reason in
@@ -94,6 +112,7 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
       setError(message);
       toast.error(message);
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }
@@ -107,6 +126,7 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
           setError(null);
           setReference("");
           setNotes("");
+          setHeldReviewed(false);
         }
       }}
     >
@@ -163,13 +183,61 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
                     </span>{" "}
                     <span className="text-muted-foreground">
                       {formatCurrency(a.amount, a.currency)} ·{" "}
-                      {a.failureReason ?? a.supersededReason ?? a.status} ·{" "}
+                      {a.failureReason ??
+                        (a.supersededReason === "REPRICED"
+                          ? "replaced after an amount change"
+                          : a.supersededReason === "REGENERATED"
+                            ? "replaced by a new link"
+                            : a.supersededReason === "PAYMENT_HELD"
+                              ? "stopped: a payment was already received"
+                            : a.supersededReason
+                              ? "replaced by another payment method"
+                              : a.status.toLowerCase().replace(/_/g, " "))}{" "}
+                      ·{" "}
                       {formatDateTime(a.createdAt)}
                     </span>
                   </li>
                 ))}
               </ul>
             </div>
+          ) : null}
+
+          {held.length > 0 ? (
+            <Alert variant="destructive" className="text-red-800 dark:text-red-200">
+              <TriangleAlertIcon className="size-4" />
+              <AlertTitle>
+                The customer has already paid on an earlier link
+              </AlertTitle>
+              <AlertDescription className="space-y-2">
+                <ul className="list-disc pl-5">
+                  {held.map((a, i) => (
+                    <li key={`${a.sessionId ?? "held"}-${i}`}>
+                      {formatCurrency(a.amount, a.currency)} on{" "}
+                      {PaymentGatewayLabel[a.gateway] ?? a.gateway}{" "}
+                      {heldPaymentSource(a)} · {formatDateTime(a.createdAt)}
+                    </li>
+                  ))}
+                </ul>
+                <p>
+                  Do not charge the card again unless that payment has been
+                  refunded. To keep it as this order&apos;s payment, record it
+                  here with its gateway reference.
+                </p>
+                <label className="flex items-start gap-2 font-medium">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={heldReviewed}
+                    onChange={(e) => setHeldReviewed(e.target.checked)}
+                    disabled={saving}
+                  />
+                  <span>
+                    I have checked the earlier payment (refunded it, or I am
+                    recording it as this order&apos;s payment).
+                  </span>
+                </label>
+              </AlertDescription>
+            </Alert>
           ) : null}
 
           {/* The operational model, stated where the operator is about to
@@ -184,7 +252,7 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
             </AlertDescription>
           </Alert>
 
-          {!consentReceived ? (
+          {!consentReceived && held.length === 0 ? (
             <Alert variant="destructive">
               <AlertTitle>Consent is not complete</AlertTitle>
               <AlertDescription>
@@ -219,6 +287,7 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
               onChange={(e) => setMethod(e.target.value)}
               disabled={saving}
               placeholder="Card terminal"
+              maxLength={40}
             />
           </div>
 
@@ -236,6 +305,7 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
               disabled={saving}
               placeholder="AUTH-004521"
               autoComplete="off"
+              maxLength={120}
             />
             <p className="text-[11px] text-muted-foreground">
               The terminal authorisation code or transfer reference. A card
@@ -270,7 +340,14 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
             loadingText="Recording"
             // Mirrors the server's rules so the operator is not invited to
             // fail. The server enforces them regardless.
-            disabled={saving || !reference.trim() || !consentReceived || alreadyPaid}
+            // Recording a HELD payment is allowed on the customer's earlier
+            // confirmation; the server checks that one exists.
+            disabled={
+              saving ||
+              !reference.trim() ||
+              alreadyPaid ||
+              (held.length > 0 ? !heldReviewed : !consentReceived)
+            }
           >
             Record payment
           </LoadingButton>

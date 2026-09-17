@@ -4,12 +4,15 @@ import { Permission } from "@/lib/constants/permissions";
 import { sendPaymentRequestSchema } from "@/lib/validation";
 import { getRequestContext } from "@/server/api/request-context";
 import { jsonOk, withApi } from "@/server/api/respond";
+import { enforceRateLimit } from "@/server/api/security";
 import { requirePermission } from "@/server/auth/session";
 import { OrderStatus } from "@/lib/constants/enums";
 import { ConflictError } from "@/lib/errors";
 import { Order } from "@/server/db/models";
 import {
+  assertNoHeldPayment,
   getOrderById,
+  standDownLinkForManualRequest,
   updateOrderCustomer,
 } from "@/server/services/order.service";
 import { sendPaymentRequestEmail } from "@/server/services/email.service";
@@ -47,6 +50,17 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
   const input = sendPaymentRequestSchema.parse(body);
   const reqCtx = await getRequestContext();
 
+  // Every accepted call emails the customer. The composer latches its own
+  // double-clicks, but a script or a stuck retry loop sent eight identical
+  // emails in a few seconds. Limited per operator AND order, so one busy
+  // operator never blocks a colleague's sends.
+  enforceRateLimit({
+    route: "order-send-payment-request",
+    key: `${actor.id}|${id}`,
+    max: 3,
+    windowMs: 60_000,
+  });
+
   let order = await getOrderById(id, { actor });
 
   // 1. Strict gate — payment link must exist before we email about it.
@@ -67,6 +81,9 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
   if (order.status === OrderStatus.PAID) {
     throw new ConflictError("Cannot send a request — order is already paid.");
   }
+  // Money already held on an earlier link: asking again, by any method,
+  // risks a second charge until it is reconciled.
+  assertNoHeldPayment(order);
   // A failed or expired gateway attempt is precisely when an operator falls
   // back to collecting manually, so that path stays open; only the gateway
   // path still refuses, because its link is dead.
@@ -79,7 +96,18 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
     );
   }
 
-  // 2. Patch customer if edited — only once the send is known to proceed.
+  // 2. Manual collection: the order's gateway link stops being payable
+  //    before the customer is asked to confirm, so the same payment cannot
+  //    also arrive online while the operator takes it on the terminal.
+  if (manualCollection) {
+    const stoodDown = await standDownLinkForManualRequest(id, {
+      actor,
+      request: reqCtx,
+    });
+    if (stoodDown) order = await getOrderById(id, { actor });
+  }
+
+  // 3. Patch customer if edited — only once the send is known to proceed.
   if (input.customer && Object.keys(input.customer).length > 0) {
     const patched = await updateOrderCustomer(id, input.customer, {
       actor,
@@ -88,7 +116,7 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
     order = patched.order;
   }
 
-  // 3. Send.
+  // 4. Send.
   const result = await sendPaymentRequestEmail(
     order,
     {
@@ -101,11 +129,13 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
     { actor, request: reqCtx },
   );
 
-  // 4. Transition LINK_GENERATED → PAYMENT_PENDING after a successful
+  // 5. Transition LINK_GENERATED → PAYMENT_PENDING after a successful
   // send. Doing it here (not in the email service) keeps the email
   // module side-effect-free against the order doc. Conditional update
   // means re-sends to an already-PENDING/PAID order are no-ops.
-  if (order.status === OrderStatus.LINK_GENERATED) {
+  // A manual request carries no link, so it does not put the order's link
+  // in the customer's hands.
+  if (order.status === OrderStatus.LINK_GENERATED && !manualCollection) {
     await Order.updateOne(
       { _id: id, status: OrderStatus.LINK_GENERATED },
       {

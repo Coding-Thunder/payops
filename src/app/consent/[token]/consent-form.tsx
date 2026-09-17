@@ -307,6 +307,8 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
 
 function SummaryBlock({ view }: { view: PublicConsentView }) {
   const { snapshot } = view;
+  // Nothing is paid on this page for a manual request; the team arranges it.
+  const manual = view.collection === "MANUAL";
   const currency = snapshot.currency;
   const dueAtCounter = snapshot.dueAtCounter ?? 0;
   const total = snapshot.total ?? snapshot.amount;
@@ -319,7 +321,7 @@ function SummaryBlock({ view }: { view: PublicConsentView }) {
       <div className="mt-3 flex items-baseline justify-between gap-3">
         <div>
           <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-            You are paying today
+            {manual ? "Booking amount" : "You are paying today"}
           </p>
           <span className="text-2xl font-semibold tracking-tight tabular-nums text-slate-900">
             {formatCurrency(snapshot.amount, currency)}
@@ -333,7 +335,9 @@ function SummaryBlock({ view }: { view: PublicConsentView }) {
       {hasCounterDue ? (
         <div className="mt-3 space-y-1 rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-3 text-sm">
           <div className="flex items-center justify-between">
-            <span className="text-slate-500">Paid online today</span>
+            <span className="text-slate-500">
+              {manual ? "Amount to prepay" : "Paid online today"}
+            </span>
             <span className="tabular-nums text-slate-900">
               {formatCurrency(snapshot.amount, currency)}
             </span>

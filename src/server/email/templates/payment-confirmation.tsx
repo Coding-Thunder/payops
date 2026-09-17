@@ -233,6 +233,7 @@ export function PaymentConfirmationEmail({
         <ChargeBreakdown
           breakdown={chargeBreakdown}
           title="Charge breakdown"
+          prepaidLabel={gatewayLabel ? undefined : "Amount paid"}
           topPadding={SPACE.md}
         />
       ) : null}

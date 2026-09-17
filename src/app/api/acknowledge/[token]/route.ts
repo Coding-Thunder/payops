@@ -33,7 +33,7 @@ export const POST = withApi(
     return jsonOk(view);
   },
   {
-    rateLimit: { route: "terms-acknowledge", max: 20, windowMs: 5 * 60_000 },
+    rateLimit: { route: "terms-acknowledge", max: 20, windowMs: 5 * 60_000, keyBy: "ip" },
     bodyLimitBytes: 2 * 1024,
   },
 );

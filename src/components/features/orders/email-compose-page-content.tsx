@@ -26,6 +26,7 @@ import { useOrderQuery } from "@/hooks/use-order-query";
 import { ApiClientError } from "@/lib/api-client";
 import { BookingTypeLabel } from "@/lib/constants/labels";
 import { formatCurrency } from "@/lib/format";
+import { paymentRequestSubject } from "@/lib/payment-request-subject";
 
 interface EmailComposePageContentProps {
   orderId: string;
@@ -162,9 +163,16 @@ export function EmailComposePageContent({
       <EmailComposer
         order={order}
         initialHtml=""
-        defaultSubject={`Complete your ${
-          order.provider?.name ?? "rental"
-        } payment • ${order.orderNumber}`}
+        defaultSubject={paymentRequestSubject(
+          order.provider?.name ?? "rental",
+          order.orderNumber,
+          false,
+        )}
+        defaultManualSubject={paymentRequestSubject(
+          order.provider?.name ?? "rental",
+          order.orderNumber,
+          true,
+        )}
         onSent={(at) => setSentAt(at)}
         canEditOrder={canEditOrder}
       />

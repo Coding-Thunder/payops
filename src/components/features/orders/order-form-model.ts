@@ -7,7 +7,7 @@ import type { OrderCharge, OrderDTO } from "@/types";
 
 /**
  * The pure half of the order form: how an existing order becomes form
- * values, and how edited values become an MCO request.
+ * values, and how edited values become an order-edit request.
  *
  * Kept free of React so the rules that decide what an edit SENDS can be
  * tested directly — those rules are what stand between an operator changing
@@ -89,7 +89,7 @@ export type ChangedField =
   | "charges";
 
 export interface OrderDiff {
-  /** What to POST, or null when nothing the MCO flow carries has moved. */
+  /** What to POST, or null when nothing the edit flow carries has moved. */
   payload: ModifyOrderRequest | null;
   /** Every field that differs from the saved order, in form order. */
   changed: ChangedField[];
@@ -250,6 +250,45 @@ const CHECKOUT_SNAPSHOT_FIELDS: ReadonlySet<ChangedField> = new Set<ChangedField
   "trip.pickupLocation",
   "trip.dropoffLocation",
 ]);
+
+/**
+ * Rebase an in-progress edit onto a newer version of the order.
+ *
+ * Fields the operator changed that nobody else changed are carried over;
+ * fields both changed are left at the newer saved value and reported, so a
+ * colleague's change is never silently overwritten by "Load latest".
+ */
+export function rebaseEdit(
+  current: OrderFormValues,
+  base: OrderDTO,
+  latest: OrderDTO,
+  opts: { settled?: boolean } = {},
+): { values: OrderFormValues; kept: ChangedField[]; conflicts: ChangedField[] } {
+  const mine = diffOrder(current, base, "", opts).changed;
+  const theirs = new Set(diffOrder(orderToFormValues(latest), base, "", opts).changed);
+  const values = orderToFormValues(latest);
+  const kept: ChangedField[] = [];
+  const conflicts: ChangedField[] = [];
+  for (const field of mine) {
+    if (theirs.has(field)) {
+      conflicts.push(field);
+      continue;
+    }
+    kept.push(field);
+    if (field === "provider" || field === "charges") {
+      (values as Record<string, unknown>)[field] = structuredClone(current[field]);
+    } else {
+      const [group, key] = field.split(".") as [
+        "customer" | "vehicle" | "trip",
+        string,
+      ];
+      (values[group] as Record<string, unknown>)[key] = (
+        current[group] as Record<string, unknown>
+      )[key];
+    }
+  }
+  return { values, kept, conflicts };
+}
 
 export function touchesCheckoutDetails(changed: readonly ChangedField[]): boolean {
   return changed.some((f) => CHECKOUT_SNAPSHOT_FIELDS.has(f));

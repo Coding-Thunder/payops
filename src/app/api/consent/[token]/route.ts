@@ -7,6 +7,7 @@ import { getBranding } from "@/server/services/branding.service";
 import {
   getPublicConsentView,
   recordConsentFromToken,
+  toPublicConsentPayload,
 } from "@/server/services/consent.service";
 
 export const runtime = "nodejs";
@@ -30,7 +31,7 @@ export const GET = withApi(async (_req: NextRequest, { params }: Params) => {
   const view = await getPublicConsentView(token, {
     brandName: branding.brandName,
   });
-  return jsonOk(view);
+  return jsonOk(toPublicConsentPayload(view));
 });
 
 export const POST = withApi(
@@ -49,14 +50,14 @@ export const POST = withApi(
       },
       { request: reqCtx, branding: { brandName: branding.brandName } },
     );
-    return jsonOk(view);
+    return jsonOk(toPublicConsentPayload(view));
   },
   {
     // Public endpoint authed by HMAC token in the URL. 20 attempts /
     // 5 min lets a legitimate customer retry a flaky submit a few times
     // while blocking automation that's harvesting tokens (HMAC makes
     // brute-forcing the token computationally infeasible anyway).
-    rateLimit: { route: "consent-submit", max: 20, windowMs: 5 * 60_000 },
+    rateLimit: { route: "consent-submit", max: 20, windowMs: 5 * 60_000, keyBy: "ip" },
     bodyLimitBytes: 4 * 1024,
   },
 );

@@ -69,9 +69,17 @@ interface OrderTableProps {
   items: OrderDTO[];
   emptyAction?: React.ReactNode;
   canDelete?: boolean;
+  /** Filters are applied: an empty list means "nothing matched", not "no
+   *  orders exist". */
+  filtered?: boolean;
 }
 
-export function OrderTable({ items, emptyAction, canDelete = false }: OrderTableProps) {
+export function OrderTable({
+  items,
+  emptyAction,
+  canDelete = false,
+  filtered = false,
+}: OrderTableProps) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pendingDelete, setPendingDelete] = useState<{
@@ -131,9 +139,13 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
   if (items.length === 0) {
     return (
       <EmptyState
-        title="No orders yet"
-        description="Create your first payable order to generate a payment link."
-        action={emptyAction}
+        title={filtered ? "No orders match these filters" : "No orders yet"}
+        description={
+          filtered
+            ? "Change the search or filters to see more orders."
+            : "Create your first payable order to generate a payment link."
+        }
+        action={filtered ? undefined : emptyAction}
       />
     );
   }
@@ -196,7 +208,9 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
             <TableHead className="h-8 hidden md:table-cell w-[84px]">
               Created
             </TableHead>
-            <TableHead className="h-8 w-[48px]" />
+            <TableHead className="h-8 w-[48px]">
+              <span className="sr-only">Actions</span>
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -312,7 +326,11 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
                     {canDelete ? (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon-sm">
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Actions for order ${o.orderNumber}`}
+                          >
                             <MoreHorizontalIcon className="size-4" />
                           </Button>
                         </DropdownMenuTrigger>
@@ -331,7 +349,10 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
                       </DropdownMenu>
                     ) : null}
                     <Button asChild variant="ghost" size="icon-sm">
-                      <Link href={`/app/orders/${o.id}`}>
+                      <Link
+                        href={`/app/orders/${o.id}`}
+                        aria-label={`Open order ${o.orderNumber}`}
+                      >
                         <ChevronRightIcon className="size-3.5" />
                       </Link>
                     </Button>

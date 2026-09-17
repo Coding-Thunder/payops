@@ -233,6 +233,7 @@ describe("when PayPal is enabled", () => {
       payment: {
         gateway: PaymentGatewayKey.PAYPAL,
         stripeSessionId: "PAYPAL-ORDER-3",
+        checkoutUrl: "https://www.paypal.com/checkoutnow?token=PAYPAL-ORDER-3",
       },
     });
     const calls = stubPayPal();
@@ -245,6 +246,38 @@ describe("when PayPal is enabled", () => {
     // Approval authorises a capture. It is not payment.
     const still = await Order.findById(order._id).lean<{ status: OrderStatus }>();
     expect(still?.status).toBe(OrderStatus.PAYMENT_PENDING);
+  });
+
+  it("does not capture an approval for an order that is already paid", async () => {
+    await createOrder({
+      status: OrderStatus.PAID,
+      payment: {
+        gateway: PaymentGatewayKey.PAYPAL,
+        stripeSessionId: "PAYPAL-ORDER-PAID",
+        checkoutUrl: null,
+      },
+    });
+    const calls = stubPayPal();
+    const res = await paypalWebhook(request(orderApproved("PAYPAL-ORDER-PAID")) as never);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.captured).toBe(false);
+    expect(calls.some((u) => u.includes("/capture"))).toBe(false);
+  });
+
+  it("does not capture an approval for a checkout the order has moved on from", async () => {
+    await createOrder({
+      status: OrderStatus.PAYMENT_PENDING,
+      payment: {
+        gateway: PaymentGatewayKey.PAYPAL,
+        stripeSessionId: "PAYPAL-ORDER-NEW",
+        checkoutUrl: "https://www.paypal.com/checkoutnow?token=PAYPAL-ORDER-NEW",
+      },
+    });
+    const calls = stubPayPal();
+    const res = await paypalWebhook(request(orderApproved("PAYPAL-ORDER-OLD")) as never);
+    expect(res.status).toBe(200);
+    expect(calls.some((u) => u.includes("/capture"))).toBe(false);
   });
 
   it("acks a replayed APPROVED whose capture PayPal rejects", async () => {

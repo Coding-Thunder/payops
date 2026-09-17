@@ -15,7 +15,10 @@ import {
 } from "@/server/payments/resolve-gateway";
 import { recordAudit } from "@/server/services/audit.service";
 import { kickPostCommitDrain } from "@/server/services/email-outbox.service";
-import { processGatewayEvent } from "@/server/services/webhook.service";
+import {
+  processGatewayEvent,
+  shouldCaptureApprovedOrder,
+} from "@/server/services/webhook.service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -153,6 +156,34 @@ export async function POST(req: NextRequest) {
   // Approval → capture. Verified above, so this is a genuine PayPal event.
   const rawEvent = event.raw as { event_type?: string } | undefined;
   if (rawEvent?.event_type === "CHECKOUT.ORDER.APPROVED" && event.sessionId) {
+    // Capturing takes the customer's money, so it happens only for the
+    // order's current checkout, on an unpaid order with nothing already held
+    // for it. Otherwise the approval is acknowledged and left to lapse:
+    // PayPal charges nothing for an order that is never captured.
+    const decision = await shouldCaptureApprovedOrder(event, organizationId);
+    if (!decision.capture) {
+      logger.warn("paypal.capture_withheld", {
+        organizationId,
+        sessionId: event.sessionId,
+        orderId: decision.orderId,
+        reason: decision.reason,
+      });
+      await recordAudit({
+        action: AuditAction.ORDER_UPDATED,
+        entityType: AuditEntity.ORDER,
+        entityId: decision.orderId,
+        metadata: {
+          action: "paypal_capture_withheld",
+          gateway: PaymentGatewayKey.PAYPAL,
+          sessionId: event.sessionId,
+          reason: decision.reason,
+        },
+      });
+      return NextResponse.json({
+        ok: true,
+        data: { received: true, captured: false, reason: decision.reason },
+      });
+    }
     try {
       if (!supportsCapture(gateway)) {
         throw new Error("Gateway does not support capture");

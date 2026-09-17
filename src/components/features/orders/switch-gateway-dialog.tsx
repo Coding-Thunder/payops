@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
 
@@ -27,6 +28,7 @@ import { toast } from "@/components/ui/sonner";
 import { api, ApiClientError } from "@/lib/api-client";
 import { PaymentGatewayLabel } from "@/lib/constants/labels";
 import { formatCurrency } from "@/lib/format";
+import { orderQueryKey } from "@/hooks/use-order-query";
 import type { PaymentGatewayKey } from "@/lib/constants/enums";
 import type { OrderDTO } from "@/types";
 
@@ -45,6 +47,7 @@ import type { OrderDTO } from "@/types";
  */
 export function SwitchGatewayDialog({ order }: { order: OrderDTO }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [options, setOptions] = useState<PaymentGatewayKey[] | null>(null);
   const [target, setTarget] = useState<string>("");
@@ -63,8 +66,13 @@ export function SwitchGatewayDialog({ order }: { order: OrderDTO }) {
         setOptions(r.options);
         setTarget(r.options[0] ?? "");
       })
-      .catch(() => {
-        if (!cancelled) setOptions([]);
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setOptions([]);
+        // A refusal is not "no other gateway is enabled".
+        if (err instanceof ApiClientError && err.status === 403) {
+          setError("Only an admin can move an order to another gateway.");
+        }
       });
     return () => {
       cancelled = true;
@@ -78,15 +86,22 @@ export function SwitchGatewayDialog({ order }: { order: OrderDTO }) {
     try {
       await api.post(`/api/orders/${order.id}/switch-gateway`, { gateway: target });
       toast.success(
-        `New ${PaymentGatewayLabel[target as PaymentGatewayKey] ?? target} payment link generated.`,
+        `New ${PaymentGatewayLabel[target as PaymentGatewayKey] ?? target} link ready — send it to the customer.`,
       );
       setOpen(false);
-      router.refresh();
+      void queryClient.invalidateQueries({ queryKey: orderQueryKey(order.id) });
+      // The new link has not reached the customer. Sending it is the next
+      // step, and it lives on the payment-request page.
+      router.push(`/app/orders/${order.id}/email`);
     } catch (err) {
       const message =
         err instanceof ApiClientError ? err.message : "Could not switch gateway.";
       setError(message);
       toast.error(message);
+      // A failed switch may already have stood the old link down; the page
+      // must stop offering it.
+      void queryClient.invalidateQueries({ queryKey: orderQueryKey(order.id) });
+      router.refresh();
     } finally {
       setSaving(false);
     }
@@ -140,9 +155,12 @@ export function SwitchGatewayDialog({ order }: { order: OrderDTO }) {
           </div>
 
           <div className="space-y-1">
-            <label className="text-[11px] font-medium text-muted-foreground">
+            <span
+              id="switch-gateway-target-label"
+              className="text-[11px] font-medium text-muted-foreground"
+            >
               Switch to
-            </label>
+            </span>
             {options === null ? (
               <p className="text-[12px] text-muted-foreground">Loading…</p>
             ) : options.length === 0 ? (
@@ -151,7 +169,7 @@ export function SwitchGatewayDialog({ order }: { order: OrderDTO }) {
               </p>
             ) : (
               <Select value={target} onValueChange={setTarget} disabled={saving}>
-                <SelectTrigger>
+                <SelectTrigger aria-labelledby="switch-gateway-target-label">
                   <SelectValue placeholder="Select a gateway" />
                 </SelectTrigger>
                 <SelectContent>
@@ -165,7 +183,8 @@ export function SwitchGatewayDialog({ order }: { order: OrderDTO }) {
             )}
           </div>
 
-          {order.payment.paymentUrl ? (
+          {order.payment.paymentUrl &&
+          (order.status === "LINK_GENERATED" || order.status === "PAYMENT_PENDING") ? (
             <Alert variant="destructive">
               <TriangleAlertIcon className="size-4" />
               <AlertTitle>The existing link stays live for a short time</AlertTitle>
