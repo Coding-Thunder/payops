@@ -161,6 +161,8 @@ export interface OrderPayment {
 export interface OrderPaymentAttempt {
   gateway: PaymentGatewayKey;
   sessionId: string | null;
+  /** The gateway's payment reference (payment intent / capture id). */
+  paymentIntentId: string | null;
   amount: number;
   currency: string;
   status: OrderStatus;

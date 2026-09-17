@@ -173,6 +173,15 @@ export function EmailComposer({
     [providers],
   );
 
+  // CTAs elsewhere link to `#payment-method`. This page renders after the
+  // order loads, so the browser's own hash scroll finds nothing; do it here.
+  React.useEffect(() => {
+    if (window.location.hash !== "#payment-method") return;
+    document
+      .getElementById("payment-method")
+      ?.scrollIntoView({ block: "start" });
+  }, []);
+
   React.useEffect(() => {
     let cancelled = false;
     api
@@ -944,7 +953,8 @@ export function EmailComposer({
                     value={
                       manualCollection
                         ? "Reviews and confirms the booking"
-                        : customerConfirmed &&
+                        : !switchTarget &&
+                            customerConfirmed &&
                             order.consent?.collectionMethod === "GATEWAY"
                           ? "Pays online (already confirmed)"
                           : "Confirms, then pays online"
@@ -1265,6 +1275,10 @@ function PaymentSummaryCard({
             sentAt={sentAt}
             paidAt={paidAt}
             manualRequested={order.consent?.collectionMethod === "MANUAL"}
+            stoodDown={
+              isOperatorSupersede(order.payment.failureReason) &&
+              outstandingHeldPayments(order).length === 0
+            }
           />
         </div>
       </CardHeader>
@@ -1313,11 +1327,14 @@ function StatusBadge({
   sentAt,
   paidAt,
   manualRequested = false,
+  stoodDown = false,
 }: {
   status: OrderStatus;
   sentAt: string | null;
   paidAt: string | null;
   manualRequested?: boolean;
+  /** The link was stopped by PayOps (re-price, regenerate, switch), not declined. */
+  stoodDown?: boolean;
 }) {
   // A manual request after a failed link is the operator's next step, not a
   // failure: the badge says what is actually pending.
@@ -1333,7 +1350,11 @@ function StatusBadge({
   if (!paidAt && (status === OrderStatus.FAILED || status === OrderStatus.EXPIRED)) {
     return (
       <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider text-red-700">
-        {status === OrderStatus.FAILED ? "Link failed" : "Link expired"}
+        {status === OrderStatus.FAILED
+          ? stoodDown
+            ? "New link needed"
+            : "Link failed"
+          : "Link expired"}
       </span>
     );
   }

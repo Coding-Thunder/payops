@@ -10,7 +10,7 @@ import {
 
 import { useActivityFeed } from "@/hooks/use-activity-feed";
 import { DomainEventType } from "@/lib/constants/events";
-import { OrderStatus } from "@/lib/constants/enums";
+import { ConsentStatus, OrderStatus } from "@/lib/constants/enums";
 import { hasCustomerConsent } from "@/lib/consent";
 import { isOperatorSupersede, outstandingHeldPayments } from "@/lib/payment-state";
 import { cn } from "@/lib/utils";
@@ -59,7 +59,10 @@ function describeOrder(order: OrderDTO, canRecordPayment: boolean): FloaterDescr
         ? canRecordPayment
           ? `${order.customer.name} confirmed. Record the payment once you have collected it.`
           : `${order.customer.name} confirmed. An admin records the payment once it is collected.`
-        : `Waiting for ${order.customer.name} to confirm the booking.`,
+        : order.consent.status === ConsentStatus.NOT_REQUESTED
+          ? // An amount change retired the request that was out.
+            "The amount changed. Send the confirmation request again."
+          : `Waiting for ${order.customer.name} to confirm the booking.`,
     };
   }
   switch (order.status) {

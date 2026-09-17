@@ -221,6 +221,7 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
       attempts: (doc.payment.attempts ?? []).map((a) => ({
         gateway: a.gateway,
         sessionId: a.sessionId ?? null,
+        paymentIntentId: a.paymentIntentId ?? null,
         amount: a.amount,
         currency: a.currency,
         status: a.status,
@@ -2102,7 +2103,7 @@ export async function repriceOrder(
   doc.pricing.amount = summary.prepaid;
   doc.payment.priceRevision = (doc.payment.priceRevision ?? 0) + 1;
   const retiredConsent =
-    summary.prepaid !== previousAmount ? retireConsent(doc) : null;
+    summary.prepaid !== previousAmount ? retireConsent(doc, { keepMethod: true }) : null;
   await saveIfUnchanged(doc, { updatedAt: readUpdatedAt });
 
   await recordAudit({
@@ -2405,7 +2406,8 @@ function noteRepriceOnStoodDownLink(doc: OrderDocument, supersededNow: boolean) 
   if (supersededNow) return;
   if (
     doc.status === OrderStatus.FAILED &&
-    isOperatorSupersede(doc.payment.failureReason)
+    isOperatorSupersede(doc.payment.failureReason) &&
+    doc.payment.failureReason !== MANUAL_REQUEST_STAND_DOWN_REASON
   ) {
     doc.payment.failureReason = "Superseded by an amount change";
   }
@@ -2689,7 +2691,9 @@ export async function applyOrderModification(
     );
 
   if (checkoutDetailsChanged) doc.payment.detailsChangedAt = new Date();
-  const retiredConsent = amountChanged ? retireConsent(doc) : null;
+  const retiredConsent = amountChanged
+    ? retireConsent(doc, { keepMethod: true })
+    : null;
 
   // Written only if nothing has touched the order since it was read — see
   // `saveIfUnchanged`. A payment settling in between would otherwise be
@@ -2764,11 +2768,17 @@ export async function applyOrderModification(
  */
 function retireConsent(
   doc: OrderDocument,
+  opts: { keepMethod?: boolean } = {},
 ): { status: string; consentId: string | null } | null {
   const status = doc.consent?.status ?? ConsentStatus.NOT_REQUESTED;
   if (status === ConsentStatus.NOT_REQUESTED) return null;
   const consentId = doc.consent?.currentConsentId
     ? String(doc.consent.currentConsentId)
+    : null;
+  // An amount change keeps the way the operator chose to collect (a manual
+  // booking stays manual); only a change of method forgets it.
+  const collectionMethod = opts.keepMethod
+    ? (doc.consent?.collectionMethod ?? null)
     : null;
   doc.consent = {
     status: ConsentStatus.NOT_REQUESTED,
@@ -2777,7 +2787,7 @@ function retireConsent(
     receivedAt: null,
     verifiedAt: null,
     method: null,
-    collectionMethod: null,
+    collectionMethod,
   } as unknown as typeof doc.consent;
   return { status, consentId };
 }
@@ -3197,13 +3207,41 @@ export async function recordManualPayment(
     );
   }
 
+  // Which held payment, if any, is being recorded as this order's payment.
+  // Only that one is settled by this recording; any other held payment is
+  // still money the customer paid and must still be refunded.
+  const accepted = input.acceptHeldPayment
+    ? held.find(
+        (a) =>
+          (a.sessionId ?? null) === input.acceptHeldPayment!.sessionId &&
+          (a.paymentIntentId ?? null) === input.acceptHeldPayment!.paymentIntentId,
+      )
+    : undefined;
+  if (input.acceptHeldPayment && !accepted) {
+    throw new ConflictError(
+      "That held payment is no longer waiting to be reconciled. Reload the order and try again.",
+    );
+  }
+  // The recording settles the order at its current amount. A held payment
+  // for a different amount (taken before a re-price, or the wrong amount)
+  // is not that payment, and recording it as such would show money received
+  // that never was.
+  if (
+    accepted &&
+    Math.round((accepted.amount ?? 0) * 100) !== Math.round(doc.pricing.amount * 100)
+  ) {
+    throw new ConflictError(
+      `That held payment was ${accepted.amount} ${doc.pricing.currency}, but this order is now ${doc.pricing.amount} ${doc.pricing.currency}. Refund it and take a new payment instead.`,
+    );
+  }
+
   // Consent is not waived by paying offline. Recording a HELD payment as
   // this order's payment is the exception that proves the rule: the
   // customer confirmed a request and then paid it; a later change of
   // gateway retired that confirmation on the order, but not the fact.
   const consentOnRecord =
     hasCustomerConsent(doc.consent?.status as ConsentStatus | undefined) ||
-    (held.length > 0 &&
+    (Boolean(accepted) &&
       (await PaymentConsent.exists({
         orderId: doc._id,
         status: { $in: [ConsentStatus.RECEIVED, ConsentStatus.VERIFIED] },
@@ -3273,15 +3311,27 @@ export async function recordManualPayment(
     { _id: fresh._id },
     { $set: { "payment.stripeSessionId": null, "payment.checkoutUrl": null } },
   );
-  // The operator has dealt with the held payment(s) they were shown.
+  // Reconciled: the held payment recorded as this order's payment — or,
+  // when the operator took a new payment instead, everything that was held
+  // (they have confirmed it was refunded).
   if (held.length > 0) {
     const reviewedAt = new Date();
-    // Two passes: held payments carry the marker, older records are PAID
-    // attempts that were superseded.
-    for (const filter of [
-      { "h.held": true, "h.heldReviewedAt": null },
-      { "h.status": OrderStatus.PAID, "h.supersededAt": { $ne: null }, "h.heldReviewedAt": null },
-    ]) {
+    const filters: Record<string, unknown>[] = accepted
+      ? [
+          {
+            "h.status": OrderStatus.PAID,
+            "h.heldReviewedAt": null,
+            "h.sessionId": accepted.sessionId ?? null,
+            "h.paymentIntentId": accepted.paymentIntentId ?? null,
+          },
+        ]
+      : [
+          // Held payments carry the marker; older records are PAID
+          // attempts that were superseded.
+          { "h.held": true, "h.heldReviewedAt": null },
+          { "h.status": OrderStatus.PAID, "h.supersededAt": { $ne: null }, "h.heldReviewedAt": null },
+        ];
+    for (const filter of filters) {
       await Order.updateOne(
         { _id: fresh._id },
         { $set: { "payment.attempts.$[h].heldReviewedAt": reviewedAt } },
@@ -3338,6 +3388,15 @@ export async function recordManualPayment(
       reference: input.reference,
       notes: input.notes ?? null,
       heldPaymentReviewed: held.length > 0 ? true : undefined,
+      acceptedHeldPayment: accepted
+        ? {
+            gateway: accepted.gateway,
+            amount: accepted.amount,
+            sessionId: accepted.sessionId ?? null,
+            paymentIntentId: accepted.paymentIntentId ?? null,
+          }
+        : undefined,
+      heldStillOutstanding: held.length - (accepted ? 1 : held.length),
       supersededLiveSession,
       priceRevision: fresh.payment.priceRevision ?? 0,
       referenceReusedOn: referenceReusedOn.map((o) => o.orderNumber),

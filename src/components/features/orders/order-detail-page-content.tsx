@@ -40,7 +40,11 @@ import { ApiClientError } from "@/lib/api-client";
 import { hasCustomerConsent } from "@/lib/consent";
 import { formatCurrency } from "@/lib/format";
 import { PaymentGatewayLabel } from "@/lib/constants/labels";
-import { heldPaymentSource, outstandingHeldPayments } from "@/lib/payment-state";
+import {
+  heldPaymentSource,
+  isOperatorSupersede,
+  outstandingHeldPayments,
+} from "@/lib/payment-state";
 import { ConsentStatus, OrderStatus, RecordState } from "@/lib/constants/enums";
 import type { UserRole } from "@/lib/constants/enums";
 import { Permission, roleHasPermission } from "@/lib/constants/permissions";
@@ -161,10 +165,23 @@ export function OrderDetailPageContent({
     order.status === OrderStatus.LINK_GENERATED && Boolean(order.payment.paymentUrl);
   const paymentStopped =
     order.status === OrderStatus.FAILED || order.status === OrderStatus.EXPIRED;
+  // A manual request whose confirmation was retired by an amount change:
+  // the customer has to confirm the new amount before it is collected.
+  const manualConsentRetired =
+    manualRequested && order.consent.status === ConsentStatus.NOT_REQUESTED;
   // Money the gateway took that the order did not accept. Until it is
   // reconciled, collecting again risks charging the customer twice.
   const held = outstandingHeldPayments(order);
+  // PayOps stopped the link itself (an amount change, a regenerate, a
+  // switch). Nothing was declined; a new link is simply needed — unless a
+  // payment is held, when no new link may be made at all.
+  const stoodDown =
+    order.status === OrderStatus.FAILED &&
+    held.length === 0 &&
+    isOperatorSupersede(order.payment.failureReason);
   const emailHref = `/app/orders/${order.id}/email`;
+  // Every CTA here is about how to collect; land on those controls.
+  const paymentMethodHref = `${emailHref}#payment-method`;
 
   return (
     <div className="space-y-6">
@@ -183,6 +200,8 @@ export function OrderDetailPageContent({
               // A manual request is what is pending, whatever the last link
               // did; "Failed" or "Draft" read as if something was wrong.
               <Badge variant="secondary">Manual payment requested</Badge>
+            ) : stoodDown ? (
+              <Badge variant="secondary">New link needed</Badge>
             ) : (
               <OrderStatusBadge status={order.status} />
             )}
@@ -272,12 +291,38 @@ export function OrderDetailPageContent({
         </Alert>
       ) : null}
 
+      {held.length === 0 && order.risk.flagged ? (
+        <Alert data-testid="flagged-alert">
+          <AlertTitle>Flagged for review</AlertTitle>
+          <AlertDescription className="space-y-1">
+            {/* The flag outlives the held payment that raised it: the note
+                still reads "a payment was received…", which is now done. */}
+            {(order.payment.attempts ?? []).some((a) => a.held && a.heldReviewedAt) ? (
+              <p>
+                {canFlagRisk
+                  ? "The held payment has been reconciled. Remove the flag once nothing else on this order needs review."
+                  : "The held payment has been reconciled. An admin removes the flag once nothing else on this order needs review."}
+              </p>
+            ) : null}
+            {order.risk.flaggedNote ? (
+              <p className="whitespace-pre-line text-[12px]">
+                {order.risk.flaggedNote}
+              </p>
+            ) : null}
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       {held.length > 0 ? null : manualRequested ? (
         <Alert>
           <AlertTitle>Manual payment requested</AlertTitle>
           <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <span>
-              {hasCustomerConsent(order.consent.status)
+              {manualConsentRetired
+                ? canEditOrder
+                  ? "The amount changed after the confirmation request was sent, so the customer must confirm the new amount. Send the manual confirmation request again before collecting."
+                  : "The amount changed after the confirmation request was sent, so the customer must confirm the new amount before the payment is collected."
+                : hasCustomerConsent(order.consent.status)
                 ? canEditOrder
                   ? "The customer confirmed the booking. Once you have collected the payment, use Record manual payment in the Payment panel."
                   : "The customer confirmed the booking. Once the payment is collected, an admin records it on this order."
@@ -289,7 +334,7 @@ export function OrderDetailPageContent({
                 : null}
             </span>
             <Button asChild size="sm" variant="outline">
-              <Link href={emailHref}>
+              <Link href={paymentMethodHref}>
                 Open payment request
                 <ArrowRightIcon className="size-3.5" />
               </Link>
@@ -306,7 +351,7 @@ export function OrderDetailPageContent({
               payment in one step.
             </span>
             <Button asChild size="sm">
-              <Link href={`/app/orders/${order.id}/email`}>
+              <Link href={paymentMethodHref}>
                 Compose payment request
                 <ArrowRightIcon className="size-3.5" />
               </Link>
@@ -324,7 +369,7 @@ export function OrderDetailPageContent({
               and pay {formatCurrency(order.pricing.amount, order.pricing.currency)}.
             </span>
             <Button asChild size="sm">
-              <Link href={emailHref}>
+              <Link href={paymentMethodHref}>
                 Send payment request
                 <ArrowRightIcon className="size-3.5" />
               </Link>
@@ -336,11 +381,12 @@ export function OrderDetailPageContent({
           <AlertTitle>Payment in progress</AlertTitle>
           <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <span>
-              Re-send the payment request, switch to another payment method, or
-              edit customer details on the payment-request page.
+              {canEditOrder
+                ? "Re-send the payment request, switch to another payment method, or edit customer details on the payment-request page."
+                : "Re-send the payment request, or send a manual consent request, on the payment-request page. Only an admin can switch the gateway."}
             </span>
             <Button asChild size="sm" variant="outline">
-              <Link href={emailHref}>
+              <Link href={paymentMethodHref}>
                 Open payment request
                 <ArrowRightIcon className="size-3.5" />
               </Link>
@@ -350,18 +396,26 @@ export function OrderDetailPageContent({
       ) : paymentStopped ? (
         <Alert>
           <AlertTitle>
-            {order.status === OrderStatus.FAILED
-              ? "Payment did not go through — choose how to collect next"
-              : "Payment link expired — choose how to collect next"}
+            {stoodDown
+              ? "New payment link needed — the previous link was stopped"
+              : order.status === OrderStatus.FAILED
+                ? "Payment did not go through — choose how to collect next"
+                : "Payment link expired — choose how to collect next"}
           </AlertTitle>
           <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <span>
-              On the payment-request page, for this same order: send a new
-              link, switch to another gateway (e.g. PayPal), or send a manual
-              consent request.
+              {/* The short reasons ("Superseded by an amount change"). The
+                  held-payment stand-down is a sentence written for the
+                  held alert, and is stale once that payment is reconciled. */}
+              {stoodDown && !order.payment.failureReason?.endsWith(".")
+                ? `${order.payment.failureReason}. `
+                : null}
+              {canEditOrder
+                ? "On the payment-request page, for this same order: send a new link, switch to another gateway (e.g. PayPal), or send a manual consent request."
+                : "On the payment-request page, for this same order: send a new link or a manual consent request. Only an admin can switch the gateway."}
             </span>
             <Button asChild size="sm">
-              <Link href={`${emailHref}#payment-method`}>
+              <Link href={paymentMethodHref}>
                 Choose payment method
                 <ArrowRightIcon className="size-3.5" />
               </Link>

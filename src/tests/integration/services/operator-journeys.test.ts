@@ -43,7 +43,11 @@ const {
   recordManualPayment,
   regeneratePaymentLink,
   setOrderRiskFlag,
+  standDownLinkForManualRequest,
+  MANUAL_REQUEST_STAND_DOWN_REASON,
 } = await import("@/server/services/order.service");
+const { buildOrderChargeExport } = await import("@/server/services/order-export.service");
+const { outstandingHeldPayments } = await import("@/lib/payment-state");
 const { processGatewayEvent, shouldCaptureApprovedOrder } = await import(
   "@/server/services/webhook.service"
 );
@@ -98,8 +102,11 @@ type Raw = {
     attempts: Array<{
       gateway: string;
       sessionId: string | null;
+      paymentIntentId?: string | null;
+      amount: number;
       status: string;
       held?: boolean;
+      heldReviewedAt?: Date | null;
       supersededReason: string | null;
       supersededAt: Date | null;
     }>;
@@ -375,15 +382,23 @@ describe("while a payment is held, nothing asks the customer to pay again", () =
         amount: 500,
       }),
     );
+    const heldAttempt = (await raw(order.id))!.payment.attempts.find((a) => a.held)!;
     const paid = await recordManualPayment(
       order.id,
-      { method: "Stripe (earlier link)", reference: "cs-held-accepted", heldPaymentReviewed: true },
+      {
+        method: "Stripe online payment",
+        reference: "cs-held-accepted",
+        heldPaymentReviewed: true,
+        acceptHeldPayment: {
+          sessionId: heldAttempt.sessionId,
+          paymentIntentId: heldAttempt.paymentIntentId ?? null,
+        },
+      },
       ctx,
     );
     expect(paid.status).toBe(OrderStatus.PAID);
     // Dealt with: re-flagging the order later does not bring it back.
     await setOrderRiskFlag(order.id, { flagged: true, note: "other reason" }, ctx);
-    const { outstandingHeldPayments } = await import("@/lib/payment-state");
     expect(outstandingHeldPayments((await raw(order.id)) as never)).toHaveLength(0);
   });
 
@@ -483,5 +498,184 @@ describe("a PayPal approval after the order was settled another way", () => {
       reason: "order_already_paid",
       orderId: order.id,
     });
+  });
+});
+
+describe("final pass: reconciling held payments one at a time", () => {
+  /** Stripe → PayPal, then the customer pays BOTH links: two held payments. */
+  async function twoHeld() {
+    const { order, stripeSession, paypalSession } = await stripeThenPayPal(500);
+    await processGatewayEvent(
+      completedWebhook({
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        sessionId: stripeSession,
+        amount: 500,
+      }),
+    );
+    await processGatewayEvent(paypalEvent("checkout.completed", order, paypalSession, 500));
+    const held = outstandingHeldPayments((await raw(order.id)) as never) as Array<{
+      sessionId: string | null;
+      paymentIntentId?: string | null;
+    }>;
+    expect(held).toHaveLength(2);
+    return { order, held, stripeSession, paypalSession };
+  }
+
+  it("accepting one held payment leaves the other waiting for a refund", async () => {
+    const { order, held, stripeSession, paypalSession } = await twoHeld();
+    const stripeHeld = held.find((a) => a.sessionId === stripeSession)!;
+    // The customer's consent was for the Stripe request; the switch retired it.
+    await confirm((await ask(order.id, "GATEWAY")).token);
+
+    const paid = await recordManualPayment(
+      order.id,
+      {
+        method: "Stripe online payment",
+        reference: stripeHeld.paymentIntentId ?? stripeSession,
+        heldPaymentReviewed: true,
+        acceptHeldPayment: {
+          sessionId: stripeHeld.sessionId,
+          paymentIntentId: stripeHeld.paymentIntentId ?? null,
+        },
+      },
+      ctx,
+    );
+    expect(paid.status).toBe(OrderStatus.PAID);
+
+    // Before: every held payment was marked reconciled, so the second $500
+    // vanished from the order page and nobody refunded it.
+    const after = (await raw(order.id))!;
+    const still = outstandingHeldPayments(after as never) as Array<{ sessionId: string | null }>;
+    expect(still.map((a) => a.sessionId)).toEqual([paypalSession]);
+    expect(after.risk?.flagged).toBe(true);
+  });
+
+  it("refuses a held payment that is not on the order", async () => {
+    const { order } = await twoHeld();
+    await expect(
+      recordManualPayment(
+        order.id,
+        {
+          method: "Stripe online payment",
+          reference: "AUTH-X",
+          heldPaymentReviewed: true,
+          acceptHeldPayment: { sessionId: "cs_not_this_order", paymentIntentId: null },
+        },
+        ctx,
+      ),
+    ).rejects.toThrow(/no longer waiting/i);
+  });
+
+  it("a new payment after refunding needs the customer's current confirmation", async () => {
+    const { order } = await twoHeld();
+    // The switch retired the confirmation; "I refunded it" does not stand in for one.
+    await expect(
+      recordManualPayment(
+        order.id,
+        { method: "Card terminal", reference: "AUTH-NEW-1", heldPaymentReviewed: true },
+        ctx,
+      ),
+    ).rejects.toThrow(/consent/i);
+
+    await confirm((await ask(order.id, "MANUAL")).token);
+    const paid = await recordManualPayment(
+      order.id,
+      { method: "Card terminal", reference: "AUTH-NEW-1", heldPaymentReviewed: true },
+      ctx,
+    );
+    expect(paid.status).toBe(OrderStatus.PAID);
+    expect(outstandingHeldPayments((await raw(order.id)) as never)).toHaveLength(0);
+  });
+
+  it("a held payment for a different amount cannot be recorded as the order's payment", async () => {
+    const { order, stripeSession } = await stripeThenPayPal(500);
+    await confirm((await ask(order.id, "GATEWAY")).token);
+    await processGatewayEvent(
+      completedWebhook({
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        sessionId: stripeSession,
+        amount: 500,
+      }),
+    );
+    await applyOrderModification(order.id, { charges: lines(575) }, ctx);
+    const heldAttempt = (await raw(order.id))!.payment.attempts.find((a) => a.held)!;
+    // Before: the order read "575 received" for a 500 payment.
+    await expect(
+      recordManualPayment(
+        order.id,
+        {
+          method: "Stripe online payment",
+          reference: "pi-held",
+          heldPaymentReviewed: true,
+          acceptHeldPayment: {
+            sessionId: heldAttempt.sessionId,
+            paymentIntentId: heldAttempt.paymentIntentId ?? null,
+          },
+        },
+        ctx,
+      ),
+    ).rejects.toThrow(/now 575/);
+    expect((await raw(order.id))!.status).not.toBe(OrderStatus.PAID);
+  });
+
+  it("the orders export shows the unreconciled held payment", async () => {
+    const { order } = await twoHeld();
+    const result = await buildOrderChargeExport(
+      { state: "ACTIVE", page: 1, pageSize: 100 } as never,
+      ctx,
+    );
+    const ExcelJS = (await import("exceljs")).default;
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(result.buffer as unknown as ArrayBuffer);
+    const sheet = wb.getWorksheet("Charges")!;
+    const headers = (sheet.getRow(1).values as unknown[]).slice(1).map(String);
+    const col = headers.indexOf("Held payment (not reconciled)");
+    expect(col).toBeGreaterThanOrEqual(0);
+    let cell = "";
+    sheet.eachRow((row, n) => {
+      if (n === 1) return;
+      const values = (row.values as unknown[]).slice(1);
+      if (values[headers.indexOf("Order number")] === order.orderNumber) {
+        cell = String(values[col] ?? "");
+      }
+    });
+    expect(cell).toContain("500.00 on Stripe");
+    expect(cell).toContain("500.00 on PayPal");
+  });
+});
+
+describe("final pass: a manual booking stays manual through an amount change", () => {
+  it("keeps the manual choice when the new amount retires the confirmation", async () => {
+    const { order } = await createOrder(validCreateOrderInput({ charges: lines(500) }), ctx);
+    await confirm((await ask(order.id, "MANUAL")).token);
+    await applyOrderModification(order.id, { charges: lines(600) }, ctx);
+    const after = (await raw(order.id))!;
+    expect(after.consent.status).toBe(ConsentStatus.NOT_REQUESTED);
+    // Before: this was cleared, and every screen offered the online link again.
+    expect(after.consent.collectionMethod).toBe("MANUAL");
+    await expect(
+      recordManualPayment(order.id, { method: "Card terminal", reference: "AUTH-600" }, ctx),
+    ).rejects.toThrow(/consent/i);
+  });
+
+  it("keeps the manual stand-down reason on the stopped link", async () => {
+    const { order } = await createOrder(validCreateOrderInput({ charges: lines(500) }), ctx);
+    await initiatePayment(order.id, ctx, { gateway: PaymentGatewayKey.STRIPE });
+    await standDownLinkForManualRequest(order.id, ctx);
+    await ask(order.id, "MANUAL");
+    await applyOrderModification(order.id, { charges: lines(600) }, ctx);
+    const after = (await raw(order.id))!;
+    expect(after.payment.failureReason).toBe(MANUAL_REQUEST_STAND_DOWN_REASON);
+    expect(after.consent.collectionMethod).toBe("MANUAL");
+  });
+
+  it("a gateway switch still forgets the method", async () => {
+    const { order } = await createOrder(validCreateOrderInput({ charges: lines(500) }), ctx);
+    await initiatePayment(order.id, ctx, { gateway: PaymentGatewayKey.STRIPE });
+    await confirm((await ask(order.id, "GATEWAY")).token);
+    await switchOrderGateway(order.id, { gateway: PaymentGatewayKey.PAYPAL }, ctx);
+    expect((await raw(order.id))!.consent.collectionMethod ?? null).toBeNull();
   });
 });

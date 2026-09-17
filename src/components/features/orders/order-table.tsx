@@ -37,6 +37,7 @@ import {
 import { BookingTypeLabel } from "@/lib/constants/labels";
 import { ConsentStatus, OrderStatus } from "@/lib/constants/enums";
 import { api, ApiClientError } from "@/lib/api-client";
+import { outstandingHeldPayments } from "@/lib/payment-state";
 import {
   formatCurrency,
   formatDate,
@@ -308,6 +309,11 @@ export function OrderTable({
                     {o.consent?.status &&
                     o.consent.status !== ConsentStatus.NOT_REQUESTED ? (
                       <ConsentStatusBadge status={o.consent.status} />
+                    ) : null}
+                    {/* Money taken that the order did not accept: whoever
+                        picks this order up must not collect again. */}
+                    {outstandingHeldPayments(o).length > 0 ? (
+                      <Badge variant="destructive">Payment held</Badge>
                     ) : null}
                   </div>
                 </TableCell>

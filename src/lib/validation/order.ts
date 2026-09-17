@@ -496,6 +496,14 @@ export const recordManualPaymentSchema = z.strictObject({
    *  (refunded it, or is recording it as this order's payment). Required
    *  while one is outstanding — see `outstandingHeldPayments`. */
   heldPaymentReviewed: z.boolean().optional(),
+  /** The held payment being recorded as this order's payment. Without it,
+   *  the operator is recording a NEW payment after refunding what was held. */
+  acceptHeldPayment: z
+    .strictObject({
+      sessionId: z.string().max(200).nullable(),
+      paymentIntentId: z.string().max(200).nullable(),
+    })
+    .optional(),
 });
 
 export type RecordManualPaymentInput = z.infer<typeof recordManualPaymentSchema>;

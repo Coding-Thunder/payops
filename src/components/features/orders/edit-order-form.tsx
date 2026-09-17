@@ -170,7 +170,12 @@ export function EditOrderForm({ order, providers }: EditOrderFormProps) {
       );
       // Replace, so Back from the payment-request page does not return to a
       // form for a change that has already been made.
-      router.replace(emailHref);
+      // A new amount means a new request: land on the controls that send it.
+      router.replace(
+        result.consentReset || (result.amountChanged ?? amountChanged)
+          ? `${emailHref}#payment-method`
+          : emailHref,
+      );
       router.refresh();
     } catch (err) {
       savingRef.current = false;

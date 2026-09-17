@@ -6,7 +6,7 @@ function Toaster(props: ToasterProps) {
   return (
     <SonnerToaster
       theme="system"
-      position="top-right"
+      position="bottom-right"
       closeButton
       richColors
       toastOptions={{

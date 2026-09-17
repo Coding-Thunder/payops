@@ -496,6 +496,7 @@ function attemptRows(order: OrderDTO): AttemptRow[] {
     rows.push({
       gateway: order.payment.gateway,
       sessionId: current,
+      paymentIntentId: order.payment.paymentIntentId,
       amount: order.payment.amountReceived ?? order.pricing.amount,
       currency: order.pricing.currency,
       status: order.payment.status,

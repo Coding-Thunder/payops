@@ -45,6 +45,8 @@ interface ConfirmDialogProps {
   onConfirm: () => void | Promise<void>;
 
   pending?: boolean;
+  /** Keeps the confirm action unavailable until the dialog's own checks pass. */
+  confirmDisabled?: boolean;
   className?: string;
 }
 
@@ -92,13 +94,14 @@ export function ConfirmDialog({
   icon,
   onConfirm,
   pending = false,
+  confirmDisabled = false,
   className,
 }: ConfirmDialogProps) {
   const [internalPending, setInternalPending] = React.useState(false);
   const isPending = pending || internalPending;
 
   async function handleConfirm() {
-    if (isPending) return;
+    if (isPending || confirmDisabled) return;
     const result = onConfirm();
     if (result instanceof Promise) {
       setInternalPending(true);
@@ -140,7 +143,7 @@ export function ConfirmDialog({
             size="sm"
             variant={toneToButtonVariant[tone]}
             onClick={handleConfirm}
-            disabled={isPending}
+            disabled={isPending || confirmDisabled}
             aria-busy={isPending || undefined}
           >
             {isPending ? <Spinner size="xs" tone="current" /> : null}

@@ -11,6 +11,7 @@ import {
 } from "@/lib/constants/enums";
 import { PaymentGatewayLabel } from "@/lib/constants/labels";
 import { summarizeCharges } from "@/lib/charges";
+import { outstandingHeldPayments } from "@/lib/payment-state";
 import { ValidationError } from "@/lib/errors";
 import type { ListOrdersQuery } from "@/lib/validation";
 import { Order, type OrderDoc } from "@/server/db/models";
@@ -91,6 +92,15 @@ const EXPORT_PROJECTION = [
   "payment.manualMethod",
   "payment.manualReference",
   "payment.priceRevision",
+  // Only what `outstandingHeldPayments` reads, not the whole attempt history.
+  "payment.attempts.status",
+  "payment.attempts.held",
+  "payment.attempts.heldReviewedAt",
+  "payment.attempts.supersededAt",
+  "payment.attempts.amount",
+  "payment.attempts.currency",
+  "payment.attempts.gateway",
+  "risk.flagged",
   "refundedAmount",
   "createdBy.name",
   "createdAt",
@@ -117,6 +127,9 @@ const COLUMNS: Array<{ header: string; key: string; width: number }> = [
   { header: "Order prepaid total", key: "prepaidTotal", width: 18 },
   { header: "Amount received", key: "amountReceived", width: 16 },
   { header: "Refunded amount", key: "refundedAmount", width: 16 },
+  // Money a gateway took that the order did not accept and nobody has
+  // reconciled — a refund may be owed. Blank when there is none.
+  { header: "Held payment (not reconciled)", key: "heldPayments", width: 30 },
   { header: "Confirmation no.", key: "confirmationNumber", width: 20 },
   { header: "Created by", key: "createdBy", width: 20 },
   { header: "Created at", key: "createdAt", width: 20 },
@@ -142,6 +155,19 @@ function paymentMethodOf(payment: OrderDoc["payment"]): string {
   if (payment.manualMethod) return payment.manualMethod;
   if (!payment.gateway) return "";
   return PaymentGatewayLabel[payment.gateway] ?? payment.gateway;
+}
+
+function heldPaymentsOf(doc: OrderDoc): string {
+  return outstandingHeldPayments(doc)
+    .map((a) => {
+      const gateway = a.gateway
+        ? (PaymentGatewayLabel[a.gateway as keyof typeof PaymentGatewayLabel] ?? a.gateway)
+        : "";
+      return [a.currency, a.amount?.toFixed(2), gateway ? `on ${gateway}` : ""]
+        .filter(Boolean)
+        .join(" ");
+    })
+    .join("; ");
 }
 
 export interface OrderExportResult {
@@ -220,6 +246,7 @@ export async function buildOrderChargeExport(
         prepaidTotal: summary.prepaid,
         amountReceived: doc.payment?.amountReceived ?? null,
         refundedAmount: doc.refundedAmount ?? 0,
+        heldPayments: heldPaymentsOf(doc),
         confirmationNumber: doc.confirmationNumber ?? "",
         createdBy: doc.createdBy?.name ?? "",
         // Real Date values so Excel treats them as dates, not text.

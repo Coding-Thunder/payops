@@ -65,9 +65,36 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
   // card as well would take it twice, so the operator confirms they have
   // dealt with it — the server refuses the recording otherwise.
   const held = outstandingHeldPayments(order);
-  const [heldReviewed, setHeldReviewed] = useState(false);
-  const failedAttempts = (order.payment.attempts ?? []).filter(
-    (a) => !a.held && (a.status === OrderStatus.FAILED || a.supersededAt),
+  // While a payment is held the operator says exactly what they are doing:
+  // recording ONE of the held payments as this order's payment (its index),
+  // or recording a new payment after refunding what was held ("refunded").
+  // Only that choice is reconciled; any other held payment stays flagged.
+  const [heldChoice, setHeldChoice] = useState<number | "refunded" | null>(null);
+  const acceptedHeld = typeof heldChoice === "number" ? held[heldChoice] : undefined;
+  const takingNewPayment = held.length === 0 || heldChoice === "refunded";
+  // Recording a held payment settles the order at its CURRENT amount, so only
+  // a held payment for exactly that amount can be recorded as its payment.
+  const matchesOrderAmount = (a: { amount: number }) =>
+    Math.round(a.amount * 100) === Math.round(order.pricing.amount * 100);
+  function chooseHeld(choice: number | "refunded") {
+    setHeldChoice(choice);
+    if (choice === "refunded") {
+      setMethod("Card terminal");
+      setReference("");
+    } else {
+      const a = held[choice];
+      setMethod(`${PaymentGatewayLabel[a.gateway] ?? a.gateway} online payment`.slice(0, 40));
+      setReference((a.paymentIntentId ?? a.sessionId ?? "").slice(0, 120));
+    }
+  }
+  // One row per link: the history can record the same link twice (live,
+  // then stood down), which read as two separate tries.
+  const failedAttempts = Array.from(
+    new Map(
+      (order.payment.attempts ?? [])
+        .filter((a) => !a.held && (a.status === OrderStatus.FAILED || a.supersededAt))
+        .map((a, i) => [a.sessionId ?? `attempt-${i}`, a] as const),
+    ).values(),
   );
 
   async function onSubmit() {
@@ -84,7 +111,19 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
           method: method.trim(),
           reference: reference.trim(),
           notes: notes.trim() || undefined,
-          ...(held.length > 0 ? { heldPaymentReviewed: heldReviewed } : {}),
+          ...(held.length > 0
+            ? {
+                heldPaymentReviewed: heldChoice !== null,
+                ...(acceptedHeld
+                  ? {
+                      acceptHeldPayment: {
+                        sessionId: acceptedHeld.sessionId ?? null,
+                        paymentIntentId: acceptedHeld.paymentIntentId ?? null,
+                      },
+                    }
+                  : {}),
+              }
+            : {}),
         },
       );
       // Only after the backend confirms. Nothing above this line implies
@@ -126,7 +165,8 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
           setError(null);
           setReference("");
           setNotes("");
-          setHeldReviewed(false);
+          setHeldChoice(null);
+          setMethod("Card terminal");
         }
       }}
     >
@@ -161,7 +201,10 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
               value={formatCurrency(order.pricing.amount, order.pricing.currency)}
               strong
             />
-            <Row label="Payment status" value={order.payment.status} />
+            <Row
+              label="Payment status"
+              value={order.payment.status.toLowerCase().replace(/_/g, " ")}
+            />
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">Consent</span>
               <Badge variant={consentReceived ? "secondary" : "destructive"}>
@@ -219,29 +262,75 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
                   ))}
                 </ul>
                 <p>
-                  Do not charge the card again unless that payment has been
-                  refunded. To keep it as this order&apos;s payment, record it
-                  here with its gateway reference.
+                  Do not take a new payment for money the customer has already
+                  paid. Choose what you are recording:
                 </p>
-                <label className="flex items-start gap-2 font-medium">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5"
-                    checked={heldReviewed}
-                    onChange={(e) => setHeldReviewed(e.target.checked)}
-                    disabled={saving}
-                  />
-                  <span>
-                    I have checked the earlier payment (refunded it, or I am
-                    recording it as this order&apos;s payment).
-                  </span>
-                </label>
+                <div
+                  role="radiogroup"
+                  aria-label="What are you recording?"
+                  className="space-y-1.5"
+                >
+                  {held.map((a, i) => (
+                    <label
+                      key={`choice-${a.sessionId ?? "held"}-${i}`}
+                      className="flex items-start gap-2 font-medium"
+                    >
+                      <input
+                        type="radio"
+                        name="held-choice"
+                        className="mt-0.5"
+                        checked={heldChoice === i}
+                        onChange={() => chooseHeld(i)}
+                        disabled={saving || !matchesOrderAmount(a)}
+                      />
+                      <span className={matchesOrderAmount(a) ? undefined : "opacity-70"}>
+                        {/* One string: the build drops the space before
+                            "is" when this is written as wrapped JSX text. */}
+                        {`The ${formatCurrency(a.amount, a.currency)} already received on ${PaymentGatewayLabel[a.gateway] ?? a.gateway} is this order's payment`}
+                        {matchesOrderAmount(a)
+                          ? held.length > 1
+                            ? " (refund the other one in its gateway)"
+                            : ""
+                          : ` — not possible: the order is now ${formatCurrency(order.pricing.amount, order.pricing.currency)}, so refund it`}
+                      </span>
+                    </label>
+                  ))}
+                  <label className="flex items-start gap-2 font-medium">
+                    <input
+                      type="radio"
+                      name="held-choice"
+                      className="mt-0.5"
+                      checked={heldChoice === "refunded"}
+                      onChange={() => chooseHeld("refunded")}
+                      disabled={saving}
+                    />
+                    <span>
+                      {held.length > 1
+                        ? "I refunded these payments and took a new payment"
+                        : "I refunded that payment and took a new payment"}
+                    </span>
+                  </label>
+                </div>
               </AlertDescription>
             </Alert>
           ) : null}
 
           {/* The operational model, stated where the operator is about to
-              act on it. This is the single most important sentence here. */}
+              act on it. This is the single most important sentence here.
+              Not shown when the operator is recording money already
+              received — there is nothing to charge then. */}
+          {acceptedHeld ? (
+            <Alert>
+              <AlertTitle>Recording money already received</AlertTitle>
+              <AlertDescription>
+                Do not take a new payment. The method and reference below are
+                filled in from{" "}
+                {PaymentGatewayLabel[acceptedHeld.gateway] ?? acceptedHeld.gateway};
+                check them and record.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          {takingNewPayment ? (
           <Alert>
             <TriangleAlertIcon className="size-4" />
             <AlertTitle>The card is charged outside PayOps</AlertTitle>
@@ -251,8 +340,9 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
               system — there is no field for them and there never will be.
             </AlertDescription>
           </Alert>
+          ) : null}
 
-          {!consentReceived && held.length === 0 ? (
+          {!consentReceived && takingNewPayment ? (
             <Alert variant="destructive">
               <AlertTitle>Consent is not complete</AlertTitle>
               <AlertDescription>
@@ -346,7 +436,8 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
               saving ||
               !reference.trim() ||
               alreadyPaid ||
-              (held.length > 0 ? !heldReviewed : !consentReceived)
+              (held.length > 0 && heldChoice === null) ||
+              (takingNewPayment && !consentReceived)
             }
           >
             Record payment

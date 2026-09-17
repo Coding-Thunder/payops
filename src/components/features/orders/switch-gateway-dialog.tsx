@@ -92,7 +92,7 @@ export function SwitchGatewayDialog({ order }: { order: OrderDTO }) {
       void queryClient.invalidateQueries({ queryKey: orderQueryKey(order.id) });
       // The new link has not reached the customer. Sending it is the next
       // step, and it lives on the payment-request page.
-      router.push(`/app/orders/${order.id}/email`);
+      router.push(`/app/orders/${order.id}/email#payment-method`);
     } catch (err) {
       const message =
         err instanceof ApiClientError ? err.message : "Could not switch gateway.";

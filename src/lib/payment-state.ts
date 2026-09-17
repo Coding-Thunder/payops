@@ -42,6 +42,7 @@ interface HeldCheckInput {
       amount?: number;
       gateway?: string;
       sessionId?: string | null;
+      paymentIntentId?: string | null;
     }> | null;
   };
 }
