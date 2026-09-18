@@ -314,6 +314,21 @@ export const deleteByIdsSchema = z.object({
 
 export type DeleteByIdsInput = z.infer<typeof deleteByIdsSchema>;
 
+/**
+ * Orders the operator ticked in the list, which is the ONLY thing an export
+ * covers: the list's own filters decide what can be selected, never what is
+ * exported. The cap is per request, not a limit on what may be exported in
+ * total — an operator exporting more does so in deliberate batches.
+ */
+export const exportOrdersSchema = z.strictObject({
+  ids: z
+    .array(z.string().regex(objectIdRegex, "Invalid id"))
+    .min(1, "Select at least one order to export")
+    .max(500, "Too many orders selected for one export — export them in batches of 500"),
+});
+
+export type ExportOrdersInput = z.infer<typeof exportOrdersSchema>;
+
 export const analyticsQuerySchema = z.object({
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),

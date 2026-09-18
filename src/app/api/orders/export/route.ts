@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { Permission } from "@/lib/constants/permissions";
-import { listOrdersQuerySchema } from "@/lib/validation";
+import { exportOrdersSchema } from "@/lib/validation";
 import { getRequestContext } from "@/server/api/request-context";
 import { withApi } from "@/server/api/respond";
 import { requirePermission } from "@/server/auth/session";
@@ -14,25 +14,33 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Download charging data as a real .xlsx workbook, one row per charge line.
+ * Download charging data for the orders the operator SELECTED, as a real
+ * .xlsx workbook with one row per charge line.
  *
- * Takes the SAME query parameters as the order list and runs the same filter,
- * so what downloads is exactly what the caller can already see — including
- * the organization scope and the STAFF own-orders narrowing.
+ * The selection is the whole scope. There is deliberately no "export
+ * everything the list is filtered to" here: on an operation with thousands
+ * of orders that is a bulk egress nobody asked for, so the request carries
+ * the ids that were ticked and nothing else.
+ *
+ * POST rather than GET because a selection of hundreds of ids does not
+ * belong in a URL — and because this records an audit row.
+ *
+ * Authorization is unchanged: the same permission the list needs, and the
+ * export service applies the list's own tenancy + STAFF own-orders filter
+ * to the ids, so an id from outside the operator's scope exports nothing.
  *
  * Deliberately not wrapped in the JSON envelope helper's success path: this
  * returns binary. `withApi` still provides the error envelope, auth plumbing
  * and rate limiting.
  */
-export const GET = withApi(
+export const POST = withApi(
   async (req: NextRequest) => {
     const actor = await requirePermission(Permission.ORDER_VIEW_OWN);
-    const query = listOrdersQuerySchema.parse(
-      Object.fromEntries(req.nextUrl.searchParams),
-    );
+    const body = await req.json().catch(() => ({}));
+    const selection = exportOrdersSchema.parse(body);
     const ctx = await getRequestContext();
 
-    const result = await buildOrderChargeExport(query, { actor, request: ctx });
+    const result = await buildOrderChargeExport(selection, { actor, request: ctx });
 
     // NextResponse rather than Response so this still satisfies
     // `withApi`, keeping its auth plumbing, error envelope and rate limit.
@@ -45,8 +53,7 @@ export const GET = withApi(
         // so there is no header-injection surface here.
         "Content-Disposition": `attachment; filename="${result.filename}"`,
         "Cache-Control": "no-store, private",
-        // How many orders the workbook covers, so the page can report it
-        // (and say "nothing matched" rather than download an empty sheet).
+        // How many orders the workbook covers, so the page can report it.
         "X-Export-Order-Count": String(result.orderCount),
         "X-Content-Type-Options": "nosniff",
       },

@@ -38,6 +38,7 @@ import { BookingTypeLabel } from "@/lib/constants/labels";
 import { ConsentStatus, OrderStatus } from "@/lib/constants/enums";
 import { api, ApiClientError } from "@/lib/api-client";
 import { outstandingHeldPayments } from "@/lib/payment-state";
+import { useOrderSelection } from "./order-selection";
 import {
   formatCurrency,
   formatDate,
@@ -70,6 +71,9 @@ interface OrderTableProps {
   items: OrderDTO[];
   emptyAction?: React.ReactNode;
   canDelete?: boolean;
+  /** Show the tick boxes. They drive the bulk actions — export for every
+   *  operator, delete for those allowed — so they are not tied to delete. */
+  selectable?: boolean;
   /** Filters are applied: an empty list means "nothing matched", not "no
    *  orders exist". */
   filtered?: boolean;
@@ -79,33 +83,35 @@ export function OrderTable({
   items,
   emptyAction,
   canDelete = false,
+  selectable = false,
   filtered = false,
 }: OrderTableProps) {
   const router = useRouter();
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Shared with the page's bulk actions (Export), so what is ticked here is
+  // exactly what they act on.
+  const { selected, toggle, setMany, clear } = useOrderSelection();
   const [pendingDelete, setPendingDelete] = useState<{
     ids: string[];
     bulk: boolean;
   } | null>(null);
 
-  const selectableItems = useMemo(
-    () => items.filter((o) => o.status !== OrderStatus.PAID),
-    [items],
-  );
-  const allSelected =
-    selectableItems.length > 0 &&
-    selectableItems.every((i) => selected.has(i.id));
-  const someSelected = selected.size > 0 && !allSelected;
+  // Every row can be ticked, paid ones included: a paid order is precisely
+  // what an operator exports charging data for. Delete still refuses them,
+  // server-side, and says so.
+  const pageIds = useMemo(() => items.map((o) => o.id), [items]);
+  const selectedOnPage = pageIds.filter((id) => selected.has(id)).length;
+  const allSelected = pageIds.length > 0 && selectedOnPage === pageIds.length;
+  const someSelected = selectedOnPage > 0 && !allSelected;
+  // A selection survives paging, so some of it can be out of sight. Saying
+  // how many keeps "Export 5 orders" from being a surprise.
+  const offPage = selected.size - selectedOnPage;
 
   function toggleAll(checked: boolean) {
-    setSelected(checked ? new Set(selectableItems.map((i) => i.id)) : new Set());
+    setMany(pageIds, checked);
   }
 
   function toggleOne(id: string, checked: boolean) {
-    const next = new Set(selected);
-    if (checked) next.add(id);
-    else next.delete(id);
-    setSelected(next);
+    toggle(id, checked);
   }
 
   async function onConfirmDelete() {
@@ -127,7 +133,7 @@ export function OrderTable({
             : "Order deleted",
         );
       }
-      setSelected(new Set());
+      clear();
       setPendingDelete(null);
       router.refresh();
     } catch (err) {
@@ -152,30 +158,37 @@ export function OrderTable({
   }
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
-      {canDelete && selected.size > 0 ? (
-        <div className="flex items-center justify-between gap-3 border-b border-border bg-surface-1 px-4 py-1.5 text-[13px]">
+      {selectable && selected.size > 0 ? (
+        <div
+          className="flex items-center justify-between gap-3 border-b border-border bg-surface-1 px-4 py-1.5 text-[13px]"
+          data-testid="order-bulk-bar"
+        >
           <span className="text-muted-foreground">
             <span className="font-medium text-foreground">{selected.size}</span>{" "}
             selected
+            {offPage > 0 ? (
+              // Paging or a filter can hide ticked orders; they still count.
+              <span className="text-muted-foreground">
+                {` (${offPage} not on this page)`}
+              </span>
+            ) : null}
           </span>
           <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setSelected(new Set())}
-            >
+            <Button variant="ghost" size="sm" onClick={() => clear()}>
               Clear
             </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() =>
-                setPendingDelete({ ids: Array.from(selected), bulk: true })
-              }
-            >
-              <Trash2Icon className="size-3.5" />
-              Delete selected
-            </Button>
+            {canDelete ? (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() =>
+                  setPendingDelete({ ids: Array.from(selected), bulk: true })
+                }
+              >
+                <Trash2Icon className="size-3.5" />
+                Delete selected
+              </Button>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -184,15 +197,15 @@ export function OrderTable({
       <Table className="[&_td:first-child]:pl-4 [&_th:first-child]:pl-4 [&_td:last-child]:pr-4 [&_th:last-child]:pr-4">
         <TableHeader>
           <TableRow>
-            {canDelete ? (
+            {selectable ? (
               <TableHead className="h-8 w-[36px]">
                 <Checkbox
                   checked={
                     allSelected ? true : someSelected ? "indeterminate" : false
                   }
                   onCheckedChange={(v) => toggleAll(v === true)}
-                  disabled={selectableItems.length === 0}
-                  aria-label="Select all rows"
+                  disabled={pageIds.length === 0}
+                  aria-label="Select all orders on this page"
                 />
               </TableHead>
             ) : null}
@@ -224,12 +237,11 @@ export function OrderTable({
               providerMeta.logo !== UNKNOWN_PROVIDER.logo;
             return (
               <TableRow key={o.id} data-state={isSelected ? "selected" : undefined}>
-                {canDelete ? (
+                {selectable ? (
                   <TableCell className={CELL}>
                     <Checkbox
                       checked={isSelected}
                       onCheckedChange={(v) => toggleOne(o.id, v === true)}
-                      disabled={isPaid}
                       aria-label={`Select order ${o.orderNumber}`}
                     />
                   </TableCell>

@@ -6,7 +6,6 @@ import {
   ConsentStatus,
   OrderStatus,
   PaymentGatewayKey,
-  RecordState,
   UserRole,
 } from "@/lib/constants/enums";
 import { AuditLog, Order } from "@/server/db/models";
@@ -315,10 +314,8 @@ describe("the complete customer journey — one order, start to finish", () => {
       ctx(),
     );
 
-    const result = await buildOrderChargeExport(
-      { state: RecordState.ACTIVE, page: 1, pageSize: 100 } as never,
-      ctx(),
-    );
+    // The export covers the orders the operator selected.
+    const result = await buildOrderChargeExport({ ids: [order.id] }, ctx());
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(result.buffer as unknown as ArrayBuffer);
     const sheet = wb.getWorksheet("Charges")!;

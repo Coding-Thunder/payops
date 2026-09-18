@@ -50,7 +50,11 @@ function attempt(overrides: Record<string, unknown>) {
   };
 }
 
-function order(attempts: Array<Record<string, unknown>>, amount = 500): OrderDTO {
+function order(
+  attempts: Array<Record<string, unknown>>,
+  amount = 500,
+  overrides: Record<string, unknown> = {},
+): OrderDTO {
   return {
     id: "order-1",
     orderNumber: "ORD-1",
@@ -76,6 +80,7 @@ function order(attempts: Array<Record<string, unknown>>, amount = 500): OrderDTO
     },
     createdAt: "2026-09-16T09:00:00.000Z",
     updatedAt: "2026-09-16T09:00:00.000Z",
+    ...overrides,
   } as unknown as OrderDTO;
 }
 
@@ -95,6 +100,46 @@ beforeEach(() => {
   post.mockResolvedValue({ order: order([]) });
 });
 
+describe("ManualPaymentDialog: a compact recording form", () => {
+  it("leads with the amount, the order and the customer", () => {
+    renderDialog(
+      order([], 320, {
+        consent: { status: ConsentStatus.VERIFIED, collectionMethod: "MANUAL" },
+        risk: { flagged: false, flaggedNote: null },
+      }),
+    );
+    expect(screen.getByText("Amount to collect")).toBeInTheDocument();
+    expect(screen.getByText("$320.00")).toBeInTheDocument();
+    expect(screen.getByText("ORD-1")).toBeInTheDocument();
+    expect(screen.getByText("Jane Guest")).toBeInTheDocument();
+    expect(screen.getByText(/customer consent verified/i)).toBeInTheDocument();
+    // The safety rule stays, in one line.
+    expect(
+      screen.getByText(/Never enter card numbers, CVV, PINs/i),
+    ).toBeInTheDocument();
+  });
+
+  it("does not repeat the order's payment history", () => {
+    // Two dead links: history the order page already shows in full.
+    renderDialog(
+      order(
+        [
+          attempt({ held: false, status: OrderStatus.FAILED, sessionId: "cs_1" }),
+          attempt({ held: false, status: OrderStatus.FAILED, sessionId: "cs_2" }),
+        ],
+        500,
+        {
+          consent: { status: ConsentStatus.VERIFIED, collectionMethod: "MANUAL" },
+          risk: { flagged: false, flaggedNote: null },
+        },
+      ),
+    );
+    expect(screen.queryByText(/previous attempts/i)).toBeNull();
+    expect(screen.queryByText(/payment status/i)).toBeNull();
+    expect(screen.getByRole("button", { name: /^record payment$/i })).toBeDisabled();
+  });
+});
+
 describe("ManualPaymentDialog with held payments", () => {
   it("sends only the held payment the operator chose", async () => {
     renderDialog(
@@ -111,8 +156,11 @@ describe("ManualPaymentDialog with held payments", () => {
         name: "The $500.00 already received on PayPal is this order's payment (refund the other one in its gateway)",
       }),
     );
-    expect(screen.queryByText(/charged outside PayOps/i)).toBeNull();
-    expect(screen.getByLabelText(/how was it taken/i)).toHaveValue("PayPal online payment");
+    // Accepting money already received must not tell the operator to take
+    // a new payment on a terminal.
+    expect(screen.queryByText(/Never enter card numbers/i)).toBeNull();
+    expect(screen.getByText(/Recording money already received/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/payment method/i)).toHaveValue("PayPal online payment");
     expect(screen.getByLabelText(/payment reference/i)).toHaveValue("CAP-1");
 
     fireEvent.click(submit());
@@ -132,7 +180,7 @@ describe("ManualPaymentDialog with held payments", () => {
       target: { value: "AUTH-1" },
     });
     expect(submit()).toBeDisabled();
-    expect(screen.getByLabelText(/how was it taken/i)).toHaveValue("Card terminal");
+    expect(screen.getByLabelText(/payment method/i)).toHaveValue("Card terminal");
   });
 
   it("does not offer a held payment for a different amount", () => {

@@ -1,7 +1,7 @@
 import "server-only";
 
 import ExcelJS from "exceljs";
-import type { Types } from "mongoose";
+import { Types } from "mongoose";
 
 import {
   AuditAction,
@@ -12,8 +12,8 @@ import {
 import { PaymentGatewayLabel } from "@/lib/constants/labels";
 import { summarizeCharges } from "@/lib/charges";
 import { outstandingHeldPayments } from "@/lib/payment-state";
-import { ValidationError } from "@/lib/errors";
-import type { ListOrdersQuery } from "@/lib/validation";
+import { NotFoundError, ValidationError } from "@/lib/errors";
+import type { ExportOrdersInput, ListOrdersQuery } from "@/lib/validation";
 import { Order, type OrderDoc } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 import type { RequestContext } from "@/server/api/request-context";
@@ -49,9 +49,16 @@ import { buildOrderListFilter } from "./order.service";
  * reachable from the order model.
  */
 
-/** Hard ceiling. Beyond this the operator is asked to narrow the range,
- *  mirroring the evidence export's own cap rather than inventing a policy. */
+/** Hard ceiling, on top of the per-request cap the schema applies. */
 const EXPORT_MAX_ORDERS = 5_000;
+
+/**
+ * Only the tenancy and role narrowing are wanted from the list filter: an
+ * export covers the orders the operator SELECTED, so nothing the list is
+ * currently filtered to — search, status, type, staff, page — may widen or
+ * narrow it.
+ */
+const SCOPE_ONLY_QUERY = { page: 1, pageSize: 1 } as unknown as ListOrdersQuery;
 
 export const XLSX_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -178,21 +185,44 @@ export interface OrderExportResult {
 }
 
 export async function buildOrderChargeExport(
-  query: ListOrdersQuery,
+  /** The orders the operator ticked in the list. */
+  selection: ExportOrdersInput,
   ctx: ExportContext,
   /** Stamped into the filename. Injected so the caller owns the clock. */
   now: Date = new Date(),
 ): Promise<OrderExportResult> {
   await connectMongo();
 
-  // Identical filter to the order list — same tenancy, same STAFF narrowing,
-  // same search semantics.
-  const scoped = await buildOrderListFilter(query, ctx);
+  // The same order ticked twice is still one order.
+  const ids = Array.from(new Set(selection.ids));
+  if (ids.length === 0) {
+    throw new ValidationError("Select at least one order to export.");
+  }
+  if (ids.length > EXPORT_MAX_ORDERS) {
+    throw new ValidationError(
+      `That is ${ids.length.toLocaleString()} orders, which is more than this export can produce at once (${EXPORT_MAX_ORDERS.toLocaleString()}). Export them in smaller batches.`,
+    );
+  }
+
+  // Tenancy and the STAFF own-orders narrowing come from the list's own
+  // filter builder, so an id outside what this operator may see matches
+  // nothing here — selecting it cannot export it.
+  const scope = await buildOrderListFilter(SCOPE_ONLY_QUERY, ctx, {
+    anyState: true,
+  });
+  const scoped = {
+    ...scope,
+    _id: { $in: ids.map((id) => new Types.ObjectId(id)) },
+  };
 
   const orderCount = await Order.countDocuments(scoped);
-  if (orderCount > EXPORT_MAX_ORDERS) {
-    throw new ValidationError(
-      `That range covers ${orderCount.toLocaleString()} orders, which is more than this export can produce at once (${EXPORT_MAX_ORDERS.toLocaleString()}). Narrow the search or the filters and try again.`,
+  // Refusing the whole export is the honest answer: silently dropping the
+  // ids that did not match would hand the operator a workbook that is
+  // missing orders they asked for, with nothing to say so.
+  if (orderCount !== ids.length) {
+    const missing = ids.length - orderCount;
+    throw new NotFoundError(
+      `${missing} of the ${ids.length} selected ${ids.length === 1 ? "order is" : "orders are"} no longer available to you. Refresh the list and select again.`,
     );
   }
 
@@ -276,7 +306,7 @@ export async function buildOrderChargeExport(
     entityId: "bulk",
     actor: { userId: ctx.actor.id, name: ctx.actor.name, role: ctx.actor.role },
     request: ctx.request ?? null,
-    metadata: { orderCount, rowCount, query: { ...query } },
+    metadata: { orderCount, rowCount, orderIds: ids },
   });
 
   return {

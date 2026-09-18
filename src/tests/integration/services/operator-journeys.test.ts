@@ -622,10 +622,7 @@ describe("final pass: reconciling held payments one at a time", () => {
 
   it("the orders export shows the unreconciled held payment", async () => {
     const { order } = await twoHeld();
-    const result = await buildOrderChargeExport(
-      { state: "ACTIVE", page: 1, pageSize: 100 } as never,
-      ctx,
-    );
+    const result = await buildOrderChargeExport({ ids: [order.id] }, ctx);
     const ExcelJS = (await import("exceljs")).default;
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(result.buffer as unknown as ArrayBuffer);

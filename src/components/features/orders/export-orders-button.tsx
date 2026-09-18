@@ -1,31 +1,17 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { DownloadIcon } from "lucide-react";
 
 import { LoadingButton } from "@/components/ui/loading-button";
 import { toast } from "@/components/ui/sonner";
 
-import { currentOrderFilters } from "./order-list-intent";
+import { useOrderSelection } from "./order-selection";
 
 const EXPORT_TOAST = "orders-export";
 
 const XLSX_TYPE =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-
-/**
- * The export endpoint takes the order list's own filters and exports every
- * order they match — all pages, not just the one on screen — so paging is
- * the only thing left out.
- */
-export function exportUrlFor(search: string): string {
-  const params = new URLSearchParams(search);
-  params.delete("page");
-  params.delete("pageSize");
-  const qs = params.toString();
-  return `/api/orders/export${qs ? `?${qs}` : ""}`;
-}
 
 function filenameFrom(disposition: string | null): string {
   const match = disposition ? /filename="?([^";]+)"?/i.exec(disposition) : null;
@@ -55,36 +41,41 @@ async function errorMessage(res: Response): Promise<string> {
 }
 
 /**
- * "Export XLSX" on the Orders list: downloads the charging workbook for
- * exactly the orders the current filters show.
+ * Export the orders the operator ticked in the list, as the charging
+ * workbook.
+ *
+ * This is a bulk action on a selection, not "download the list": with
+ * nothing ticked there is nothing to export and the button says so, and
+ * what goes to the server is the selected ids — never the current filters.
+ * The label carries the count so it is never a question whether this
+ * exports three orders or four thousand.
  */
 export function ExportOrdersButton() {
-  const params = useSearchParams();
+  const { selected } = useOrderSelection();
+  const ids = useMemo(() => Array.from(selected), [selected]);
   const [exporting, setExporting] = useState(false);
   // A second click before the first render lands must not start a second
   // download.
   const busyRef = useRef(false);
 
+  const count = ids.length;
+  const label =
+    count === 0 ? "Export XLSX" : `Export ${count} order${count === 1 ? "" : "s"}`;
+
   async function onExport() {
-    if (busyRef.current) return;
+    if (busyRef.current || ids.length === 0) return;
     busyRef.current = true;
     setExporting(true);
     try {
-      // The filters just chosen, even if the list is still updating to them.
-      const res = await fetch(exportUrlFor(currentOrderFilters(params.toString())), {
+      const res = await fetch("/api/orders/export", {
+        method: "POST",
         credentials: "include",
-        headers: { Accept: XLSX_TYPE },
+        headers: { "Content-Type": "application/json", Accept: XLSX_TYPE },
+        body: JSON.stringify({ ids }),
       });
       const type = res.headers.get("content-type") ?? "";
       if (!res.ok || !type.startsWith(XLSX_TYPE)) {
         toast.error(await errorMessage(res), { id: EXPORT_TOAST });
-        return;
-      }
-      const count = Number(res.headers.get("x-export-order-count") ?? NaN);
-      if (count === 0) {
-        toast.info("No orders match the current filters, so there is nothing to export.", {
-          id: EXPORT_TOAST,
-        });
         return;
       }
       const blob = await res.blob();
@@ -97,10 +88,10 @@ export function ExportOrdersButton() {
       link.remove();
       // Give the browser a moment to start the download before releasing.
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      const exported = Number(res.headers.get("x-export-order-count") ?? NaN);
+      const n = Number.isFinite(exported) ? exported : ids.length;
       toast.success(
-        Number.isFinite(count)
-          ? `Exported ${count.toLocaleString()} order${count === 1 ? "" : "s"} to ${link.download}`
-          : `Downloaded ${link.download}`,
+        `Exported ${n.toLocaleString()} order${n === 1 ? "" : "s"} to ${link.download}`,
         // One toast for exports, replaced each time, so a burst of exports
         // does not stack over the page's own buttons.
         { id: EXPORT_TOAST },
@@ -125,12 +116,23 @@ export function ExportOrdersButton() {
         loading={exporting}
         loadingText="Exporting"
         icon={<DownloadIcon className="size-4" />}
+        disabled={count === 0}
+        title={count === 0 ? "Select orders below to export them" : undefined}
         aria-describedby="orders-export-hint"
       >
-        Export XLSX
+        {label}
       </LoadingButton>
-      <span id="orders-export-hint" className="sr-only">
-        Downloads every order matching the current filters as an Excel workbook.
+      {/* With nothing selected the reason is on screen, not only in a
+          tooltip a disabled button may never show. */}
+      <span
+        id="orders-export-hint"
+        className={
+          count === 0 ? "order-first text-[12px] text-muted-foreground" : "sr-only"
+        }
+      >
+        {count === 0
+          ? "Select orders below to export them"
+          : `Downloads the ${count} selected order${count === 1 ? "" : "s"} as an Excel workbook.`}
       </span>
     </>
   );

@@ -944,10 +944,13 @@ function describeProductDescription(input: ProductDescriptionInput): string {
 export async function buildOrderListFilter(
   query: ListOrdersQuery,
   ctx: OrderContext,
+  /** `anyState` drops the ACTIVE default — for callers whose scope is an
+   *  explicit set of orders rather than the list's current view. */
+  opts: { anyState?: boolean } = {},
 ): Promise<Record<string, unknown>> {
   const scope = await getRequestOrganizationScope();
   const filter: Record<string, unknown> = {};
-  filter.state = query.state ?? RecordState.ACTIVE;
+  if (!opts.anyState) filter.state = query.state ?? RecordState.ACTIVE;
   if (query.status) filter.status = query.status;
   if (query.bookingType) filter.bookingType = query.bookingType;
 

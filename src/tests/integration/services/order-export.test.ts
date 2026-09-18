@@ -52,7 +52,8 @@ beforeEach(async () => {
 });
 
 const ctx = (actor = admin) => ({ actor, request: null });
-const QUERY = { state: RecordState.ACTIVE, page: 1, pageSize: 100 } as never;
+/** What the operator ticked in the list — the export's whole scope. */
+const sel = (...orders: Array<{ id: string }>) => ({ ids: orders.map((o) => o.id) });
 
 /** Load the produced bytes back as a workbook — the real assertion. */
 async function parse(buffer: Buffer) {
@@ -83,8 +84,8 @@ async function makeOrder(charges: Array<{ name: string; amount: number; timing: 
 
 describe("buildOrderChargeExport — a real, parseable workbook", () => {
   it("produces a file ExcelJS can load, with the expected sheet and headers", async () => {
-    await makeOrder([{ name: "Rental cost", amount: 500, timing: "PREPAID" }]);
-    const result = await buildOrderChargeExport(QUERY, ctx());
+    const order = await makeOrder([{ name: "Rental cost", amount: 500, timing: "PREPAID" }]);
+    const result = await buildOrderChargeExport(sel(order), ctx());
 
     // Real XLSX files are ZIP containers — "PK" is the signature.
     expect(result.buffer.subarray(0, 2).toString("latin1")).toBe("PK");
@@ -98,12 +99,12 @@ describe("buildOrderChargeExport — a real, parseable workbook", () => {
   });
 
   it("writes one row per charge line", async () => {
-    await makeOrder([
+    const order = await makeOrder([
       { name: "Rental cost", amount: 500, timing: "PREPAID" },
       { name: "Fuel option", amount: 40, timing: "DUE_AT_COUNTER" },
       { name: "Extra driver", amount: 25, timing: "DUE_AT_COUNTER" },
     ]);
-    const result = await buildOrderChargeExport(QUERY, ctx());
+    const result = await buildOrderChargeExport(sel(order), ctx());
     const { rows } = await parse(result.buffer);
 
     expect(rows).toHaveLength(3);
@@ -113,50 +114,62 @@ describe("buildOrderChargeExport — a real, parseable workbook", () => {
   });
 
   it("keeps amounts NUMERIC so the column sums in Excel", async () => {
-    await makeOrder([{ name: "Rental cost", amount: 249.99, timing: "PREPAID" }]);
+    const order = await makeOrder([{ name: "Rental cost", amount: 249.99, timing: "PREPAID" }]);
     const { rows } = await parse(
-      (await buildOrderChargeExport(QUERY, ctx())).buffer,
+      (await buildOrderChargeExport(sel(order), ctx())).buffer,
     );
     expect(typeof rows[0]["Charge amount"]).toBe("number");
     expect(rows[0]["Charge amount"]).toBe(249.99);
   });
 
   it("writes real dates, not strings", async () => {
-    await makeOrder([{ name: "Rental cost", amount: 500, timing: "PREPAID" }]);
+    const order = await makeOrder([{ name: "Rental cost", amount: 500, timing: "PREPAID" }]);
     const { rows } = await parse(
-      (await buildOrderChargeExport(QUERY, ctx())).buffer,
+      (await buildOrderChargeExport(sel(order), ctx())).buffer,
     );
     expect(rows[0]["Created at"]).toBeInstanceOf(Date);
   });
 
   it("marks the due-at-counter state per line", async () => {
-    await makeOrder([
+    const order = await makeOrder([
       { name: "Rental cost", amount: 500, timing: "PREPAID" },
       { name: "Fuel option", amount: 40, timing: "DUE_AT_COUNTER" },
     ]);
     const { rows } = await parse(
-      (await buildOrderChargeExport(QUERY, ctx())).buffer,
+      (await buildOrderChargeExport(sel(order), ctx())).buffer,
     );
     expect(rows.map((r) => r["Due at counter"])).toEqual(["No", "Yes"]);
   });
 
-  it("handles an empty dataset without producing a broken file", async () => {
-    const result = await buildOrderChargeExport(QUERY, ctx());
-    expect(result.rowCount).toBe(0);
-    const { sheet, headers, rows } = await parse(result.buffer);
-    // Headers still present so the operator gets a usable, if empty, sheet.
-    expect(sheet).toBeTruthy();
-    expect(headers).toContain("Order number");
-    expect(rows).toHaveLength(0);
+  it("refuses an empty selection rather than producing an empty workbook", async () => {
+    await makeOrder([{ name: "Rental cost", amount: 500, timing: "PREPAID" }]);
+    // Nothing ticked is not "export everything" — the button is unavailable
+    // in the UI, and the service refuses it too.
+    await expect(buildOrderChargeExport({ ids: [] }, ctx())).rejects.toThrow(
+      /at least one order/i,
+    );
   });
 
-  it("exports multiple orders", async () => {
-    await makeOrder([{ name: "Rental cost", amount: 500, timing: "PREPAID" }]);
-    await makeOrder([{ name: "Rental cost", amount: 300, timing: "PREPAID" }]);
-    const result = await buildOrderChargeExport(QUERY, ctx());
+  it("exports multiple selected orders", async () => {
+    const a = await makeOrder([{ name: "Rental cost", amount: 500, timing: "PREPAID" }]);
+    const b = await makeOrder([{ name: "Rental cost", amount: 300, timing: "PREPAID" }]);
+    const result = await buildOrderChargeExport(sel(a, b), ctx());
     const { rows } = await parse(result.buffer);
     expect(rows).toHaveLength(2);
     expect(result.orderCount).toBe(2);
+    expect(rows.map((r) => r["Order number"]).sort()).toEqual(
+      [a.orderNumber, b.orderNumber].sort(),
+    );
+  });
+
+  it("counts an order ticked twice once", async () => {
+    const order = await makeOrder([{ name: "Rental cost", amount: 500, timing: "PREPAID" }]);
+    const result = await buildOrderChargeExport(
+      { ids: [order.id, order.id] },
+      ctx(),
+    );
+    expect(result.orderCount).toBe(1);
+    expect((await parse(result.buffer)).rows).toHaveLength(1);
   });
 });
 
@@ -180,7 +193,7 @@ describe("buildOrderChargeExport — values", () => {
     );
 
     const { rows } = await parse(
-      (await buildOrderChargeExport(QUERY, ctx())).buffer,
+      (await buildOrderChargeExport(sel(order), ctx())).buffer,
     );
     const row = rows[0];
     expect(row["Order number"]).toBe(order.orderNumber);
@@ -207,7 +220,7 @@ describe("buildOrderChargeExport — values", () => {
     );
 
     const { rows } = await parse(
-      (await buildOrderChargeExport(QUERY, ctx())).buffer,
+      (await buildOrderChargeExport(sel(order), ctx())).buffer,
     );
     expect(rows[0]["Payment method"]).toBe("Card terminal");
     expect(rows[0]["Payment reference"]).toBe("AUTH-004521");
@@ -228,7 +241,7 @@ describe("buildOrderChargeExport — values", () => {
     );
 
     const { rows } = await parse(
-      (await buildOrderChargeExport(QUERY, ctx())).buffer,
+      (await buildOrderChargeExport(sel(order), ctx())).buffer,
     );
     const blob = JSON.stringify(rows);
     // No PAN-length digit run anywhere in the sheet.
@@ -239,36 +252,52 @@ describe("buildOrderChargeExport — values", () => {
 });
 
 describe("buildOrderChargeExport — authorization and tenancy", () => {
-  it("narrows a STAFF export to their own orders", async () => {
+  it("refuses a STAFF selection of someone else's order", async () => {
     // The whole reason the export reuses `buildOrderListFilter`: this
     // narrowing is not re-implemented here and so cannot drift from the list.
-    await makeOrder([{ name: "Admin order", amount: 500, timing: "PREPAID" }]);
+    const admins = await makeOrder([{ name: "Admin order", amount: 500, timing: "PREPAID" }]);
 
-    const result = await buildOrderChargeExport(QUERY, ctx(staff));
-    const { rows } = await parse(result.buffer);
-    // The admin's order is not the staff user's, so it must not appear.
-    expect(rows).toHaveLength(0);
+    // Ticking an id the operator may not see cannot export it — and the
+    // refusal is the whole export, so nothing arrives quietly short.
+    await expect(
+      buildOrderChargeExport(sel(admins), ctx(staff)),
+    ).rejects.toThrow(/no longer available to you/i);
   });
 
-  it("honours the search filter exactly as the list does", async () => {
+  it("refuses a selection containing an order that does not exist", async () => {
+    const order = await makeOrder([{ name: "Rental cost", amount: 500, timing: "PREPAID" }]);
+    await expect(
+      buildOrderChargeExport(
+        { ids: [order.id, "ffffffffffffffffffffffff"] },
+        ctx(),
+      ),
+    ).rejects.toThrow(/1 of the 2 selected orders/i);
+  });
+
+  it("exports only what was selected, whatever the list is filtered to", async () => {
     const a = await makeOrder([{ name: "Rental cost", amount: 500, timing: "PREPAID" }]);
     await makeOrder([{ name: "Rental cost", amount: 300, timing: "PREPAID" }]);
+    await makeOrder([{ name: "Rental cost", amount: 700, timing: "PREPAID" }]);
 
     const { rows } = await parse(
-      (
-        await buildOrderChargeExport(
-          { ...(QUERY as object), q: a.orderNumber } as never,
-          ctx(),
-        )
-      ).buffer,
+      (await buildOrderChargeExport(sel(a), ctx())).buffer,
     );
     expect(rows).toHaveLength(1);
     expect(rows[0]["Order number"]).toBe(a.orderNumber);
   });
 
-  it("records an audit row for the bulk egress", async () => {
-    await makeOrder([{ name: "Rental cost", amount: 500, timing: "PREPAID" }]);
-    await buildOrderChargeExport(QUERY, ctx());
+  it("exports an archived order the operator selected", async () => {
+    const order = await makeOrder([{ name: "Rental cost", amount: 500, timing: "PREPAID" }]);
+    await Order.updateOne({ _id: order.id }, { $set: { state: RecordState.ARCHIVED } });
+    const { rows } = await parse(
+      (await buildOrderChargeExport(sel(order), ctx())).buffer,
+    );
+    expect(rows).toHaveLength(1);
+  });
+
+  it("records an audit row naming the orders that left", async () => {
+    const order = await makeOrder([{ name: "Rental cost", amount: 500, timing: "PREPAID" }]);
+    await buildOrderChargeExport(sel(order), ctx());
 
     const rows = await AuditLog.find({
       action: AuditAction.ORDER_EXPORTED,
@@ -276,5 +305,6 @@ describe("buildOrderChargeExport — authorization and tenancy", () => {
     expect(rows).toHaveLength(1);
     expect(String(rows[0].actor.userId)).toBe(admin.id);
     expect(rows[0].metadata.rowCount).toBe(1);
+    expect(rows[0].metadata.orderIds).toEqual([order.id]);
   });
 });

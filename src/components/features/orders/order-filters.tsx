@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { SearchIcon } from "lucide-react";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 
 import { Input } from "@/components/ui/input";
 import { InlineSpinner } from "@/components/ui/spinner";
@@ -19,11 +19,6 @@ import {
   OrderStatusLabel,
 } from "@/lib/constants/labels";
 
-import {
-  resetOrderFilters,
-  setIntendedOrderFilters,
-  settleOrderFilters,
-} from "./order-list-intent";
 
 const ALL = "__all__";
 
@@ -43,21 +38,11 @@ export function OrderFilters({ canSeeAll }: OrderFiltersProps) {
     setQuery(currentQueryParam);
   }
 
-  // Once the page reflects a change, the export no longer needs the intent.
-  settleOrderFilters(params.toString());
-  const appliedOnMount = useRef(params.toString());
-  useEffect(() => {
-    resetOrderFilters(appliedOnMount.current);
-  }, []);
-
   function update(name: string, value: string | null) {
     const next = new URLSearchParams(params.toString());
     if (value && value !== ALL) next.set(name, value);
     else next.delete(name);
     next.delete("page");
-    // Recorded before navigating: an export started while the list is still
-    // updating must use these filters, not the ones on screen.
-    setIntendedOrderFilters(next.toString());
     startTransition(() => router.push(`?${next.toString()}`));
   }
 
