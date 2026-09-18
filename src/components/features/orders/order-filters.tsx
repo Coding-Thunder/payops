@@ -19,7 +19,6 @@ import {
   OrderStatusLabel,
 } from "@/lib/constants/labels";
 
-
 const ALL = "__all__";
 
 interface OrderFiltersProps {

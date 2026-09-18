@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import * as CheckboxPrimitive from "@radix-ui/react-checkbox";
-import { CheckIcon } from "lucide-react";
+import { CheckIcon, MinusIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -13,10 +13,14 @@ const Checkbox = React.forwardRef<
   <CheckboxPrimitive.Root
     ref={ref}
     className={cn(
-      "peer size-4 shrink-0 rounded-[4px] border border-input shadow-xs",
+      // The unchecked border is the only thing that says "you can tick
+      // this"; at the shared input grey it measured 1.27:1 on white, well
+      // under the 3:1 a control boundary needs.
+      "group peer size-4 shrink-0 rounded-[4px] border border-muted-foreground/80 shadow-xs",
       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
       "disabled:cursor-not-allowed disabled:opacity-50",
       "data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=checked]:text-primary-foreground",
+      "data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[state=indeterminate]:text-primary-foreground",
       className,
     )}
     {...props}
@@ -24,7 +28,9 @@ const Checkbox = React.forwardRef<
     <CheckboxPrimitive.Indicator
       className={cn("flex items-center justify-center text-current")}
     >
-      <CheckIcon className="size-3.5" />
+      {/* Partly selected reads as a dash, not a faint "all" tick. */}
+      <CheckIcon className="size-3.5 group-data-[state=indeterminate]:hidden" />
+      <MinusIcon className="hidden size-3.5 group-data-[state=indeterminate]:block" />
     </CheckboxPrimitive.Indicator>
   </CheckboxPrimitive.Root>
 ));

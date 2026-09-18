@@ -5,6 +5,7 @@ const toast = vi.hoisted(() => ({
   success: vi.fn(),
   error: vi.fn(),
   info: vi.fn(),
+  dismiss: vi.fn(),
 }));
 vi.mock("@/components/ui/sonner", () => ({ toast }));
 
@@ -14,7 +15,10 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { ExportOrdersButton } from "@/components/features/orders/export-orders-button";
-import { OrderSelectionProvider } from "@/components/features/orders/order-selection";
+import {
+  OrderSelectionProvider,
+  useOrderSelection,
+} from "@/components/features/orders/order-selection";
 import { OrderTable } from "@/components/features/orders/order-table";
 import {
   BookingType,
@@ -138,6 +142,7 @@ describe("Export XLSX is a bulk action on the selection", () => {
     expect(button).toBeDisabled();
     // Visible, not only a tooltip.
     const hint = screen.getByText("Select orders below to export them");
+    expect(hint).not.toHaveClass("sr-only");
     expect(hint).toBeVisible();
     expect(button).toHaveAttribute("aria-describedby", hint.id);
 
@@ -234,6 +239,91 @@ describe("Export XLSX is a bulk action on the selection", () => {
     // Restored, so the operator can try again.
     expect(exportButton()).toBeEnabled();
     expect(exportButton()).not.toHaveAttribute("aria-busy");
+  });
+
+  it("unticks the orders the server could not export, and says so", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              ok: false,
+              error: {
+                code: "NOT_FOUND",
+                message: "1 of the 2 selected orders is no longer available to you.",
+                details: { unavailableIds: ["aaaaaaaaaaaaaaaaaaaaaaa2"] },
+              },
+            }),
+            { status: 404, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+    renderList();
+    select("ORD-AAAAAAAAAAAAAAAAAAAAAAA1");
+    select("ORD-AAAAAAAAAAAAAAAAAAAAAAA2");
+    await act(async () => {
+      fireEvent.click(exportButton());
+    });
+    // The gone order has no row to untick by hand; the selection drops it.
+    expect(exportButton()).toHaveTextContent("Export 1 order");
+    expect(
+      screen.getByRole("checkbox", { name: "Select order ORD-AAAAAAAAAAAAAAAAAAAAAAA2" }),
+    ).not.toBeChecked();
+    expect(toast.error).toHaveBeenCalledWith(
+      "1 of the 2 selected orders is no longer available to you. It has been removed from your selection — export again for the rest.",
+      expect.anything(),
+    );
+  });
+
+  it("clears a stale error toast when a new export starts", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => workbookResponse(1)));
+    const downloads = captureDownloads();
+    renderList();
+    select("ORD-AAAAAAAAAAAAAAAAAAAAAAA1");
+    try {
+      await act(async () => {
+        fireEvent.click(exportButton());
+      });
+    } finally {
+      downloads.restore();
+    }
+    expect(toast.dismiss).toHaveBeenCalledWith("orders-export");
+  });
+
+  it("refuses more than 500 orders in one export, and says why", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    function SelectMany() {
+      const { setMany } = useOrderSelection();
+      return (
+        <button
+          type="button"
+          onClick={() =>
+            setMany(
+              Array.from({ length: 501 }, (_, i) => i.toString(16).padStart(24, "0")),
+              true,
+            )
+          }
+        >
+          pick 501
+        </button>
+      );
+    }
+    render(
+      <OrderSelectionProvider>
+        <ExportOrdersButton />
+        <SelectMany />
+      </OrderSelectionProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "pick 501" }));
+    expect(exportButton()).toHaveTextContent("Export 501 orders");
+    expect(exportButton()).toBeDisabled();
+    expect(
+      screen.getByText("Export up to 500 orders at a time — 501 are selected"),
+    ).toBeVisible();
+    fireEvent.click(exportButton());
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("shows the server's reason when the export is refused", async () => {

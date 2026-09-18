@@ -987,6 +987,20 @@ export async function buildOrderListFilter(
   return withOrganizationScope(filter, scope);
 }
 
+/**
+ * The orders an operator may act on BY ID — a bulk export or a bulk delete
+ * of what they ticked: the list's tenancy and role narrowing, and none of
+ * its view filters (search, status, record state, page). One definition, so
+ * a bulk action can never reach further than the list the ids came from.
+ */
+export async function buildSelectionScopeFilter(
+  ctx: OrderContext,
+): Promise<Record<string, unknown>> {
+  return buildOrderListFilter({ page: 1, pageSize: 1 } as ListOrdersQuery, ctx, {
+    anyState: true,
+  });
+}
+
 export async function listOrders(
   query: ListOrdersQuery,
   ctx: OrderContext,
@@ -1434,10 +1448,27 @@ export async function deleteOrders(
   const valid = ids.filter((id) => Types.ObjectId.isValid(id));
   if (valid.length === 0) return { deleted: 0, blockedPaidIds: [] };
 
-  const objectIds = valid.map((id) => new Types.ObjectId(id));
-  const docs = await Order.find({ _id: { $in: objectIds } })
+  // Only orders this operator could see in their own list: the same tenancy
+  // (and role) scope as reads. Without it, an admin could hard-delete another
+  // organization's order just by naming its id.
+  const unique = Array.from(new Set(valid.map((id) => id.toLowerCase())));
+  const objectIds = unique.map((id) => new Types.ObjectId(id));
+  const scope = await buildSelectionScopeFilter(ctx);
+  const docs = await Order.find({ ...scope, _id: { $in: objectIds } })
     .select({ _id: 1, orderNumber: 1, status: 1 })
     .lean<{ _id: Types.ObjectId; orderNumber: string; status: OrderStatus }[]>();
+
+  // Refuse the whole request when any id is outside that scope — and in the
+  // same words whether it belongs to someone else or does not exist, so the
+  // answer never confirms another tenant's order is real. Nothing is deleted.
+  if (docs.length !== unique.length) {
+    const missing = unique.length - docs.length;
+    throw new NotFoundError(
+      unique.length === 1
+        ? "Order not found"
+        : `${missing} of the ${unique.length} selected orders ${missing === 1 ? "was" : "were"} not found. Nothing was deleted — refresh the list and try again.`,
+    );
+  }
 
   const paid = docs.filter((d) => d.status === OrderStatus.PAID);
   const deletable = docs.filter((d) => d.status !== OrderStatus.PAID);
@@ -1449,7 +1480,8 @@ export async function deleteOrders(
   }
 
   const deletableIds = deletable.map((d) => d._id);
-  const res = await Order.deleteMany({ _id: { $in: deletableIds } });
+  // Scoped again at the write, not only at the read.
+  const res = await Order.deleteMany({ ...scope, _id: { $in: deletableIds } });
 
   await recordAudit({
     action: AuditAction.ORDER_DELETED,

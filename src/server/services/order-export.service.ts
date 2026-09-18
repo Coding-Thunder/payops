@@ -13,13 +13,13 @@ import { PaymentGatewayLabel } from "@/lib/constants/labels";
 import { summarizeCharges } from "@/lib/charges";
 import { outstandingHeldPayments } from "@/lib/payment-state";
 import { NotFoundError, ValidationError } from "@/lib/errors";
-import type { ExportOrdersInput, ListOrdersQuery } from "@/lib/validation";
+import { EXPORT_MAX_SELECTION, type ExportOrdersInput } from "@/lib/validation";
 import { Order, type OrderDoc } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 import type { RequestContext } from "@/server/api/request-context";
 
 import { recordAudit } from "./audit.service";
-import { buildOrderListFilter } from "./order.service";
+import { buildSelectionScopeFilter } from "./order.service";
 
 /**
  * XLSX export of charging data, one row per CHARGE LINE.
@@ -29,11 +29,15 @@ import { buildOrderListFilter } from "./order.service";
  * An order with a prepaid line and a counter line becomes two rows that share
  * an order number.
  *
+ * SCOPE is the operator's SELECTION: the ids they ticked, and nothing the
+ * list happened to be filtered to. An archived order they could see and tick
+ * is included.
+ *
  * TENANCY AND AUTHORIZATION come from `buildOrderListFilter`, the same
  * function the order list uses. That is deliberate: a hand-written filter
  * here could drift and start emitting rows outside the caller's organization
- * or outside a STAFF user's own orders. The export is exactly the list the
- * caller can already see, in a spreadsheet.
+ * or outside a STAFF user's own orders. A selected id outside that scope
+ * refuses the whole export.
  *
  * MEMORY. Rows stream out of a Mongo cursor with an explicit projection that
  * EXCLUDES the bulk text fields (`terms.text` ≤8000 chars, `policy.text`
@@ -48,17 +52,6 @@ import { buildOrderListFilter } from "./order.service";
  * tokens and gateway secrets live in the credential vault and are not
  * reachable from the order model.
  */
-
-/** Hard ceiling, on top of the per-request cap the schema applies. */
-const EXPORT_MAX_ORDERS = 5_000;
-
-/**
- * Only the tenancy and role narrowing are wanted from the list filter: an
- * export covers the orders the operator SELECTED, so nothing the list is
- * currently filtered to — search, status, type, staff, page — may widen or
- * narrow it.
- */
-const SCOPE_ONLY_QUERY = { page: 1, pageSize: 1 } as unknown as ListOrdersQuery;
 
 export const XLSX_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -193,36 +186,47 @@ export async function buildOrderChargeExport(
 ): Promise<OrderExportResult> {
   await connectMongo();
 
-  // The same order ticked twice is still one order.
-  const ids = Array.from(new Set(selection.ids));
+  // The same order ticked twice is still one order — however its id is
+  // cased (the schema accepts either).
+  const ids = Array.from(new Set(selection.ids.map((id) => id.toLowerCase())));
+  // The route's schema already enforces both; a direct caller gets the same.
   if (ids.length === 0) {
     throw new ValidationError("Select at least one order to export.");
   }
-  if (ids.length > EXPORT_MAX_ORDERS) {
+  if (ids.length > EXPORT_MAX_SELECTION) {
     throw new ValidationError(
-      `That is ${ids.length.toLocaleString()} orders, which is more than this export can produce at once (${EXPORT_MAX_ORDERS.toLocaleString()}). Export them in smaller batches.`,
+      `Too many orders selected for one export — export them in batches of ${EXPORT_MAX_SELECTION}`,
     );
   }
 
   // Tenancy and the STAFF own-orders narrowing come from the list's own
-  // filter builder, so an id outside what this operator may see matches
-  // nothing here — selecting it cannot export it.
-  const scope = await buildOrderListFilter(SCOPE_ONLY_QUERY, ctx, {
-    anyState: true,
-  });
+  // filter builder — none of its view filters — so an id outside what this
+  // operator may see matches nothing here: selecting it cannot export it.
+  const scope = await buildSelectionScopeFilter(ctx);
   const scoped = {
     ...scope,
     _id: { $in: ids.map((id) => new Types.ObjectId(id)) },
   };
 
-  const orderCount = await Order.countDocuments(scoped);
+  const found = await Order.find(scoped)
+    .select({ _id: 1 })
+    .lean<Array<{ _id: Types.ObjectId }>>();
+  const orderCount = found.length;
   // Refusing the whole export is the honest answer: silently dropping the
   // ids that did not match would hand the operator a workbook that is
-  // missing orders they asked for, with nothing to say so.
+  // missing orders they asked for, with nothing to say so. The ids that did
+  // not match are returned — they are the caller's own input, and whether
+  // one was deleted or belongs to someone else is deliberately not said —
+  // so the page can untick them.
   if (orderCount !== ids.length) {
-    const missing = ids.length - orderCount;
+    const present = new Set(found.map((d) => String(d._id)));
+    const unavailableIds = ids.filter((id) => !present.has(id));
+    const missing = unavailableIds.length;
     throw new NotFoundError(
-      `${missing} of the ${ids.length} selected ${ids.length === 1 ? "order is" : "orders are"} no longer available to you. Refresh the list and select again.`,
+      ids.length === 1
+        ? "The selected order is no longer available to you."
+        : `${missing} of the ${ids.length} selected orders ${missing === 1 ? "is" : "are"} no longer available to you.`,
+      { unavailableIds },
     );
   }
 

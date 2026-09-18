@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ChevronRightIcon, MoreHorizontalIcon, Trash2Icon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,7 @@ import {
 import { BookingTypeLabel } from "@/lib/constants/labels";
 import { ConsentStatus, OrderStatus } from "@/lib/constants/enums";
 import { api, ApiClientError } from "@/lib/api-client";
+import { DELETE_MAX_SELECTION } from "@/lib/validation";
 import { outstandingHeldPayments } from "@/lib/payment-state";
 import { useOrderSelection } from "./order-selection";
 import {
@@ -93,7 +94,11 @@ export function OrderTable({
   const [pendingDelete, setPendingDelete] = useState<{
     ids: string[];
     bulk: boolean;
+    /** Of those ids, how many are not on screen, and how many are paid. */
+    offPage: number;
+    paid: number;
   } | null>(null);
+  const selectAllRef = useRef<HTMLButtonElement>(null);
 
   // Every row can be ticked, paid ones included: a paid order is precisely
   // what an operator exports charging data for. Delete still refuses them,
@@ -112,6 +117,24 @@ export function OrderTable({
 
   function toggleOne(id: string, checked: boolean) {
     toggle(id, checked);
+  }
+
+  function clearSelection() {
+    clear();
+    // Clear lives in the bar it removes; keep keyboard focus in the table.
+    window.setTimeout(() => selectAllRef.current?.focus(), 0);
+  }
+
+  /** Ask before deleting what is ticked — saying what that includes. */
+  function confirmBulkDelete() {
+    const ids = Array.from(selected);
+    setPendingDelete({
+      ids,
+      bulk: true,
+      offPage,
+      paid: items.filter((o) => selected.has(o.id) && o.status === OrderStatus.PAID)
+        .length,
+    });
   }
 
   async function onConfirmDelete() {
@@ -133,7 +156,11 @@ export function OrderTable({
             : "Order deleted",
         );
       }
-      clear();
+      // A bulk delete used the whole selection; a single row's delete only
+      // takes that row out of it, so a selection built for an export (across
+      // pages) survives deleting one unrelated order.
+      if (pendingDelete.bulk) clear();
+      else setMany(pendingDelete.ids, false);
       setPendingDelete(null);
       router.refresh();
     } catch (err) {
@@ -143,22 +170,9 @@ export function OrderTable({
     }
   }
 
-  if (items.length === 0) {
-    return (
-      <EmptyState
-        title={filtered ? "No orders match these filters" : "No orders yet"}
-        description={
-          filtered
-            ? "Change the search or filters to see more orders."
-            : "Create your first payable order to generate a payment link."
-        }
-        action={filtered ? undefined : emptyAction}
-      />
-    );
-  }
-  return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
-      {selectable && selected.size > 0 ? (
+  const tooManyToDelete = selected.size > DELETE_MAX_SELECTION;
+  const bulkBar =
+    selectable && selected.size > 0 ? (
         <div
           className="flex items-center justify-between gap-3 border-b border-border bg-surface-1 px-4 py-1.5 text-[13px]"
           data-testid="order-bulk-bar"
@@ -174,15 +188,19 @@ export function OrderTable({
             ) : null}
           </span>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => clear()}>
+            <Button variant="ghost" size="sm" onClick={clearSelection}>
               Clear
             </Button>
             {canDelete ? (
               <Button
                 variant="destructive"
                 size="sm"
-                onClick={() =>
-                  setPendingDelete({ ids: Array.from(selected), bulk: true })
+                onClick={confirmBulkDelete}
+                disabled={tooManyToDelete}
+                title={
+                  tooManyToDelete
+                    ? `Delete up to ${DELETE_MAX_SELECTION} orders at a time`
+                    : undefined
                 }
               >
                 <Trash2Icon className="size-3.5" />
@@ -191,7 +209,36 @@ export function OrderTable({
             ) : null}
           </div>
         </div>
-      ) : null}
+      ) : null;
+
+  if (items.length === 0) {
+    const empty = (
+      <EmptyState
+        title={filtered ? "No orders match these filters" : "No orders yet"}
+        description={
+          filtered
+            ? "Change the search or filters to see more orders."
+            : "Create your first payable order to generate a payment link."
+        }
+        action={filtered ? undefined : emptyAction}
+      />
+    );
+    // A filter can leave nothing on screen while orders are still ticked;
+    // the count and Clear must stay reachable.
+    return bulkBar ? (
+      <div className="space-y-3">
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
+          {bulkBar}
+        </div>
+        {empty}
+      </div>
+    ) : (
+      empty
+    );
+  }
+  return (
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
+      {bulkBar}
       {/* Slightly tighter outer gutter than the shared default, so the
           last laptop-width column fits without a horizontal scroll. */}
       <Table className="[&_td:first-child]:pl-4 [&_th:first-child]:pl-4 [&_td:last-child]:pr-4 [&_th:last-child]:pr-4">
@@ -200,6 +247,7 @@ export function OrderTable({
             {selectable ? (
               <TableHead className="h-8 w-[36px]">
                 <Checkbox
+                  ref={selectAllRef}
                   checked={
                     allSelected ? true : someSelected ? "indeterminate" : false
                   }
@@ -357,7 +405,7 @@ export function OrderTable({
                             variant="destructive"
                             disabled={isPaid}
                             onClick={() =>
-                              setPendingDelete({ ids: [o.id], bulk: false })
+                              setPendingDelete({ ids: [o.id], bulk: false, offPage: 0, paid: 0 })
                             }
                           >
                             <Trash2Icon className="size-3.5" />
@@ -391,7 +439,21 @@ export function OrderTable({
             ? `Delete ${pendingDelete.ids.length} ${pendingDelete.ids.length === 1 ? "order" : "orders"}?`
             : "Delete this order?"
         }
-        description="Orders are removed permanently. Paid orders are kept for financial history and will be skipped."
+        description={
+          // The selection outlives paging and filters, so say plainly when
+          // it reaches orders that are not on screen.
+          [
+            "Orders are removed permanently.",
+            pendingDelete?.bulk && pendingDelete.offPage > 0
+              ? `${pendingDelete.offPage} of them ${pendingDelete.offPage === 1 ? "is" : "are"} not on this page.`
+              : null,
+            pendingDelete?.bulk && pendingDelete.paid > 0
+              ? `${pendingDelete.paid} ${pendingDelete.paid === 1 ? "is" : "are"} paid and will be kept.`
+              : "Paid orders are kept for financial history and will be skipped.",
+          ]
+            .filter(Boolean)
+            .join(" ")
+        }
         confirmLabel="Delete"
         onConfirm={onConfirmDelete}
       />

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { LoadingButton } from "@/components/ui/loading-button";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -26,7 +27,7 @@ import { hasCustomerConsent } from "@/lib/consent";
 import { heldPaymentSource, outstandingHeldPayments } from "@/lib/payment-state";
 import { orderQueryKey } from "@/hooks/use-order-query";
 import { PaymentGatewayLabel } from "@/lib/constants/labels";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDateTime } from "@/lib/format";
 import type { OrderDTO } from "@/types";
 
 /**
@@ -59,6 +60,8 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
   const [method, setMethod] = useState("Card terminal");
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
+  const referenceRef = useRef<HTMLInputElement>(null);
+  const firstHeldChoiceRef = useRef<HTMLInputElement>(null);
 
   const consentReceived = hasCustomerConsent(order.consent?.status);
   const alreadyPaid = order.status === OrderStatus.PAID;
@@ -152,27 +155,39 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
     }
   }
 
+  // Every way of closing — Cancel, Escape, the X, a click outside —
+  // leaves the next opening blank. Cancel used to skip this, so a reference
+  // from an earlier call came back pre-filled.
+  function onOpenChange(next: boolean) {
+    setOpen(next);
+    if (!next) {
+      setError(null);
+      setReference("");
+      setNotes("");
+      setHeldChoice(null);
+      setMethod("Card terminal");
+    }
+  }
+
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) {
-          setError(null);
-          setReference("");
-          setNotes("");
-          setHeldChoice(null);
-          setMethod("Card terminal");
-        }
-      }}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
           <BanknoteIcon className="size-3.5" />
           Record manual payment
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
+      <DialogContent
+        className="max-h-[90dvh]"
+        // Land where the operator types: the reference. Focusing the method
+        // (the first field) selected "Card terminal", so the first thing
+        // typed — the auth code — replaced it. With money held, the choice
+        // of what is being recorded comes first.
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          (held.length > 0 ? firstHeldChoiceRef.current : referenceRef.current)?.focus();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Record manual payment</DialogTitle>
           <DialogDescription>
@@ -181,14 +196,14 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
           </DialogDescription>
         </DialogHeader>
 
-        {error ? (
-          <Alert variant="destructive">
-            <AlertTitle>Could not record the payment</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        ) : null}
+        <DialogBody className="space-y-3 text-[13px]">
+          {error ? (
+            <Alert variant="destructive">
+              <AlertTitle>Could not record the payment</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
 
-        <div className="space-y-3 text-[13px]">
           {/* Who and how much, in one glance. The amount is the fact the
               operator is confirming out loud on the call, so it carries the
               hierarchy. */}
@@ -226,77 +241,90 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
                 can be recorded. Send the consent request first.
               </AlertDescription>
             </Alert>
-          ) : (
+          ) : acceptedHeld ? (
             <p className="text-[12.5px] text-muted-foreground">
               Recorded against the customer&apos;s earlier confirmation.
+            </p>
+          ) : (
+            <p className="text-[12.5px] text-muted-foreground">
+              Customer consent is not complete — a new payment would need it.
             </p>
           )}
 
           {/* Money is already sitting in a gateway: what this recording
               means depends entirely on what the operator says it is. */}
           {held.length > 0 ? (
-            <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2.5 text-[12.5px] text-red-800 dark:text-red-200">
-              <p className="font-medium">
+            <Alert
+              variant="destructive"
+              className="text-[12.5px] text-red-800 dark:text-red-200"
+            >
+              <TriangleAlertIcon className="size-4" />
+              <AlertTitle>
                 {held.length > 1
-                  ? "Payments were already received on earlier links:"
-                  : "A payment was already received on an earlier link:"}
-              </p>
-              <ul className="space-y-0.5">
-                {held.map((a, i) => (
-                  <li key={`${a.sessionId ?? "held"}-${i}`}>
-                    {formatCurrency(a.amount, a.currency)} on{" "}
-                    {PaymentGatewayLabel[a.gateway] ?? a.gateway}{" "}
-                    {heldPaymentSource(a)}
-                  </li>
-                ))}
-              </ul>
-              <div
-                role="radiogroup"
-                aria-label="What are you recording?"
-                className="space-y-1.5 pt-0.5"
-              >
-                {held.map((a, i) => (
-                  <label
-                    key={`choice-${a.sessionId ?? "held"}-${i}`}
-                    className="flex items-start gap-2 font-medium"
-                  >
+                  ? "Payments were already received on earlier links"
+                  : "A payment was already received on an earlier link"}
+              </AlertTitle>
+              <AlertDescription className="space-y-2">
+                <ul className="space-y-0.5">
+                  {held.map((a, i) => (
+                    <li key={`${a.sessionId ?? "held"}-${i}`}>
+                      {`${formatCurrency(a.amount, a.currency)} on ${PaymentGatewayLabel[a.gateway] ?? a.gateway} ${heldPaymentSource(a)} · ${formatDateTime(a.createdAt)}`}
+                    </li>
+                  ))}
+                </ul>
+                <p className="font-medium">
+                  Do not take a new payment for money the customer has already
+                  paid. Choose what you are recording:
+                </p>
+                <div
+                  role="radiogroup"
+                  aria-label="What are you recording?"
+                  className="space-y-1.5 pt-0.5"
+                >
+                  {held.map((a, i) => (
+                    <label
+                      key={`choice-${a.sessionId ?? "held"}-${i}`}
+                      className="flex items-start gap-2 font-medium"
+                    >
+                      <input
+                        ref={i === 0 ? firstHeldChoiceRef : undefined}
+                        type="radio"
+                        name="held-choice"
+                        className="mt-0.5"
+                        checked={heldChoice === i}
+                        onChange={() => chooseHeld(i)}
+                        disabled={saving || !matchesOrderAmount(a)}
+                      />
+                      <span className={matchesOrderAmount(a) ? undefined : "opacity-70"}>
+                        {/* One string: the build drops the space before
+                            "is" when this is written as wrapped JSX text. */}
+                        {`The ${formatCurrency(a.amount, a.currency)} already received on ${PaymentGatewayLabel[a.gateway] ?? a.gateway} is this order's payment`}
+                        {matchesOrderAmount(a)
+                          ? held.length > 1
+                            ? " (refund the other one in its gateway)"
+                            : ""
+                          : ` — not possible: the order is now ${formatCurrency(order.pricing.amount, order.pricing.currency)}, so refund it`}
+                      </span>
+                    </label>
+                  ))}
+                  <label className="flex items-start gap-2 font-medium">
                     <input
                       type="radio"
                       name="held-choice"
                       className="mt-0.5"
-                      checked={heldChoice === i}
-                      onChange={() => chooseHeld(i)}
-                      disabled={saving || !matchesOrderAmount(a)}
+                      checked={heldChoice === "refunded"}
+                      onChange={() => chooseHeld("refunded")}
+                      disabled={saving}
                     />
-                    <span className={matchesOrderAmount(a) ? undefined : "opacity-70"}>
-                      {/* One string: the build drops the space before
-                          "is" when this is written as wrapped JSX text. */}
-                      {`The ${formatCurrency(a.amount, a.currency)} already received on ${PaymentGatewayLabel[a.gateway] ?? a.gateway} is this order's payment`}
-                      {matchesOrderAmount(a)
-                        ? held.length > 1
-                          ? " (refund the other one in its gateway)"
-                          : ""
-                        : ` — not possible: the order is now ${formatCurrency(order.pricing.amount, order.pricing.currency)}, so refund it`}
+                    <span>
+                      {held.length > 1
+                        ? "I refunded these payments and took a new payment"
+                        : "I refunded that payment and took a new payment"}
                     </span>
                   </label>
-                ))}
-                <label className="flex items-start gap-2 font-medium">
-                  <input
-                    type="radio"
-                    name="held-choice"
-                    className="mt-0.5"
-                    checked={heldChoice === "refunded"}
-                    onChange={() => chooseHeld("refunded")}
-                    disabled={saving}
-                  />
-                  <span>
-                    {held.length > 1
-                      ? "I refunded these payments and took a new payment"
-                      : "I refunded that payment and took a new payment"}
-                  </span>
-                </label>
-              </div>
-            </div>
+                </div>
+              </AlertDescription>
+            </Alert>
           ) : null}
 
           {/* The operational model, in one line, where the operator is about
@@ -313,9 +341,6 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
                   Payment is collected outside PayOps.
                 </span>{" "}
                 Never enter card numbers, CVV, PINs or other card data here.
-                {hasLiveLink
-                  ? " Recording this stands the customer's open payment link down so it cannot also be paid."
-                  : ""}
               </span>
             </p>
           ) : acceptedHeld ? (
@@ -326,6 +351,15 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
               Do not take a new payment — the method and reference below are
               filled in from{" "}
               {PaymentGatewayLabel[acceptedHeld.gateway] ?? acceptedHeld.gateway}.
+            </p>
+          ) : null}
+
+          {hasLiveLink ? (
+            <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-red-800 dark:text-red-200">
+              <span className="font-medium">
+                A payment link is still out with the customer.
+              </span>{" "}
+              Recording this stands it down so it cannot also be paid.
             </p>
           ) : null}
 
@@ -354,7 +388,10 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
               Payment reference <span className="text-destructive">*</span>
             </label>
             <Input
+              ref={referenceRef}
               id="manual-reference"
+              required
+              aria-required="true"
               value={reference}
               onChange={(e) => setReference(e.target.value)}
               disabled={saving}
@@ -384,13 +421,19 @@ export function ManualPaymentDialog({ order }: { order: OrderDTO }) {
               disabled={saving}
             />
           </div>
-        </div>
+        </DialogBody>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => setOpen(false)} disabled={saving}>
+          <Button
+            variant="ghost"
+            className="h-9"
+            onClick={() => onOpenChange(false)}
+            disabled={saving}
+          >
             Cancel
           </Button>
           <LoadingButton
+            className="h-9"
             onClick={onSubmit}
             loading={saving}
             loadingText="Recording"

@@ -66,8 +66,8 @@ export class ForbiddenError extends AppError {
 }
 
 export class NotFoundError extends AppError {
-  constructor(message = "Resource not found") {
-    super("NOT_FOUND", message, 404);
+  constructor(message = "Resource not found", details?: unknown) {
+    super("NOT_FOUND", message, 404, { details });
     this.name = "NotFoundError";
   }
 }

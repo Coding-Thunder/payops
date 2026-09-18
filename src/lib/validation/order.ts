@@ -305,14 +305,20 @@ export type ArchiveOrderInput = z.infer<typeof archiveOrderSchema>;
 
 const objectIdRegex = /^[a-f0-9]{24}$/i;
 
+/** Most records one bulk delete may name. */
+export const DELETE_MAX_SELECTION = 100;
+
 export const deleteByIdsSchema = z.object({
   ids: z
     .array(z.string().regex(objectIdRegex, "Invalid id"))
     .min(1, "Select at least one record")
-    .max(100, "Too many records selected"),
+    .max(DELETE_MAX_SELECTION, "Too many records selected"),
 });
 
 export type DeleteByIdsInput = z.infer<typeof deleteByIdsSchema>;
+
+/** Most orders one export may name; the button enforces it too. */
+export const EXPORT_MAX_SELECTION = 500;
 
 /**
  * Orders the operator ticked in the list, which is the ONLY thing an export
@@ -324,7 +330,10 @@ export const exportOrdersSchema = z.strictObject({
   ids: z
     .array(z.string().regex(objectIdRegex, "Invalid id"))
     .min(1, "Select at least one order to export")
-    .max(500, "Too many orders selected for one export — export them in batches of 500"),
+    .max(
+      EXPORT_MAX_SELECTION,
+      `Too many orders selected for one export — export them in batches of ${EXPORT_MAX_SELECTION}`,
+    ),
 });
 
 export type ExportOrdersInput = z.infer<typeof exportOrdersSchema>;

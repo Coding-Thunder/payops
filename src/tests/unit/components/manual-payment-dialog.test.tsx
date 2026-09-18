@@ -138,6 +138,37 @@ describe("ManualPaymentDialog: a compact recording form", () => {
     expect(screen.queryByText(/payment status/i)).toBeNull();
     expect(screen.getByRole("button", { name: /^record payment$/i })).toBeDisabled();
   });
+
+  const eligible = () =>
+    order([], 500, {
+      consent: { status: ConsentStatus.VERIFIED, collectionMethod: "MANUAL" },
+      risk: { flagged: false, flaggedNote: null },
+    });
+
+  it("opens on the reference — typing the auth code does not overwrite the method", async () => {
+    renderDialog(eligible());
+    const reference = screen.getByLabelText(/payment reference/i);
+    await waitFor(() => expect(reference).toHaveFocus());
+    expect(reference).toBeRequired();
+    expect(reference).toHaveAttribute("aria-required", "true");
+    expect(screen.getByLabelText(/payment method/i)).toHaveValue("Card terminal");
+  });
+
+  it("Cancel leaves the next opening blank", () => {
+    renderDialog(eligible());
+    fireEvent.change(screen.getByLabelText(/payment method/i), { target: { value: "Cash" } });
+    fireEvent.change(screen.getByLabelText(/payment reference/i), {
+      target: { value: "AUTH-OLD-CALL" },
+    });
+    fireEvent.change(screen.getByLabelText(/notes/i), { target: { value: "x" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    fireEvent.click(screen.getByRole("button", { name: /record manual payment/i }));
+    // Before: the previous call's reference came back, one click from recording.
+    expect(screen.getByLabelText(/payment reference/i)).toHaveValue("");
+    expect(screen.getByLabelText(/payment method/i)).toHaveValue("Card terminal");
+    expect(screen.getByLabelText(/notes/i)).toHaveValue("");
+  });
 });
 
 describe("ManualPaymentDialog with held payments", () => {
@@ -171,6 +202,34 @@ describe("ManualPaymentDialog with held payments", () => {
       heldPaymentReviewed: true,
       acceptHeldPayment: { sessionId: "PAYPAL-1", paymentIntentId: "CAP-1" },
     });
+  });
+
+  it("says not to take a new payment before any choice is made", async () => {
+    renderDialog(
+      order([attempt({})], 500, {
+        payment: {
+          gateway: "PAYPAL",
+          status: OrderStatus.FAILED,
+          paymentUrl: "https://pay.example/live",
+          paymentSessionId: "PAYPAL-1",
+          paymentIntentId: null,
+          paidAt: null,
+          failureReason: null,
+          attempts: [attempt({})],
+        },
+      }),
+    );
+    expect(
+      screen.getByText(/Do not take a new payment for money the customer has already paid/i),
+    ).toBeInTheDocument();
+    // Recording stands a live link down whatever is being recorded.
+    expect(
+      screen.getByText(/A payment link is still out with the customer/i),
+    ).toBeInTheDocument();
+    // No claim of an earlier confirmation until one is actually relied on.
+    expect(screen.queryByText(/earlier confirmation/i)).toBeNull();
+    // With money held, the choice is where focus starts.
+    await waitFor(() => expect(screen.getAllByRole("radio")[0]).toHaveFocus());
   });
 
   it("a new payment after a refund needs the customer's confirmation", () => {

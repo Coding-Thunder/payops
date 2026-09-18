@@ -5,6 +5,7 @@ import { DownloadIcon } from "lucide-react";
 
 import { LoadingButton } from "@/components/ui/loading-button";
 import { toast } from "@/components/ui/sonner";
+import { EXPORT_MAX_SELECTION } from "@/lib/validation";
 
 import { useOrderSelection } from "./order-selection";
 
@@ -18,12 +19,25 @@ function filenameFrom(disposition: string | null): string {
   return match?.[1] ?? "orders.xlsx";
 }
 
-async function errorMessage(res: Response): Promise<string> {
+interface ExportFailure {
+  message: string;
+  /** Selected orders the server could not export (deleted, or out of scope). */
+  unavailableIds: string[];
+}
+
+async function readFailure(res: Response): Promise<ExportFailure> {
   if (res.status === 401) {
-    return "Your session has ended. Sign in again (reload the page) to export.";
+    return {
+      message: "Your session has ended. Sign in again (reload the page) to export.",
+      unavailableIds: [],
+    };
   }
   let body: {
-    error?: { code?: string; message?: string; details?: { retryAfterSec?: number } };
+    error?: {
+      code?: string;
+      message?: string;
+      details?: { retryAfterSec?: number; unavailableIds?: unknown };
+    };
   } | null = null;
   try {
     body = await res.json();
@@ -32,12 +46,25 @@ async function errorMessage(res: Response): Promise<string> {
   }
   if (res.status === 429) {
     const wait = body?.error?.details?.retryAfterSec;
-    return `Too many exports in a row. Try again${wait ? ` in ${wait} seconds` : " in a minute"}.`;
+    return {
+      message: `Too many exports in a row. Try again${wait ? ` in ${wait} seconds` : " in a minute"}.`,
+      unavailableIds: [],
+    };
   }
   if (res.status >= 500) {
-    return "The export could not be created because of a server problem. Nothing was downloaded — try again in a moment.";
+    return {
+      message:
+        "The export could not be created because of a server problem. Nothing was downloaded — try again in a moment.",
+      unavailableIds: [],
+    };
   }
-  return body?.error?.message ?? "The export could not be created. Please try again.";
+  const unavailable = body?.error?.details?.unavailableIds;
+  return {
+    message: body?.error?.message ?? "The export could not be created. Please try again.",
+    unavailableIds: Array.isArray(unavailable)
+      ? unavailable.filter((id): id is string => typeof id === "string")
+      : [],
+  };
 }
 
 /**
@@ -51,21 +78,32 @@ async function errorMessage(res: Response): Promise<string> {
  * exports three orders or four thousand.
  */
 export function ExportOrdersButton() {
-  const { selected } = useOrderSelection();
+  const { selected, setMany } = useOrderSelection();
   const ids = useMemo(() => Array.from(selected), [selected]);
   const [exporting, setExporting] = useState(false);
   // A second click before the first render lands must not start a second
   // download.
   const busyRef = useRef(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   const count = ids.length;
+  const overCap = count > EXPORT_MAX_SELECTION;
   const label =
     count === 0 ? "Export XLSX" : `Export ${count} order${count === 1 ? "" : "s"}`;
+  const hint =
+    count === 0
+      ? "Select orders below to export them"
+      : overCap
+        ? `Export up to ${EXPORT_MAX_SELECTION} orders at a time — ${count} are selected`
+        : null;
 
   async function onExport() {
-    if (busyRef.current || ids.length === 0) return;
+    if (busyRef.current || ids.length === 0 || overCap) return;
     busyRef.current = true;
     setExporting(true);
+    // A failure from the previous try must not sit on screen while this one
+    // runs — it may well succeed.
+    toast.dismiss(EXPORT_TOAST);
     try {
       const res = await fetch("/api/orders/export", {
         method: "POST",
@@ -75,7 +113,20 @@ export function ExportOrdersButton() {
       });
       const type = res.headers.get("content-type") ?? "";
       if (!res.ok || !type.startsWith(XLSX_TYPE)) {
-        toast.error(await errorMessage(res), { id: EXPORT_TOAST });
+        const failure = await readFailure(res);
+        if (failure.unavailableIds.length > 0) {
+          // They have no row to untick by hand (deleted, or no longer this
+          // operator's), so the selection drops them and says so. Nothing
+          // was downloaded; the operator exports the rest deliberately.
+          setMany(failure.unavailableIds, false);
+          const n = failure.unavailableIds.length;
+          toast.error(
+            `${failure.message} ${n === 1 ? "It has" : "They have"} been removed from your selection — export again for the rest.`,
+            { id: EXPORT_TOAST },
+          );
+          return;
+        }
+        toast.error(failure.message, { id: EXPORT_TOAST });
         return;
       }
       const blob = await res.blob();
@@ -104,35 +155,38 @@ export function ExportOrdersButton() {
     } finally {
       busyRef.current = false;
       setExporting(false);
+      // Disabling the button while it worked took focus away; give it back
+      // so a keyboard or screen-reader user keeps their place.
+      window.setTimeout(() => {
+        if (document.activeElement === document.body) buttonRef.current?.focus();
+      }, 0);
     }
   }
 
   return (
     <>
       <LoadingButton
+        ref={buttonRef}
         type="button"
         variant="outline"
         onClick={onExport}
         loading={exporting}
         loadingText="Exporting"
         icon={<DownloadIcon className="size-4" />}
-        disabled={count === 0}
-        title={count === 0 ? "Select orders below to export them" : undefined}
+        disabled={count === 0 || overCap}
+        title={hint ?? undefined}
         aria-describedby="orders-export-hint"
       >
         {label}
       </LoadingButton>
-      {/* With nothing selected the reason is on screen, not only in a
-          tooltip a disabled button may never show. */}
+      {/* When the button cannot be used, the reason is on screen — not only
+          in a tooltip a disabled button may never show. */}
       <span
         id="orders-export-hint"
-        className={
-          count === 0 ? "order-first text-[12px] text-muted-foreground" : "sr-only"
-        }
+        className={hint ? "order-first text-[12px] text-muted-foreground" : "sr-only"}
       >
-        {count === 0
-          ? "Select orders below to export them"
-          : `Downloads the ${count} selected order${count === 1 ? "" : "s"} as an Excel workbook.`}
+        {hint ??
+          `Downloads the ${count} selected order${count === 1 ? "" : "s"} as an Excel workbook.`}
       </span>
     </>
   );
