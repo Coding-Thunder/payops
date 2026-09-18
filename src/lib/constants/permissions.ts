@@ -76,7 +76,9 @@ const ADMIN_ONLY_PERMISSIONS: readonly Permission[] = [
   Permission.ORDER_VIEW_ALL,
   Permission.ORDER_UPDATE,
   Permission.ORDER_ARCHIVE,
-  Permission.ORDER_DELETE,
+  // ORDER_DELETE intentionally NOT granted to ADMIN — deleting orders is a
+  // hard, unrecoverable removal of payment records, so like AUDIT_DELETE it
+  // is SUPER_ADMIN only. Everyone else archives.
   Permission.ANALYTICS_VIEW,
   Permission.SETTINGS_VIEW,
   Permission.SETTINGS_UPDATE,

@@ -64,6 +64,20 @@ describe("permissions matrix", () => {
     });
   });
 
+  describe("deleting orders", () => {
+    // A hard, unrecoverable delete of payment records: SUPER_ADMIN only.
+    // ADMIN keeps archiving, which is how everyone else removes an order.
+    it("is SUPER_ADMIN only", () => {
+      expect(roleHasPermission(UserRole.SUPER_ADMIN, Permission.ORDER_DELETE)).toBe(true);
+      expect(roleHasPermission(UserRole.ADMIN, Permission.ORDER_DELETE)).toBe(false);
+      expect(roleHasPermission(UserRole.STAFF, Permission.ORDER_DELETE)).toBe(false);
+    });
+
+    it("leaves ADMIN able to archive", () => {
+      expect(roleHasPermission(UserRole.ADMIN, Permission.ORDER_ARCHIVE)).toBe(true);
+    });
+  });
+
   describe("SUPER_ADMIN", () => {
     it("has every permission in the registry", () => {
       for (const p of Object.values(Permission)) {

@@ -1444,6 +1444,11 @@ export async function deleteOrders(
   ids: string[],
   ctx: OrderContext,
 ): Promise<{ deleted: number; blockedPaidIds: string[] }> {
+  // The route checks this too; checked here as well so no other caller can
+  // reach a hard delete without it — and before anything is read or removed.
+  if (!roleHasPermission(ctx.actor.role, Permission.ORDER_DELETE)) {
+    throw new ForbiddenError("Only a super admin can delete orders");
+  }
   await connectMongo();
   const valid = ids.filter((id) => Types.ObjectId.isValid(id));
   if (valid.length === 0) return { deleted: 0, blockedPaidIds: [] };

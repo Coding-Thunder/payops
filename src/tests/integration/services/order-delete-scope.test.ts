@@ -14,15 +14,18 @@ import { validCreateOrderInput } from "@/tests/fixtures/order-input.fixture";
 
 /**
  * Bulk delete is a hard delete, so it must reach only the caller's own
- * organization. It used to look orders up by id alone: an admin who knew
- * another organization's order id could delete it.
+ * organization — it used to look orders up by id alone, so anyone allowed
+ * to delete could delete another organization's order — and only a
+ * SUPER_ADMIN may do it at all.
  */
 
 const { createOrder, deleteOrders } = await import("@/server/services/order.service");
 
+const superAdmin = actorFor(UserRole.SUPER_ADMIN);
 const admin = actorFor(UserRole.ADMIN);
 const staff = actorFor(UserRole.STAFF);
-const ctx = { actor: admin, request: null };
+/** Who deletes: the only role allowed to. */
+const ctx = { actor: superAdmin, request: null };
 
 let headersMock: Awaited<ReturnType<typeof mockNextHeaders>>;
 let sessionMock: Awaited<ReturnType<typeof mockSession>> | null = null;
@@ -32,7 +35,7 @@ beforeEach(async () => {
   await createSettings();
   await seedTestOrganization();
   headersMock = await mockNextHeaders();
-  sessionMock = await mockSession(admin);
+  sessionMock = await mockSession(superAdmin);
 });
 afterEach(async () => {
   await headersMock.restore();
@@ -41,7 +44,7 @@ afterEach(async () => {
 });
 
 async function makeOrder() {
-  const { order } = await createOrder(validCreateOrderInput(), ctx);
+  const { order } = await createOrder(validCreateOrderInput(), { actor: admin, request: null });
   return order;
 }
 
@@ -105,9 +108,43 @@ describe("deleteOrders stays inside the caller's organization", () => {
   });
 });
 
+describe("only a SUPER_ADMIN can delete orders", () => {
+  it.each([
+    ["ADMIN", admin],
+    ["STAFF", staff],
+  ])("the service refuses %s before touching anything", async (_role, actor) => {
+    const order = await makeOrder();
+    await expect(deleteOrders([order.id], { actor, request: null })).rejects.toThrow(
+      /only a super admin can delete orders/i,
+    );
+    expect(await exists(order.id)).toBe(true);
+  });
+});
+
 describe("POST /api/orders/delete", () => {
   const post = (ids: string[]) =>
     deleteRoute(buildRequest("/api/orders/delete", { method: "POST", body: { ids } }));
+
+  async function as(user: typeof admin) {
+    sessionMock?.restore();
+    sessionMock = await mockSession(user);
+  }
+
+  it("ADMIN gets 403 and nothing is deleted — own, foreign or paid", async () => {
+    const mine = await makeOrder();
+    const paid = await makeOrder();
+    const theirs = await foreignOrder();
+    await Order.updateOne({ _id: paid.id }, { $set: { status: OrderStatus.PAID } });
+    await as(admin);
+    for (const ids of [[mine.id], [mine.id, paid.id], [mine.id, theirs.id]]) {
+      const { status, body } = await jsonBody(await post(ids));
+      expect(status).toBe(403);
+      expect((body as { error: { code: string } }).error.code).toBe("FORBIDDEN");
+    }
+    expect(await exists(mine.id)).toBe(true);
+    expect(await exists(paid.id)).toBe(true);
+    expect(await exists(theirs.id)).toBe(true);
+  });
 
   it("rejects another organization's id with 404 and deletes nothing", async () => {
     const theirs = await foreignOrder();
@@ -125,12 +162,24 @@ describe("POST /api/orders/delete", () => {
     expect(await exists(mine.id)).toBe(false);
   });
 
-  it("keeps the permission rule: STAFF cannot delete, even their own order", async () => {
-    const order = await makeOrder();
-    sessionMock?.restore();
-    sessionMock = await mockSession(staff);
-    const { status } = await jsonBody(await post([order.id]));
+  it("STAFF gets 403 and nothing is deleted, even for a mixed selection", async () => {
+    const a = await makeOrder();
+    const b = await makeOrder();
+    await as(staff);
+    const { status } = await jsonBody(await post([a.id, b.id]));
     expect(status).toBe(403);
-    expect(await exists(order.id)).toBe(true);
+    expect(await exists(a.id)).toBe(true);
+    expect(await exists(b.id)).toBe(true);
+  });
+
+  it("SUPER_ADMIN: a paid order is still kept", async () => {
+    const paid = await makeOrder();
+    await Order.updateOne({ _id: paid.id }, { $set: { status: OrderStatus.PAID } });
+    const { status, body } = await jsonBody(await post([paid.id]));
+    expect(status).toBe(409);
+    expect((body as { error: { message: string } }).error.message).toMatch(
+      /Paid orders cannot be deleted/,
+    );
+    expect(await exists(paid.id)).toBe(true);
   });
 });
