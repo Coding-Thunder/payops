@@ -16,6 +16,7 @@ import { orderQueryKey } from "@/hooks/use-order-query";
 import { formatCurrency } from "@/lib/format";
 import { PaymentGatewayLabel } from "@/lib/constants/labels";
 import { outstandingHeldPayments } from "@/lib/payment-state";
+import { PAID_FEATURES_ENABLED } from "@/lib/paid-features";
 import type { OrderDTO } from "@/types";
 
 interface RiskFlagDialogProps {
@@ -45,7 +46,9 @@ export function RiskFlagDialog({
   // Clearing the flag closes out any held payment as "not this order's
   // payment" and re-opens collection. That is only right once the money has
   // gone back to the customer, so the operator says so first.
-  const held = outstandingHeldPayments(order);
+  // Held-payment reconciliation is a paid feature; without it this dialog is
+  // the flag/unflag it has always been.
+  const held = PAID_FEATURES_ENABLED ? outstandingHeldPayments(order) : [];
   const [refunded, setRefunded] = useState(false);
 
   const isFlagged = order.risk.flagged;

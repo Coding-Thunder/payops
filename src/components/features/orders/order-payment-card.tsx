@@ -38,6 +38,7 @@ import {
   isSessionSuperseded,
   outstandingHeldPayments,
 } from "@/lib/payment-state";
+import { PAID_FEATURES_ENABLED } from "@/lib/paid-features";
 import type { OrderDTO } from "@/types";
 
 interface OrderPaymentCardProps {
@@ -80,8 +81,13 @@ export function OrderPaymentCard({
   // The latest request asked for manual collection: nothing is charged
   // online, whatever link the order once had.
   const manualRequested =
-    !isPaid && order.consent?.collectionMethod === "MANUAL";
+    PAID_FEATURES_ENABLED &&
+    !isPaid &&
+    order.consent?.collectionMethod === "MANUAL";
+  // Money held is still money: the guards that stop a second charge use the
+  // real answer, while the reconciliation UI it drives is a paid feature.
   const heldPayment = outstandingHeldPayments(order).length > 0;
+  const showHeld = PAID_FEATURES_ENABLED && heldPayment;
   const stoodDown =
     order.status === OrderStatus.FAILED &&
     isOperatorSupersede(order.payment.failureReason);
@@ -122,7 +128,7 @@ export function OrderPaymentCard({
           <CardDescription>
             {isPaid
               ? `Settled ${formatRelative(order.payment.paidAt)}`
-              : heldPayment
+              : showHeld
                 ? "Payment already received on an earlier link — reconcile it"
               : manualRequested
                 ? "Manual payment requested"
@@ -272,7 +278,7 @@ export function OrderPaymentCard({
           </div>
         </div>
 
-        {order.payment.failureReason && !heldPayment ? (
+        {order.payment.failureReason && !showHeld ? (
           isOperatorSupersede(order.payment.failureReason) ? (
             // Stood down by an operator action, not declined by the gateway.
             <Alert>
@@ -284,7 +290,7 @@ export function OrderPaymentCard({
               <AlertDescription>
                 {manualRequested
                   ? "A manual payment was requested instead, so the customer can no longer pay online."
-                  : `${order.payment.failureReason}. It can no longer be paid — generate a new link or record a manual payment.`}
+                  : `${order.payment.failureReason}. It can no longer be paid — ${PAID_FEATURES_ENABLED ? "generate a new link or record a manual payment" : "generate a new link"}.`}
               </AlertDescription>
             </Alert>
           ) : (
@@ -295,7 +301,7 @@ export function OrderPaymentCard({
           )
         ) : null}
 
-        {attemptRows(order).length > 0 ? (
+        {PAID_FEATURES_ENABLED && attemptRows(order).length > 0 ? (
           // Stripe declined, then PayPal — the operator needs the history in
           // front of them, not only in the audit log.
           <details className="rounded-md border border-border p-3 text-sm">
@@ -377,7 +383,7 @@ export function OrderPaymentCard({
         {/* Stripe declined → offer PayPal on the SAME order. Hidden once the
             order is settled: a second payable link against a paid order is
             precisely the double charge this must not create. */}
-        {!isPaid && canManagePayment ? (
+        {PAID_FEATURES_ENABLED && !isPaid && canManagePayment ? (
           <div className="flex flex-wrap items-center gap-2 pt-1">
             {/* No gateway to switch away from until a link has existed. */}
             {/* While a payment is held, no new link: only reconciliation. */}

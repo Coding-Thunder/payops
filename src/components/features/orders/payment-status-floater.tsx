@@ -13,6 +13,7 @@ import { DomainEventType } from "@/lib/constants/events";
 import { ConsentStatus, OrderStatus } from "@/lib/constants/enums";
 import { hasCustomerConsent } from "@/lib/consent";
 import { isOperatorSupersede, outstandingHeldPayments } from "@/lib/payment-state";
+import { PAID_FEATURES_ENABLED } from "@/lib/paid-features";
 import { cn } from "@/lib/utils";
 import type { OrderDTO } from "@/types";
 
@@ -43,14 +44,19 @@ const TONE_ICONS: Record<FloaterDescriptor["tone"], React.ElementType> = {
 };
 
 function describeOrder(order: OrderDTO, canRecordPayment: boolean): FloaterDescriptor {
-  if (order.status !== OrderStatus.PAID && outstandingHeldPayments(order).length > 0) {
+  if (
+    PAID_FEATURES_ENABLED &&
+    order.status !== OrderStatus.PAID &&
+    outstandingHeldPayments(order).length > 0
+  ) {
     return {
       tone: "failed",
       label: "Payment already received on an earlier link",
       detail: "Do not charge the customer again until it is reconciled.",
     };
   }
-  const manual = order.consent?.collectionMethod === "MANUAL";
+  const manual =
+    PAID_FEATURES_ENABLED && order.consent?.collectionMethod === "MANUAL";
   if (manual && order.status !== OrderStatus.PAID) {
     return {
       tone: "pending",

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { Permission } from "@/lib/constants/permissions";
+import { assertPaidFeaturesEnabled } from "@/lib/paid-features";
 import { exportOrdersSchema } from "@/lib/validation";
 import { getRequestContext } from "@/server/api/request-context";
 import { withApi } from "@/server/api/respond";
@@ -36,6 +37,8 @@ export const dynamic = "force-dynamic";
 export const POST = withApi(
   async (req: NextRequest) => {
     const actor = await requirePermission(Permission.ORDER_VIEW_OWN);
+    // A paid feature, switched off until paid for: see src/lib/paid-features.ts.
+    assertPaidFeaturesEnabled();
     const body = await req.json().catch(() => ({}));
     const selection = exportOrdersSchema.parse(body);
     const ctx = await getRequestContext();

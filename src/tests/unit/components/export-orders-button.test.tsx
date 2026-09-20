@@ -9,6 +9,10 @@ const toast = vi.hoisted(() => ({
 }));
 vi.mock("@/components/ui/sonner", () => ({ toast }));
 
+// These exercise paid features, which are disabled by default — see
+// src/lib/paid-features.ts. Switched on for this file.
+vi.mock("@/lib/paid-features", () => import("@/tests/utils/paid-features-on"));
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn(), replace: vi.fn(), push: vi.fn() }),
   useSearchParams: () => new URLSearchParams("status=PAID&q=ada&page=3"),

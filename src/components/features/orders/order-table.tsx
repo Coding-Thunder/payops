@@ -39,6 +39,7 @@ import { ConsentStatus, OrderStatus } from "@/lib/constants/enums";
 import { api, ApiClientError } from "@/lib/api-client";
 import { DELETE_MAX_SELECTION } from "@/lib/validation";
 import { outstandingHeldPayments } from "@/lib/payment-state";
+import { PAID_FEATURES_ENABLED } from "@/lib/paid-features";
 import { useOrderSelection } from "./order-selection";
 import {
   formatCurrency,
@@ -103,7 +104,15 @@ export function OrderTable({
   // Every row can be ticked, paid ones included: a paid order is precisely
   // what an operator exports charging data for. Delete still refuses them,
   // server-side, and says so.
-  const pageIds = useMemo(() => items.map((o) => o.id), [items]);
+  // The rows that can be ticked: all of them for Export, or — with the paid
+  // features off — only the ones Delete can act on (never a paid order).
+  const pageIds = useMemo(
+    () =>
+      items
+        .filter((o) => PAID_FEATURES_ENABLED || o.status !== OrderStatus.PAID)
+        .map((o) => o.id),
+    [items],
+  );
   const selectedOnPage = pageIds.filter((id) => selected.has(id)).length;
   const allSelected = pageIds.length > 0 && selectedOnPage === pageIds.length;
   const someSelected = selectedOnPage > 0 && !allSelected;
@@ -290,6 +299,10 @@ export function OrderTable({
                     <Checkbox
                       checked={isSelected}
                       onCheckedChange={(v) => toggleOne(o.id, v === true)}
+                      // A paid order is selectable for Export (a paid
+                      // feature). Without it, selection serves Delete alone,
+                      // which never removes a paid order — as before.
+                      disabled={!PAID_FEATURES_ENABLED && isPaid}
                       aria-label={`Select order ${o.orderNumber}`}
                     />
                   </TableCell>
@@ -372,7 +385,7 @@ export function OrderTable({
                     ) : null}
                     {/* Money taken that the order did not accept: whoever
                         picks this order up must not collect again. */}
-                    {outstandingHeldPayments(o).length > 0 ? (
+                    {PAID_FEATURES_ENABLED && outstandingHeldPayments(o).length > 0 ? (
                       <Badge variant="destructive">Payment held</Badge>
                     ) : null}
                   </div>

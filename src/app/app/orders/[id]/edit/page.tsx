@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { Button } from "@/components/ui/button";
 import { RecordState } from "@/lib/constants/enums";
 import { Permission } from "@/lib/constants/permissions";
+import { PAID_FEATURES_ENABLED } from "@/lib/paid-features";
 import { ForbiddenError, NotFoundError } from "@/lib/errors";
 import { requirePermission } from "@/server/auth/session";
 import { getOrderById } from "@/server/services/order.service";
@@ -31,6 +32,9 @@ interface EditOrderRouteProps {
  */
 export default async function EditOrderRoute({ params }: EditOrderRouteProps) {
   const { id } = await params;
+  // Edit order (MCO changes) is a paid feature, switched off until paid for
+  // (see src/lib/paid-features.ts): the order page is where it leads instead.
+  if (!PAID_FEATURES_ENABLED) redirect(`/app/orders/${id}`);
   // Someone who may view the order but not change it (STAFF) is sent to the
   // order itself rather than shown an error page.
   let user;

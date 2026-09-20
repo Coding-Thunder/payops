@@ -10,6 +10,7 @@ import { OrderTable } from "@/components/features/orders/order-table";
 import { Pagination } from "@/components/features/orders/pagination";
 import { PageHeader } from "@/components/common/page-header";
 import { Permission, roleHasPermission } from "@/lib/constants/permissions";
+import { PAID_FEATURES_ENABLED } from "@/lib/paid-features";
 import { listOrdersQuerySchema } from "@/lib/validation";
 import { requirePermission } from "@/server/auth/session";
 import { listOrders } from "@/server/services/order.service";
@@ -51,7 +52,8 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
           }
           actions={
             <div className="flex flex-wrap items-center gap-2">
-              <ExportOrdersButton />
+              {/* XLSX export is a paid feature (src/lib/paid-features.ts). */}
+              {PAID_FEATURES_ENABLED ? <ExportOrdersButton /> : null}
               <Button asChild>
                 <Link href="/app/orders/create">
                   <PlusIcon className="size-4" />
@@ -66,7 +68,9 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
         <OrderTable
           items={data.items}
           canDelete={canDelete}
-          selectable
+          // Tick boxes serve Export (a paid feature) and Delete. With the
+          // paid features off they are back to serving Delete alone.
+          selectable={PAID_FEATURES_ENABLED || canDelete}
           filtered={Boolean(
             params.q ||
             params.status ||

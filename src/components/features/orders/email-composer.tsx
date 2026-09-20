@@ -37,6 +37,7 @@ import { cn } from "@/lib/utils";
 import { customerEmail as customerEmailSchema } from "@/lib/validation";
 import { hasCustomerConsent } from "@/lib/consent";
 import { isOperatorSupersede, outstandingHeldPayments } from "@/lib/payment-state";
+import { PAID_FEATURES_ENABLED } from "@/lib/paid-features";
 import type { OrderDTO } from "@/types";
 
 interface EmailComposerProps {
@@ -139,6 +140,7 @@ export function EmailComposer({
   // from its order page must not greet the operator with "Generate a Stripe
   // link". A live link on the order means a gateway send is what is pending.
   const [manualCollection, setManualCollection] = React.useState(() => {
+    if (!PAID_FEATURES_ENABLED) return false;
     if (order.consent?.collectionMethod !== "MANUAL") return false;
     // A link generated AFTER the manual request is the operator's newer
     // decision; otherwise the manual request stands.
@@ -251,7 +253,7 @@ export function EmailComposer({
       : null;
   // Moving an order to another gateway is an admin action on the server
   // (ORDER_UPDATE), the same permission as editing the order.
-  const canSwitchGateway = canEditOrder && !isPaid;
+  const canSwitchGateway = PAID_FEATURES_ENABLED && canEditOrder && !isPaid;
   const switchTarget =
     switchTo && pinnedGateway && switchTo !== pinnedGateway && canSwitchGateway
       ? switchTo
@@ -269,6 +271,9 @@ export function EmailComposer({
     order.consent?.collectionMethod === (manualCollection ? "MANUAL" : "GATEWAY");
   const customerConfirmed = hasCustomerConsent(order.consent?.status);
   const held = outstandingHeldPayments(order);
+  // The warning is paid UI (reconciliation); the disabled Send below is the
+  // safety guard the server enforces either way.
+  const showHeld = PAID_FEATURES_ENABLED && held.length > 0;
   const deadLinkReason =
     order.payment.failureReason && !isOperatorSupersede(order.payment.failureReason)
       ? order.payment.failureReason
@@ -515,7 +520,7 @@ export function EmailComposer({
                 {order.orderNumber}
               </p>
             </div>
-            {canEditOrder ? (
+            {PAID_FEATURES_ENABLED && canEditOrder ? (
               <>
             <Button asChild variant="outline" size="sm">
               <Link
@@ -725,7 +730,7 @@ export function EmailComposer({
                   gateway because the domain genuinely separates them: it is
                   not in `SUPPORTED`, `initiatePayment` refuses it, and it
                   settles money rather than routing it. */}
-              {held.length > 0 ? (
+              {showHeld ? (
                 <Alert variant="destructive" className="text-red-800 dark:text-red-200">
                   <AlertTitle>Payment already received on an earlier link</AlertTitle>
                   <AlertDescription>
@@ -756,6 +761,13 @@ export function EmailComposer({
                       ? (GATEWAY_LABEL[order.payment.gateway] ??
                         order.payment.gateway)
                       : "—"}
+                  </div>
+                ) : !PAID_FEATURES_ENABLED && pinnedGateway ? (
+                  // Switching gateways is a paid feature. Without it the
+                  // order stays on the gateway its link was made on, and the
+                  // selector shows that rather than offering a choice.
+                  <div className="rounded-md border border-input bg-muted/40 px-3 py-2 text-sm">
+                    {GATEWAY_LABEL[pinnedGateway] ?? pinnedGateway}
                   </div>
                 ) : providers.length === 0 ? (
                   <div className="rounded-md border border-input bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
@@ -832,6 +844,7 @@ export function EmailComposer({
                         ) : null}
                       </label>
                     ))}
+                    {PAID_FEATURES_ENABLED ? (
                     <label
                       className="flex cursor-pointer items-center gap-2.5 rounded-md border border-input px-3 py-2 text-sm hover:bg-muted/40"
                     >
@@ -851,6 +864,7 @@ export function EmailComposer({
                         No payment link
                       </span>
                     </label>
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -931,7 +945,13 @@ export function EmailComposer({
                     current amount, so a new link or a resend never uses an
                     older figure. */}
                 <SummaryRow
-                  label={isPaid ? "Amount (MCO)" : "Charging now (MCO)"}
+                  label={
+                    PAID_FEATURES_ENABLED
+                      ? isPaid
+                        ? "Amount (MCO)"
+                        : "Charging now (MCO)"
+                      : "Amount"
+                  }
                   value={formatCurrency(order.pricing.amount, order.pricing.currency)}
                   strong
                 />

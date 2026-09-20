@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { render } from "@react-email/render";
 
 import { Permission } from "@/lib/constants/permissions";
+import { assertPaidFeaturesEnabled } from "@/lib/paid-features";
 import { sendPaymentRequestSchema } from "@/lib/validation";
 import { jsonOk, withApi } from "@/server/api/respond";
 import { requirePermission } from "@/server/auth/session";
@@ -34,6 +35,9 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
   const input = sendPaymentRequestSchema.parse(body);
+  // Previewing a manual request belongs to the manual payment feature,
+  // switched off until paid for (see src/lib/paid-features.ts).
+  if (input.collection === "MANUAL") assertPaidFeaturesEnabled();
 
   const order = await getOrderById(id, { actor });
   // Overlay any edited customer name into the email's "Hi <name>"

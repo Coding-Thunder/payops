@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OrderStatus, UserRole } from "@/lib/constants/enums";
 import { POST as sendRoute } from "@/app/api/orders/[id]/send-payment-request/route";
@@ -12,6 +12,10 @@ import { ensureMongo } from "@/tests/utils/db";
 import { seedTestOrganization } from "@/tests/utils/organization";
 import { validCreateOrderInput } from "@/tests/fixtures/order-input.fixture";
 import { NextRequest } from "next/server";
+
+// These exercise paid features, which are disabled by default — see
+// src/lib/paid-features.ts. Switched on for this file.
+vi.mock("@/lib/paid-features", () => import("@/tests/utils/paid-features-on"));
 
 /**
  * Route-boundary regressions from the operator QA pass.

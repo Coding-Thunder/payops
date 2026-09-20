@@ -37,6 +37,7 @@ import { listAtRiskOrders } from "@/server/services/order.service";
 import type { OrderDTO } from "@/types";
 import { PaymentGatewayLabel } from "@/lib/constants/labels";
 import { outstandingHeldPayments } from "@/lib/payment-state";
+import { PAID_FEATURES_ENABLED } from "@/lib/paid-features";
 
 export const metadata = { title: "Disputes" };
 export const dynamic = "force-dynamic";
@@ -50,7 +51,10 @@ function reasonsFor(order: OrderDTO): RiskReason[] {
   const out: RiskReason[] = [];
   // A payment the order did not accept is raised by the system, not by an
   // operator, and it is the reason most likely to mean money is owed back.
-  const held = outstandingHeldPayments(order).length > 0;
+  // Naming a held payment belongs to the paid reconciliation feature; the
+  // order still appears here, flagged, either way.
+  const held =
+    PAID_FEATURES_ENABLED && outstandingHeldPayments(order).length > 0;
   if (held) {
     out.push({ label: "Payment held for review", tone: "destructive" });
   } else if (order.risk.flagged) {

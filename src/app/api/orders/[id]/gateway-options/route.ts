@@ -1,4 +1,5 @@
 import { Permission } from "@/lib/constants/permissions";
+import { assertPaidFeaturesEnabled } from "@/lib/paid-features";
 import { jsonOk, withApi } from "@/server/api/respond";
 import { requirePermission } from "@/server/auth/session";
 import { getOrderGatewayOptions } from "@/server/services/order.service";
@@ -20,6 +21,8 @@ interface Params {
  */
 export const GET = withApi(async (_req, { params }: Params) => {
   await requirePermission(Permission.ORDER_UPDATE);
+  // A paid feature, switched off until paid for: see src/lib/paid-features.ts.
+  assertPaidFeaturesEnabled();
   const { id } = await params;
   return jsonOk(await getOrderGatewayOptions(id));
 });

@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 
 import { Permission } from "@/lib/constants/permissions";
+import { assertPaidFeaturesEnabled } from "@/lib/paid-features";
 import { sendPaymentRequestSchema } from "@/lib/validation";
 import { getRequestContext } from "@/server/api/request-context";
 import { jsonOk, withApi } from "@/server/api/respond";
@@ -48,6 +49,10 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
   const input = sendPaymentRequestSchema.parse(body);
+  // Manual collection is a paid feature, switched off until paid for (see
+  // src/lib/paid-features.ts). The gateway send is the original product and
+  // is untouched.
+  if (input.collection === "MANUAL") assertPaidFeaturesEnabled();
   const reqCtx = await getRequestContext();
 
   // Every accepted call emails the customer. The composer latches its own

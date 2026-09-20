@@ -1,6 +1,7 @@
 import { type NextRequest } from "next/server";
 
 import { Permission } from "@/lib/constants/permissions";
+import { assertPaidFeaturesEnabled } from "@/lib/paid-features";
 import { ConflictError } from "@/lib/errors";
 import { modifyOrderSchema } from "@/lib/validation";
 import { getRequestContext } from "@/server/api/request-context";
@@ -27,6 +28,8 @@ interface Params {
 export const POST = withApi(
   async (req: NextRequest, { params }: Params) => {
     const actor = await requirePermission(Permission.ORDER_UPDATE);
+    // A paid feature, switched off until paid for: see src/lib/paid-features.ts.
+    assertPaidFeaturesEnabled();
     const { id } = await params;
     const body = modifyOrderSchema.parse(await req.json());
     // The edit page always says which version it was filled from. A request

@@ -48,6 +48,7 @@ import {
 import { ConsentStatus, OrderStatus, RecordState } from "@/lib/constants/enums";
 import type { UserRole } from "@/lib/constants/enums";
 import { Permission, roleHasPermission } from "@/lib/constants/permissions";
+import { PAID_FEATURES_ENABLED } from "@/lib/paid-features";
 
 interface OrderDetailPageContentProps {
   orderId: string;
@@ -139,6 +140,10 @@ export function OrderDetailPageContent({
   const canEditOrder =
     roleHasPermission(role, Permission.ORDER_UPDATE) &&
     order.state !== RecordState.ARCHIVED;
+  // Edit order, manual collection and held-payment reconciliation are paid
+  // features, switched off until paid for (see src/lib/paid-features.ts).
+  // With them off this page is the one the product had before them.
+  const canEditMco = PAID_FEATURES_ENABLED && canEditOrder;
 
   const needsPaymentLink = order.status === OrderStatus.NOT_INITIATED;
   // A request sent for manual collection leaves the order NOT_INITIATED on
@@ -150,6 +155,7 @@ export function OrderDetailPageContent({
   // Including while an earlier gateway link is still live: the operator
   // chose Manual, and the page must say so rather than "payment in progress".
   const manualRequested =
+    PAID_FEATURES_ENABLED &&
     order.consent.collectionMethod === "MANUAL" &&
     order.status !== OrderStatus.PAID;
   const liveLinkAlongsideManual =
@@ -171,7 +177,7 @@ export function OrderDetailPageContent({
     manualRequested && order.consent.status === ConsentStatus.NOT_REQUESTED;
   // Money the gateway took that the order did not accept. Until it is
   // reconciled, collecting again risks charging the customer twice.
-  const held = outstandingHeldPayments(order);
+  const held = PAID_FEATURES_ENABLED ? outstandingHeldPayments(order) : [];
   // PayOps stopped the link itself (an amount change, a regenerate, a
   // switch). Nothing was declined; a new link is simply needed — unless a
   // payment is held, when no new link may be made at all.
@@ -219,7 +225,7 @@ export function OrderDetailPageContent({
             {order.risk.flagged ? (
               <Badge variant="destructive">Flagged</Badge>
             ) : null}
-            {canEditOrder ? (
+            {canEditMco ? (
               <Button asChild variant="outline" size="sm">
                 <Link href={`/app/orders/${order.id}/edit`}>
                   <PencilIcon className="size-3.5" />
@@ -235,7 +241,9 @@ export function OrderDetailPageContent({
 
       <PaymentStatusFloater
         order={order}
-        canRecordPayment={roleHasPermission(role, Permission.ORDER_UPDATE)}
+        canRecordPayment={
+          PAID_FEATURES_ENABLED && roleHasPermission(role, Permission.ORDER_UPDATE)
+        }
       />
 
       <Card>
@@ -291,7 +299,7 @@ export function OrderDetailPageContent({
         </Alert>
       ) : null}
 
-      {held.length === 0 && order.risk.flagged ? (
+      {PAID_FEATURES_ENABLED && held.length === 0 && order.risk.flagged ? (
         <Alert data-testid="flagged-alert">
           <AlertTitle>Flagged for review</AlertTitle>
           <AlertDescription className="space-y-1">
@@ -381,9 +389,11 @@ export function OrderDetailPageContent({
           <AlertTitle>Payment in progress</AlertTitle>
           <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <span>
-              {canEditOrder
-                ? "Re-send the payment request, switch to another payment method, or edit customer details on the payment-request page."
-                : "Re-send the payment request, or send a manual consent request, on the payment-request page. Only an admin can switch the gateway."}
+              {!PAID_FEATURES_ENABLED
+                ? "Re-send the payment request, or edit customer details, on the payment-request page."
+                : canEditOrder
+                  ? "Re-send the payment request, switch to another payment method, or edit customer details on the payment-request page."
+                  : "Re-send the payment request, or send a manual consent request, on the payment-request page. Only an admin can switch the gateway."}
             </span>
             <Button asChild size="sm" variant="outline">
               <Link href={paymentMethodHref}>
@@ -410,13 +420,19 @@ export function OrderDetailPageContent({
               {stoodDown && !order.payment.failureReason?.endsWith(".")
                 ? `${order.payment.failureReason}. `
                 : null}
-              {canEditOrder
-                ? "On the payment-request page, for this same order: send a new link, switch to another gateway (e.g. PayPal), or send a manual consent request."
-                : "On the payment-request page, for this same order: send a new link or a manual consent request. Only an admin can switch the gateway."}
+              {!PAID_FEATURES_ENABLED
+                ? "Generate a new payment link for this order and send it on the payment-request page."
+                : canEditOrder
+                  ? "On the payment-request page, for this same order: send a new link, switch to another gateway (e.g. PayPal), or send a manual consent request."
+                  : "On the payment-request page, for this same order: send a new link or a manual consent request. Only an admin can switch the gateway."}
             </span>
             <Button asChild size="sm">
               <Link href={paymentMethodHref}>
-                Choose payment method
+                {/* Choosing between gateways (or manual) is a paid feature;
+                    without it this leads to the same page to send again. */}
+                {PAID_FEATURES_ENABLED
+                  ? "Choose payment method"
+                  : "Open payment request"}
                 <ArrowRightIcon className="size-3.5" />
               </Link>
             </Button>
