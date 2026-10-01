@@ -26,8 +26,38 @@ export interface EmailChargeBreakdown {
   total: string;
 }
 
+/**
+ * The four customer-visible strings in this block.
+ *
+ * Defaults are the exact strings this component has always rendered, so a
+ * car-rental email is byte-identical whether or not a caller passes
+ * `wording`. A flight has no counter to pay at, so it supplies its own.
+ */
+export interface ChargeWording {
+  prepaidLabel: string;
+  dueLabel: string;
+  totalLabel: string;
+  dueSuffix: string;
+}
+
+export const RENTAL_CHARGE_WORDING: ChargeWording = {
+  prepaidLabel: "Amount paid online",
+  dueLabel: "Amount due at counter",
+  totalLabel: "Total rental cost",
+  dueSuffix: "(due at counter)",
+};
+
+export const FLIGHT_CHARGE_WORDING: ChargeWording = {
+  prepaidLabel: "Amount paid online",
+  dueLabel: "Amount due later",
+  totalLabel: "Total flight cost",
+  dueSuffix: "(due later)",
+};
+
 interface ChargeBreakdownProps {
   breakdown: EmailChargeBreakdown;
+  /** Defaults to the rental wording — see RENTAL_CHARGE_WORDING. */
+  wording?: ChargeWording;
   title?: string;
   topPadding?: number;
   bottomPadding?: number;
@@ -43,6 +73,7 @@ export function ChargeBreakdown({
   title = "Charge summary",
   topPadding = SPACE.xl,
   bottomPadding = SPACE.xs,
+  wording = RENTAL_CHARGE_WORDING,
 }: ChargeBreakdownProps) {
   const showLines = breakdown.lines.length > 0;
   return (
@@ -57,7 +88,7 @@ export function ChargeBreakdown({
               key={idx}
               label={
                 line.timing === PaymentTiming.DUE_AT_COUNTER
-                  ? `${line.name} (due at counter)`
+                  ? `${line.name} ${wording.dueSuffix}`
                   : line.name
               }
               value={line.amount}
@@ -65,14 +96,16 @@ export function ChargeBreakdown({
           ))
         : null}
 
-      <TotalRow label="Amount paid online" value={breakdown.prepaid} />
+      <TotalRow label={wording.prepaidLabel} value={breakdown.prepaid} />
       {breakdown.dueAtCounter ? (
-        <TotalRow
-          label="Amount due at counter"
-          value={breakdown.dueAtCounter}
-        />
+        <TotalRow label={wording.dueLabel} value={breakdown.dueAtCounter} />
       ) : null}
-      <TotalRow label="Total rental cost" value={breakdown.total} emphasise isLast />
+      <TotalRow
+        label={wording.totalLabel}
+        value={breakdown.total}
+        emphasise
+        isLast
+      />
     </SummaryCard>
   );
 }

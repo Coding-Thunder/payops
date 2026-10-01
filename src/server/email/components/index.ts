@@ -14,6 +14,9 @@ export {
   ChargeBreakdown,
   type EmailChargeBreakdown,
   type EmailChargeLine,
+  FLIGHT_CHARGE_WORDING,
+  RENTAL_CHARGE_WORDING,
+  type ChargeWording,
 } from "./charge-breakdown";
 export { EmailTermsSection } from "./terms-section";
 export { EmailAgreeButton } from "./agree-button";

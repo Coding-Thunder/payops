@@ -120,6 +120,22 @@ const serverSchema = z.object({
   SUPPORT_EMAIL: z.string().default("vinaymaheshwari35@gmail.com"),
   SUPPORT_PHONE: z.string().default("+1-555-0100"),
 
+  /**
+   * ---- Flight brand ----
+   *
+   * This deployment sells car rentals as one brand and flights as another,
+   * inside a single organization. CUSTOMER_BRAND_NAME above is the car
+   * brand; these are the flight one.
+   *
+   * Support contacts default to EMPTY, not to a placeholder: empty means
+   * "this brand has no separate desk, use the organization's", which is the
+   * correct behaviour until a real flight support address exists. See
+   * `src/server/email/service-brand.ts`.
+   */
+  FLIGHT_BRAND_NAME: z.string().min(1).default("Airfare Fees"),
+  FLIGHT_SUPPORT_EMAIL: z.string().default(""),
+  FLIGHT_SUPPORT_PHONE: z.string().default(""),
+
   DEFAULT_CURRENCY: z.string().default("USD"),
   DEFAULT_PAYMENT_EXPIRY_HOURS: z.coerce.number().int().positive().default(24),
   DEFAULT_ORDER_PREFIX: z.string().default("ORD"),

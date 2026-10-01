@@ -2,6 +2,7 @@ import "server-only";
 
 import { Types } from "mongoose";
 
+import { ServiceType } from "@/lib/constants/enums";
 import { env } from "@/lib/env";
 import { ConflictError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
@@ -14,6 +15,8 @@ import {
 } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 import { getSecret } from "@/server/services/organization-credential.service";
+
+import { applyServiceBrand } from "./service-brand";
 
 /**
  * Who an email is FROM, and which mailbox actually sends it.
@@ -209,12 +212,32 @@ export async function resolvePublicBrand(
   };
 }
 
-/** Convenience for the many callers that hold an order id, not an org id. */
+/**
+ * Convenience for the many callers that hold an order id, not an org id.
+ *
+ * Also applies the SERVICE-TYPE overlay, because the order is already being
+ * read here: one query answers both "which organization?" and "which of its
+ * brands?". A car order comes back with the organization brand untouched.
+ */
 export async function resolvePublicBrandForOrder(
   orderId: string,
   fallback: PublicBrandFallback,
 ): Promise<PublicBrand> {
-  return resolvePublicBrand(await organizationIdForOrder(orderId), fallback);
+  if (!Types.ObjectId.isValid(orderId)) {
+    return resolvePublicBrand(null, fallback);
+  }
+  await connectMongo();
+  const row = await Order.findById(orderId)
+    .select("organizationId serviceType")
+    .lean<{
+      organizationId?: Types.ObjectId | null;
+      serviceType?: ServiceType | null;
+    } | null>();
+  const brand = await resolvePublicBrand(
+    row?.organizationId ? String(row.organizationId) : null,
+    fallback,
+  );
+  return applyServiceBrand(brand, { serviceType: row?.serviceType ?? null });
 }
 
 /**
@@ -231,12 +254,17 @@ export async function resolvePublicBrandForOrderNumber(
   if (!trimmed) return fallbackBrand(fallback);
   await connectMongo();
   const row = await Order.findOne({ orderNumber: trimmed })
-    .select("organizationId")
-    .lean<{ organizationId?: Types.ObjectId | null } | null>();
-  return resolvePublicBrand(
+    .select("organizationId serviceType")
+    .lean<{
+      organizationId?: Types.ObjectId | null;
+      serviceType?: ServiceType | null;
+    } | null>();
+  const brand = await resolvePublicBrand(
     row?.organizationId ? String(row.organizationId) : null,
     fallback,
   );
+  // Same overlay as above: the /pay pages brand to the order's service type.
+  return applyServiceBrand(brand, { serviceType: row?.serviceType ?? null });
 }
 
 /** The organization that owns an order, or null for pre-migration rows. */

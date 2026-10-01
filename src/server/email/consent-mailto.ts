@@ -2,6 +2,7 @@ import "server-only";
 
 import type { OrderDTO } from "@/types";
 
+import { serviceDetailRows } from "@/lib/service-summary";
 import { formatEmailDay } from "./format";
 
 /**
@@ -33,9 +34,12 @@ export function buildConsentMailto(args: {
     `Customer: ${order.customer.name}`,
     `Order: ${order.orderNumber}`,
     `Provider: ${order.provider?.name ?? "—"}`,
-    `Vehicle: ${order.vehicle.company} • ${order.vehicle.type}`,
-    `Pick-up: ${formatEmailDay(order.trip.pickupDate)}`,
-    `Drop-off: ${formatEmailDay(order.trip.dropoffDate)}`,
+    // Service-aware: a car order still emits the Vehicle / Pick-up /
+    // Drop-off triple in that order, byte-identical to before; a flight
+    // emits Route / Airline / Departure / … instead.
+    ...serviceDetailRows(order, formatEmailDay).map(
+      (row) => `${row.label}: ${row.value}`,
+    ),
     `Amount: ${order.pricing.amount.toFixed(2)} ${order.pricing.currency}`,
     order.payment.paymentUrl
       ? `Payment link: ${order.payment.paymentUrl}`

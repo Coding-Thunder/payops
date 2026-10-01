@@ -22,6 +22,13 @@ import type { OrderDTO } from "@/types";
 
 import { getMailer, getMailerFor } from "@/server/email/smtp";
 import {
+  describeServiceItem,
+  isFlightOrder,
+  serviceDetailRows,
+  type ServiceRow,
+} from "@/lib/service-summary";
+import { applyServiceEmailIdentity } from "@/server/email/service-brand";
+import {
   organizationIdForOrder,
   resolveEmailIdentity,
   resolvePublicBrandForOrder,
@@ -33,6 +40,11 @@ import {
   PaymentRequestEmail,
   type PaymentRequestEmailProps,
 } from "@/server/email/templates/payment-request";
+import {
+  FlightPaymentConfirmationEmail,
+  type FlightPaymentConfirmationEmailProps,
+} from "@/server/email/templates/flight-payment-confirmation";
+import { FlightPaymentRequestEmail } from "@/server/email/templates/flight-payment-request";
 import {
   PaymentConfirmationEmail,
   type PaymentConfirmationEmailProps,
@@ -232,7 +244,12 @@ export async function sendPaymentConfirmationEmail(
   // falling back to the deployment Branding singleton. Resolved once here
   // and handed to sendEmail so the body, the From header and the evidence
   // row can never disagree about which brand sent the mail.
-  const identity = await resolveEmailIdentity(orgId, branding);
+  // Organization brand first, then the service-type overlay: a flight goes
+  // out as the flight brand, a car rental is returned unchanged.
+  const identity = applyServiceEmailIdentity(
+    await resolveEmailIdentity(orgId, branding),
+    order,
+  );
   const brandName = identity.brandName;
   // Inline the provider logo as a data URI so Gmail / Outlook render it
   // without proxying back to our server. Falls back to the original
@@ -244,7 +261,9 @@ export async function sendPaymentConfirmationEmail(
   const providerForEmail = order.provider
     ? { ...order.provider, logo: providerLogoInline ?? order.provider.logo }
     : order.provider;
-  const props: PaymentConfirmationEmailProps = {
+  // Fields both receipts share. The two templates then add what only they
+  // need — a vehicle and a trip, or an itinerary.
+  const commonProps = {
     brandName,
     appUrl: env.server.APP_URL,
     supportEmail: identity.supportEmail,
@@ -259,14 +278,6 @@ export async function sendPaymentConfirmationEmail(
     paidOn: order.payment.paidAt
       ? formatEmailDate(order.payment.paidAt)
       : formatEmailDate(new Date()),
-    provider: providerForEmail,
-    vehicle: order.vehicle,
-    trip: {
-      pickupDate: formatEmailDay(order.trip.pickupDate),
-      dropoffDate: formatEmailDay(order.trip.dropoffDate),
-      pickupLocation: order.trip.pickupLocation ?? null,
-      dropoffLocation: order.trip.dropoffLocation ?? null,
-    },
     confirmationNumber: order.confirmationNumber ?? null,
     chargeBreakdown: buildEmailChargeBreakdown(order),
     termsText: order.terms?.text || null,
@@ -284,8 +295,48 @@ export async function sendPaymentConfirmationEmail(
       ? PAYMENT_GATEWAY_LABELS[order.payment.gateway as PaymentGatewayKey]
       : null,
   };
-  const html = await render(<PaymentConfirmationEmail {...props} />);
-  const text = await render(<PaymentConfirmationEmail {...props} />, {
+
+  /**
+   * Template selection by service type.
+   *
+   * A flight receipt renders a DIFFERENT template file; the rental template
+   * is not reached at all for a flight, and is not modified by this feature,
+   * so a car receipt is byte-for-byte what it was before flights existed.
+   * Both paths go through the same `sendEmail` dispatcher below — one
+   * delivery system, one outbox, one retry and audit path.
+   */
+  const flightElement = order.flight
+    ? (
+        <FlightPaymentConfirmationEmail
+          {...(commonProps as Omit<
+            FlightPaymentConfirmationEmailProps,
+            "flightRows"
+          >)}
+          flightRows={serviceDetailRows(order, formatEmailDay)}
+        />
+      )
+    : null;
+  const carElement = (
+    <PaymentConfirmationEmail
+      {...(commonProps as Omit<
+        PaymentConfirmationEmailProps,
+        "provider" | "vehicle" | "trip"
+      >)}
+      provider={providerForEmail}
+      vehicle={order.vehicle ?? { company: "", type: "" }}
+      trip={{
+        pickupDate: order.trip ? formatEmailDay(order.trip.pickupDate) : "",
+        dropoffDate: order.trip ? formatEmailDay(order.trip.dropoffDate) : "",
+        pickupLocation: order.trip?.pickupLocation ?? null,
+        dropoffLocation: order.trip?.dropoffLocation ?? null,
+      }}
+    />
+  );
+  const element =
+    isFlightOrder(order) && flightElement ? flightElement : carElement;
+
+  const html = await render(element);
+  const text = await render(element, {
     plainText: true,
   });
   const finalSubject =
@@ -323,9 +374,9 @@ export async function sendPaymentConfirmationEmail(
         supportEmail: identity.supportEmail,
         supportPhone: identity.supportPhone,
       },
-      amount: props.amount,
-      paidOn: props.paidOn,
-      receiptUrl: props.receiptUrl ?? null,
+      amount: commonProps.amount,
+      paidOn: commonProps.paidOn,
+      receiptUrl: commonProps.receiptUrl ?? null,
       html,
       text,
     },
@@ -378,15 +429,22 @@ export async function composePaymentRequestProps(
     consentMessage: string;
     consentRequired: boolean;
   } | null,
-): Promise<PaymentRequestEmailProps> {
+  // `flightRows` rides along so the flight template can be rendered from
+  // the same composed props — the preview route and the send path both call
+  // this one function and neither needs to know which template wins.
+): Promise<PaymentRequestEmailProps & { flightRows: ServiceRow[] }> {
   const composeOrgId = await organizationIdForOrder(order.id);
   const [branding, tpl, settings] = await Promise.all([
     getBranding(),
     getActiveTemplateContent("payment-request", composeOrgId),
     getSettings(),
   ]);
-  // Organization brand, falling back to the deployment singleton.
-  const identity = await resolveEmailIdentity(composeOrgId, branding);
+  // Organization brand, falling back to the deployment singleton, then the
+  // service-type overlay so a flight request carries the flight brand.
+  const identity = applyServiceEmailIdentity(
+    await resolveEmailIdentity(composeOrgId, branding),
+    order,
+  );
   const providerLogoInline = order.provider
     ? await inlinePublicImage(order.provider.logo)
     : null;
@@ -483,13 +541,18 @@ export async function composePaymentRequestProps(
       ? formatEmailDate(order.payment.expiresAt)
       : null,
     provider: providerForEmail,
-    vehicle: order.vehicle,
+    // A flight order never renders this template — `sendPaymentRequestEmail`
+    // picks the flight one — but the props type is shared with the preview
+    // route, so these stay defined rather than nullable.
+    vehicle: order.vehicle ?? { company: "", type: "" },
     trip: {
-      pickupDate: formatEmailDay(order.trip.pickupDate),
-      dropoffDate: formatEmailDay(order.trip.dropoffDate),
-      pickupLocation: order.trip.pickupLocation ?? null,
-      dropoffLocation: order.trip.dropoffLocation ?? null,
+      pickupDate: order.trip ? formatEmailDay(order.trip.pickupDate) : "",
+      dropoffDate: order.trip ? formatEmailDay(order.trip.dropoffDate) : "",
+      pickupLocation: order.trip?.pickupLocation ?? null,
+      dropoffLocation: order.trip?.dropoffLocation ?? null,
     },
+    /** Itinerary rows, used only by the flight template. */
+    flightRows: serviceDetailRows(order, formatEmailDay),
     chargeBreakdown: buildEmailChargeBreakdown(order),
     paymentUrl: checkoutUrl,
     gatewayLabel,
@@ -587,11 +650,20 @@ export async function sendPaymentRequestEmail(
             return {
               bookingType: order.bookingType,
               provider: order.provider?.name ?? "",
-              vehicle: `${order.vehicle.company} • ${order.vehicle.type}`,
-              pickupDate: order.trip.pickupDate,
-              dropoffDate: order.trip.dropoffDate,
-              pickupLocation: order.trip.pickupLocation ?? null,
-              dropoffLocation: order.trip.dropoffLocation ?? null,
+              // Service-aware. A car order yields the identical
+              // "Company • Type" string and the same two dates it always
+              // did; a flight yields its route and departure/return.
+              vehicle: describeServiceItem(order),
+              pickupDate: order.trip?.pickupDate ?? order.flight?.departureDate ?? "",
+              dropoffDate:
+                order.trip?.dropoffDate ??
+                order.flight?.returnDate ??
+                order.flight?.departureDate ??
+                "",
+              pickupLocation:
+                order.trip?.pickupLocation ?? order.flight?.origin ?? null,
+              dropoffLocation:
+                order.trip?.dropoffLocation ?? order.flight?.destination ?? null,
               amount: order.pricing.amount,
               currency: order.pricing.currency,
               charges: s.charges,
@@ -625,8 +697,19 @@ export async function sendPaymentRequestEmail(
     consentRequired: settings.consentMode === ConsentMode.REQUIRED,
   });
   const toAddress = overrides.toOverride?.trim() || order.customer.email;
-  const html = await render(<PaymentRequestEmail {...props} />);
-  const text = await render(<PaymentRequestEmail {...props} />, {
+  /**
+   * Same template split as the confirmation receipt: a flight renders the
+   * flight request template, a car rental renders the one it always has.
+   * The dispatcher, outbox, retry, evidence and audit below are shared and
+   * untouched — only the markup differs.
+   */
+  const requestElement = isFlightOrder(order) ? (
+    <FlightPaymentRequestEmail {...props} />
+  ) : (
+    <PaymentRequestEmail {...props} />
+  );
+  const html = await render(requestElement);
+  const text = await render(requestElement, {
     plainText: true,
   });
   const sent = await sendEmail({
