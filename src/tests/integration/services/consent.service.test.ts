@@ -54,9 +54,9 @@ async function seedRequestedConsent(
       snapshot: {
         bookingType: order.bookingType,
         provider: order.provider.name,
-        vehicle: `${order.vehicle.company} • ${order.vehicle.type}`,
-        pickupDate: order.trip.pickupDate.toISOString(),
-        dropoffDate: order.trip.dropoffDate.toISOString(),
+        vehicle: `${order.vehicle!.company} • ${order.vehicle!.type}`,
+        pickupDate: order.trip!.pickupDate.toISOString(),
+        dropoffDate: order.trip!.dropoffDate.toISOString(),
         amount: order.pricing.amount,
         currency: order.pricing.currency,
         paymentLinkRef: order.payment.checkoutUrl ?? null,

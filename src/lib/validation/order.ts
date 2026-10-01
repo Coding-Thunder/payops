@@ -7,6 +7,10 @@ import {
   PAYMENT_TIMINGS,
   PaymentTiming,
   RECORD_STATES,
+  CABIN_CLASSES,
+  FLIGHT_TRIP_TYPES,
+  FlightTripType,
+  ServiceType,
 } from "@/lib/constants/enums";
 import { PROVIDER_KEY_REGEX } from "@/lib/constants/providers";
 
@@ -111,6 +115,94 @@ export const createOrderSchema = z
   });
 
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
+
+/* ──────────────────────── service-typed creation ─────────────────────────
+ *
+ * `createOrderSchema` above is the CAR schema and is deliberately left
+ * untouched — every rule, message and refinement a car order has ever been
+ * validated by still lives there, and the car member of the union below is
+ * literally that schema with a discriminant added. There is no second copy
+ * to drift.
+ */
+
+/** Passenger counts. At least one adult; an infant cannot travel alone. */
+const flightPassengersSchema = z.object({
+  adults: z.coerce.number().int().min(1, "At least one adult").max(9),
+  children: z.coerce.number().int().min(0).max(9),
+  infants: z.coerce.number().int().min(0).max(9),
+});
+
+const flightDetailsSchema = z
+  .object({
+    tripType: z.enum(FLIGHT_TRIP_TYPES),
+    airline: z.string().trim().max(80).optional().nullable(),
+    flightNumber: z.string().trim().max(16).optional().nullable(),
+    origin: z.string().trim().min(2, "Origin is required").max(120),
+    destination: z.string().trim().min(2, "Destination is required").max(120),
+    departureDate: isoDateString,
+    departureTimePreference: z.string().trim().max(40).optional().nullable(),
+    arrivalDate: isoDateString.optional().nullable(),
+    returnDate: isoDateString.optional().nullable(),
+    returnTimePreference: z.string().trim().max(40).optional().nullable(),
+    cabinClass: z.enum(CABIN_CLASSES),
+    passengers: flightPassengersSchema,
+    passengerNotes: z.string().trim().max(2000).optional().nullable(),
+    pnr: z.string().trim().max(32).optional().nullable(),
+  })
+  // A round trip without a return leg is the one combination the operator
+  // can get wrong that the model would also reject — catch it at the form.
+  .refine((f) => f.tripType !== FlightTripType.ROUND_TRIP || !!f.returnDate, {
+    path: ["returnDate"],
+    message: "A round trip needs a return date",
+  })
+  // Same-day returns are legitimate, so this is `<`, not `<=`.
+  .refine(
+    (f) => !f.returnDate || new Date(f.returnDate) >= new Date(f.departureDate),
+    { path: ["returnDate"], message: "Return cannot be before departure" },
+  )
+  .refine(
+    (f) =>
+      !f.arrivalDate || new Date(f.arrivalDate) >= new Date(f.departureDate),
+    { path: ["arrivalDate"], message: "Arrival cannot be before departure" },
+  );
+
+/** The car member: the existing schema, plus the discriminant. */
+export const createCarOrderSchema = createOrderSchema.extend({
+  serviceType: z.literal(ServiceType.CAR_RENTAL),
+});
+
+/**
+ * The flight member. Reuses the shared customer / charges / currency rules
+ * by picking them off the car schema, so those can never diverge, and
+ * swaps the car-only `vehicle` + `trip` for `flight`.
+ */
+export const createFlightOrderSchema = createOrderSchema
+  .omit({ vehicle: true, trip: true })
+  .extend({
+    serviceType: z.literal(ServiceType.FLIGHT),
+    flight: flightDetailsSchema,
+  });
+
+/**
+ * What POST /api/orders accepts.
+ *
+ * A discriminated union rather than one object with everything optional:
+ * optional-everything would happily accept a flight with no route and a car
+ * with no vehicle, and the first time anyone noticed would be a customer
+ * receiving a payment link for a booking with no detail on it.
+ *
+ * The route defaults `serviceType` to CAR_RENTAL BEFORE parsing, so a client
+ * that has never heard of service types — which is every existing caller —
+ * keeps working unchanged.
+ */
+export const createOrderRequestSchema = z.discriminatedUnion("serviceType", [
+  createCarOrderSchema,
+  createFlightOrderSchema,
+]);
+
+export type CreateCarOrderInput = z.infer<typeof createCarOrderSchema>;
+export type CreateFlightOrderInput = z.infer<typeof createFlightOrderSchema>;
+export type CreateOrderRequestInput = z.infer<typeof createOrderRequestSchema>;
 
 /** Staff edit of the supplier confirmation number from the admin portal.
  *  Empty string clears it. */

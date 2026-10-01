@@ -16,6 +16,8 @@ import {
   DISPUTE_STATUSES,
   DisputeOutcome,
   DisputeStatus,
+  FLIGHT_TRIP_TYPES,
+  FlightTripType,
   ORDER_STATUSES,
   OrderStatus,
   PAYMENT_GATEWAY_KEYS,
@@ -24,12 +26,19 @@ import {
   PaymentTiming,
   RECORD_STATES,
   RecordState,
+  SERVICE_TYPES,
+  ServiceType,
 } from "@/lib/constants/enums";
 import { PROVIDER_KEY_REGEX } from "@/lib/constants/providers";
 
 export interface OrderDoc extends OrganizationScoped {
   orderNumber: string;
   bookingType: BookingType;
+  /** What this booking is for. Absent on every order written before the
+   *  field existed; those hydrate as CAR_RENTAL via the schema default.
+   *  Read it through `serviceTypeOf()` in `@/lib/service-summary`, never
+   *  directly — `.lean()` does not apply defaults. */
+  serviceType: ServiceType;
   status: OrderStatus;
   state: RecordState;
 
@@ -48,7 +57,8 @@ export interface OrderDoc extends OrganizationScoped {
     primaryColor?: string | null;
     onPrimaryColor?: string | null;
   };
-  vehicle: {
+  /** CAR_RENTAL only. Null on FLIGHT orders. */
+  vehicle?: {
     company: string;
     type: string;
     /** Optional public URL the operator provides at creation time so the
@@ -56,15 +66,40 @@ export interface OrderDoc extends OrganizationScoped {
      *  checkout summary, and the payment-confirmation email. Stored
      *  verbatim — we don't proxy, resize, or rehost it. */
     imageUrl?: string | null;
-  };
-  trip: {
+  } | null;
+  /** CAR_RENTAL only. Null on FLIGHT orders. */
+  trip?: {
     pickupDate: Date;
     dropoffDate: Date;
     /** Free-text rental pick-up / drop-off locations. Optional so orders
      *  created before this field keep validating. */
     pickupLocation?: string | null;
     dropoffLocation?: string | null;
-  };
+  } | null;
+  /**
+   * FLIGHT only. A booking REQUEST — this platform holds no airline
+   * inventory and talks to no GDS. It captures enough for an operator to
+   * source the fare manually and quote it back, plus the record locator
+   * once ticketed.
+   */
+  flight?: {
+    tripType: FlightTripType;
+    airline?: string | null;
+    flightNumber?: string | null;
+    origin: string;
+    destination: string;
+    departureDate: Date;
+    departureTimePreference?: string | null;
+    /** Outbound arrival. Null until a specific itinerary is chosen. */
+    arrivalDate?: Date | null;
+    returnDate?: Date | null;
+    returnTimePreference?: string | null;
+    cabinClass: string;
+    passengers: { adults: number; children: number; infants: number };
+    passengerNotes?: string | null;
+    /** Airline record locator, pasted by the operator once ticketed. */
+    pnr?: string | null;
+  } | null;
   pricing: {
     /** Stored in MAJOR units (e.g. dollars), 2-decimal precision.
      *  Equals the sum of PREPAID `charges` — i.e. the amount the gateway is
@@ -403,6 +438,70 @@ const disputePointerSchema = new Schema(
   { _id: false },
 );
 
+const flightPassengersSchema = new Schema(
+  {
+    adults: { type: Number, required: true, min: 1, max: 9, default: 1 },
+    children: { type: Number, required: true, min: 0, max: 9, default: 0 },
+    infants: { type: Number, required: true, min: 0, max: 9, default: 0 },
+  },
+  { _id: false },
+);
+
+/**
+ * Flight booking REQUEST. Deliberately not an airline/GDS integration —
+ * this platform holds no inventory. It captures enough for an operator to
+ * source the fare manually and quote it back.
+ *
+ * `origin` / `destination` are free text, not IATA codes: operators paste
+ * whatever the customer wrote ("London Heathrow", "LHR", "any London
+ * airport") and normalising that is a data-entry problem, not a schema one.
+ */
+const flightSchema = new Schema(
+  {
+    tripType: {
+      type: String,
+      enum: FLIGHT_TRIP_TYPES,
+      required: true,
+      default: FlightTripType.ONE_WAY,
+    },
+    airline: { type: String, default: null, trim: true, maxlength: 80 },
+    flightNumber: { type: String, default: null, trim: true, maxlength: 16 },
+    origin: { type: String, required: true, trim: true, maxlength: 120 },
+    destination: { type: String, required: true, trim: true, maxlength: 120 },
+    departureDate: { type: Date, required: true },
+    departureTimePreference: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 40,
+    },
+    arrivalDate: { type: Date, default: null },
+    returnDate: { type: Date, default: null },
+    returnTimePreference: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 40,
+    },
+    cabinClass: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 40,
+      default: "ECONOMY",
+    },
+    passengers: {
+      type: flightPassengersSchema,
+      required: true,
+      default: () => ({ adults: 1, children: 0, infants: 0 }),
+    },
+    passengerNotes: { type: String, default: null, maxlength: 2000 },
+    /** Airline record locator, pasted by the operator once ticketed. */
+    pnr: { type: String, default: null, trim: true, maxlength: 32 },
+  },
+  { _id: false },
+);
+
 const orderSchema = new Schema<OrderDoc>(
   {
     orderNumber: {
@@ -416,6 +515,13 @@ const orderSchema = new Schema<OrderDoc>(
       type: String,
       enum: BOOKING_TYPES,
       required: true,
+      index: true,
+    },
+    serviceType: {
+      type: String,
+      enum: SERVICE_TYPES,
+      required: true,
+      default: ServiceType.CAR_RENTAL,
       index: true,
     },
     status: {
@@ -434,8 +540,41 @@ const orderSchema = new Schema<OrderDoc>(
     },
     customer: { type: customerSchema, required: true },
     provider: { type: providerSchema, required: true },
-    vehicle: { type: vehicleSchema, required: true },
-    trip: { type: tripSchema, required: true },
+    /**
+     * Car-rental payload. The predicate is TRUE for every document that
+     * existed before `serviceType` was introduced — Mongoose applies the
+     * schema default when hydrating a stored document with no such key, so
+     * they validate as CAR_RENTAL, which is exactly what they are. This is
+     * therefore identical to the previous `required: true` for every order
+     * this deployment has ever written.
+     */
+    vehicle: {
+      type: vehicleSchema,
+      default: null,
+      required: function (this: OrderDoc) {
+        return (
+          (this.serviceType ?? ServiceType.CAR_RENTAL) ===
+          ServiceType.CAR_RENTAL
+        );
+      },
+    },
+    trip: {
+      type: tripSchema,
+      default: null,
+      required: function (this: OrderDoc) {
+        return (
+          (this.serviceType ?? ServiceType.CAR_RENTAL) ===
+          ServiceType.CAR_RENTAL
+        );
+      },
+    },
+    flight: {
+      type: flightSchema,
+      default: null,
+      required: function (this: OrderDoc) {
+        return this.serviceType === ServiceType.FLIGHT;
+      },
+    },
     pricing: { type: pricingSchema, required: true },
     charges: { type: [chargeSchema], default: [] },
     confirmationNumber: {
@@ -492,11 +631,41 @@ orderSchema.index({ state: 1, createdAt: -1 });
 orderSchema.index({ "provider.id": 1, createdAt: -1 });
 orderSchema.index({ "consent.status": 1, createdAt: -1 });
 orderSchema.index({ "dispute.status": 1, "dispute.openedAt": -1 });
+// Service-type filtering on the orders list. Organization-scoped because
+// every list query already carries the tenant clause, so a plain
+// { serviceType: 1 } index would be the wrong prefix.
+orderSchema.index({ organizationId: 1, serviceType: 1, createdAt: -1 });
 // `payment.stripeSessionId` already has `index: true, sparse: true` on the
 // field definition — declaring it again here triggers a duplicate-index
 // warning at startup. Keep it on the field, drop the schema-level call.
 
+/**
+ * Cross-field date rules, per service type.
+ *
+ * The CAR_RENTAL branch is the pre-existing check, unchanged, and is what
+ * every document with no stored `serviceType` takes. FLIGHT gets a
+ * different rule on purpose: a one-way flight has no return leg at all, and
+ * a same-day return is perfectly legitimate — so "after" would be wrong and
+ * "required" would be wronger.
+ */
 orderSchema.pre("validate", function () {
+  const serviceType = this.serviceType ?? ServiceType.CAR_RENTAL;
+
+  if (serviceType === ServiceType.FLIGHT) {
+    const f = this.flight;
+    if (!f) return;
+    if (f.returnDate && f.returnDate < f.departureDate) {
+      throw new Error("Return date cannot be before the departure date");
+    }
+    if (f.arrivalDate && f.arrivalDate < f.departureDate) {
+      throw new Error("Arrival cannot be before departure");
+    }
+    if (f.tripType === FlightTripType.ROUND_TRIP && !f.returnDate) {
+      throw new Error("A round trip needs a return date");
+    }
+    return;
+  }
+
   if (this.trip?.pickupDate && this.trip?.dropoffDate) {
     if (this.trip.pickupDate >= this.trip.dropoffDate) {
       throw new Error("Drop-off date must be after pick-up date");

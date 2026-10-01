@@ -7,6 +7,8 @@ import {
   OrderStatus,
   PaymentTiming,
   RecordState,
+  FlightTripType,
+  ServiceType,
 } from "@/lib/constants/enums";
 import {
   buildProviderSnapshot,
@@ -66,16 +68,53 @@ export function buildOrder(seed: OrderSeed = {}): OrderDoc & { _id: Types.Object
       email: (seed.customer?.email ?? "customer@payops.test").toLowerCase(),
       phone: seed.customer?.phone ?? "+15555550100",
     },
-    vehicle: {
-      company: seed.vehicle?.company ?? "Toyota",
-      type: seed.vehicle?.type ?? "Corolla",
-    },
-    trip: {
-      pickupDate: seed.trip?.pickupDate ?? pickup,
-      dropoffDate: seed.trip?.dropoffDate ?? dropoff,
-      pickupLocation: seed.trip?.pickupLocation ?? "LAX Airport — Terminal 1",
-      dropoffLocation: seed.trip?.dropoffLocation ?? "San Diego Downtown",
-    },
+    // Default is a CAR_RENTAL, exactly as every existing test expects.
+    // Pass `serviceType: FLIGHT` (and optionally `flight`) to build a flight
+    // order instead; the car payload is then omitted, which is what the
+    // model requires.
+    serviceType: seed.serviceType ?? ServiceType.CAR_RENTAL,
+    vehicle:
+      seed.serviceType === ServiceType.FLIGHT
+        ? null
+        : {
+            company: seed.vehicle?.company ?? "Toyota",
+            type: seed.vehicle?.type ?? "Corolla",
+          },
+    trip:
+      seed.serviceType === ServiceType.FLIGHT
+        ? null
+        : {
+            pickupDate: seed.trip?.pickupDate ?? pickup,
+            dropoffDate: seed.trip?.dropoffDate ?? dropoff,
+            pickupLocation:
+              seed.trip?.pickupLocation ?? "LAX Airport — Terminal 1",
+            dropoffLocation:
+              seed.trip?.dropoffLocation ?? "San Diego Downtown",
+          },
+    flight:
+      seed.serviceType === ServiceType.FLIGHT
+        ? {
+            tripType: seed.flight?.tripType ?? FlightTripType.ONE_WAY,
+            airline: seed.flight?.airline ?? "British Airways",
+            flightNumber: seed.flight?.flightNumber ?? "BA117",
+            origin: seed.flight?.origin ?? "London Heathrow",
+            destination: seed.flight?.destination ?? "New York JFK",
+            departureDate: seed.flight?.departureDate ?? pickup,
+            departureTimePreference:
+              seed.flight?.departureTimePreference ?? null,
+            arrivalDate: seed.flight?.arrivalDate ?? null,
+            returnDate: seed.flight?.returnDate ?? null,
+            returnTimePreference: seed.flight?.returnTimePreference ?? null,
+            cabinClass: seed.flight?.cabinClass ?? "ECONOMY",
+            passengers: seed.flight?.passengers ?? {
+              adults: 1,
+              children: 0,
+              infants: 0,
+            },
+            passengerNotes: seed.flight?.passengerNotes ?? null,
+            pnr: seed.flight?.pnr ?? null,
+          }
+        : null,
     pricing: {
       amount: seed.pricing?.amount ?? 199.5,
       currency: (seed.pricing?.currency ?? Currency.USD) as Currency,
@@ -161,8 +200,10 @@ export async function createOrder(seed: OrderSeed = {}): Promise<OrderDocument> 
     state: data.state,
     provider: data.provider,
     customer: data.customer,
+    serviceType: data.serviceType,
     vehicle: data.vehicle,
     trip: data.trip,
+    flight: data.flight,
     pricing: data.pricing,
     charges: data.charges,
     confirmationNumber: data.confirmationNumber,

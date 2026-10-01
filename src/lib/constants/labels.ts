@@ -1,5 +1,6 @@
 import {
   BookingType,
+  CabinClass,
   ConsentMethod,
   ConsentMode,
   ConsentStatus,
@@ -7,10 +8,29 @@ import {
   OrderEvidenceEventType,
   OrderStatus,
   PaymentGatewayKey,
+  FlightTripType,
   PaymentTiming,
   RecordState,
+  ServiceType,
   UserRole,
 } from "./enums";
+
+export const ServiceTypeLabel: Record<ServiceType, string> = {
+  CAR_RENTAL: "Car rental",
+  FLIGHT: "Flight",
+};
+
+export const FlightTripTypeLabel: Record<FlightTripType, string> = {
+  ONE_WAY: "One way",
+  ROUND_TRIP: "Round trip",
+};
+
+export const CabinClassLabel: Record<CabinClass, string> = {
+  ECONOMY: "Economy",
+  PREMIUM_ECONOMY: "Premium economy",
+  BUSINESS: "Business",
+  FIRST: "First",
+};
 
 export const BookingTypeLabel: Record<BookingType, string> = {
   NEW_BOOKING: "New booking",

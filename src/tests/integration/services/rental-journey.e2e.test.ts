@@ -52,8 +52,8 @@ describe("rental journey (end-to-end)", () => {
     // pricing.amount == prepaid total (the ONLY figure billed online)
     expect(draft.pricing.amount).toBe(150);
     expect(draft.charges).toHaveLength(2);
-    expect(draft.trip.pickupLocation).toBe("LAX Airport — Terminal 1");
-    expect(draft.trip.dropoffLocation).toBe("San Diego Downtown");
+    expect(draft.trip!.pickupLocation).toBe("LAX Airport — Terminal 1");
+    expect(draft.trip!.dropoffLocation).toBe("San Diego Downtown");
 
     // Single source of truth derivations
     const sum = summarizeCharges(draft.charges);

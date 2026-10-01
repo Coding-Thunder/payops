@@ -20,6 +20,51 @@ export const RecordState = {
 export type RecordState = (typeof RecordState)[keyof typeof RecordState];
 export const RECORD_STATES = Object.values(RecordState) as RecordState[];
 
+/**
+ * What a booking is actually FOR.
+ *
+ * CAR_RENTAL is the default and is what every order written before this
+ * field existed is. Mongoose applies the default when hydrating a stored
+ * document that has no such key, and every read path goes through
+ * `serviceTypeOf()` in `@/lib/service-summary` rather than touching the
+ * field directly — because `.lean()` does NOT apply defaults, so a legacy
+ * document read that way has `serviceType: undefined`.
+ *
+ * Deliberately NOT a general catalog of everything the platform might sell:
+ * each member costs a payload sub-document, a create form, a set of detail
+ * rows and an email path. Add one only when it is actually being sold.
+ */
+export const ServiceType = {
+  CAR_RENTAL: "CAR_RENTAL",
+  FLIGHT: "FLIGHT",
+} as const;
+export type ServiceType = (typeof ServiceType)[keyof typeof ServiceType];
+export const SERVICE_TYPES = Object.values(ServiceType) as ServiceType[];
+
+/** Trip shape for a FLIGHT order. A one-way request has no return leg at
+ *  all, which is why `returnDate` is nullable rather than merely optional. */
+export const FlightTripType = {
+  ONE_WAY: "ONE_WAY",
+  ROUND_TRIP: "ROUND_TRIP",
+} as const;
+export type FlightTripType =
+  (typeof FlightTripType)[keyof typeof FlightTripType];
+export const FLIGHT_TRIP_TYPES = Object.values(
+  FlightTripType,
+) as FlightTripType[];
+
+/** Cabin classes offered on the flight request form. Stored as a free
+ *  string on the order so an operator can record something unusual, but the
+ *  form only offers these. */
+export const CabinClass = {
+  ECONOMY: "ECONOMY",
+  PREMIUM_ECONOMY: "PREMIUM_ECONOMY",
+  BUSINESS: "BUSINESS",
+  FIRST: "FIRST",
+} as const;
+export type CabinClass = (typeof CabinClass)[keyof typeof CabinClass];
+export const CABIN_CLASSES = Object.values(CabinClass) as CabinClass[];
+
 export const BookingType = {
   NEW_BOOKING: "NEW_BOOKING",
   MODIFICATION: "MODIFICATION",

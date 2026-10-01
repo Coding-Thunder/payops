@@ -16,6 +16,7 @@ import {
   PaymentGatewayKey,
   RecordState,
   UserRole,
+  ServiceType,
 } from "@/lib/constants/enums";
 import {
   ConflictError,
@@ -38,10 +39,18 @@ import {
   withOrganizationScope,
 } from "@/server/db/organization-filter";
 import { getRequestOrganizationScope } from "@/server/auth/organization";
+import {
+  describeServiceDates,
+  describeServiceItem,
+  serviceNoun,
+  type ServiceSummarySource,
+} from "@/lib/service-summary";
 import { resolvePublicBrand } from "@/server/email/identity";
+import { applyServiceBrand } from "@/server/email/service-brand";
 import type {
   ArchiveOrderInput,
   CreateOrderInput,
+  CreateOrderRequestInput,
   ListOrdersQuery,
 } from "@/lib/validation";
 import type { OrderDTO, PaginatedResult } from "@/types";
@@ -145,13 +154,25 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
             onPrimaryColor: fallback.onPrimaryColor,
           };
         })(),
-    vehicle: { ...doc.vehicle },
-    trip: {
-      pickupDate: doc.trip.pickupDate.toISOString(),
-      dropoffDate: doc.trip.dropoffDate.toISOString(),
-      pickupLocation: doc.trip.pickupLocation ?? null,
-      dropoffLocation: doc.trip.dropoffLocation ?? null,
-    },
+    // Legacy rows have no stored serviceType; they are car rentals.
+    serviceType: doc.serviceType ?? ServiceType.CAR_RENTAL,
+    vehicle: doc.vehicle ? { ...doc.vehicle } : null,
+    trip: doc.trip
+      ? {
+          pickupDate: doc.trip.pickupDate.toISOString(),
+          dropoffDate: doc.trip.dropoffDate.toISOString(),
+          pickupLocation: doc.trip.pickupLocation ?? null,
+          dropoffLocation: doc.trip.dropoffLocation ?? null,
+        }
+      : null,
+    flight: doc.flight
+      ? {
+          ...doc.flight,
+          departureDate: doc.flight.departureDate.toISOString(),
+          arrivalDate: doc.flight.arrivalDate?.toISOString() ?? null,
+          returnDate: doc.flight.returnDate?.toISOString() ?? null,
+        }
+      : null,
     pricing: { amount: doc.pricing.amount, currency: doc.pricing.currency },
     // Charges are the source of truth; legacy orders (no `charges[]`) get a
     // single synthesised prepaid line from `pricing.amount`.
@@ -295,7 +316,7 @@ interface CreateOrderResult {
  *   - keep Stripe rate-limit + idempotency surface tight
  */
 export async function createOrder(
-  input: CreateOrderInput,
+  input: CreateOrderRequestInput | CreateOrderInput,
   ctx: OrderContext,
 ): Promise<CreateOrderResult> {
   await connectMongo();
@@ -306,6 +327,44 @@ export async function createOrder(
       "This booking type is currently disabled. Update operational settings to enable it.",
     );
   }
+
+  /**
+   * Exactly one service payload, resolved once.
+   *
+   * `"flight" in input` is a real type guard, so each branch below is
+   * narrowed and the car branch still sees the `vehicle`/`trip` it always
+   * had. An input with no `flight` key — which is every caller that predates
+   * service types — takes the car branch and writes precisely what it wrote
+   * before this feature existed.
+   */
+  const servicePayload =
+    "flight" in input && input.flight
+      ? {
+          serviceType: ServiceType.FLIGHT,
+          vehicle: null,
+          trip: null,
+          flight: {
+            ...input.flight,
+            departureDate: new Date(input.flight.departureDate),
+            arrivalDate: input.flight.arrivalDate
+              ? new Date(input.flight.arrivalDate)
+              : null,
+            returnDate: input.flight.returnDate
+              ? new Date(input.flight.returnDate)
+              : null,
+          },
+        }
+      : {
+          serviceType: ServiceType.CAR_RENTAL,
+          vehicle: (input as CreateOrderInput).vehicle,
+          trip: {
+            pickupDate: new Date((input as CreateOrderInput).trip.pickupDate),
+            dropoffDate: new Date((input as CreateOrderInput).trip.dropoffDate),
+            pickupLocation: (input as CreateOrderInput).trip.pickupLocation,
+            dropoffLocation: (input as CreateOrderInput).trip.dropoffLocation,
+          },
+          flight: null,
+        };
 
   const currency = input.currency ?? settings.defaultCurrency;
   const orderId = new Types.ObjectId();
@@ -337,13 +396,7 @@ export async function createOrder(
           state: RecordState.ACTIVE,
           customer: input.customer,
           provider: providerSnapshot,
-          vehicle: input.vehicle,
-          trip: {
-            pickupDate: new Date(input.trip.pickupDate),
-            dropoffDate: new Date(input.trip.dropoffDate),
-            pickupLocation: input.trip.pickupLocation,
-            dropoffLocation: input.trip.dropoffLocation,
-          },
+          ...servicePayload,
           pricing: { amount: chargeSummary.prepaid, currency },
           charges: chargeSummary.charges,
           terms: {
@@ -424,17 +477,21 @@ export async function createOrder(
                 onPrimaryColor: orderDoc.provider.onPrimaryColor ?? null,
               }
             : null,
-          vehicle: {
-            company: orderDoc.vehicle.company,
-            type: orderDoc.vehicle.type,
-            imageUrl: orderDoc.vehicle.imageUrl ?? null,
-          },
-          trip: {
-            pickupDate: orderDoc.trip.pickupDate.toISOString(),
-            dropoffDate: orderDoc.trip.dropoffDate.toISOString(),
-            pickupLocation: orderDoc.trip.pickupLocation ?? null,
-            dropoffLocation: orderDoc.trip.dropoffLocation ?? null,
-          },
+          vehicle: orderDoc.vehicle
+            ? {
+                company: orderDoc.vehicle.company,
+                type: orderDoc.vehicle.type,
+                imageUrl: orderDoc.vehicle.imageUrl ?? null,
+              }
+            : null,
+          trip: orderDoc.trip
+            ? {
+                pickupDate: orderDoc.trip.pickupDate.toISOString(),
+                dropoffDate: orderDoc.trip.dropoffDate.toISOString(),
+                pickupLocation: orderDoc.trip.pickupLocation ?? null,
+                dropoffLocation: orderDoc.trip.dropoffLocation ?? null,
+              }
+            : null,
           pricing: {
             amount: orderDoc.pricing.amount,
             currency: orderDoc.pricing.currency,
@@ -605,23 +662,24 @@ export async function initiatePayment(
   // PayPal puts it in the header of the page where the customer authorises
   // the charge. Sourcing it from the deployment singleton showed every brand's
   // customer "Rental Confirmation" at the exact moment they part with money.
-  const publicBrand = await resolvePublicBrand(
-    doc.organizationId ? String(doc.organizationId) : null,
-    branding,
+  // Organization brand, then the SERVICE-TYPE overlay. This value becomes
+  // `metadata.appName`, which the gateways turn into the payment-intent
+  // description and PayPal's `brand_name` on the approval screen — i.e. the
+  // company name the customer reads at the moment they part with money.
+  // Without the overlay a flight customer would be shown the car brand there.
+  const publicBrand = applyServiceBrand(
+    await resolvePublicBrand(
+      doc.organizationId ? String(doc.organizationId) : null,
+      branding,
+    ),
+    doc,
   );
   const productName = describeProductName({
     bookingType: doc.bookingType,
     provider: doc.provider?.id ?? resolveProvider(undefined).id,
-    vehicle: { company: doc.vehicle.company, type: doc.vehicle.type },
+    order: doc,
   });
-  const description = describeProductDescription({
-    trip: {
-      pickupDate: doc.trip.pickupDate.toISOString(),
-      dropoffDate: doc.trip.dropoffDate.toISOString(),
-      pickupLocation: doc.trip.pickupLocation ?? null,
-      dropoffLocation: doc.trip.dropoffLocation ?? null,
-    },
-  });
+  const description = describeProductDescription(doc);
 
   let session: CreatedPaymentSession;
   try {
@@ -633,7 +691,7 @@ export async function initiatePayment(
       customer: doc.customer,
       productName,
       description,
-      imageUrls: doc.vehicle.imageUrl ? [doc.vehicle.imageUrl] : undefined,
+      imageUrls: doc.vehicle?.imageUrl ? [doc.vehicle.imageUrl] : undefined,
       successUrl: settings.successRedirectUrl,
       cancelUrl: settings.cancelRedirectUrl,
       expiresAt,
@@ -809,41 +867,42 @@ export async function initiatePayment(
 interface ProductNameInput {
   bookingType: BookingType;
   provider: string;
-  vehicle: { company: string; type: string };
+  /** The order, for the service-aware "what was bought" string. */
+  order: ServiceSummarySource;
 }
 
+/**
+ * The gateway-hosted checkout line item.
+ *
+ * CAR_RENTAL output is UNCHANGED from before service types existed:
+ * `describeServiceItem` returns "Toyota Corolla" and `serviceNoun` returns
+ * "rental", so NEW_BOOKING still reads "Hertz • Toyota Corolla rental" and
+ * the other two booking types never used the noun at all. A flight reads
+ * "Airline • BA117 • LHR → JFK flight" through the same template.
+ */
 function describeProductName(input: ProductNameInput): string {
   const providerName = resolveProvider({ id: input.provider }).name;
-  const vehicle = `${input.vehicle.company} ${input.vehicle.type}`;
+  const item = describeServiceItem(input.order);
   switch (input.bookingType) {
     case BookingType.NEW_BOOKING:
-      return `${providerName} • ${vehicle} rental`;
+      return `${providerName} • ${item} ${serviceNoun(input.order)}`;
     case BookingType.MODIFICATION:
-      return `${providerName} booking modification • ${vehicle}`;
+      return `${providerName} booking modification • ${item}`;
     case BookingType.CANCELLATION_CHARGE:
-      return `${providerName} cancellation charge • ${vehicle}`;
+      return `${providerName} cancellation charge • ${item}`;
     default:
-      return `${providerName} • ${vehicle}`;
+      return `${providerName} • ${item}`;
   }
 }
 
-interface ProductDescriptionInput {
-  trip: {
-    pickupDate: string;
-    dropoffDate: string;
-    pickupLocation?: string | null;
-    dropoffLocation?: string | null;
-  };
-}
-
-function describeProductDescription(input: ProductDescriptionInput): string {
-  const pickup = new Date(input.trip.pickupDate).toISOString().slice(0, 10);
-  const drop = new Date(input.trip.dropoffDate).toISOString().slice(0, 10);
-  const pickupLoc = input.trip.pickupLocation?.trim();
-  const dropLoc = input.trip.dropoffLocation?.trim();
-  const pickupPart = pickupLoc ? `${pickup} (${pickupLoc})` : pickup;
-  const dropPart = dropLoc ? `${drop} (${dropLoc})` : drop;
-  return `Pick-up: ${pickupPart} • Drop-off: ${dropPart}`;
+/**
+ * The checkout line-item sub-description. Delegates to the one place that
+ * knows how to phrase dates per service type; the CAR_RENTAL branch there
+ * is a verbatim copy of the implementation this function used to carry, so
+ * existing car checkouts render the identical string.
+ */
+function describeProductDescription(order: ServiceSummarySource): string {
+  return describeServiceDates(order);
 }
 
 // ---------- Listing / fetching ----------
@@ -1094,9 +1153,14 @@ export async function regeneratePaymentLink(
   // patching the symptom: there is no longer a path here that can reach a
   // Stripe client the organization does not own.
   const gateway = await resolveGatewayForOrder(doc, null);
-  const regenBrand = await resolvePublicBrand(
-    doc.organizationId ? String(doc.organizationId) : null,
-    await getBranding(),
+  // Same overlay as the initial link — a regenerated flight link must not
+  // revert to the car brand on the checkout screen.
+  const regenBrand = applyServiceBrand(
+    await resolvePublicBrand(
+      doc.organizationId ? String(doc.organizationId) : null,
+      await getBranding(),
+    ),
+    doc,
   );
   const expiresAt = new Date(
     Date.now() + settings.paymentExpiryHours * 60 * 60 * 1000,
@@ -1132,17 +1196,10 @@ export async function regeneratePaymentLink(
       productName: describeProductName({
         bookingType: doc.bookingType,
         provider: doc.provider?.id ?? resolveProvider(undefined).id,
-        vehicle: { company: doc.vehicle.company, type: doc.vehicle.type },
+        order: doc,
       }),
-      description: describeProductDescription({
-        trip: {
-          pickupDate: doc.trip.pickupDate.toISOString(),
-          dropoffDate: doc.trip.dropoffDate.toISOString(),
-          pickupLocation: doc.trip.pickupLocation ?? null,
-          dropoffLocation: doc.trip.dropoffLocation ?? null,
-        },
-      }),
-      imageUrls: doc.vehicle.imageUrl ? [doc.vehicle.imageUrl] : undefined,
+      description: describeProductDescription(doc),
+      imageUrls: doc.vehicle?.imageUrl ? [doc.vehicle.imageUrl] : undefined,
       successUrl: settings.successRedirectUrl,
       cancelUrl: settings.cancelRedirectUrl,
       expiresAt,

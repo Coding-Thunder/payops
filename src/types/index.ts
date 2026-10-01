@@ -8,12 +8,14 @@ import type {
   Currency,
   DisputeOutcome,
   DisputeStatus,
+  FlightTripType,
   OrderEvidenceActorType,
   OrderEvidenceEventType,
   OrderStatus,
   PaymentGatewayKey,
   PaymentTiming,
   RecordState,
+  ServiceType,
   UserRole,
 } from "@/lib/constants/enums";
 import type { ProviderSnapshot } from "@/lib/constants/providers";
@@ -76,6 +78,24 @@ export interface OrderTrip {
    *  orders created before this field existed keep validating. */
   pickupLocation?: string | null;
   dropoffLocation?: string | null;
+}
+
+/** FLIGHT payload as serialised to the client. Dates are ISO strings. */
+export interface OrderFlight {
+  tripType: FlightTripType;
+  airline?: string | null;
+  flightNumber?: string | null;
+  origin: string;
+  destination: string;
+  departureDate: string;
+  departureTimePreference?: string | null;
+  arrivalDate?: string | null;
+  returnDate?: string | null;
+  returnTimePreference?: string | null;
+  cabinClass: string;
+  passengers: { adults: number; children: number; infants: number };
+  passengerNotes?: string | null;
+  pnr?: string | null;
 }
 
 /**
@@ -194,8 +214,15 @@ export interface OrderDTO {
   state: RecordState;
   customer: OrderCustomer;
   provider: ProviderSnapshot;
-  vehicle: OrderVehicle;
-  trip: OrderTrip;
+  /** What this booking is for. Legacy rows have no stored value and are
+   *  serialised as CAR_RENTAL. */
+  serviceType: ServiceType;
+  /** CAR_RENTAL only — null on a flight order. */
+  vehicle: OrderVehicle | null;
+  /** CAR_RENTAL only — null on a flight order. */
+  trip: OrderTrip | null;
+  /** FLIGHT only — null on a car order. */
+  flight: OrderFlight | null;
   pricing: OrderPricing;
   /** Rental charge breakdown — source of truth for prepaid / due-at-counter
    *  / total. Empty for legacy orders (treat `pricing.amount` as one prepaid
@@ -309,6 +336,9 @@ export interface PublicConsentView {
   /** Owning organization, so the page can brand its chrome to match the
    *  email that sent the customer here. Null for pre-migration bookings. */
   organizationId: string | null;
+  /** Service type of the booking, so the page brands to the right one of
+   *  the organization's brands. Legacy rows read as CAR_RENTAL. */
+  serviceType: ServiceType;
   consentMessage: string;
   snapshot: PaymentConsentSnapshot;
   paymentUrl: string | null;
@@ -416,7 +446,8 @@ export interface OrderEvidenceChainDTO {
     /** Vehicle snapshot lifted to the chain order so the evidence
      *  page + PDF can render the operator-captured car image
      *  alongside the provider logo. */
-    vehicle: OrderVehicle;
+    /** Null on a flight order — the itinerary lives in the evidence rows. */
+    vehicle: OrderVehicle | null;
     createdAt: string;
   };
 }
@@ -441,6 +472,9 @@ export interface ProviderDTO {
   onPrimaryColor: string;
   tagline: string;
   status: RecordState;
+  /** Service types this supplier may be selected for. Legacy rows have no
+   *  stored value and are treated as car-rental only. */
+  serviceTypes: ServiceType[];
   sortOrder: number;
   createdAt: string;
   updatedAt: string;

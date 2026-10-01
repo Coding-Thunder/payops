@@ -364,11 +364,13 @@ export async function getEvidenceChain(
       status: orderDoc.status,
       state: orderDoc.state,
       provider,
-      vehicle: {
-        company: orderDoc.vehicle.company,
-        type: orderDoc.vehicle.type,
-        imageUrl: orderDoc.vehicle.imageUrl ?? null,
-      },
+      vehicle: orderDoc.vehicle
+        ? {
+            company: orderDoc.vehicle.company,
+            type: orderDoc.vehicle.type,
+            imageUrl: orderDoc.vehicle.imageUrl ?? null,
+          }
+        : null,
       createdAt: orderDoc.createdAt.toISOString(),
     },
   };
