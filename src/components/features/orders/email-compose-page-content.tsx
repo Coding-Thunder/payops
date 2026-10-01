@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { describeServiceItem, serviceItemLabel } from "@/lib/service-summary";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
@@ -148,8 +149,8 @@ export function EmailComposePageContent({
             />
             <SummaryRow label="Provider" value={order.provider?.name ?? "—"} />
             <SummaryRow
-              label="Vehicle"
-              value={`${order.vehicle.company} · ${order.vehicle.type}`}
+              label={serviceItemLabel(order)}
+              value={describeServiceItem(order)}
             />
             <SummaryRow label="Order" value={order.orderNumber} mono />
           </dl>

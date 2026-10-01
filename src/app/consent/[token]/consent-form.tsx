@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ServiceType } from "@/lib/constants/enums";
 import { ShieldCheckIcon } from "lucide-react";
 
 import { api, ApiClientError } from "@/lib/api-client";
@@ -261,6 +262,8 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
 }
 
 function SummaryBlock({ view }: { view: PublicConsentView }) {
+  // A flight has no counter and no vehicle. Car wording is unchanged.
+  const isFlight = view.serviceType === ServiceType.FLIGHT;
   const { snapshot } = view;
   const currency = snapshot.currency;
   const dueAtCounter = snapshot.dueAtCounter ?? 0;
@@ -295,14 +298,18 @@ function SummaryBlock({ view }: { view: PublicConsentView }) {
           </div>
           <div className="flex items-center justify-between">
             <span className="text-slate-500">
-              Remaining balance due at rental counter
+              {isFlight
+                ? "Remaining balance due later"
+                : "Remaining balance due at rental counter"}
             </span>
             <span className="tabular-nums text-slate-900">
               {formatCurrency(dueAtCounter, currency)}
             </span>
           </div>
           <div className="flex items-center justify-between border-t border-slate-200 pt-1.5 font-medium">
-            <span className="text-slate-700">Total rental cost</span>
+            <span className="text-slate-700">
+              {isFlight ? "Total flight cost" : "Total rental cost"}
+            </span>
             <span className="tabular-nums text-slate-900">
               {formatCurrency(total, currency)}
             </span>
@@ -314,9 +321,17 @@ function SummaryBlock({ view }: { view: PublicConsentView }) {
         <DetailRow label="Customer" value={view.customerName} />
         <DetailRow label="Email" value={view.customerEmail} mono />
         <DetailRow label="Provider" value={snapshot.provider || "—"} />
-        <DetailRow label="Vehicle" value={snapshot.vehicle} />
+        {/* The snapshot's three slots hold different things per service:
+            a car's vehicle/pick-up/drop-off, or a flight's route and
+            departure/return. The VALUES were already service-aware; these
+            labels now follow, so a flight customer is not asked to sign
+            next to the word "Vehicle". */}
         <DetailRow
-          label="Pick-up"
+          label={isFlight ? "Itinerary" : "Vehicle"}
+          value={snapshot.vehicle}
+        />
+        <DetailRow
+          label={isFlight ? "Departure" : "Pick-up"}
           value={
             snapshot.pickupLocation
               ? `${formatDateTime(snapshot.pickupDate)} · ${snapshot.pickupLocation}`
@@ -324,7 +339,7 @@ function SummaryBlock({ view }: { view: PublicConsentView }) {
           }
         />
         <DetailRow
-          label="Drop-off"
+          label={isFlight ? "Return" : "Drop-off"}
           value={
             snapshot.dropoffLocation
               ? `${formatDateTime(snapshot.dropoffDate)} · ${snapshot.dropoffLocation}`

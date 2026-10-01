@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { PublicBrandChrome } from "@/components/public/public-brand-chrome";
 import { resolvePublicBrand } from "@/server/email/identity";
+import { applyServiceBrand } from "@/server/email/service-brand";
 import { getBranding } from "@/server/services/branding.service";
 import { getPublicConsentView } from "@/server/services/consent.service";
 import { AppError } from "@/lib/errors";
@@ -38,7 +39,12 @@ export default async function ConsentPage({ params }: ConsentPageProps) {
   // Brand the chrome and the form's support links to the booking's
   // organization. `branding` remains the fallback the default organization
   // resolves to, so nothing about the incumbent brand's page changes.
-  const brand = await resolvePublicBrand(view.organizationId, branding);
+  // Organization brand, then the service-type overlay — a flight consent
+  // page carries the flight brand, a rental one is untouched.
+  const brand = applyServiceBrand(
+    await resolvePublicBrand(view.organizationId, branding),
+    { serviceType: view.serviceType },
+  );
   const brandedForForm = {
     ...branding,
     brandName: brand.brandName,

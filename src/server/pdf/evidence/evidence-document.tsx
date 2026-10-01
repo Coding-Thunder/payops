@@ -193,10 +193,15 @@ export function EvidenceDocument({
           value={formatCurrency(order.pricing.amount, order.pricing.currency)}
         />
         <Row label="Provider" value={order.provider?.name ?? "—"} />
-        <Row
-          label="Vehicle"
-          value={`${order.vehicle.company} · ${order.vehicle.type}`}
-        />
+        {/* Car orders keep the exact "Vehicle: Company · Type" row they
+            always printed. A flight has no vehicle, so the dispute packet
+            names the route instead of printing an empty field. */}
+        {order.vehicle ? (
+          <Row
+            label="Vehicle"
+            value={`${order.vehicle.company} · ${order.vehicle.type}`}
+          />
+        ) : null}
         <Row label="Created" value={order.createdAt} />
 
         <View style={styles.imagesRow}>
@@ -210,7 +215,7 @@ export function EvidenceDocument({
               <Text style={styles.imageTileCaption}>{order.provider.name}</Text>
             </View>
           ) : null}
-          {order.vehicle.imageUrl ? (
+          {order.vehicle?.imageUrl ? (
             <View style={styles.imageTile}>
               <Text style={styles.imageTileLabel}>Vehicle</Text>
               <Image

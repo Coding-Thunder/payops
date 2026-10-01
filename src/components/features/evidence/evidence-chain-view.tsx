@@ -130,21 +130,27 @@ export function EvidenceChainView({
             </div>
           </div>
 
-          <div className="space-y-1">
-            <h4 className="text-[12.5px] font-semibold text-foreground">
-              Car make
-            </h4>
-            <p className="text-[13px]">{order.vehicle.company}</p>
-          </div>
+          {/* Car-only. A flight order carries no vehicle, and its itinerary
+              is already in the evidence rows below. */}
+          {order.vehicle ? (
+            <>
+              <div className="space-y-1">
+                <h4 className="text-[12.5px] font-semibold text-foreground">
+                  Car make
+                </h4>
+                <p className="text-[13px]">{order.vehicle.company}</p>
+              </div>
 
-          <div className="space-y-1">
-            <h4 className="text-[12.5px] font-semibold text-foreground">
-              Car model
-            </h4>
-            <p className="text-[13px]">{order.vehicle.type}</p>
-          </div>
+              <div className="space-y-1">
+                <h4 className="text-[12.5px] font-semibold text-foreground">
+                  Car model
+                </h4>
+                <p className="text-[13px]">{order.vehicle.type}</p>
+              </div>
+            </>
+          ) : null}
 
-          {order.vehicle.imageUrl ? (
+          {order.vehicle?.imageUrl ? (
             <div className="space-y-1.5">
               <h4 className="text-[12.5px] font-semibold text-foreground">
                 Car image

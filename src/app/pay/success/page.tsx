@@ -1,6 +1,7 @@
 import Image from "next/image";
 
 import { PublicBrandChrome } from "@/components/public/public-brand-chrome";
+import { isFlightOrder, serviceDetailRows } from "@/lib/service-summary";
 import { resolvePublicBrandForOrderNumber } from "@/server/email/identity";
 import { getBranding } from "@/server/services/branding.service";
 import {
@@ -92,6 +93,9 @@ export default async function PaymentSuccessPage({
       });
     }
   }
+  // A flight has no counter to settle a balance at, so the charge wording
+  // differs. Car wording is unchanged.
+  const isFlight = order ? isFlightOrder(order) : false;
   const stillPending =
     order?.status === OrderStatus.PAYMENT_PENDING &&
     Boolean(order?.payment.paymentSessionId);
@@ -238,7 +242,9 @@ export default async function PaymentSuccessPage({
                   </div>
                   <div className="flex items-center justify-between">
                     <dt className="text-slate-500">
-                      Remaining balance due at rental counter
+                      {isFlight
+                        ? "Remaining balance due later"
+                        : "Remaining balance due at rental counter"}
                     </dt>
                     <dd className="tabular-nums text-slate-900">
                       {formatCurrency(
@@ -248,7 +254,9 @@ export default async function PaymentSuccessPage({
                     </dd>
                   </div>
                   <div className="flex items-center justify-between border-t border-slate-100 pt-1.5 font-medium">
-                    <dt className="text-slate-700">Total rental cost</dt>
+                    <dt className="text-slate-700">
+                      {isFlight ? "Total flight cost" : "Total rental cost"}
+                    </dt>
                     <dd className="tabular-nums text-slate-900">
                       {formatCurrency(breakdown.total, order.pricing.currency)}
                     </dd>
@@ -291,26 +299,43 @@ export default async function PaymentSuccessPage({
                   value={BookingTypeLabel[order.bookingType]}
                 />
                 <DetailRow label="Provider" value={providerMeta.name} />
-                <DetailRow
-                  label="Vehicle"
-                  value={`${order.vehicle.company} · ${order.vehicle.type}`}
-                />
-                <DetailRow
-                  label="Pick-up"
-                  value={
-                    order.trip.pickupLocation
-                      ? `${formatDateTime(order.trip.pickupDate)} · ${order.trip.pickupLocation}`
-                      : formatDateTime(order.trip.pickupDate)
-                  }
-                />
-                <DetailRow
-                  label="Drop-off"
-                  value={
-                    order.trip.dropoffLocation
-                      ? `${formatDateTime(order.trip.dropoffDate)} · ${order.trip.dropoffLocation}`
-                      : formatDateTime(order.trip.dropoffDate)
-                  }
-                />
+                {/* Car orders keep the exact Vehicle / Pick-up / Drop-off
+                    triple, with the same " · location" suffix. A flight
+                    shows its route, airline, dates and cabin instead —
+                    rendered from the one helper every surface shares, so
+                    this page can never disagree with the email. */}
+                {order.vehicle && order.trip ? (
+                  <>
+                    <DetailRow
+                      label="Vehicle"
+                      value={`${order.vehicle.company} · ${order.vehicle.type}`}
+                    />
+                    <DetailRow
+                      label="Pick-up"
+                      value={
+                        order.trip.pickupLocation
+                          ? `${formatDateTime(order.trip.pickupDate)} · ${order.trip.pickupLocation}`
+                          : formatDateTime(order.trip.pickupDate)
+                      }
+                    />
+                    <DetailRow
+                      label="Drop-off"
+                      value={
+                        order.trip.dropoffLocation
+                          ? `${formatDateTime(order.trip.dropoffDate)} · ${order.trip.dropoffLocation}`
+                          : formatDateTime(order.trip.dropoffDate)
+                      }
+                    />
+                  </>
+                ) : (
+                  serviceDetailRows(order, formatDateTime).map((row) => (
+                    <DetailRow
+                      key={row.label}
+                      label={row.label}
+                      value={row.value}
+                    />
+                  ))
+                )}
                 {order.confirmationNumber ? (
                   <DetailRow
                     label="Confirmation #"

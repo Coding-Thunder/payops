@@ -13,6 +13,7 @@ import {
   OrderEvidenceEventType,
   PaymentGatewayKey,
   type UserRole,
+  ServiceType,
 } from "@/lib/constants/enums";
 import {
   BadRequestError,
@@ -347,6 +348,7 @@ export async function getPublicConsentView(
     customerEmail: doc.customerEmail,
     brandName: brand.brandName,
     organizationId,
+    serviceType: order?.serviceType ?? ServiceType.CAR_RENTAL,
     // The gateway is pinned on the order at link generation. Read it from
     // there rather than assuming, so the copy always names the processor the
     // customer is actually about to be handed to.

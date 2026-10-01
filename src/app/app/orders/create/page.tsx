@@ -1,4 +1,4 @@
-import { CreateOrderForm } from "@/components/features/orders/create-order-form";
+import { ServiceTabs } from "@/components/features/orders/service-tabs";
 import { PageHeader } from "@/components/common/page-header";
 import { CURRENCIES } from "@/lib/constants/enums";
 import { Permission } from "@/lib/constants/permissions";
@@ -14,9 +14,14 @@ export const dynamic = "force-dynamic";
  *
  * Server-rendered page that fetches what the form binds against
  * (allowed booking types, default currency, active providers) and
- * renders the form directly. On submit the form posts /api/orders and
- * routes the agent to /orders/[id]/email. No internal tabs, no drafts
- * autosave, no workspace shell.
+ * renders the forms directly. On submit the form posts /api/orders and
+ * routes the agent to /orders/[id]/email. No drafts autosave, no workspace
+ * shell.
+ *
+ * The provider catalog is fetched ONCE here, unfiltered, and narrowed per
+ * tab in the client. Two queries would be the obvious alternative and the
+ * wrong one on a small instance — the catalog is a handful of rows and the
+ * filter is a predicate.
  */
 export default async function CreateOrderPage() {
   await requirePermission(Permission.ORDER_CREATE);
@@ -29,9 +34,9 @@ export default async function CreateOrderPage() {
     <div className="space-y-6">
       <PageHeader
         title="Create order"
-        description="Capture booking details. The payment link is generated when you send the request email."
+        description="Pick a service, then capture the booking details. The payment link is generated when you send the request email."
       />
-      <CreateOrderForm
+      <ServiceTabs
         allowedBookingTypes={settings.allowedBookingTypes}
         defaultCurrency={settings.defaultCurrency}
         allowedCurrencies={CURRENCIES}

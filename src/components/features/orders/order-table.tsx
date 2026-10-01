@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { describeServiceItem } from "@/lib/service-summary";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { ChevronRightIcon, MoreHorizontalIcon, Trash2Icon } from "lucide-react";
@@ -276,12 +277,22 @@ export function OrderTable({ items, emptyAction, canDelete = false }: OrderTable
                   </span>
                 </TableCell>
                 <TableCell className={`hidden 2xl:table-cell ${CELL}`}>
-                  <div className="max-w-[140px] truncate text-[13px] font-medium leading-tight">
-                    {o.vehicle.company}
-                  </div>
-                  <div className="max-w-[140px] truncate text-[11.5px] text-muted-foreground leading-tight">
-                    {o.vehicle.type}
-                  </div>
+                  {/* Car rows keep the company/type pair they always
+                      showed. A flight row shows its route on one line. */}
+                  {o.vehicle ? (
+                    <>
+                      <div className="max-w-[140px] truncate text-[13px] font-medium leading-tight">
+                        {o.vehicle.company}
+                      </div>
+                      <div className="max-w-[140px] truncate text-[11.5px] text-muted-foreground leading-tight">
+                        {o.vehicle.type}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="max-w-[140px] truncate text-[13px] font-medium leading-tight">
+                      {describeServiceItem(o)}
+                    </div>
+                  )}
                 </TableCell>
                 <TableCell
                   className={`text-right font-medium tabular-nums ${CELL}`}

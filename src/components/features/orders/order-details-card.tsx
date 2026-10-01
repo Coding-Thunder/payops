@@ -7,6 +7,10 @@ import {
 import { ProviderCard } from "@/components/features/providers";
 import { BookingTypeLabel } from "@/lib/constants/labels";
 import { formatDateTime } from "@/lib/format";
+import {
+  describeServiceItem,
+  serviceDetailRows,
+} from "@/lib/service-summary";
 import type { OrderDTO } from "@/types";
 
 interface OrderDetailsCardProps {
@@ -14,12 +18,13 @@ interface OrderDetailsCardProps {
 }
 
 export function OrderDetailsCard({ order }: OrderDetailsCardProps) {
-  const imageUrl = order.vehicle.imageUrl ?? null;
+  const imageUrl = order.vehicle?.imageUrl ?? null;
+  const vehicle = order.vehicle;
   return (
     <div className="space-y-4">
       <ProviderCard
         provider={order.provider}
-        description={`${order.vehicle.company} ${order.vehicle.type}`}
+        description={describeServiceItem(order)}
         meta={
           <>
             <div className="font-mono text-[12px] text-foreground">
@@ -46,7 +51,7 @@ export function OrderDetailsCard({ order }: OrderDetailsCardProps) {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={imageUrl}
-                alt={`${order.vehicle.company} ${order.vehicle.type}`}
+                alt={describeServiceItem(order)}
                 className="aspect-[16/9] w-full rounded-t-lg object-cover bg-surface-1"
                 loading="lazy"
               />
@@ -81,43 +86,54 @@ export function OrderDetailsCard({ order }: OrderDetailsCardProps) {
               </>
             }
           />
-          <Detail
-            label="Vehicle"
-            value={
-              <>
-                <div className="font-medium">{order.vehicle.company}</div>
-                <div className="text-xs text-muted-foreground">
-                  {order.vehicle.type}
-                </div>
-              </>
-            }
-          />
-          <Detail
-            label="Pick-up"
-            value={
-              <>
-                <div>{formatDateTime(order.trip.pickupDate)}</div>
-                {order.trip.pickupLocation ? (
-                  <div className="text-xs text-muted-foreground">
-                    {order.trip.pickupLocation}
-                  </div>
-                ) : null}
-              </>
-            }
-          />
-          <Detail
-            label="Drop-off"
-            value={
-              <>
-                <div>{formatDateTime(order.trip.dropoffDate)}</div>
-                {order.trip.dropoffLocation ? (
-                  <div className="text-xs text-muted-foreground">
-                    {order.trip.dropoffLocation}
-                  </div>
-                ) : null}
-              </>
-            }
-          />
+          {/* Car orders render the exact Vehicle / Pick-up / Drop-off
+              blocks they always have, two-line locations included. A flight
+              renders its itinerary rows from the shared helper. */}
+          {vehicle && order.trip ? (
+            <>
+              <Detail
+                label="Vehicle"
+                value={
+                  <>
+                    <div className="font-medium">{vehicle.company}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {vehicle.type}
+                    </div>
+                  </>
+                }
+              />
+              <Detail
+                label="Pick-up"
+                value={
+                  <>
+                    <div>{formatDateTime(order.trip.pickupDate)}</div>
+                    {order.trip.pickupLocation ? (
+                      <div className="text-xs text-muted-foreground">
+                        {order.trip.pickupLocation}
+                      </div>
+                    ) : null}
+                  </>
+                }
+              />
+              <Detail
+                label="Drop-off"
+                value={
+                  <>
+                    <div>{formatDateTime(order.trip.dropoffDate)}</div>
+                    {order.trip.dropoffLocation ? (
+                      <div className="text-xs text-muted-foreground">
+                        {order.trip.dropoffLocation}
+                      </div>
+                    ) : null}
+                  </>
+                }
+              />
+            </>
+          ) : (
+            serviceDetailRows(order, formatDateTime).map((row) => (
+              <Detail key={row.label} label={row.label} value={row.value} />
+            ))
+          )}
           <Detail
             label="Created by"
             value={

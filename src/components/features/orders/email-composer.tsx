@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { describeServiceItem, serviceItemLabel } from "@/lib/service-summary";
 import { useRouter } from "next/navigation";
 import {
   CheckCircle2Icon,
@@ -630,8 +631,8 @@ function PaymentSummaryCard({
           <Meta label="Amount" value={formatAmount(order)} />
           <Meta label="Provider" value={order.provider?.name ?? "—"} />
           <Meta
-            label="Vehicle"
-            value={`${order.vehicle.company} · ${order.vehicle.type}`}
+            label={serviceItemLabel(order)}
+            value={describeServiceItem(order)}
           />
         </dl>
         {order.payment.paymentUrl ? (
