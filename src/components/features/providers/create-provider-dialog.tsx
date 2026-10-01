@@ -26,6 +26,8 @@ import {
   type CreateProviderInput,
 } from "@/lib/validation";
 import type { ProviderDTO } from "@/types";
+import { ServiceType } from "@/lib/constants/enums";
+import { ServiceTypesField } from "./service-types-field";
 
 const PLACEHOLDER_LOGO = "/providers/_placeholder.svg";
 
@@ -44,6 +46,7 @@ export function CreateProviderDialog() {
       primaryColor: "#1E3A8A",
       onPrimaryColor: "#FFFFFF",
       tagline: "",
+      serviceTypes: [ServiceType.CAR_RENTAL],
       sortOrder: 0,
     },
     mode: "onTouched",
@@ -198,6 +201,17 @@ export function CreateProviderDialog() {
                   </FormControl>
                   <FormMessage />
                 </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="serviceTypes"
+              render={({ field }) => (
+                <ServiceTypesField
+                  value={field.value}
+                  onChange={field.onChange}
+                />
               )}
             />
 

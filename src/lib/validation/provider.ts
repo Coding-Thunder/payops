@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import { RECORD_STATES, RecordState } from "@/lib/constants/enums";
+import {
+  RECORD_STATES,
+  RecordState,
+  SERVICE_TYPES,
+} from "@/lib/constants/enums";
 import { PROVIDER_KEY_REGEX } from "@/lib/constants/providers";
 
 const hexColor = z
@@ -29,6 +33,15 @@ export const createProviderSchema = z.object({
   primaryColor: hexColor,
   onPrimaryColor: hexColor,
   tagline: z.string().trim().max(140),
+  /**
+   * Which services this supplier may be picked for. At least one, because a
+   * supplier usable for nothing would silently vanish from every form.
+   * Defaults to car rental so the field can be omitted by any existing
+   * caller and behave exactly as before.
+   */
+  serviceTypes: z
+    .array(z.enum(SERVICE_TYPES))
+    .min(1, "Pick at least one service"),
   sortOrder: z.number().int().min(0).max(9_999),
 });
 
@@ -40,6 +53,10 @@ export const updateProviderSchema = z.object({
   primaryColor: hexColor.optional(),
   onPrimaryColor: hexColor.optional(),
   tagline: z.string().trim().max(140).optional(),
+  serviceTypes: z
+    .array(z.enum(SERVICE_TYPES))
+    .min(1, "Pick at least one service")
+    .optional(),
   sortOrder: z.number().int().min(0).max(9_999).optional(),
 });
 
@@ -60,6 +77,8 @@ export const listProvidersQuerySchema = z.object({
     .union([z.string(), z.boolean()])
     .transform((v) => (typeof v === "boolean" ? v : v === "true"))
     .optional(),
+  /** Narrow the catalog to suppliers usable for one service type. */
+  serviceType: z.enum(SERVICE_TYPES).optional(),
 });
 
 export type ListProvidersQuery = z.infer<typeof listProvidersQuerySchema>;

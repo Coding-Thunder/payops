@@ -25,6 +25,8 @@ import {
   type UpdateProviderInput,
 } from "@/lib/validation";
 import type { ProviderDTO } from "@/types";
+import { ServiceType } from "@/lib/constants/enums";
+import { ServiceTypesField } from "./service-types-field";
 
 interface EditProviderDialogProps {
   provider: ProviderDTO;
@@ -48,6 +50,11 @@ export function EditProviderDialog({
       primaryColor: provider.primaryColor,
       onPrimaryColor: provider.onPrimaryColor,
       tagline: provider.tagline,
+      // Legacy rows carry no value; those are car-rental suppliers.
+      serviceTypes:
+        provider.serviceTypes && provider.serviceTypes.length > 0
+          ? provider.serviceTypes
+          : [ServiceType.CAR_RENTAL],
       sortOrder: provider.sortOrder,
     },
     mode: "onTouched",
@@ -63,6 +70,12 @@ export function EditProviderDialog({
       if (dirty.primaryColor) patch.primaryColor = values.primaryColor;
       if (dirty.onPrimaryColor) patch.onPrimaryColor = values.onPrimaryColor;
       if (dirty.tagline) patch.tagline = values.tagline;
+      // `dirtyFields` for an array is an array of per-item flags, so test it
+      // as "any entry dirty" rather than truthiness of the whole value.
+      const serviceTypesDirty = Array.isArray(dirty.serviceTypes)
+        ? dirty.serviceTypes.some(Boolean)
+        : Boolean(dirty.serviceTypes);
+      if (serviceTypesDirty) patch.serviceTypes = values.serviceTypes;
       if (dirty.sortOrder) patch.sortOrder = values.sortOrder;
 
       const hasMetadataChanges = Object.keys(patch).length > 0;
@@ -170,6 +183,17 @@ export function EditProviderDialog({
                 </FormDescription>
                 <FormMessage />
               </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="serviceTypes"
+            render={({ field }) => (
+              <ServiceTypesField
+                value={field.value}
+                onChange={field.onChange}
+              />
             )}
           />
 

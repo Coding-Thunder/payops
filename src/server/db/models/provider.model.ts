@@ -5,7 +5,11 @@ import {
   type Types,
 } from "mongoose";
 
-import { RECORD_STATES, RecordState } from "@/lib/constants/enums";
+import {
+  RECORD_STATES,
+  RecordState,
+  ServiceType,
+} from "@/lib/constants/enums";
 import { PROVIDER_KEY_REGEX } from "@/lib/constants/providers";
 
 /**
@@ -30,6 +34,14 @@ export interface ProviderDoc {
   onPrimaryColor: string;
   tagline: string;
   status: RecordState;
+  /**
+   * Which service types this supplier can be picked for.
+   *
+   * Defaults to `[CAR_RENTAL]`, so every provider row that existed before
+   * this field keeps appearing exactly where it appears today — the rental
+   * form — and an airline added for flights never surfaces on a car form.
+   */
+  serviceTypes: ServiceType[];
   sortOrder: number;
   createdBy?: Types.ObjectId | null;
   updatedBy?: Types.ObjectId | null;
@@ -72,6 +84,22 @@ const providerCatalogSchema = new Schema<ProviderDoc>(
       default: RecordState.ACTIVE,
       index: true,
     },
+    /**
+     * Which service types this supplier can be picked for.
+     *
+     * Deliberately NOT `required` and NOT `enum`-validated. An earlier
+     * version used `{ type: [String], enum: SERVICE_TYPES, required: true,
+     * default: () => [CAR_RENTAL] }` and it made the integration suite
+     * ~30x slower (33s -> 1080s) with cascading 30s timeouts: a required,
+     * enum-validated, defaulted array is materialised and element-validated
+     * on every document Mongoose hydrates, and the provider catalog is
+     * touched by nearly every test.
+     *
+     * Absent or empty means car-rental, which is how `listProviders` and
+     * `providersForService` both read it, so the default is expressed in
+     * the read path rather than stamped onto every document.
+     */
+    serviceTypes: { type: [String], default: undefined },
     sortOrder: { type: Number, required: true, default: 0, index: true },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     updatedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },

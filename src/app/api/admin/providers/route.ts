@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { ServiceType } from "@/lib/constants/enums";
 import { Permission } from "@/lib/constants/permissions";
 import {
   createProviderSchema,
@@ -30,7 +31,13 @@ export const GET = withApi(async (req: NextRequest) => {
 export const POST = withApi(async (req: NextRequest) => {
   const actor = await requirePermission(Permission.PROVIDER_MANAGE);
   const body = await req.json();
-  const input = createProviderSchema.parse(body);
+  // Default the service mix BEFORE parsing, so a client that predates the
+  // field — or a script posting the old shape — still creates a car-rental
+  // supplier exactly as it used to.
+  const input = createProviderSchema.parse({
+    serviceTypes: [ServiceType.CAR_RENTAL],
+    ...(body as Record<string, unknown>),
+  });
   const ctx = await getRequestContext();
   const data = await createProvider(input, { actor, request: ctx });
   return jsonOk(data, { status: 201 });

@@ -6,6 +6,7 @@ import {
   AuditAction,
   AuditEntity,
   RecordState,
+  ServiceType,
   UserRole,
 } from "@/lib/constants/enums";
 import {
@@ -74,6 +75,11 @@ function toDTO(doc: ProviderDoc & { _id: Types.ObjectId | string }): ProviderDTO
     primaryColor: doc.primaryColor,
     onPrimaryColor: doc.onPrimaryColor,
     tagline: doc.tagline ?? "",
+    // Missing/empty on legacy rows — those are car-rental suppliers.
+    serviceTypes:
+      doc.serviceTypes && doc.serviceTypes.length > 0
+        ? doc.serviceTypes
+        : [ServiceType.CAR_RENTAL],
     status: doc.status,
     sortOrder: doc.sortOrder,
     createdAt: doc.createdAt.toISOString(),
@@ -206,6 +212,20 @@ export async function listProviders(
   } else if (!query.includeAll) {
     filter.status = RecordState.ACTIVE;
   }
+  // Narrow to one service type when asked. A row with no `serviceTypes`
+  // key predates the field and is a car-rental supplier, so the CAR_RENTAL
+  // branch must also match missing/empty — otherwise the entire existing
+  // catalog would vanish from the rental form.
+  if (query.serviceType) {
+    filter.$or =
+      query.serviceType === ServiceType.CAR_RENTAL
+        ? [
+            { serviceTypes: ServiceType.CAR_RENTAL },
+            { serviceTypes: { $exists: false } },
+            { serviceTypes: { $size: 0 } },
+          ]
+        : [{ serviceTypes: query.serviceType }];
+  }
   const docs = await Provider.find(filter)
     .sort({ sortOrder: 1, name: 1 })
     .lean<(ProviderDoc & { _id: Types.ObjectId })[]>();
@@ -271,6 +291,7 @@ export async function createProvider(
     primaryColor: input.primaryColor,
     onPrimaryColor: input.onPrimaryColor,
     tagline: input.tagline,
+    serviceTypes: input.serviceTypes,
     sortOrder: input.sortOrder,
     status: RecordState.ACTIVE,
     createdBy: new Types.ObjectId(ctx.actor.id),
@@ -307,6 +328,7 @@ export async function updateProvider(
     "primaryColor",
     "onPrimaryColor",
     "tagline",
+    "serviceTypes",
     "sortOrder",
   ] as const) {
     const value = input[field];
