@@ -128,6 +128,7 @@ async function sendEmail(
   from: string;
   replyTo: string | null;
   delivered: boolean;
+  providerResponse?: string | null;
 }> {
   // Identity is resolved from the ORDER'S organization, not from ambient
   // request context — this runs on the outbox drainer and webhook paths,
@@ -176,6 +177,7 @@ async function sendEmail(
       from: fromAddress,
       replyTo: replyTo || null,
       delivered: false,
+      providerResponse: null,
     };
   }
 
@@ -219,6 +221,10 @@ async function sendEmail(
       from: fromAddress,
       replyTo: replyTo || null,
       delivered: true,
+      // The transport's own acceptance line, e.g. "250 2.0.0 Ok: queued".
+      // Recorded so an operator can tell provider ACCEPTANCE from inbox
+      // delivery, which SMTP cannot report at all.
+      providerResponse: info.response ?? null,
     };
   } catch (err) {
     logger.error("email.send_failed", {
@@ -829,6 +835,15 @@ export async function sendPaymentRequestEmail(
     transition: "email_sent",
     source: "service.email.payment_request",
     actor: context?.actor?.id ?? null,
+    // WHAT THIS PROVES: the SMTP server accepted the message and issued a
+    // message id. It is NOT inbox delivery — SMTP gives no delivery
+    // callback, so anything past acceptance (DMARC quarantine, spam
+    // filing, silent discard) is invisible from here. `messageId` plus
+    // `providerResponse` are what an operator correlates against the
+    // provider's own logs.
+    providerAccepted: true,
+    messageId: sent.id,
+    providerResponse: sent.providerResponse ?? null,
   });
   publishEvent({
     type: DomainEventType.ORDER_EMAIL_SENT,
