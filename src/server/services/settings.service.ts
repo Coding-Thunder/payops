@@ -5,6 +5,7 @@ import { Types } from "mongoose";
 import {
   AuditAction,
   AuditEntity,
+  ServiceType,
   type BookingType,
   type ConsentMode,
   type Currency,
@@ -19,6 +20,7 @@ import {
 import {
   DEFAULT_CANCELLATION_POLICY,
   DEFAULT_CONSENT_MESSAGE,
+  DEFAULT_FLIGHT_TERMS_AND_CONDITIONS,
   DEFAULT_TERMS_AND_CONDITIONS,
 } from "@/server/db/models/setting.model";
 import { connectMongo } from "@/server/db/mongoose";
@@ -39,6 +41,8 @@ export interface OperationalSettings {
   consentMessage: string;
   termsAndConditions: string;
   termsVersion: string;
+  flightTermsAndConditions: string;
+  flightTermsVersion: string;
   updatedAt: string;
 }
 
@@ -58,6 +62,8 @@ function toDTO(doc: SettingDoc | null): OperationalSettings {
       consentMessage: DEFAULT_CONSENT_MESSAGE,
       termsAndConditions: DEFAULT_TERMS_AND_CONDITIONS,
       termsVersion: "v1",
+      flightTermsAndConditions: DEFAULT_FLIGHT_TERMS_AND_CONDITIONS,
+      flightTermsVersion: "v1",
       updatedAt: new Date(0).toISOString(),
     };
   }
@@ -76,7 +82,43 @@ function toDTO(doc: SettingDoc | null): OperationalSettings {
     consentMessage: doc.consentMessage ?? DEFAULT_CONSENT_MESSAGE,
     termsAndConditions: doc.termsAndConditions ?? DEFAULT_TERMS_AND_CONDITIONS,
     termsVersion: doc.termsVersion ?? "v1",
+    // A settings document written before flights existed carries neither
+    // field. Substituting the default here — rather than migrating the
+    // document — means an existing deployment serves correct flight terms
+    // with no production data edit, and the operator can still override.
+    flightTermsAndConditions:
+      doc.flightTermsAndConditions ?? DEFAULT_FLIGHT_TERMS_AND_CONDITIONS,
+    flightTermsVersion: doc.flightTermsVersion ?? "v1",
     updatedAt: doc.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * The Terms & Conditions snapshot for an order of this service type.
+ *
+ * Selection lives here, with the settings it reads; RENDERING is untouched.
+ * Every customer surface — both emails, the hosted acknowledgement page, the
+ * evidence chain, the dispute pack — already reads `order.terms.text` from
+ * the per-order snapshot, so making the snapshot service-aware at creation is
+ * the whole fix. Nothing downstream needed to learn about service types.
+ *
+ * Returns the rental text and the RENTAL version for a car order: the exact
+ * expression `createOrder` used before flights had their own copy, so a car
+ * order's snapshot is byte-identical to what it would have been.
+ */
+export function termsForService(
+  settings: OperationalSettings,
+  serviceType: ServiceType,
+): { text: string; version: string } {
+  if (serviceType === ServiceType.FLIGHT) {
+    return {
+      text: settings.flightTermsAndConditions,
+      version: settings.flightTermsVersion,
+    };
+  }
+  return {
+    text: settings.termsAndConditions,
+    version: settings.termsVersion,
   };
 }
 
@@ -142,6 +184,7 @@ export async function updateSettings(
     "consentMode",
     "consentMessage",
     "termsAndConditions",
+    "flightTermsAndConditions",
   ];
   for (const field of fields) {
     if (!(field in input)) continue;
@@ -176,6 +219,18 @@ export async function updateSettings(
     set.termsVersion = bumped;
     changes.termsVersion = {
       from: existing.termsVersion ?? "v1",
+      to: bumped,
+    };
+  }
+
+  // The flight T&C carries its OWN version counter. Editing flight copy must
+  // not bump the rental version — a rental order's snapshot would then claim
+  // a revision whose text never changed.
+  if ("flightTermsAndConditions" in changes) {
+    const bumped = nextPolicyVersion(existing.flightTermsVersion ?? "v1");
+    set.flightTermsVersion = bumped;
+    changes.flightTermsVersion = {
+      from: existing.flightTermsVersion ?? "v1",
       to: bumped,
     };
   }

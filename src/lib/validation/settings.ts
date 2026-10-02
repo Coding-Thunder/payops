@@ -40,6 +40,15 @@ export const updateSettingsSchema = z.object({
     .min(20, "Terms must be at least 20 characters")
     .max(8000, "Terms must be 8000 characters or fewer")
     .optional(),
+  // Same constraints as the rental terms above, deliberately: the two are
+  // peers, and a flight customer is owed terms of the same substance. Blank
+  // is not an accepted value for either — there is no "no terms" state.
+  flightTermsAndConditions: z
+    .string()
+    .trim()
+    .min(20, "Flight terms must be at least 20 characters")
+    .max(8000, "Flight terms must be 8000 characters or fewer")
+    .optional(),
 });
 
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;

@@ -31,6 +31,7 @@ export default async function AdminSettingsPage() {
           consentMode: settings.consentMode,
           consentMessage: settings.consentMessage,
           termsAndConditions: settings.termsAndConditions,
+          flightTermsAndConditions: settings.flightTermsAndConditions,
         }}
         canEdit={canEdit}
       />

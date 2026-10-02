@@ -51,6 +51,31 @@ export const DEFAULT_TERMS_AND_CONDITIONS = [
   "Cancellation and refund terms follow the cancellation policy provided with your booking.",
 ].join("\n");
 
+/**
+ * Default FLIGHT Terms & Conditions.
+ *
+ * A separate constant rather than a variant of the rental text because the
+ * two describe different obligations: a flight has no counter, no driver's
+ * licence and no vehicle to return, and a rental has no ticketed passenger
+ * name to match against a passport. Shipping the rental clauses to a flight
+ * customer is not a wording blemish — it tells them to present a licence at
+ * a pick-up location that does not exist for their booking.
+ *
+ * Deliberately generic: these are the obligations common to any ticketed
+ * air booking, with the airline's own conditions of carriage and fare rules
+ * referenced rather than restated. Operators edit this from /admin/settings
+ * exactly as they edit the rental text.
+ */
+export const DEFAULT_FLIGHT_TERMS_AND_CONDITIONS = [
+  "The prepaid amount is charged today to ticket your booking. Any balance shown as due later is collected separately and is not part of today's charge.",
+  "Passenger names must match the government-issued photo ID or passport used for travel. Name changes after ticketing may not be permitted, and corrections may incur an airline fee.",
+  "Holding a valid passport, visa, and any transit documents required for the itinerary is the passenger's responsibility.",
+  "Check-in and boarding cut-off times are set by the operating airline. A flight missed due to late arrival is not refundable.",
+  "Baggage allowance, seat selection, and onboard services are set by the operating airline and may be charged separately.",
+  "Schedule changes, delays, and cancellations are governed by the operating airline's conditions of carriage.",
+  "Cancellation and refund terms follow the cancellation policy provided with your booking together with the operating airline's fare rules.",
+].join("\n");
+
 export interface SettingDoc {
   key: string;
   paymentExpiryHours: number;
@@ -84,6 +109,14 @@ export interface SettingDoc {
   /** Auto-bumped version string for the T&C, mirroring the policy version so
    *  an order can prove which T&C revision the customer accepted. */
   termsVersion: string;
+  /** FLIGHT Terms & Conditions text. Selected instead of
+   *  `termsAndConditions` when the order's serviceType is FLIGHT. Optional on
+   *  the type because settings documents written before flights existed do
+   *  not carry it; the read path substitutes the default. */
+  flightTermsAndConditions?: string;
+  /** Version string for the flight T&C, bumped independently of the rental
+   *  one so editing flight copy never invalidates a rental order's snapshot. */
+  flightTermsVersion?: string;
   updatedBy?: Schema.Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
@@ -161,6 +194,21 @@ const settingSchema = new Schema<SettingDoc>(
     termsVersion: {
       type: String,
       required: true,
+      default: "v1",
+      maxlength: 16,
+    },
+    // Not `required` — an existing settings document predates flights and
+    // must still load. `toDTO` substitutes the default on read, so no
+    // migration or production data edit is needed to start serving these.
+    flightTermsAndConditions: {
+      type: String,
+      required: false,
+      default: DEFAULT_FLIGHT_TERMS_AND_CONDITIONS,
+      maxlength: 8000,
+    },
+    flightTermsVersion: {
+      type: String,
+      required: false,
       default: "v1",
       maxlength: 16,
     },

@@ -7,6 +7,7 @@ import {
 import {
   DEFAULT_CANCELLATION_POLICY,
   DEFAULT_CONSENT_MESSAGE,
+  DEFAULT_FLIGHT_TERMS_AND_CONDITIONS,
   DEFAULT_TERMS_AND_CONDITIONS,
   Setting,
   SETTINGS_KEY,
@@ -43,6 +44,9 @@ export function buildSettings(seed: SettingsSeed = {}): SettingDoc {
     consentMessage: seed.consentMessage ?? DEFAULT_CONSENT_MESSAGE,
     termsAndConditions: seed.termsAndConditions ?? DEFAULT_TERMS_AND_CONDITIONS,
     termsVersion: seed.termsVersion ?? "v1",
+    flightTermsAndConditions:
+      seed.flightTermsAndConditions ?? DEFAULT_FLIGHT_TERMS_AND_CONDITIONS,
+    flightTermsVersion: seed.flightTermsVersion ?? "v1",
     updatedBy: seed.updatedBy ?? null,
     createdAt: seed.createdAt ?? now,
     updatedAt: seed.updatedAt ?? now,
@@ -71,6 +75,8 @@ export async function createSettings(
         consentMessage: data.consentMessage,
         termsAndConditions: data.termsAndConditions,
         termsVersion: data.termsVersion,
+        flightTermsAndConditions: data.flightTermsAndConditions,
+        flightTermsVersion: data.flightTermsVersion,
         updatedBy: data.updatedBy ?? undefined,
       },
       $setOnInsert: { key: SETTINGS_KEY },

@@ -63,7 +63,7 @@ import type {
 import { getGatewayForOrganization } from "@/server/payments/resolve-gateway";
 import { recordAudit } from "./audit.service";
 import { captureEvidenceSafe } from "./evidence.service";
-import { getSettings } from "./settings.service";
+import { getSettings, termsForService } from "./settings.service";
 import { generateOrderNumber } from "./order-number";
 import {
   buildProviderSnapshotFromKey,
@@ -399,10 +399,10 @@ export async function createOrder(
           ...servicePayload,
           pricing: { amount: chargeSummary.prepaid, currency },
           charges: chargeSummary.charges,
-          terms: {
-            text: settings.termsAndConditions,
-            version: settings.termsVersion,
-          },
+          // Service-aware: a flight order snapshots the flight terms, a car
+          // order snapshots exactly what it always did. Downstream surfaces
+          // read this snapshot and need no service knowledge of their own.
+          terms: termsForService(settings, servicePayload.serviceType),
           payment: {
             status: OrderStatus.NOT_INITIATED,
             processedWebhookEventIds: [],

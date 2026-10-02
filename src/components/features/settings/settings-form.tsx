@@ -33,7 +33,11 @@ import {
   CONSENT_MODES,
   CURRENCIES,
 } from "@/lib/constants/enums";
-import { BookingTypeLabel, ConsentModeLabel } from "@/lib/constants/labels";
+import {
+  BookingTypeLabel,
+  ConsentModeLabel,
+  ServiceTypeLabel,
+} from "@/lib/constants/labels";
 import {
   updateSettingsSchema,
   type UpdateSettingsInput,
@@ -335,31 +339,60 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
 
           <Section
             title="Terms & Conditions"
-            description="Shown in the confirmation email with an 'I Agree' acknowledgement action, and snapshotted onto each order at creation. Saving a change auto-bumps the terms version; existing orders keep the version they were created under."
+            description="Shown in the confirmation email with an 'I Agree' acknowledgement action, and snapshotted onto each order at creation. Each service type has its own text and its own version counter, so an order is only ever asked to accept terms that describe what it actually booked. Saving a change auto-bumps that service's version; existing orders keep the version they were created under."
           >
-            <FormField
-              control={form.control}
-              name="termsAndConditions"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Terms text</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      rows={10}
-                      placeholder="One clause per line — paragraphs render with subtle spacing in the email."
-                      disabled={!canEdit || isSubmitting}
-                      {...field}
-                      value={field.value ?? ""}
-                    />
-                  </FormControl>
-                  <p className="text-[11.5px] text-muted-foreground">
-                    20–8,000 characters. Use one clause per line. Paste the
-                    customer-provided Terms & Conditions here.
-                  </p>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="space-y-5">
+              <FormField
+                control={form.control}
+                name="termsAndConditions"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      {ServiceTypeLabel.CAR_RENTAL} terms text
+                    </FormLabel>
+                    <FormControl>
+                      <Textarea
+                        rows={10}
+                        placeholder="One clause per line — paragraphs render with subtle spacing in the email."
+                        disabled={!canEdit || isSubmitting}
+                        {...field}
+                        value={field.value ?? ""}
+                      />
+                    </FormControl>
+                    <p className="text-[11.5px] text-muted-foreground">
+                      20–8,000 characters. Use one clause per line. Applied to
+                      car rental orders. Paste the customer-provided Terms &
+                      Conditions here.
+                    </p>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="flightTermsAndConditions"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{ServiceTypeLabel.FLIGHT} terms text</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        rows={10}
+                        placeholder="One clause per line — paragraphs render with subtle spacing in the email."
+                        disabled={!canEdit || isSubmitting}
+                        {...field}
+                        value={field.value ?? ""}
+                      />
+                    </FormControl>
+                    <p className="text-[11.5px] text-muted-foreground">
+                      20–8,000 characters. Applied to flight orders. Keep this
+                      free of rental wording — a flight customer has no counter
+                      to visit and no licence to present.
+                    </p>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
           </Section>
         </SectionStack>
 
