@@ -52,6 +52,30 @@ export const DEFAULT_TERMS_AND_CONDITIONS = [
 ].join("\n");
 
 /**
+ * Default FLIGHT cancellation / refund policy.
+ *
+ * The rental policy is written around a pick-up time ("more than 24 hours
+ * before pick-up", "date or vehicle changes") — none of which a ticketed air
+ * booking has. A flight customer reading it is told a refund rule that does
+ * not govern their booking.
+ *
+ * Deliberately states NO refund window, fee or percentage. Air refundability
+ * is set by the fare rules of the fare actually booked, so inventing numbers
+ * here would be inventing a business policy this deployment has not agreed.
+ * The text defers to the airline's fare rules and points the customer at
+ * support; the operator replaces it from /admin/settings with whatever the
+ * business commits to.
+ */
+export const DEFAULT_FLIGHT_CANCELLATION_POLICY = [
+  "Changes and refunds for air tickets are governed by the fare rules of the fare booked with the operating airline.",
+  "Once a ticket is issued, airline cancellation and change fees may apply and are deducted from any refund due.",
+  "Some promotional and discounted fares are non-refundable. Your fare's conditions are confirmed at the time of ticketing.",
+  "Where a refund is due, it is returned to the original payment method once the airline releases the funds, which can take longer than a card refund.",
+  "Airline-initiated schedule changes and cancellations are handled under the airline's conditions of carriage.",
+  "To request a change, cancellation, or refund, reply to this email or contact our support team using the details below.",
+].join("\n");
+
+/**
  * Default FLIGHT Terms & Conditions.
  *
  * A separate constant rather than a variant of the rental text because the
@@ -117,6 +141,12 @@ export interface SettingDoc {
   /** Version string for the flight T&C, bumped independently of the rental
    *  one so editing flight copy never invalidates a rental order's snapshot. */
   flightTermsVersion?: string;
+  /** FLIGHT cancellation/refund policy. Snapshotted onto a flight order's
+   *  `policy` instead of `cancellationPolicy`. Optional for the same reason
+   *  as the flight terms: older documents do not carry it. */
+  flightCancellationPolicy?: string;
+  /** Version string for the flight policy, bumped independently. */
+  flightCancellationPolicyVersion?: string;
   updatedBy?: Schema.Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
@@ -207,6 +237,18 @@ const settingSchema = new Schema<SettingDoc>(
       maxlength: 8000,
     },
     flightTermsVersion: {
+      type: String,
+      required: false,
+      default: "v1",
+      maxlength: 16,
+    },
+    flightCancellationPolicy: {
+      type: String,
+      required: false,
+      default: DEFAULT_FLIGHT_CANCELLATION_POLICY,
+      maxlength: 4000,
+    },
+    flightCancellationPolicyVersion: {
       type: String,
       required: false,
       default: "v1",

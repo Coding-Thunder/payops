@@ -19,6 +19,7 @@ export {
   type ChargeWording,
 } from "./charge-breakdown";
 export { EmailTermsSection } from "./terms-section";
+export { EmailPolicySection } from "./policy-section";
 export { EmailAgreeButton } from "./agree-button";
 export { SupportSection } from "./support-section";
 export * from "./tokens";

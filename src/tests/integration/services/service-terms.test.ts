@@ -11,12 +11,15 @@ import {
 import { ProviderId } from "@/lib/constants/providers";
 import { Order, Setting, SETTINGS_KEY } from "@/server/db/models";
 import {
+  DEFAULT_CANCELLATION_POLICY,
+  DEFAULT_FLIGHT_CANCELLATION_POLICY,
   DEFAULT_FLIGHT_TERMS_AND_CONDITIONS,
   DEFAULT_TERMS_AND_CONDITIONS,
 } from "@/server/db/models/setting.model";
 import { createOrder } from "@/server/services/order.service";
 import {
   getSettings,
+  policyForService,
   termsForService,
   updateSettings,
 } from "@/server/services/settings.service";
@@ -226,5 +229,118 @@ describe("a settings document written before flights existed", () => {
     for (const phrase of RENTAL_ONLY) {
       expect(snapshot).not.toContain(phrase);
     }
+  });
+});
+
+/**
+ * The cancellation/refund policy has exactly the same problem as the terms:
+ * the rental policy is written around a pick-up time ("more than 24 hours
+ * before pick-up", "date or vehicle changes") that a ticketed flight has no
+ * equivalent of, and it is rendered in the flight confirmation email.
+ */
+
+/** Phrases that only make sense for a rental. */
+const RENTAL_ONLY_POLICY = ["pick-up", "vehicle changes", "deposit"];
+
+describe("policyForService", () => {
+  it("hands a car order the rental policy and the RENTAL version", async () => {
+    const settings = await getSettings();
+    expect(policyForService(settings, ServiceType.CAR_RENTAL)).toEqual({
+      text: settings.cancellationPolicy,
+      version: settings.cancellationPolicyVersion,
+    });
+  });
+
+  it("hands a flight order the flight policy and the FLIGHT version", async () => {
+    const settings = await getSettings();
+    expect(policyForService(settings, ServiceType.FLIGHT)).toEqual({
+      text: settings.flightCancellationPolicy,
+      version: settings.flightCancellationPolicyVersion,
+    });
+  });
+});
+
+describe("the default flight policy", () => {
+  it("carries no rental-only wording", () => {
+    const text = DEFAULT_FLIGHT_CANCELLATION_POLICY.toLowerCase();
+    for (const phrase of RENTAL_ONLY_POLICY) {
+      expect(text).not.toContain(phrase);
+    }
+  });
+
+  it("states no invented refund window or fee", () => {
+    // Air refundability is set by the booked fare's rules. Shipping a
+    // specific window or percentage here would be inventing a business
+    // policy nobody agreed, so the default defers to the fare rules.
+    expect(DEFAULT_FLIGHT_CANCELLATION_POLICY).toMatch(/fare rules/i);
+    expect(DEFAULT_FLIGHT_CANCELLATION_POLICY).not.toMatch(/\d+\s*hours?/i);
+    expect(DEFAULT_FLIGHT_CANCELLATION_POLICY).not.toMatch(/\d+\s*%/);
+  });
+
+  it("leaves the rental policy defaults exactly as they were", () => {
+    expect(DEFAULT_CANCELLATION_POLICY).toContain("before pick-up");
+    expect(DEFAULT_CANCELLATION_POLICY).toContain("vehicle changes");
+  });
+});
+
+describe("createOrder snapshots the right policy", () => {
+  it("gives a FLIGHT order the flight policy, free of rental wording", async () => {
+    const actor = actorFor(UserRole.ADMIN);
+    const created = await createOrder(flightInput() as never, { actor });
+    const doc = await Order.findById(created.order.id).lean();
+    const snapshot = (doc?.policy?.text ?? "").toLowerCase();
+    expect(snapshot.length).toBeGreaterThan(0);
+    for (const phrase of RENTAL_ONLY_POLICY) {
+      expect(snapshot).not.toContain(phrase);
+    }
+  });
+
+  it("gives a CAR order exactly the rental policy it always got", async () => {
+    const actor = actorFor(UserRole.ADMIN);
+    const settings = await getSettings();
+    const created = await createOrder(validCreateOrderInput(), { actor });
+    const doc = await Order.findById(created.order.id).lean();
+    expect(doc?.policy?.text).toBe(settings.cancellationPolicy);
+    expect(doc?.policy?.version).toBe(settings.cancellationPolicyVersion);
+  });
+});
+
+describe("policy versioning stays per-service", () => {
+  it("bumps only the flight policy version when flight text changes", async () => {
+    const before = await getSettings();
+    await updateSettings(
+      {
+        flightCancellationPolicy:
+          "Revised flight policy, long enough for the schema minimum.",
+      } as never,
+      { actorId: actorFor().id, actorName: "QA", actorRole: "ADMIN" },
+    );
+    const after = await getSettings();
+    expect(after.flightCancellationPolicyVersion).not.toBe(
+      before.flightCancellationPolicyVersion,
+    );
+    expect(after.cancellationPolicyVersion).toBe(
+      before.cancellationPolicyVersion,
+    );
+    expect(after.cancellationPolicy).toBe(before.cancellationPolicy);
+  });
+});
+
+describe("a pre-flight settings document, for the policy too", () => {
+  it("serves the flight policy with no migration", async () => {
+    await Setting.updateOne(
+      { key: SETTINGS_KEY },
+      {
+        $unset: {
+          flightCancellationPolicy: "",
+          flightCancellationPolicyVersion: "",
+        },
+      },
+    );
+    const settings = await getSettings();
+    expect(settings.flightCancellationPolicy).toBe(
+      DEFAULT_FLIGHT_CANCELLATION_POLICY,
+    );
+    expect(settings.flightCancellationPolicyVersion).toBe("v1");
   });
 });

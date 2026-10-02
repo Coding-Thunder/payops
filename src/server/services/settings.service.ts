@@ -20,6 +20,7 @@ import {
 import {
   DEFAULT_CANCELLATION_POLICY,
   DEFAULT_CONSENT_MESSAGE,
+  DEFAULT_FLIGHT_CANCELLATION_POLICY,
   DEFAULT_FLIGHT_TERMS_AND_CONDITIONS,
   DEFAULT_TERMS_AND_CONDITIONS,
 } from "@/server/db/models/setting.model";
@@ -43,6 +44,8 @@ export interface OperationalSettings {
   termsVersion: string;
   flightTermsAndConditions: string;
   flightTermsVersion: string;
+  flightCancellationPolicy: string;
+  flightCancellationPolicyVersion: string;
   updatedAt: string;
 }
 
@@ -64,6 +67,8 @@ function toDTO(doc: SettingDoc | null): OperationalSettings {
       termsVersion: "v1",
       flightTermsAndConditions: DEFAULT_FLIGHT_TERMS_AND_CONDITIONS,
       flightTermsVersion: "v1",
+      flightCancellationPolicy: DEFAULT_FLIGHT_CANCELLATION_POLICY,
+      flightCancellationPolicyVersion: "v1",
       updatedAt: new Date(0).toISOString(),
     };
   }
@@ -89,6 +94,10 @@ function toDTO(doc: SettingDoc | null): OperationalSettings {
     flightTermsAndConditions:
       doc.flightTermsAndConditions ?? DEFAULT_FLIGHT_TERMS_AND_CONDITIONS,
     flightTermsVersion: doc.flightTermsVersion ?? "v1",
+    flightCancellationPolicy:
+      doc.flightCancellationPolicy ?? DEFAULT_FLIGHT_CANCELLATION_POLICY,
+    flightCancellationPolicyVersion:
+      doc.flightCancellationPolicyVersion ?? "v1",
     updatedAt: doc.updatedAt.toISOString(),
   };
 }
@@ -119,6 +128,30 @@ export function termsForService(
   return {
     text: settings.termsAndConditions,
     version: settings.termsVersion,
+  };
+}
+
+/**
+ * The cancellation/refund policy snapshot for an order of this service type.
+ *
+ * Same seam as `termsForService`, for the same reason: the order carries a
+ * frozen `policy`, and every email reads that snapshot rather than settings.
+ * A car order gets exactly the expression `createOrder` used before flights
+ * existed.
+ */
+export function policyForService(
+  settings: OperationalSettings,
+  serviceType: ServiceType,
+): { text: string; version: string } {
+  if (serviceType === ServiceType.FLIGHT) {
+    return {
+      text: settings.flightCancellationPolicy,
+      version: settings.flightCancellationPolicyVersion,
+    };
+  }
+  return {
+    text: settings.cancellationPolicy,
+    version: settings.cancellationPolicyVersion,
   };
 }
 
@@ -185,6 +218,7 @@ export async function updateSettings(
     "consentMessage",
     "termsAndConditions",
     "flightTermsAndConditions",
+    "flightCancellationPolicy",
   ];
   for (const field of fields) {
     if (!(field in input)) continue;
@@ -231,6 +265,18 @@ export async function updateSettings(
     set.flightTermsVersion = bumped;
     changes.flightTermsVersion = {
       from: existing.flightTermsVersion ?? "v1",
+      to: bumped,
+    };
+  }
+
+  // And the flight policy, again on its own counter.
+  if ("flightCancellationPolicy" in changes) {
+    const bumped = nextPolicyVersion(
+      existing.flightCancellationPolicyVersion ?? "v1",
+    );
+    set.flightCancellationPolicyVersion = bumped;
+    changes.flightCancellationPolicyVersion = {
+      from: existing.flightCancellationPolicyVersion ?? "v1",
       to: bumped,
     };
   }

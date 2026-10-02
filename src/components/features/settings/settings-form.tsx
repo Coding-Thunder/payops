@@ -327,6 +327,33 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
                       disabled={!canEdit || isSubmitting}
                       {...field}
                     />
+                    <FormField
+                      control={form.control}
+                      name="flightCancellationPolicy"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            {ServiceTypeLabel.FLIGHT} cancellation & refund policy
+                          </FormLabel>
+                          <FormControl>
+                            <Textarea
+                              rows={8}
+                              placeholder="One clause per line."
+                              disabled={!canEdit || isSubmitting}
+                              {...field}
+                              value={field.value ?? ""}
+                            />
+                          </FormControl>
+                          <p className="text-[11.5px] text-muted-foreground">
+                            20–4,000 characters. Applied to flight orders. Air
+                            refundability follows the fare rules of the fare booked, so
+                            state what the business commits to rather than reusing the
+                            rental pick-up windows.
+                          </p>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                   </FormControl>
                   <p className="text-[11.5px] text-muted-foreground">
                     20–4,000 characters. Use one statement per line.

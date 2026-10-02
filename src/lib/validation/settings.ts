@@ -49,6 +49,13 @@ export const updateSettingsSchema = z.object({
     .min(20, "Flight terms must be at least 20 characters")
     .max(8000, "Flight terms must be 8000 characters or fewer")
     .optional(),
+  // Peer of `cancellationPolicy`, same constraints.
+  flightCancellationPolicy: z
+    .string()
+    .trim()
+    .min(20, "Flight policy must be at least 20 characters")
+    .max(4000, "Flight policy must be 4000 characters or fewer")
+    .optional(),
 });
 
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;

@@ -63,7 +63,11 @@ import type {
 import { getGatewayForOrganization } from "@/server/payments/resolve-gateway";
 import { recordAudit } from "./audit.service";
 import { captureEvidenceSafe } from "./evidence.service";
-import { getSettings, termsForService } from "./settings.service";
+import {
+  getSettings,
+  policyForService,
+  termsForService,
+} from "./settings.service";
 import { generateOrderNumber } from "./order-number";
 import {
   buildProviderSnapshotFromKey,
@@ -412,10 +416,11 @@ export async function createOrder(
             name: ctx.actor.name,
             email: ctx.actor.email,
           },
+          // Service-aware, exactly like `terms` above: the rental policy is
+          // written around a pick-up time a flight does not have.
           policy: {
             acceptedAt: new Date(),
-            version: settings.cancellationPolicyVersion,
-            text: settings.cancellationPolicy,
+            ...policyForService(settings, servicePayload.serviceType),
           },
           risk: { flagged: false },
           consent: { status: ConsentStatus.NOT_REQUESTED },

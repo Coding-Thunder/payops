@@ -8,6 +8,8 @@ import { requirePermission } from "@/server/auth/session";
 import { getOrderById } from "@/server/services/order.service";
 import { composePaymentRequestProps } from "@/server/services/email.service";
 import { PaymentRequestEmail } from "@/server/email/templates/payment-request";
+import { FlightPaymentRequestEmail } from "@/server/email/templates/flight-payment-request";
+import { isFlightOrder } from "@/lib/service-summary";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,6 +55,26 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
     intro: input.intro,
     note: input.note,
   });
-  const html = await render(<PaymentRequestEmail {...props} />);
+  /**
+   * Template selection must match `sendPaymentRequestEmail` EXACTLY.
+   *
+   * This route previously rendered the rental template for every order, so a
+   * flight order previewed as a car email: an empty "Vehicle" row, blank
+   * Pick-up/Drop-off, "Total rental cost" and "Amount due at counter". The
+   * email that actually went out was the flight one, which made the preview
+   * actively misleading — the operator approved a layout the customer never
+   * received.
+   *
+   * `composePaymentRequestProps` above already carries `flightRows`, so both
+   * callers compose once and only the element differs. Keeping the two
+   * selections identical is the point; if they diverge again the preview
+   * lies, so `email-preview-parity.test.ts` asserts they agree.
+   */
+  const element = isFlightOrder(order) ? (
+    <FlightPaymentRequestEmail {...props} />
+  ) : (
+    <PaymentRequestEmail {...props} />
+  );
+  const html = await render(element);
   return jsonOk({ html });
 });

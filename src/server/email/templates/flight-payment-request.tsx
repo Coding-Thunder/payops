@@ -12,6 +12,7 @@ import {
   EmailFooter,
   EmailHeader,
   EmailLayout,
+  EmailPolicySection,
   EmailTermsSection,
   FLIGHT_CHARGE_WORDING,
   MetadataRow,
@@ -95,6 +96,8 @@ export function FlightPaymentRequestEmail({
   note,
   termsText,
   termsVersion,
+  cancellationPolicy,
+  cancellationPolicyVersion,
   primaryCta,
 }: FlightPaymentRequestEmailProps) {
   const greetingLine = greeting?.trim() || `Hi ${customerName},`;
@@ -229,6 +232,14 @@ export function FlightPaymentRequestEmail({
           </Text>
         </Section>
       ) : null}
+
+      {/* The rental request email shows the policy; a flight request showed
+          nothing at all, so a flight customer was asked to pay with no
+          refund terms in front of them. Same block, flight text. */}
+      <EmailPolicySection
+        policyText={cancellationPolicy ?? null}
+        policyVersion={cancellationPolicyVersion ?? null}
+      />
 
       <EmailTermsSection
         termsText={termsText ?? null}

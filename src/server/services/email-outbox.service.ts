@@ -200,7 +200,15 @@ async function processPendingEmail(
   // edits between enqueue and drain should appear in the actual send.
   const order = await fetchOrderForOutbox(String(doc.orderId));
   if (doc.kind === EmailKind.PAYMENT_CONFIRMATION) {
-    await sendPaymentConfirmationEmail(order);
+    const result = await sendPaymentConfirmationEmail(order);
+    // `sendPaymentConfirmationEmail` returns normally when there is no SMTP
+    // transport configured, so a bare `await` let the row be marked SENT and
+    // stamped `confirmationEmailSentAt` for an email nobody ever sent.
+    // Throwing puts it back through the existing backoff, and it reaches
+    // FAILED after MAX_ATTEMPTS like any other undeliverable row.
+    if (!result.delivered) {
+      throw new Error("Email was not delivered: no transport accepted it");
+    }
     // Mark the order so the UI timeline + DTO can show "confirmation
     // sent". Conditional on the field being null so re-drains (rare —
     // shouldn't happen given outbox status gating) can't ratchet

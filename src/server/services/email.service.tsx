@@ -112,9 +112,23 @@ function maskEmail(addr: string): string {
   return `${head}***${domain}`;
 }
 
+/**
+ * `delivered` says whether the transport actually accepted the message.
+ *
+ * It exists because "did not throw" is NOT the same as "sent": with no SMTP
+ * credentials configured this function logs, records EMAIL_FAILED and returns
+ * normally, so callers that treated a normal return as success went on to
+ * announce `email_sent` for an email that was never handed to any transport.
+ * A real transport error still throws, as before.
+ */
 async function sendEmail(
   args: SendArgs,
-): Promise<{ id: string | null; from: string; replyTo: string | null }> {
+): Promise<{
+  id: string | null;
+  from: string;
+  replyTo: string | null;
+  delivered: boolean;
+}> {
   // Identity is resolved from the ORDER'S organization, not from ambient
   // request context — this runs on the outbox drainer and webhook paths,
   // which have neither a session nor an organization cookie.
@@ -157,7 +171,12 @@ async function sendEmail(
         kind: args.kind,
       },
     });
-    return { id: null, from: fromAddress, replyTo: replyTo || null };
+    return {
+      id: null,
+      from: fromAddress,
+      replyTo: replyTo || null,
+      delivered: false,
+    };
   }
 
   try {
@@ -199,6 +218,7 @@ async function sendEmail(
       id: info.messageId ?? null,
       from: fromAddress,
       replyTo: replyTo || null,
+      delivered: true,
     };
   } catch (err) {
     logger.error("email.send_failed", {
@@ -228,7 +248,7 @@ async function sendEmail(
  */
 export async function sendPaymentConfirmationEmail(
   order: OrderDTO,
-): Promise<{ id: string | null }> {
+): Promise<{ id: string | null; delivered: boolean }> {
   // Branding is a single Mongo read per send. We deliberately don't cache
   // it across sends so a brand-name / support-contact change propagates to
   // the very next confirmation, no process restart required.
@@ -611,7 +631,12 @@ export async function sendPaymentRequestEmail(
   order: OrderDTO,
   overrides: PaymentRequestOverrides = {},
   context?: SendPaymentRequestContext,
-): Promise<{ id: string | null; consentToken: string | null }> {
+): Promise<{
+  id: string | null;
+  consentToken: string | null;
+  /** False when nothing was handed to a transport — see `sendEmail`. */
+  delivered: boolean;
+}> {
   if (!order.payment.paymentUrl) {
     throw new Error(
       "Order has no payment link yet — generate the link via the email composer before sending the request.",
@@ -779,6 +804,23 @@ export async function sendPaymentRequestEmail(
   // node lights up the moment the send completes, instead of waiting for
   // the next 5s poll or a manual refresh. The audit row was already
   // written by `sendEmail`; this is purely the realtime push.
+  //
+  // GATED ON ACTUAL DELIVERY. `sendEmail` returns normally when no SMTP
+  // transport is configured, having already recorded EMAIL_FAILED, so
+  // announcing the transition unconditionally told the operator an email had
+  // gone out when none had. The evidence snapshot above is still captured
+  // either way: what was rendered is worth keeping as a record regardless,
+  // and it carries `messageId: null` when nothing was delivered.
+  if (!sent.delivered) {
+    logger.warn("order.email_not_delivered", {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      kind: EmailKind.PAYMENT_LINK,
+      source: "service.email.payment_request",
+    });
+    return { id: sent.id, consentToken, delivered: false };
+  }
+
   logger.info("order.lifecycle.transition", {
     orderId: order.id,
     orderNumber: order.orderNumber,
@@ -805,7 +847,7 @@ export async function sendPaymentRequestEmail(
       messageId: sent.id,
     },
   });
-  return { id: sent.id, consentToken };
+  return { id: sent.id, consentToken, delivered: true };
 }
 
 function subjectForBookingType(order: OrderDTO, brand: string): string {
