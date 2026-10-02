@@ -9,6 +9,7 @@ import { BookingTypeLabel } from "@/lib/constants/labels";
 import { formatDateTime } from "@/lib/format";
 import {
   describeServiceItem,
+  isFlightOrder,
   serviceDetailRows,
 } from "@/lib/service-summary";
 import type { OrderDTO } from "@/types";
@@ -25,6 +26,7 @@ export function OrderDetailsCard({ order }: OrderDetailsCardProps) {
       <ProviderCard
         provider={order.provider}
         description={describeServiceItem(order)}
+        label={isFlightOrder(order) ? "Airline / supplier" : undefined}
         meta={
           <>
             <div className="font-mono text-[12px] text-foreground">

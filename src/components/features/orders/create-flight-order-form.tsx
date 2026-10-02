@@ -650,6 +650,20 @@ export function CreateFlightOrderForm({
                             disabled={isSubmitting}
                             {...field}
                             value={field.value ?? ""}
+                            // `chargeInputSchema.amount` is a strict
+                            // `z.number()`, and a number input hands RHF a
+                            // STRING. Without this conversion the form fails
+                            // its own validation with "Enter a valid amount"
+                            // and never reaches the API. Identical to the
+                            // rental form's handler — the schema is shared,
+                            // so the conversion has to be too.
+                            onChange={(e) =>
+                              field.onChange(
+                                e.target.value === ""
+                                  ? ""
+                                  : Number(e.target.value),
+                              )
+                            }
                           />
                         </FormControl>
                         <FormMessage />

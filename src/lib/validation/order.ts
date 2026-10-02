@@ -125,6 +125,36 @@ export type CreateOrderInput = z.infer<typeof createOrderSchema>;
  * to drift.
  */
 
+/**
+ * An optional date coming from a form.
+ *
+ * `isoDateString.optional()` is NOT enough: `.optional()` admits `undefined`,
+ * but a React form field that has never been touched sends `""`, which hits
+ * `.min(1, "Date is required")` and fails. That made the one-way flight form
+ * demand a return date it had itself labelled "not required".
+ *
+ * Same shape as `vehicle.imageUrl` above — validate-or-empty, then normalise
+ * empty to null so the stored document matches the model's `default: null`.
+ */
+const optionalIsoDateString = z
+  .string()
+  .trim()
+  .refine((v) => v === "" || !Number.isNaN(Date.parse(v)), "Enter a valid date")
+  .optional()
+  .nullable()
+  .transform((v) => (v && v.length > 0 ? v : null));
+
+/** Optional free text from a form: empty becomes null, not "". */
+function optionalText(max: number) {
+  return z
+    .string()
+    .trim()
+    .max(max)
+    .optional()
+    .nullable()
+    .transform((v) => (v && v.length > 0 ? v : null));
+}
+
 /** Passenger counts. At least one adult; an infant cannot travel alone. */
 const flightPassengersSchema = z.object({
   adults: z.coerce.number().int().min(1, "At least one adult").max(9),
@@ -135,19 +165,19 @@ const flightPassengersSchema = z.object({
 const flightDetailsSchema = z
   .object({
     tripType: z.enum(FLIGHT_TRIP_TYPES),
-    airline: z.string().trim().max(80).optional().nullable(),
-    flightNumber: z.string().trim().max(16).optional().nullable(),
+    airline: optionalText(80),
+    flightNumber: optionalText(16),
     origin: z.string().trim().min(2, "Origin is required").max(120),
     destination: z.string().trim().min(2, "Destination is required").max(120),
     departureDate: isoDateString,
-    departureTimePreference: z.string().trim().max(40).optional().nullable(),
-    arrivalDate: isoDateString.optional().nullable(),
-    returnDate: isoDateString.optional().nullable(),
-    returnTimePreference: z.string().trim().max(40).optional().nullable(),
+    departureTimePreference: optionalText(40),
+    arrivalDate: optionalIsoDateString,
+    returnDate: optionalIsoDateString,
+    returnTimePreference: optionalText(40),
     cabinClass: z.enum(CABIN_CLASSES),
     passengers: flightPassengersSchema,
-    passengerNotes: z.string().trim().max(2000).optional().nullable(),
-    pnr: z.string().trim().max(32).optional().nullable(),
+    passengerNotes: optionalText(2000),
+    pnr: optionalText(32),
   })
   // A round trip without a return leg is the one combination the operator
   // can get wrong that the model would also reject — catch it at the form.

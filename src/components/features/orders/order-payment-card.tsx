@@ -21,6 +21,7 @@ import { CopyButton } from "@/components/common/copy-button";
 import { OrderStatusBadge } from "@/components/common/status-badges";
 import { toast } from "@/components/ui/sonner";
 import { api, ApiClientError } from "@/lib/api-client";
+import { isFlightOrder } from "@/lib/service-summary";
 import { formatCurrency, formatDateTime, formatRelative } from "@/lib/format";
 import { OrderStatus, PaymentTiming } from "@/lib/constants/enums";
 import { PaymentGatewayLabel } from "@/lib/constants/labels";
@@ -41,6 +42,8 @@ export function OrderPaymentCard({
   order,
   canRegenerate,
 }: OrderPaymentCardProps) {
+  // A flight has no counter to settle a balance at. Car wording unchanged.
+  const isFlight = isFlightOrder(order);
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
 
@@ -172,14 +175,18 @@ export function OrderPaymentCard({
           </div>
           {hasCounterDue ? (
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Amount due at counter</span>
+                <span className="text-muted-foreground">
+                {isFlight ? "Amount due later" : "Amount due at counter"}
+              </span>
               <span className="font-medium tabular-nums">
                 {formatCurrency(breakdown.dueAtCounter, currency)}
               </span>
             </div>
           ) : null}
           <div className="flex items-center justify-between">
-            <span className="font-medium">Total rental cost</span>
+            <span className="font-medium">
+              {isFlight ? "Total flight cost" : "Total rental cost"}
+            </span>
             <span className="font-semibold tabular-nums">
               {formatCurrency(breakdown.total, currency)}
             </span>

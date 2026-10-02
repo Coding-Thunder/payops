@@ -92,6 +92,78 @@ describe("flight order validation", () => {
     expect(parsed.success).toBe(false);
   });
 
+  /**
+   * REGRESSION — the form sends "" for every optional date it has not
+   * touched. `isoDateString.optional()` admits `undefined`, never "", so the
+   * one-way form failed its own validation demanding a return date it had
+   * labelled "not required", and the order never reached the API.
+   */
+  it("accepts empty strings for the optional dates, as the form sends them", () => {
+    const parsed = createFlightOrderSchema.safeParse(
+      flightInput({
+        flight: {
+          ...flightInput().flight,
+          arrivalDate: "",
+          returnDate: "",
+          departureTimePreference: "",
+          returnTimePreference: "",
+          airline: "",
+          flightNumber: "",
+          pnr: "",
+          passengerNotes: "",
+        },
+      }),
+    );
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      // Normalised to null so the stored document matches the model's
+      // `default: null` rather than holding empty strings.
+      expect(parsed.data.flight.returnDate).toBeNull();
+      expect(parsed.data.flight.arrivalDate).toBeNull();
+      expect(parsed.data.flight.airline).toBeNull();
+      expect(parsed.data.flight.pnr).toBeNull();
+    }
+  });
+
+  /**
+   * REGRESSION — a number input hands react-hook-form a STRING, and
+   * `chargeInputSchema.amount` is a strict `z.number()`. The flight form was
+   * missing the car form's explicit conversion, so every submission failed
+   * client-side with "Enter a valid amount" and no request was ever sent.
+   * The schema is shared, so this asserts the contract the form must meet.
+   */
+  it("requires a NUMBER amount — a string is rejected, as the shared schema demands", () => {
+    const asString = createFlightOrderSchema.safeParse(
+      flightInput({
+        charges: [
+          { name: "Airfare", amount: "420.50", timing: PaymentTiming.PREPAID },
+        ],
+      }),
+    );
+    expect(asString.success).toBe(false);
+
+    const asNumber = createFlightOrderSchema.safeParse(
+      flightInput({
+        charges: [
+          { name: "Airfare", amount: 420.5, timing: PaymentTiming.PREPAID },
+        ],
+      }),
+    );
+    expect(asNumber.success).toBe(true);
+  });
+
+  it("keeps a decimal amount exact through parsing", () => {
+    for (const amount of [420.5, 0.5, 1, 1234.56, 99.99]) {
+      const parsed = createFlightOrderSchema.safeParse(
+        flightInput({
+          charges: [{ name: "Airfare", amount, timing: PaymentTiming.PREPAID }],
+        }),
+      );
+      expect(parsed.success).toBe(true);
+      if (parsed.success) expect(parsed.data.charges[0]!.amount).toBe(amount);
+    }
+  });
+
   it("rejects a flight with no route", () => {
     const parsed = createFlightOrderSchema.safeParse(
       flightInput({ flight: { ...flightInput().flight, origin: "" } }),
