@@ -321,31 +321,42 @@ function SummaryBlock({ view }: { view: PublicConsentView }) {
         <DetailRow label="Customer" value={view.customerName} />
         <DetailRow label="Email" value={view.customerEmail} mono />
         <DetailRow label="Provider" value={snapshot.provider || "—"} />
-        {/* The snapshot's three slots hold different things per service:
-            a car's vehicle/pick-up/drop-off, or a flight's route and
-            departure/return. The VALUES were already service-aware; these
-            labels now follow, so a flight customer is not asked to sign
-            next to the word "Vehicle". */}
-        <DetailRow
-          label={isFlight ? "Itinerary" : "Vehicle"}
-          value={snapshot.vehicle}
-        />
-        <DetailRow
-          label={isFlight ? "Departure" : "Pick-up"}
-          value={
-            snapshot.pickupLocation
-              ? `${formatDateTime(snapshot.pickupDate)} · ${snapshot.pickupLocation}`
-              : formatDateTime(snapshot.pickupDate)
-          }
-        />
-        <DetailRow
-          label={isFlight ? "Return" : "Drop-off"}
-          value={
-            snapshot.dropoffLocation
-              ? `${formatDateTime(snapshot.dropoffDate)} · ${snapshot.dropoffLocation}`
-              : formatDateTime(snapshot.dropoffDate)
-          }
-        />
+        {/* A FLIGHT renders the order's own itinerary rows — route, airline,
+            flight number, PNR, departure, ARRIVAL, trip type, cabin,
+            passengers — from `view.serviceRows`.
+
+            It used to relabel the consent snapshot's three car slots instead,
+            which is why this page was wrong: the snapshot is car-shaped, so a
+            flight's "dropoff" fell back to its DEPARTURE date and the page
+            showed a Return equal to the Departure, with no arrival anywhere.
+            Relabelling a car summary is not a flight summary.
+
+            A CAR keeps the exact three rows it has always had. */}
+        {isFlight ? (
+          view.serviceRows.map((row) => (
+            <DetailRow key={row.label} label={row.label} value={row.value} />
+          ))
+        ) : (
+          <>
+            <DetailRow label="Vehicle" value={snapshot.vehicle} />
+            <DetailRow
+              label="Pick-up"
+              value={
+                snapshot.pickupLocation
+                  ? `${formatDateTime(snapshot.pickupDate)} · ${snapshot.pickupLocation}`
+                  : formatDateTime(snapshot.pickupDate)
+              }
+            />
+            <DetailRow
+              label="Drop-off"
+              value={
+                snapshot.dropoffLocation
+                  ? `${formatDateTime(snapshot.dropoffDate)} · ${snapshot.dropoffLocation}`
+                  : formatDateTime(snapshot.dropoffDate)
+              }
+            />
+          </>
+        )}
       </dl>
     </div>
   );

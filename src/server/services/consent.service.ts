@@ -16,6 +16,10 @@ import {
   ServiceType,
 } from "@/lib/constants/enums";
 import {
+  serviceDetailRows,
+  type ServiceSummarySource,
+} from "@/lib/service-summary";
+import {
   BadRequestError,
   ConflictError,
   ForbiddenError,
@@ -324,6 +328,19 @@ function gatewayLabelOf(gateway: string | null | undefined): string | null {
  * trimmed view shape so we never leak audit metadata (IP, UA, verifier)
  * to the customer.
  */
+/** Dates on the hosted consent page: UTC with the clock shown, because the
+ *  customer is confirming a specific departure and arrival. Mirrors the
+ *  email formatter so the page and the email agree. */
+function formatConsentDateTime(value: Date | string | number): string {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  const month = d.toLocaleString("en-GB", { month: "short", timeZone: "UTC" });
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${day} ${month} ${d.getUTCFullYear()} • ${hh}:${mm} UTC`;
+}
+
 export async function getPublicConsentView(
   token: string,
   branding: { brandName: string; supportEmail?: string; supportPhone?: string },
@@ -343,6 +360,11 @@ export async function getPublicConsentView(
     supportPhone: branding.supportPhone ?? "",
   });
   return {
+    // The order is already loaded above for brand + gateway, so this costs
+    // no extra query on a $5 instance.
+    serviceRows: order
+      ? serviceDetailRows(order as ServiceSummarySource, formatConsentDateTime)
+      : [],
     status: doc.status as ConsentStatus,
     customerName: doc.customerName,
     customerEmail: doc.customerEmail,

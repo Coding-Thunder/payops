@@ -328,6 +328,19 @@ export interface PaymentConsentDTO {
 /** Trimmed shape used by the unauthenticated hosted consent page — never
  *  leaks IP / UA / verifier metadata to the customer. */
 export interface PublicConsentView {
+  /**
+   * Service-native itinerary rows for the pre-payment summary.
+   *
+   * Derived from the ORDER at read time, not from the persisted consent
+   * snapshot. The snapshot is append-only legal evidence with a car-shaped
+   * schema (`vehicle`, `pickupDate`, `dropoffDate`), and a flight was being
+   * squeezed into it: its route became "vehicle", its departure became
+   * "pickup", and a ONE-WAY flight's "dropoff" fell back to the departure
+   * date — so the page showed a Return identical to the Departure and no
+   * arrival at all. These rows carry what the order actually holds, and the
+   * stored snapshot is left exactly as it was.
+   */
+  serviceRows: Array<{ label: string; value: string }>;
   status: ConsentStatus;
   customerName: string;
   customerEmail: string;
