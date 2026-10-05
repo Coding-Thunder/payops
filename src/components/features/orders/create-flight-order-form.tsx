@@ -350,6 +350,34 @@ export function CreateFlightOrderForm({
               )}
             />
 
+            {/* Arrival was in `defaultValues` and in the schema, model, DTO,
+                detail view and email rows — but had no input, so every flight
+                order submitted "" and normalised to null. The operator could
+                never enter it and the customer never saw it. Same
+                DateTimePicker as Departure, so it carries a TIME as well as a
+                date, which is the part that was actually being asked for. */}
+            <FormField
+              control={form.control}
+              name="flight.arrivalDate"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Arrival (optional)</FormLabel>
+                  <FormControl>
+                    <DateTimePicker
+                      value={field.value ?? ""}
+                      onChange={field.onChange}
+                      disabled={isSubmitting}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Landing date and time, once the itinerary is known. The
+                    model rejects an arrival before departure.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             <FormField
               control={form.control}
               name="flight.returnDate"
