@@ -23,11 +23,15 @@ export const updateSettingsSchema = z.object({
   defaultCurrency: z.enum(CURRENCIES),
   successRedirectUrl: z.string().url(),
   cancelRedirectUrl: z.string().url(),
+  // Optional, like `termsAndConditions` below: the settings page sends the
+  // car rental text only for a brand that sells car rental, and the service
+  // leaves an absent field untouched.
   cancellationPolicy: z
     .string()
     .trim()
     .min(20, "Policy must be at least 20 characters")
-    .max(4000, "Policy must be 4000 characters or fewer"),
+    .max(4000, "Policy must be 4000 characters or fewer")
+    .optional(),
   consentMode: z.enum(CONSENT_MODES).optional(),
   consentMessage: z
     .string()
@@ -45,12 +49,18 @@ export const updateSettingsSchema = z.object({
 
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;
 
-// One organization's own legal text for one service type — FLIGHT only for
-// now. There is deliberately no organization field: the route writes the
-// selected organization and nothing else. Same limits and messages as the
-// deployment-wide text above.
+/** The service types with a legal slot of their own on an organization.
+ *  Car rental has none: its text is the organization's top-level legal,
+ *  else the deployment settings above. */
+export const SERVICE_LEGAL_TYPES = [ServiceType.FLIGHT, ServiceType.HOTEL] as const;
+export type ServiceWithOwnLegal = (typeof SERVICE_LEGAL_TYPES)[number];
+
+// One organization's own legal text for one service type. There is
+// deliberately no organization field: the route writes the selected
+// organization and nothing else, and only for a service it sells. Same
+// limits and messages as the deployment-wide text above.
 export const updateServiceLegalSchema = z.object({
-  serviceType: z.literal(ServiceType.FLIGHT),
+  serviceType: z.enum(SERVICE_LEGAL_TYPES),
   termsAndConditions: z
     .string()
     .trim()

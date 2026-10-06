@@ -119,15 +119,16 @@ export interface OrganizationPayments {
 /**
  * Legal text frozen onto each of this organization's orders at creation.
  *
- * The four top-level fields are the organization's CAR RENTAL (and, until it
- * gets its own slot, HOTEL) text. Empty strings mean "inherit the deployment
- * Settings singleton", which is what both incumbent brands do and will keep
- * doing — their orders carry exactly the terms they carry today.
+ * The four top-level fields are the organization's CAR RENTAL text. Empty
+ * strings mean "inherit the deployment Settings singleton", which is what
+ * both incumbent brands do and will keep doing — their orders carry exactly
+ * the terms they carry today.
  *
- * FLIGHT orders never read these fields: they use `services.FLIGHT` below,
- * else the built-in flight text. (Before per-service text existed these
- * fields were also where a flight brand's terms went; an organization that
- * put flight wording here must move it to `services.FLIGHT`.)
+ * FLIGHT and HOTEL orders never read these fields: they use
+ * `services.FLIGHT` / `services.HOTEL` below, else that service's built-in
+ * text. (Before per-service text existed these fields were also where a
+ * flight or hotel brand's terms went; an organization that put such wording
+ * here must move it to its service's slot.)
  */
 export interface OrganizationLegal {
   termsAndConditions: string;
@@ -137,10 +138,10 @@ export interface OrganizationLegal {
   /**
    * Legal text for one specific service type, keyed by ServiceType.
    *
-   * The four top-level fields above are this organization's car rental /
-   * hotel text, resolved exactly as before for those orders. A service
-   * listed here never reads them — a brand's car-rental terms must not be
-   * frozen onto its flights — and never falls back to the deployment
+   * The four top-level fields above are this organization's car rental
+   * text, resolved exactly as before for those orders. A service listed
+   * here never reads them — a brand's car-rental terms must not be frozen
+   * onto its flights or hotel stays — and never falls back to the deployment
    * Settings singleton (which is car text) either. See `resolveOrderLegal`.
    *
    * Absent on every document written before it existed, which reads as
@@ -159,6 +160,7 @@ export interface OrganizationServiceLegal {
 
 export interface OrganizationServicesLegal {
   FLIGHT?: OrganizationServiceLegal | null;
+  HOTEL?: OrganizationServiceLegal | null;
 }
 
 export interface OrganizationDoc {
@@ -311,6 +313,7 @@ const serviceLegalSubSchema = new Schema<OrganizationServiceLegal>(
 const servicesLegalSubSchema = new Schema<OrganizationServicesLegal>(
   {
     FLIGHT: { type: serviceLegalSubSchema, default: null },
+    HOTEL: { type: serviceLegalSubSchema, default: null },
   },
   { _id: false },
 );

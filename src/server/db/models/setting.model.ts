@@ -80,6 +80,39 @@ export const DEFAULT_FLIGHT_CANCELLATION_POLICY = [
 /** Version label frozen onto an order that used a built-in flight text. */
 export const DEFAULT_FLIGHT_LEGAL_VERSION = "v1";
 
+/**
+ * Built-in HOTEL terms — the fallback for an organization that sells hotel
+ * stays but has not entered its own (Admin → Settings → Hotel terms). The
+ * same reasons as the flight text: brand-neutral, never on the Settings
+ * singleton, and never the car rental text, whose licence/vehicle clauses do
+ * not describe a hotel stay.
+ *
+ * Frozen permanently onto every hotel order that uses it, so it says only
+ * what a hotel order shows and does: the destination, dates, rooms and
+ * guests, a property that may still be unnamed, the amount paid online (the
+ * emails' "You pay today" / "Amount paid online"), any "Amount due at the
+ * property", holds collected on confirmation, and refunds of the online
+ * amount to the original payment method.
+ */
+export const DEFAULT_HOTEL_TERMS_AND_CONDITIONS = [
+  "This booking is arranged on your behalf for the destination, dates, rooms and guests shown in your reservation, at the property named there or the one we confirm with you. Your stay is provided by that property under its own terms and house rules.",
+  "The amount you pay online is the only amount collected through this payment. If your card is authorized (held) rather than charged, it is collected only once your booking is confirmed. Any amount shown as due at the property, and any local taxes or fees the property charges, are paid to the property directly.",
+  "Check-in and check-out times, identification requirements, security deposits and incidental charges are set by the property. The lead guest may be asked to present a valid photo ID and a payment card at check-in.",
+  "Changes to the dates, rooms or guests may change the price and are subject to availability.",
+  "Changes and cancellations are subject to the cancellation policy provided with your booking.",
+].join("\n");
+
+/** Built-in HOTEL cancellation policy. Same rules as the hotel terms. */
+export const DEFAULT_HOTEL_CANCELLATION_POLICY = [
+  "Whether a booking can be changed or cancelled, and at what cost, depends on the rate booked. Some rates are non-refundable.",
+  "Where a refund is due, it is made to your original payment method and is limited to the amount you paid online.",
+  "Any amount due at the property — including any charge the property makes for a no-show — is set and collected by the property.",
+  "To request a change or cancellation, reply to this email or contact our support team using the details below.",
+].join("\n");
+
+/** Version label frozen onto an order that used a built-in hotel text. */
+export const DEFAULT_HOTEL_LEGAL_VERSION = "v1";
+
 export interface SettingDoc {
   key: string;
   paymentExpiryHours: number;

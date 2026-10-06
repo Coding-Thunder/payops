@@ -8,6 +8,7 @@ import {
   type BookingType,
   type ConsentMode,
   type Currency,
+  ServiceType,
 } from "@/lib/constants/enums";
 import { ValidationError } from "@/lib/errors";
 import { env } from "@/lib/env";
@@ -23,9 +24,11 @@ import {
   DEFAULT_TERMS_AND_CONDITIONS,
 } from "@/server/db/models/setting.model";
 import { connectMongo } from "@/server/db/mongoose";
+import { getSelectedOrganization } from "@/server/auth/organization";
 import type { UpdateSettingsInput } from "@/lib/validation";
 
 import { recordAudit } from "./audit.service";
+import { resolveOrganizationServiceTypes } from "./organization-service-types";
 
 export interface OperationalSettings {
   paymentExpiryHours: number;
@@ -156,6 +159,25 @@ export async function updateSettings(
 
   if (Object.keys(set).length === 0) {
     throw new ValidationError("No changes to apply");
+  }
+
+  // The car rental terms and policy are deployment-wide, but they are
+  // offered — and so editable — only while the selected organization sells
+  // car rental, exactly as the settings page shows them. The page leaves
+  // them out for any other brand and posts them back unchanged, so the rest
+  // of the form still saves; a request that does change them is refused.
+  if ("termsAndConditions" in changes || "cancellationPolicy" in changes) {
+    const organization = await getSelectedOrganization();
+    if (
+      organization &&
+      !(await resolveOrganizationServiceTypes(organization.id)).includes(
+        ServiceType.CAR_RENTAL,
+      )
+    ) {
+      throw new ValidationError(
+        `${organization.brandName} does not sell car rental, so it has no car rental terms to set. Switch to a brand that does to edit them.`,
+      );
+    }
   }
 
   set.updatedBy = new Types.ObjectId(ctx.actorId);

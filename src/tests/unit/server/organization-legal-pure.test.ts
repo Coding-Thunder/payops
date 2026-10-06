@@ -153,8 +153,13 @@ describe("updateServiceLegalSchema", () => {
     expect(updateServiceLegalSchema.safeParse(valid).success).toBe(true);
   });
 
-  it("refuses any service type other than FLIGHT", () => {
-    for (const serviceType of [ServiceType.CAR_RENTAL, ServiceType.HOTEL, undefined]) {
+  it("accepts exactly the services with a legal slot of their own: FLIGHT and HOTEL", () => {
+    for (const serviceType of [ServiceType.FLIGHT, ServiceType.HOTEL]) {
+      expect(updateServiceLegalSchema.safeParse({ ...valid, serviceType }).success).toBe(true);
+    }
+    // Car rental has no slot (its text is the organization's top-level
+    // legal, else the deployment settings), and a missing type is refused.
+    for (const serviceType of [ServiceType.CAR_RENTAL, undefined, "TRAIN"]) {
       expect(updateServiceLegalSchema.safeParse({ ...valid, serviceType }).success).toBe(false);
     }
   });

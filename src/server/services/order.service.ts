@@ -69,6 +69,7 @@ import type {
   FlightOrderInput,
   HotelOrderInput,
   ListOrdersQuery,
+  ServiceWithOwnLegal,
 } from "@/lib/validation";
 import type {
   OrderDTO,
@@ -89,9 +90,10 @@ import { captureEvidenceSafe } from "./evidence.service";
 import { getSettings } from "./settings.service";
 import { generateOrderNumber } from "./order-number";
 import {
-  pairFlightLegal,
-  type StoredFlightLegal,
+  pairServiceLegal,
+  type StoredServiceLegal,
 } from "./organization-legal.service";
+import { serviceTypesOrDefault } from "./organization-service-types";
 import {
   buildProviderSnapshotFromKey,
   currentProviderLogo,
@@ -411,18 +413,33 @@ interface ResolvedLegal {
   cancellationPolicyVersion: string;
 }
 
+/** How a refusal names a service an organization does not sell. */
+const SERVICE_NOUN: Record<ServiceWithOwnLegal, string> = {
+  [ServiceType.FLIGHT]: "flights",
+  [ServiceType.HOTEL]: "hotel stays",
+};
+
 /**
  * The Terms & cancellation policy frozen onto a new order.
  *
  * These strings end up in the customer's receipt, on the consent page, and
  * in the dispute evidence chain, so they must describe what the customer
- * actually bought — a brand selling flights cannot be freezing car-rental
- * terms onto its orders.
+ * actually bought — a brand selling flights or hotel stays cannot be
+ * freezing car-rental terms onto its orders.
  *
- * The organization's own text WINS; an empty value falls through to the
- * deployment Settings singleton. Both incumbent brands have no per-org
- * legal text, so every field falls through and their orders are frozen
- * with exactly the terms they are frozen with today.
+ * FLIGHT and HOTEL terms are frozen ONLY for an organization that sells
+ * that service — the same rule (`serviceTypesOrDefault`) that decides which
+ * order forms and legal editors it is offered — so a crafted request is
+ * refused here, before anything is written. Car rental is resolved exactly
+ * as it always was.
+ *
+ * CAR RENTAL: the organization's own text WINS; an empty value falls through
+ * to the deployment Settings singleton. Both incumbent brands have no
+ * per-org legal text, so every field falls through and their orders are
+ * frozen with exactly the terms they are frozen with today.
+ *
+ * FLIGHT and HOTEL: the organization's own text for that service, else that
+ * service's built-in default (`resolveServiceLegal`).
  */
 async function resolveOrderLegal(
   organizationId: Types.ObjectId | null,
@@ -434,21 +451,50 @@ async function resolveOrderLegal(
     cancellationPolicyVersion: string;
   },
 ): Promise<ResolvedLegal> {
-  if (serviceType === ServiceType.FLIGHT) {
-    return resolveFlightLegal(organizationId);
-  }
-
   const fallback: ResolvedLegal = {
     termsAndConditions: settings.termsAndConditions,
     termsVersion: settings.termsVersion,
     cancellationPolicy: settings.cancellationPolicy,
     cancellationPolicyVersion: settings.cancellationPolicyVersion,
   };
-  if (!organizationId) return fallback;
+  if (!organizationId) {
+    if (serviceType !== ServiceType.CAR_RENTAL) {
+      // Unreachable: createOrder refuses an unowned non-car order first.
+      throw new ValidationError(
+        "Select an organization before creating this order.",
+      );
+    }
+    return fallback;
+  }
 
   const org = await Organization.findById(organizationId)
-    .select("legal")
-    .lean<{ legal?: Partial<ResolvedLegal> | null } | null>();
+    .select("brandName serviceTypes legal")
+    .lean<{
+      brandName?: string;
+      serviceTypes?: ServiceType[] | null;
+      legal?:
+        | (Partial<ResolvedLegal> & {
+            services?: Partial<
+              Record<ServiceWithOwnLegal, StoredServiceLegal | null>
+            > | null;
+          })
+        | null;
+    } | null>();
+
+  if (serviceType === ServiceType.FLIGHT || serviceType === ServiceType.HOTEL) {
+    if (!serviceTypesOrDefault(org?.serviceTypes).includes(serviceType)) {
+      throw new ValidationError(
+        `${org?.brandName ?? "This organization"} does not sell ${SERVICE_NOUN[serviceType]}, so this order cannot be created for it.`,
+      );
+    }
+    return resolveServiceLegal(
+      organizationId,
+      serviceType,
+      org?.legal?.services?.[serviceType],
+    );
+  }
+
+  // CAR RENTAL — exactly as before.
   const legal = org?.legal;
   if (!legal) return fallback;
 
@@ -467,36 +513,25 @@ async function resolveOrderLegal(
 }
 
 /**
- * Flight terms for ONE organization: its own `legal.services.FLIGHT` text,
- * else the built-in flight default. Never the organization's top-level
- * (car / general) legal text and never the deployment Settings singleton —
- * both are car-rental terms, which is exactly the bug this exists to fix.
+ * Flight or hotel terms for ONE organization: its own `legal.services`
+ * text for that service, else that service's built-in default. Never the
+ * organization's top-level (car) legal text and never the deployment
+ * Settings singleton — both are car-rental terms, which is exactly the bug
+ * this exists to fix.
  *
- * Each text travels with its OWN version: an organization's flight terms
- * with the organization's version, the built-in default with the default's.
- * Never empty, because `order.terms.text` / `order.policy.text` are required.
+ * Each text travels with its OWN version: an organization's text with the
+ * organization's version, the built-in default with the default's. Never
+ * empty, because `order.terms.text` / `order.policy.text` are required.
  */
-async function resolveFlightLegal(
-  organizationId: Types.ObjectId | null,
-): Promise<ResolvedLegal> {
-  if (!organizationId) {
-    // Unreachable: createOrder refuses an unowned non-car order first.
-    throw new ValidationError(
-      "Select an organization before creating this order.",
-    );
-  }
-  const org = await Organization.findById(organizationId)
-    .select("legal.services.FLIGHT")
-    .lean<{
-      legal?: {
-        services?: { FLIGHT?: StoredFlightLegal | null } | null;
-      } | null;
-    } | null>();
-
-  // The same pairing rule the admin form shows (`pairFlightLegal`).
-  const legal = pairFlightLegal(org?.legal?.services?.FLIGHT);
+function resolveServiceLegal(
+  organizationId: Types.ObjectId,
+  serviceType: ServiceWithOwnLegal,
+  own: StoredServiceLegal | null | undefined,
+): ResolvedLegal {
+  // The same pairing rule the admin form shows (`pairServiceLegal`).
+  const legal = pairServiceLegal(serviceType, own);
   if (legal.termsIsDefault || legal.policyIsDefault) {
-    logger.warn("legal.flight.default_used", {
+    logger.warn(`legal.${serviceType.toLowerCase()}.default_used`, {
       organizationId: String(organizationId),
       terms: legal.termsIsDefault ? "default" : "organization",
       policy: legal.policyIsDefault ? "default" : "organization",
@@ -674,10 +709,12 @@ export async function createOrder(
     );
   }
 
-  // Legal text frozen onto the order. The organization's own text wins;
-  // an organization that has none — which is both incumbent brands —
+  // Legal text frozen onto the order — refused for a flight or hotel the
+  // organization does not sell. Car rental: the organization's own text
+  // wins; an organization that has none — which is both incumbent brands —
   // falls back to the deployment settings singleton, so their orders carry
-  // exactly the terms they have always carried.
+  // exactly the terms they have always carried. Flight and hotel: that
+  // service's own text, else its built-in default.
   const legal = await resolveOrderLegal(organizationId, serviceType, settings);
 
   const serviceFields =

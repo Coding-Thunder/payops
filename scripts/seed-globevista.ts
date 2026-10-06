@@ -183,11 +183,11 @@ async function main() {
       ServiceType.HOTEL,
       ServiceType.CAR_RENTAL,
     ],
-    // Empty means "not set". The top-level fields are the car-rental /
-    // general text: unset, FlightBizz car and hotel orders use the
-    // deployment Settings terms. Flight terms live under `services.FLIGHT`
-    // and are entered in Admin → Settings → Flight terms; until then flight
-    // orders freeze the built-in flight default, never car-rental terms.
+    // Empty means "not set". The top-level fields are the car-rental text:
+    // unset, FlightBizz car orders use the deployment Settings terms. Flight
+    // and hotel terms live under `services.FLIGHT` / `services.HOTEL` and
+    // are entered in Admin → Settings; until then those orders freeze their
+    // service's built-in default, never car-rental terms.
     legal: {
       termsAndConditions: "",
       termsVersion: "",
@@ -370,12 +370,12 @@ async function main() {
     "      or FlightBizz customers will be shown no support contact.",
   );
   console.log(
-    "   4. Switch to FlightBizz and enter its flight terms and cancellation policy in",
+    "   4. Switch to FlightBizz and enter its flight and hotel terms and cancellation",
   );
   console.log(
-    "      Admin → Settings → Flight terms. Until then flight orders freeze the built-in",
+    "      policies in Admin → Settings. Until then flight and hotel orders freeze their",
   );
-  console.log("      flight default.");
+  console.log("      built-in defaults.");
   console.log(
     "   5. Run `npm run indexes:audit` — production runs autoIndex:false.",
   );

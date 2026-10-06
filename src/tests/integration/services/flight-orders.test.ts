@@ -718,6 +718,12 @@ describe("Stripe is asked for the SERVICE CHARGE only", () => {
   });
 
   it("keeps a hotel's line item exactly as before", async () => {
+    // A hotel order needs an organization that sells hotel stays: its terms
+    // are frozen only for one (see `resolveOrderLegal`).
+    await Organization.updateOne(
+      { _id: skyways },
+      { $addToSet: { serviceTypes: ServiceType.HOTEL } },
+    );
     actingAs(skyways);
     const { order } = await createOrder(validHotelOrderInput(), { actor });
     await initiatePayment(order.id, { actor });

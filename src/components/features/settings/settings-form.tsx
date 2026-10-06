@@ -44,9 +44,20 @@ type SettingsFormValues = UpdateSettingsInput;
 interface SettingsFormProps {
   initial: SettingsFormValues;
   canEdit: boolean;
+  /**
+   * Whether the selected organization sells car rental. The car rental
+   * terms and policy below are only offered when it does; otherwise the
+   * page sends no car rental text at all, so a save never carries it, and
+   * the server refuses a change to it from that brand.
+   */
+  showCarRentalLegal?: boolean;
 }
 
-export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
+export function SettingsForm({
+  initial,
+  canEdit,
+  showCarRentalLegal = true,
+}: SettingsFormProps) {
   const router = useRouter();
   const form = useForm<SettingsFormValues>({
     resolver: zodResolver(updateSettingsSchema),
@@ -306,61 +317,65 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
             />
           </Section>
 
-          <Section
-            title="Car rental & hotel cancellation & refund policy"
-            description="The deployment-wide default for car rental and hotel orders on every brand without a policy of its own — flight orders never use it. Shown in every confirmation email. Snapshotted onto each order at creation so disputes can attach the exact terms the customer paid against. Saving a change auto-bumps the policy version; existing orders keep pointing at the older version they were created under."
-          >
-            <FormField
-              control={form.control}
-              name="cancellationPolicy"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Policy text</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      rows={8}
-                      placeholder="One rule per line — paragraphs render with subtle spacing in the email."
-                      disabled={!canEdit || isSubmitting}
-                      {...field}
-                    />
-                  </FormControl>
-                  <p className="text-[11.5px] text-muted-foreground">
-                    20–4,000 characters. Use one statement per line.
-                  </p>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </Section>
+          {showCarRentalLegal ? (
+            <>
+              <Section
+                title="Car rental cancellation & refund policy"
+                description="The deployment-wide default for car rental orders on every brand without a policy of its own — flight and hotel orders never use it. Shown in every confirmation email. Snapshotted onto each order at creation so disputes can attach the exact terms the customer paid against. Saving a change auto-bumps the policy version; existing orders keep pointing at the older version they were created under."
+              >
+                <FormField
+                  control={form.control}
+                  name="cancellationPolicy"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Policy text</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          rows={8}
+                          placeholder="One rule per line — paragraphs render with subtle spacing in the email."
+                          disabled={!canEdit || isSubmitting}
+                          {...field}
+                        />
+                      </FormControl>
+                      <p className="text-[11.5px] text-muted-foreground">
+                        20–4,000 characters. Use one statement per line.
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </Section>
 
-          <Section
-            title="Car rental & hotel Terms & Conditions"
-            description="The deployment-wide default for car rental and hotel orders on every brand without terms of its own — flight orders never use it. Shown in the confirmation email with an 'I Agree' acknowledgement action, and snapshotted onto each order at creation. Saving a change auto-bumps the terms version; existing orders keep the version they were created under."
-          >
-            <FormField
-              control={form.control}
-              name="termsAndConditions"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Terms text</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      rows={10}
-                      placeholder="One clause per line — paragraphs render with subtle spacing in the email."
-                      disabled={!canEdit || isSubmitting}
-                      {...field}
-                      value={field.value ?? ""}
-                    />
-                  </FormControl>
-                  <p className="text-[11.5px] text-muted-foreground">
-                    20–8,000 characters. Use one clause per line. Paste the
-                    customer-provided Terms & Conditions here.
-                  </p>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </Section>
+              <Section
+                title="Car rental Terms & Conditions"
+                description="The deployment-wide default for car rental orders on every brand without terms of its own — flight and hotel orders never use it. Shown in the confirmation email with an 'I Agree' acknowledgement action, and snapshotted onto each order at creation. Saving a change auto-bumps the terms version; existing orders keep the version they were created under."
+              >
+                <FormField
+                  control={form.control}
+                  name="termsAndConditions"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Terms text</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          rows={10}
+                          placeholder="One clause per line — paragraphs render with subtle spacing in the email."
+                          disabled={!canEdit || isSubmitting}
+                          {...field}
+                          value={field.value ?? ""}
+                        />
+                      </FormControl>
+                      <p className="text-[11.5px] text-muted-foreground">
+                        20–8,000 characters. Use one clause per line. Paste the
+                        customer-provided Terms & Conditions here.
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </Section>
+            </>
+          ) : null}
         </SectionStack>
 
         <div className="mt-6 flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-1 px-4 py-3">

@@ -195,7 +195,7 @@ describe("getOrganizationFlightLegal", () => {
       brandName: "alphaair brand",
       sellsFlight: true,
       ...DEFAULT_VIEW,
-      // Alpha has organization-wide (car / hotel) text — which flight orders
+      // Alpha has organization-wide (car rental) text — which flight orders
       // never use; the editor says so.
       hasOrganizationWideText: true,
     });
@@ -581,13 +581,20 @@ describe("/api/admin/settings/legal", () => {
     expect((await getOrganizationFlightLegal(bravo)).termsIsDefault).toBe(true);
   });
 
-  it("PATCH answers 422 for an invalid body, and for a service other than FLIGHT", async () => {
+  it("PATCH answers 422 for an invalid body, a service with no slot, and a service the brand does not sell", async () => {
     actingAs(alpha);
     expect((await patch({ ...input(), termsAndConditions: "too short" })).status).toBe(422);
     expect(
-      (await patch({ ...input({ termsAndConditions: OWN_TERMS }), serviceType: ServiceType.HOTEL }))
+      (await patch({ ...input({ termsAndConditions: OWN_TERMS }), serviceType: ServiceType.CAR_RENTAL }))
         .status,
     ).toBe(422);
+    // HOTEL has a slot, but alpha sells car rental and flights only.
+    const hotel = await patch({ ...input({ termsAndConditions: OWN_TERMS }), serviceType: ServiceType.HOTEL });
+    expect(hotel.status).toBe(422);
+    const { body } = await jsonBody<{ ok: false; error: { message: string } }>(hotel);
+    expect(body.error.message).toBe(
+      "alphaair brand does not sell hotel stays, so it has no hotel terms to set.",
+    );
   });
 
   it("PATCH never touches the deployment Settings singleton", async () => {
