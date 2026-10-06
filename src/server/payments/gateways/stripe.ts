@@ -248,10 +248,17 @@ export function createStripeGateway(
         // silently be handed back the dead session. The automatic key is
         // left exactly as it was; `stripe-session.characterization.test.ts`
         // pins it.
-        idempotencyKey:
+        //
+        // A regenerated link is namespaced per regeneration for the same
+        // reason: under the plain key Stripe replays the ORIGINAL session —
+        // the one being replaced — or refuses the request because its
+        // expiry differs. A first session passes no `regenerationId`, so
+        // both keys above are unchanged.
+        idempotencyKey: `${
           input.captureMethod === "manual"
             ? `order:${input.orderId}:checkout:manual`
-            : `order:${input.orderId}:checkout`,
+            : `order:${input.orderId}:checkout`
+        }${input.regenerationId ? `:regen:${input.regenerationId}` : ""}`,
       },
     );
 
@@ -278,8 +285,8 @@ export function createStripeGateway(
     try {
       await stripe.checkout.sessions.expire(sessionId);
     } catch (err) {
-      // Already expired / never existed — best-effort. Caller can still
-      // create a fresh session over the top.
+      // Already expired / completed / never existed — best-effort. No
+      // caller depends on the expiry succeeding.
       logger.warn("stripe.expire_session_failed", {
         sessionId,
         err: err instanceof Error ? err.message : String(err),

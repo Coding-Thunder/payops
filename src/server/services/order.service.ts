@@ -1,5 +1,7 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
+
 import { Types } from "mongoose";
 
 import { sessionOpt, withTx } from "@/server/db/transaction";
@@ -1509,6 +1511,51 @@ export async function assertOrderInScope(doc: {
 }
 
 /**
+ * NOT SCOPED BY THE REQUEST — for the email outbox only.
+ *
+ * The outbox delivers an email queued for ONE order, durably identified by
+ * the row's `orderId` and the `organizationId` stamped on the row when it
+ * was queued. It runs after the request that queued it, or on its timer —
+ * inside whatever request context happened to start it: a payment webhook
+ * (no session and no organization cookie, so the request scope is
+ * `denyAll`), or an operator who has a different brand selected. Resolving
+ * the order through that ambient scope, as `getOrderById` does, is what made
+ * every webhook-paid order's confirmation email fail with "Order not found"
+ * in a multi-organization deployment.
+ *
+ * Tenancy here is the job's own: the order the row names. Everything the
+ * email is built from — brand, template, terms — is resolved from THAT
+ * order's organization, never from the row or the ambient request. A row
+ * stamped for a different organization (a pre-tenancy row back-filled to the
+ * default organization, say) is logged and still delivered as the order's
+ * own brand: withholding the customer's receipt protects nothing. Never call
+ * this from a request handler — operator reads must use `getOrderById`.
+ */
+export async function getOrderForEmailJob(
+  orderId: string,
+  expectedOrganizationId: Types.ObjectId | string | null | undefined,
+): Promise<OrderDTO> {
+  await connectMongo();
+  // Same logo warm-up as every DTO read: `orderToDTO` overlays the live
+  // provider logo synchronously.
+  await warmProviderLogoCache();
+  if (!Types.ObjectId.isValid(orderId)) throw new NotFoundError("Order not found");
+  const doc = await Order.findById(orderId).lean<
+    OrderDoc & { _id: Types.ObjectId }
+  >();
+  if (!doc) throw new NotFoundError("Order not found");
+  const owner = doc.organizationId ? String(doc.organizationId) : null;
+  if (expectedOrganizationId && owner !== String(expectedOrganizationId)) {
+    logger.warn("email_outbox.organization_mismatch", {
+      orderId,
+      queuedFor: String(expectedOrganizationId),
+      orderOrganizationId: owner,
+    });
+  }
+  return orderToDTO(doc);
+}
+
+/**
  * DELIBERATELY UNSCOPED BY ORGANIZATION. Do not "fix" this.
  *
  * The only caller is the PUBLIC /pay/success page, which the customer
@@ -1632,6 +1679,37 @@ export async function regeneratePaymentLink(
     );
   }
 
+  // THE CUSTOMER MAY ALREADY HAVE PAID ON THE CURRENT LINK.
+  //
+  // A payment's webhook can land late, so "not PAID here" does not mean "not
+  // paid". Ask the gateway first — through reconcile itself, which settles a
+  // completed session exactly as its webhook would — before a new link
+  // invites a second payment for the same order. A released hold stays
+  // released. Best-effort: a session the gateway cannot look up must not
+  // block the one recovery path for a broken link.
+  if (doc.payment.stripeSessionId) {
+    let current: OrderDTO | null = null;
+    try {
+      ({ order: current } = await reconcileOrderPayment(String(doc._id), ctx));
+    } catch (err) {
+      logger.warn("orders.regenerate_reconcile_failed", {
+        orderId: String(doc._id),
+        sessionId: doc.payment.stripeSessionId,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+    const captureStatus = current?.payment.capture?.status;
+    if (
+      current?.status === OrderStatus.PAID ||
+      captureStatus === PaymentCaptureStatus.AUTHORIZED ||
+      captureStatus === PaymentCaptureStatus.CAPTURE_PENDING
+    ) {
+      throw new ConflictError(
+        "The customer has already completed checkout on the existing payment link, so no new link was issued. Refresh the order to see it.",
+      );
+    }
+  }
+
   const settings = await getSettings();
   // The merchant account that HOLDS the original session — resolved through
   // the order's own organization and its pinned provider.
@@ -1657,19 +1735,9 @@ export async function regeneratePaymentLink(
     Date.now() + settings.paymentExpiryHours * 60 * 60 * 1000,
   );
 
-  // Expire the previous session. Stripe cancels it; PayPal has no cancel for
-  // an unapproved order and its adapter logs a deliberate no-op.
-  if (doc.payment.stripeSessionId) {
-    try {
-      await gateway.expireSession(doc.payment.stripeSessionId);
-    } catch (err) {
-      logger.warn("orders.previous_session_expire_failed", {
-        sessionId: doc.payment.stripeSessionId,
-        gateway: gateway.key,
-        err: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
+  // The session this regeneration replaces. It is retired only AFTER the
+  // replacement is recorded on the order — see the end of this function.
+  const previousSessionId = doc.payment.stripeSessionId ?? null;
 
   // THE CAPTURE MODE MUST BE CARRIED OVER.
   //
@@ -1698,6 +1766,9 @@ export async function regeneratePaymentLink(
       // Undefined for an automatic-capture organization, so the outgoing
       // payload for both incumbent brands is byte-identical to today's.
       ...(regenIsManual ? { captureMethod: "manual" as const } : {}),
+      // Without it Stripe replays the order's FIRST session — the one being
+      // replaced — instead of creating a new one.
+      regenerationId: randomUUID(),
       // Regeneration reuses the snapshot already attached to the order —
       // never re-validates against the live catalog so disabled providers
       // can still have outstanding payment links refreshed. `pricing.amount`
@@ -1734,42 +1805,71 @@ export async function regeneratePaymentLink(
     throw new PaymentError(`${gateway.label} did not return a checkout URL`);
   }
 
-  doc.payment.stripeSessionId = session.sessionId;
-  doc.payment.checkoutUrl = session.url;
-  doc.payment.expiresAt = session.expiresAt;
-  doc.payment.failureReason = null;
-  doc.payment.paymentIntentId = session.paymentIntentId;
-  // Pin the provider that actually holds this session, so a later reconcile
-  // or webhook looks it up on the right merchant account.
-  doc.payment.gateway = gateway.key;
-  doc.status = OrderStatus.PAYMENT_PENDING;
-  doc.payment.status = OrderStatus.PAYMENT_PENDING;
-  // Re-arm the authorization record against the NEW intent. Without this a
-  // regenerated manual-capture order carries stale capture state — e.g. a
-  // CANCELLED or AUTHORIZATION_EXPIRED status that would make the incoming
-  // authorization for the new session fail its `PENDING_AUTHORIZATION`
-  // filter and be silently dropped.
-  if (regenIsManual) {
-    doc.payment.capture = {
-      method: CaptureMode.MANUAL,
-      status: PaymentCaptureStatus.PENDING_AUTHORIZATION,
-      authorizedAt: null,
-      amountAuthorized: null,
-      captureExpiresAt: null,
-      capturedAt: null,
-      amountCaptured: null,
-      cancelledAt: null,
-      cancelReason: null,
-      lastError: null,
-    };
-    doc.bookingStatus = BookingStatus.PENDING;
-  }
-
-  // Transactional: order save + audit + evidence. The Stripe session
-  // is already created above — if the tx aborts we don't roll it back
-  // but the next regenerate call will expire-and-replace it.
-  await withTx(async (txSession) => {
-    await doc.save(sessionOpt(txSession));
+  // Transactional: order write + audit + evidence. The gateway session is
+  // already created above — if the tx aborts it is not rolled back; it was
+  // never recorded or returned, so nothing can reach it, and it lapses at
+  // its own expiry.
+  //
+  // A CONDITIONAL write, not `doc.save()`. The order is re-checked at the
+  // moment of writing against everything verified above — and against the
+  // session this regeneration replaces, so two regenerations of one link
+  // record one replacement. A payment that settled meanwhile is never
+  // overwritten with the new session's ids, and every field is written
+  // explicitly: `save()` skips a field whose in-memory value did not change,
+  // so an EXPIRED that landed meanwhile used to survive the regeneration.
+  const updated = await withTx(async (txSession) => {
+    const next = await Order.findOneAndUpdate(
+      {
+        _id: doc._id,
+        status: { $ne: OrderStatus.PAID },
+        state: { $ne: RecordState.ARCHIVED },
+        "payment.capture.status": {
+          $nin: [
+            PaymentCaptureStatus.AUTHORIZED,
+            PaymentCaptureStatus.CAPTURE_PENDING,
+          ],
+        },
+        "payment.stripeSessionId": previousSessionId,
+      },
+      {
+        $set: {
+          status: OrderStatus.PAYMENT_PENDING,
+          "payment.status": OrderStatus.PAYMENT_PENDING,
+          "payment.stripeSessionId": session.sessionId,
+          "payment.checkoutUrl": session.url,
+          "payment.expiresAt": session.expiresAt,
+          "payment.failureReason": null,
+          "payment.paymentIntentId": session.paymentIntentId,
+          // Pin the provider that actually holds this session, so a later
+          // reconcile or webhook looks it up on the right merchant account.
+          "payment.gateway": gateway.key,
+          // Re-arm the authorization record against the NEW intent. Without
+          // this a regenerated manual-capture order carries stale capture
+          // state — e.g. a CANCELLED or AUTHORIZATION_EXPIRED status that
+          // would make the incoming authorization for the new session fail
+          // its `PENDING_AUTHORIZATION` filter and be silently dropped.
+          ...(regenIsManual
+            ? {
+                "payment.capture": {
+                  method: CaptureMode.MANUAL,
+                  status: PaymentCaptureStatus.PENDING_AUTHORIZATION,
+                  authorizedAt: null,
+                  amountAuthorized: null,
+                  captureExpiresAt: null,
+                  capturedAt: null,
+                  amountCaptured: null,
+                  cancelledAt: null,
+                  cancelReason: null,
+                  lastError: null,
+                },
+                bookingStatus: BookingStatus.PENDING,
+              }
+            : {}),
+        },
+      },
+      { ...sessionOpt(txSession), returnDocument: "after" },
+    ).lean<OrderDoc & { _id: Types.ObjectId }>();
+    if (!next) return null;
 
     await recordAudit(
       {
@@ -1803,9 +1903,7 @@ export async function regeneratePaymentLink(
           checkoutUrl: session.url,
           amount: doc.pricing.amount,
           currency: doc.pricing.currency,
-          expiresAt: doc.payment.expiresAt
-            ? doc.payment.expiresAt.toISOString()
-            : null,
+          expiresAt: session.expiresAt ? session.expiresAt.toISOString() : null,
         },
         refs: {
           paymentSessionId: session.sessionId,
@@ -1815,7 +1913,35 @@ export async function regeneratePaymentLink(
       },
       txSession,
     );
+    return next;
   });
+
+  if (!updated) {
+    // Paid, archived, authorized or regenerated by another request since the
+    // checks above. This attempt's session was never recorded or returned,
+    // so nothing can reach it; it lapses at its own expiry.
+    throw new ConflictError(
+      "This order changed while its payment link was being regenerated. Refresh and try again.",
+    );
+  }
+
+  // Only now is the replaced session retired. Expiring it first — as this
+  // used to — raced its own expiry notice against the write above: handled
+  // while the order still held that session, the notice expired the order,
+  // and the new link with it. Never the session just recorded, which a
+  // gateway may hand back unchanged. Stripe cancels it; PayPal has no cancel
+  // for an unapproved order and its adapter logs a deliberate no-op.
+  if (previousSessionId && previousSessionId !== session.sessionId) {
+    try {
+      await gateway.expireSession(previousSessionId);
+    } catch (err) {
+      logger.warn("orders.previous_session_expire_failed", {
+        sessionId: previousSessionId,
+        gateway: gateway.key,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   logger.info("order.lifecycle.transition", {
     orderId: String(doc._id),
@@ -1838,7 +1964,7 @@ export async function regeneratePaymentLink(
   });
 
   return {
-    order: orderToDTO(doc.toObject() as OrderDoc & { _id: Types.ObjectId }),
+    order: orderToDTO(updated),
     checkoutUrl: session.url,
   };
 }
@@ -2376,21 +2502,33 @@ export async function reconcileOrderPayment(
   }
 
   // Gateway says the session expired before the customer finished.
+  //
+  // Conditional on the session just asked about: a regeneration that
+  // committed while the gateway was answering has replaced it — and then
+  // cancelled it — so this expiry is the OLD session's, and the new link
+  // must survive it.
   if (status.status === "expired") {
-    if (
-      doc.status === OrderStatus.PAYMENT_PENDING ||
-      doc.status === OrderStatus.LINK_GENERATED
-    ) {
-      doc.status = OrderStatus.EXPIRED;
-      doc.payment.status = OrderStatus.EXPIRED;
-      await doc.save();
-    }
+    const expired = await Order.updateOne(
+      {
+        _id: doc._id,
+        status: {
+          $in: [OrderStatus.PAYMENT_PENDING, OrderStatus.LINK_GENERATED],
+        },
+        "payment.stripeSessionId": doc.payment.stripeSessionId,
+      },
+      {
+        $set: {
+          status: OrderStatus.EXPIRED,
+          "payment.status": OrderStatus.EXPIRED,
+        },
+      },
+    );
     const refreshed = await Order.findById(id).lean<
       OrderDoc & { _id: Types.ObjectId }
     >();
     return {
       order: orderToDTO(refreshed!),
-      changed: wasPending,
+      changed: expired.modifiedCount > 0,
       stripeStatus: "expired",
     };
   }

@@ -60,6 +60,19 @@ export interface CreatePaymentSessionInput {
    * outgoing Stripe payloads byte-identical.
    */
   captureMethod?: "automatic" | "manual";
+  /**
+   * Set ONLY when a payment link is being regenerated: unique to that one
+   * regeneration attempt.
+   *
+   * Undefined for an order's first session, which must emit exactly the
+   * request it emitted before this field existed. A gateway that keys
+   * session creation idempotently per order (Stripe) folds it into the key:
+   * reusing the first session's key would hand back — or, with any
+   * parameter changed, refuse — the very session being replaced. Unique per
+   * attempt so a retry after a failure still gets a session; the order
+   * service records at most one replacement per replaced session.
+   */
+  regenerationId?: string;
 }
 
 export interface CreatedPaymentSession {

@@ -216,25 +216,29 @@ describe("regeneratePaymentLink -> Stripe (now via the gateway)", () => {
     );
   });
 
-  it("reuses the SAME idempotency key as the original session", async () => {
-    // Recorded because it is a live hazard, not because it is desirable.
-    // Against real Stripe an idempotency key is honoured for 24h, so a
-    // regenerate inside that window returns the ORIGINAL session (with its
-    // original expiry) instead of a fresh one — or 400s if any parameter
-    // changed. The in-process stub does not deduplicate, so no test can
-    // observe the real consequence. Verify against Stripe directly before
-    // changing anything on this path.
+  it("keys every regeneration apart from the original session and from each other", async () => {
+    // This expectation CHANGED, deliberately. Regeneration used to reuse
+    // the original session's key — recorded here as a live hazard: Stripe
+    // honours a key for 24h, so a regeneration inside that window got the
+    // ORIGINAL session back (the one it was replacing, and then cancelling)
+    // or a 400 because its expiry differed. The in-process stub does not
+    // deduplicate, so only the key itself can be asserted.
+    //
+    // The first session's key is unchanged.
     const { actor, order } = await orderWithImage(null);
+    await regeneratePaymentLink(order.id, { actor });
     await regeneratePaymentLink(order.id, { actor });
 
     const stripe = getCurrentTestStripe();
     const keys = stripe.sessionsCreated.map(
       (s) => (s.options as { idempotencyKey?: string } | undefined)?.idempotencyKey,
     );
-    expect(keys).toEqual([
-      `order:${order.id}:checkout`,
-      `order:${order.id}:checkout`,
-    ]);
+    expect(keys).toHaveLength(3);
+    expect(keys[0]).toBe(`order:${order.id}:checkout`);
+    const regen = new RegExp(`^order:${order.id}:checkout:regen:[0-9a-f-]{36}$`);
+    expect(keys[1]).toMatch(regen);
+    expect(keys[2]).toMatch(regen);
+    expect(keys[2]).not.toBe(keys[1]);
   });
 
   it("produces a payload identical to the gateway's apart from images", async () => {

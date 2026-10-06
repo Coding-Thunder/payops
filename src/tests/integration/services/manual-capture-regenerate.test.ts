@@ -184,6 +184,15 @@ describe("regenerating a link carries the capture mode over", () => {
     expect(lastSessionParams().payment_intent_data?.capture_method).toBe(
       "manual",
     );
+    // Keyed apart from the first manual session, or Stripe would replay it.
+    const key = (
+      getCurrentTestStripe().sessionsCreated.at(-1)!.options as
+        | { idempotencyKey?: string }
+        | undefined
+    )?.idempotencyKey;
+    expect(key).toMatch(
+      new RegExp(`^order:${order.id}:checkout:manual:regen:[0-9a-f-]{36}$`),
+    );
   });
 
   it("still sends NO capture_method at all on a RentalConfirmation regenerate", async () => {
@@ -283,5 +292,63 @@ describe("regenerating over a live authorization is refused", () => {
     await expect(
       regeneratePaymentLink(order.id, { actor: admin }),
     ).resolves.toBeTruthy();
+  });
+});
+
+describe("a regeneration never issues a second link for a session the customer already completed", () => {
+  /** What Stripe reports for the order's current session from now on. */
+  async function stripeReports(
+    orderId: string,
+    status: string,
+    paymentStatus: string,
+  ) {
+    const { payment } = await reload(orderId);
+    const session = getCurrentTestStripe().sessionsCreated.find(
+      (s) => s.result.id === payment.stripeSessionId,
+    )!.result as unknown as { status: string; payment_status: string };
+    session.status = status;
+    session.payment_status = paymentStatus;
+  }
+
+  it("settles a hold the app has not seen yet as an authorization, and issues no new link", async () => {
+    const order = await linkedOrder(globevista);
+    const before = await reload(order.id);
+    // The customer authorized on the current session; the webhook is late.
+    await stripeReports(order.id, "complete", "unpaid");
+
+    await expect(
+      regeneratePaymentLink(order.id, { actor: admin }),
+    ).rejects.toThrow(/already completed checkout on the existing payment link/);
+
+    // No second session, nothing cancelled: the hold stays reachable.
+    expect(getCurrentTestStripe().sessionsCreated).toHaveLength(1);
+    expect(getCurrentTestStripe().sessionsExpired).toEqual([]);
+    const after = await reload(order.id);
+    expect(after.payment.stripeSessionId).toBe(before.payment.stripeSessionId);
+    expect(after.payment.paymentIntentId).toBe(before.payment.paymentIntentId);
+    expect(after.payment.capture?.status).toBe(PaymentCaptureStatus.AUTHORIZED);
+    // A hold, not a payment.
+    expect(after.status).not.toBe(OrderStatus.PAID);
+  });
+
+  it("still issues a new link after a RELEASED hold, though Stripe keeps the old session complete", async () => {
+    const order = await linkedOrder(globevista);
+    await authorize(order.id, order.orderNumber);
+    await cancelAuthorization(order.id, { actor: admin });
+    const before = await reload(order.id);
+    await stripeReports(order.id, "complete", "unpaid");
+
+    const { order: regenerated } = await regeneratePaymentLink(order.id, {
+      actor: admin,
+    });
+
+    const sessionB = regenerated.payment.paymentSessionId;
+    expect(sessionB).not.toBe(before.payment.stripeSessionId);
+    expect(getCurrentTestStripe().sessionsExpired).not.toContain(sessionB);
+    const after = await reload(order.id);
+    expect(after.payment.stripeSessionId).toBe(sessionB);
+    expect(after.payment.capture?.status).toBe(
+      PaymentCaptureStatus.PENDING_AUTHORIZATION,
+    );
   });
 });

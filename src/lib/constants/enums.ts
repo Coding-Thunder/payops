@@ -230,6 +230,9 @@ export const AuditAction = {
   BOOKING_CANCELLED: "BOOKING_CANCELLED",
   PAYMENT_FAILED: "PAYMENT_FAILED",
   PAYMENT_EXPIRED: "PAYMENT_EXPIRED",
+  /** The gateway reported on a session the order has since replaced (a
+   *  regenerated link). Recorded; the order is left unchanged. */
+  PAYMENT_SESSION_SUPERSEDED: "PAYMENT_SESSION_SUPERSEDED",
 
   WEBHOOK_RECEIVED: "WEBHOOK_RECEIVED",
   WEBHOOK_DUPLICATE: "WEBHOOK_DUPLICATE",

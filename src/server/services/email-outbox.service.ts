@@ -2,7 +2,7 @@ import "server-only";
 
 import { type ClientSession, Types } from "mongoose";
 
-import { EmailKind, UserRole } from "@/lib/constants/enums";
+import { EmailKind } from "@/lib/constants/enums";
 import { logger } from "@/lib/logger";
 import {
   Order,
@@ -17,12 +17,18 @@ import {
   sendPaymentAuthorizedEmail,
   sendPaymentConfirmationEmail,
 } from "./email.service";
-import { getOrderById } from "./order.service";
+import { getOrderForEmailJob } from "./order.service";
 
 /* ────────────────────────── Enqueue (called in-tx) ──────────────────────── */
 
 interface EnqueueInput {
   orderId: string;
+  /**
+   * The ORDER's organization, stamped on the row. The row then carries its
+   * own tenant: delivery never depends on the request that queued it or on
+   * the one that happens to drain it (see `getOrderForEmailJob`).
+   */
+  organizationId: Types.ObjectId | string | null;
   kind: EmailKind;
   recipient: string;
   metadata?: Record<string, unknown> | null;
@@ -47,6 +53,10 @@ export async function enqueueEmail(
     [
       {
         orderId: new Types.ObjectId(input.orderId),
+        organizationId:
+          input.organizationId && Types.ObjectId.isValid(input.organizationId)
+            ? new Types.ObjectId(String(input.organizationId))
+            : null,
         kind: input.kind,
         recipient: input.recipient.toLowerCase(),
         status: PendingEmailStatus.PENDING,
@@ -201,7 +211,7 @@ async function processPendingEmail(
   // Re-render from current order state. We deliberately don't snapshot
   // the order at enqueue time — branding / template / customer-email
   // edits between enqueue and drain should appear in the actual send.
-  const order = await fetchOrderForOutbox(String(doc.orderId));
+  const order = await fetchOrderForOutbox(doc);
   if (doc.kind === EmailKind.PAYMENT_CONFIRMATION) {
     await sendPaymentConfirmationEmail(order);
     // Mark the order so the UI timeline + DTO can show "confirmation
@@ -230,17 +240,18 @@ async function processPendingEmail(
   throw new Error(`Outbox does not handle email kind: ${doc.kind}`);
 }
 
-/** System-actor fetch — skips per-actor permission checks via a synthetic
- *  SUPER_ADMIN context. The outbox drainer is not a per-user request. */
-async function fetchOrderForOutbox(orderId: string) {
-  return getOrderById(orderId, {
-    actor: {
-      id: "system",
-      name: "outbox",
-      email: "system@payops.local",
-      role: UserRole.SUPER_ADMIN,
-    },
-  });
+/**
+ * The order a row is for, resolved from the ROW — its `orderId` and the
+ * `organizationId` it was stamped with — never from the request running the
+ * drain. The post-commit drain and the timer both run inside the request
+ * that started them: a webhook delivery (no session, no organization cookie)
+ * or an operator with another brand selected. Through the request-scoped
+ * `getOrderById`, a webhook-paid order's confirmation failed "Order not
+ * found" on every attempt made outside an operator request for the order's
+ * own brand, until the row was marked FAILED.
+ */
+async function fetchOrderForOutbox(doc: PendingEmailDoc) {
+  return getOrderForEmailJob(String(doc.orderId), doc.organizationId ?? null);
 }
 
 /** Test-only: clear the in-process drainer so subsequent test files

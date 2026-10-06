@@ -363,6 +363,13 @@ interface SendArgs {
    * second lookup.
    */
   identity?: EmailIdentity | null;
+  /**
+   * The ORDER's organization — what this send's EMAIL_SENT / EMAIL_FAILED
+   * audit rows are attributed to. Omitted means "look it up from the order"
+   * (the same read identity resolution needs); callers that already
+   * resolved it pass it to save the lookup.
+   */
+  organizationId?: string | null;
 }
 
 /** Reduce a full email to `a***@example.com` for logger output — keeps
@@ -381,16 +388,21 @@ function maskEmail(addr: string): string {
 async function sendEmail(
   args: SendArgs,
 ): Promise<{ id: string | null; from: string; replyTo: string | null }> {
-  // Identity is resolved from the ORDER'S organization, not from ambient
-  // request context — this runs on the outbox drainer and webhook paths,
-  // which have neither a session nor an organization cookie.
+  // Identity AND audit attribution come from the ORDER'S organization, not
+  // from ambient request context — this runs on the outbox drainer and
+  // webhook paths, which have neither a session nor an organization cookie,
+  // or (when an operator request started the drain) another brand's cookie.
+  // Undefined only for a send with no order, which keeps the request scope.
+  const organizationId =
+    args.organizationId !== undefined
+      ? args.organizationId
+      : args.orderId
+        ? await organizationIdForOrder(args.orderId)
+        : undefined;
   const identity =
     args.identity ??
     (args.orderId
-      ? await resolveEmailIdentity(
-          await organizationIdForOrder(args.orderId),
-          await getBranding(),
-        )
+      ? await resolveEmailIdentity(organizationId ?? null, await getBranding())
       : null);
 
   // An organization with its own SMTP account sends through it; everyone
@@ -418,6 +430,7 @@ async function sendEmail(
       action: AuditAction.EMAIL_FAILED,
       entityType: AuditEntity.ORDER,
       entityId: args.orderId ?? null,
+      ...(organizationId !== undefined ? { organizationId } : {}),
       metadata: {
         reason: "SMTP not configured (SMTP_HOST / SMTP_USER / SMTP_PASS)",
         kind: args.kind,
@@ -454,6 +467,7 @@ async function sendEmail(
       action: AuditAction.EMAIL_SENT,
       entityType: AuditEntity.ORDER,
       entityId: args.orderId ?? null,
+      ...(organizationId !== undefined ? { organizationId } : {}),
       metadata: {
         kind: args.kind,
         to: args.to,
@@ -476,6 +490,7 @@ async function sendEmail(
       action: AuditAction.EMAIL_FAILED,
       entityType: AuditEntity.ORDER,
       entityId: args.orderId ?? null,
+      ...(organizationId !== undefined ? { organizationId } : {}),
       metadata: {
         kind: args.kind,
         to: args.to,
@@ -570,6 +585,7 @@ export async function sendPaymentConfirmationEmail(
   const recipient = order.customer.email;
   const sent = await sendEmail({
     identity,
+    organizationId: orgId,
     to: recipient,
     subject: finalSubject,
     html,
@@ -700,6 +716,7 @@ export async function sendPaymentAuthorizedEmail(
   const recipient = order.customer.email;
   const sent = await sendEmail({
     identity,
+    organizationId: orgId,
     to: recipient,
     subject: finalSubject,
     html,

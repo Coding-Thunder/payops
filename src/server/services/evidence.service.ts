@@ -247,10 +247,19 @@ export async function captureEvidenceSafe(
       err: message,
     });
     try {
+      // The order's tenant, as for the evidence row itself: the outbox and
+      // webhooks write evidence with no organization context, so ambient
+      // scope would leave this row unattributed.
+      const owner = Types.ObjectId.isValid(input.orderId)
+        ? await Order.findById(input.orderId)
+            .select({ organizationId: 1 })
+            .lean<{ organizationId?: Types.ObjectId | null } | null>()
+        : null;
       await recordAudit({
         action: AuditAction.EVIDENCE_RECORD_FAILED,
         entityType: AuditEntity.ORDER_EVIDENCE,
         entityId: input.orderId,
+        ...(owner ? { organizationId: owner.organizationId ?? null } : {}),
         actor: input.actor.userId
           ? {
               userId: input.actor.userId,

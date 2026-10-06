@@ -450,6 +450,9 @@ export async function applyCheckoutPaid(
       await enqueueEmail(
         {
           orderId: String(updated._id),
+          // The order's own tenant, carried on the outbox row: the drain
+          // runs inside this webhook delivery's context, which has none.
+          organizationId: updated.organizationId ?? null,
           kind: EmailKind.PAYMENT_CONFIRMATION,
           recipient: updated.customer.email,
         },
@@ -539,10 +542,9 @@ async function handleCheckoutExpired(
   // CHECKOUT session can then expire while the AUTHORIZATION is still
   // perfectly live and capturable. Driving the order to EXPIRED there
   // would tell the operator the money is gone while Stripe is still
-  // holding it. Written as its own early return rather than by widening
-  // the update filter below, because `payment.capture` is null on every
-  // order both incumbent brands have — so this branch is provably never
-  // taken for them and their query shape is unchanged.
+  // holding it. Written as its own early return, not as a condition in the
+  // update filter below: `payment.capture` is null on every order both
+  // incumbent brands have, so this branch is provably never taken for them.
   if (
     order.payment?.capture?.status === PaymentCaptureStatus.AUTHORIZED ||
     order.payment?.capture?.status === PaymentCaptureStatus.CAPTURE_PENDING
@@ -555,6 +557,73 @@ async function handleCheckoutExpired(
   }
 
   const gatewayKey = order.payment.gateway ?? "STRIPE";
+
+  // ONLY THE ORDER'S CURRENT SESSION CAN EXPIRE IT.
+  //
+  // `payment.stripeSessionId` is the authoritative session: payment
+  // initiation pins it, and regenerating a link REPLACES it — then retires
+  // the previous session at the gateway. The gateway announces that old
+  // session's expiry, and the event still finds this order through the
+  // order id in its metadata; expiring the order on it killed the
+  // replacement link the customer had just been sent. A superseded session's
+  // expiry is history: recorded against the order's tenant (once — replays
+  // are dedupe-claimed like every other event), order untouched. A session
+  // discarded by the payment-initiation race is superseded the same way,
+  // when it is not the session the order recorded.
+  //
+  // Expiry only: a superseded session reported PAID still settles the order
+  // (`handleCheckoutCompleted`) — that money was collected. An event or an
+  // order without a session id keeps the previous behaviour.
+  const currentSessionId = order.payment.stripeSessionId ?? null;
+  if (
+    event.sessionId &&
+    currentSessionId &&
+    event.sessionId !== currentSessionId
+  ) {
+    const recorded = await withTx(async (session) => {
+      const claimed = await tryClaimGatewayEvent(
+        {
+          gatewayEventId: event.eventId,
+          gateway: gatewayKey,
+          orderId: String(order._id),
+        },
+        session,
+      );
+      if (!claimed) return false;
+      await recordAudit(
+        {
+          action: AuditAction.PAYMENT_SESSION_SUPERSEDED,
+          entityType: AuditEntity.PAYMENT,
+          entityId: String(order._id),
+          organizationId: order.organizationId ?? null,
+          metadata: {
+            orderNumber: order.orderNumber,
+            eventId: event.eventId,
+            type: event.type,
+            sessionId: event.sessionId,
+            currentSessionId,
+          },
+        },
+        session,
+      );
+      return true;
+    });
+    if (!recorded) {
+      return { handled: true, duplicate: true, orderId: String(order._id) };
+    }
+    logger.info("payments.superseded_session_expiry_ignored", {
+      orderId: String(order._id),
+      eventId: event.eventId,
+      sessionId: event.sessionId,
+      currentSessionId,
+    });
+    return {
+      handled: true,
+      duplicate: false,
+      orderId: String(order._id),
+      reason: "superseded_session",
+    };
+  }
 
   type Outcome =
     | { duplicate: true }
@@ -576,6 +645,11 @@ async function handleCheckoutExpired(
         _id: order._id,
         status: { $ne: OrderStatus.PAID },
         "payment.processedWebhookEventIds": { $ne: event.eventId },
+        // The check above, re-asserted at the write: a regeneration that
+        // lands in between has replaced this session, and must keep its link.
+        ...(event.sessionId && currentSessionId
+          ? { "payment.stripeSessionId": event.sessionId }
+          : {}),
       },
       {
         $set: {
@@ -1032,6 +1106,7 @@ export async function applyPaymentAuthorized(
     await enqueueEmail(
       {
         orderId: String(updated._id),
+        organizationId: updated.organizationId ?? null,
         kind: EmailKind.PAYMENT_AUTHORIZED,
         recipient: updated.customer.email,
       },
