@@ -1,10 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { useForm, type Control } from "react-hook-form";
+import { useRef, useState } from "react";
+import { useForm, type Control, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import type { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import { LoadingButton } from "@/components/ui/loading-button";
@@ -15,7 +14,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { DateTimePicker } from "@/components/common/date-time-picker";
 import {
   Form,
   FormControl,
@@ -37,13 +35,23 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
 import { api, ApiClientError } from "@/lib/api-client";
-import { BookingTypeLabel } from "@/lib/constants/labels";
+import {
+  BookingTypeLabel,
+  CabinClassLabel,
+  FLIGHT_PROVIDER_LABEL,
+  FlightTripTypeLabel,
+} from "@/lib/constants/labels";
 import {
   BookingType,
   type BookingType as BookingTypeT,
+  CABIN_CLASSES,
+  CabinClass,
   type Currency,
+  FLIGHT_TRIP_TYPES,
+  FlightTripType,
   PaymentTiming,
 } from "@/lib/constants/enums";
+import { normalizeTripType } from "@/lib/flight-itinerary";
 import { flightOrderSchema, type FlightOrderInput } from "@/lib/validation";
 import type { OrderDTO, ProviderDTO } from "@/types";
 import { ProviderSelector } from "@/components/features/providers";
@@ -51,24 +59,35 @@ import {
   ChargeLinesFieldset,
   type ChargeLinesFormValues,
 } from "./charge-lines-fieldset";
+import { FlightAmountsSummary } from "./flight/flight-amounts-summary";
+import { ItineraryEditor } from "./flight/itinerary-editor";
+import {
+  emptySegment,
+  flagItineraryErrors,
+  type FlightJourneyFormValue,
+  type FlightOrderFormValues,
+  initialReturnJourney,
+  normalizeJourneyArrayErrors,
+} from "./flight/itinerary-form";
 
 /**
- * Flight booking REQUEST form.
+ * Flight booking form — the itinerary the operator sourced, and the money.
  *
  * Bound to `flightOrderSchema` and nothing else. There is deliberately no
  * shared union-typed `useForm` across the three service tabs: RHF resolves
  * field paths structurally, and a `useForm<CarRental | Flight | Hotel>`
- * makes `trip.pickupDate` and `flight.origin` siblings in the same field
+ * makes `trip.pickupDate` and `flight.outbound` siblings in the same field
  * registry — which is how half-typed values leak across tabs. One schema,
  * one resolver, one form state per tab.
  *
+ * The itinerary itself — journeys, numbered flights, connections, layovers
+ * and their live validation — lives in `./flight/`. The money is PREPAID
+ * only: the charge lines are the operator's service charge, the one amount
+ * the payment link collects, and the airline fare sits beside them as part
+ * of the booking value the customer is shown, never sent to the gateway.
+ *
  * Nothing here touches the car-rental path.
  */
-
-// Same input/output split the rental form documents: `z.coerce` and
-// `.default()` mean the schema's input shape is NOT its output shape, so the
-// form state is typed from `z.input` and `handleSubmit` yields `z.output`.
-type FlightOrderFormValues = z.input<typeof flightOrderSchema>;
 
 /** `z.coerce.number()` widens its INPUT to `unknown` in Zod 4, so the
  *  passenger counters need a narrowing on the way into a controlled input. */
@@ -76,28 +95,28 @@ function numberFieldValue(value: unknown): string | number {
   return typeof value === "number" || typeof value === "string" ? value : "";
 }
 
-const TRIP_TYPES = [
-  { value: "ONE_WAY", label: "One way" },
-  { value: "ROUND_TRIP", label: "Round trip" },
-] as const;
+/** No due-at-counter for a flight — nothing is paid at an airport desk. */
+const FLIGHT_CHARGE_TIMINGS = [PaymentTiming.PREPAID] as const;
 
-const CABIN_CLASSES = [
-  { value: "ECONOMY", label: "Economy" },
-  { value: "PREMIUM_ECONOMY", label: "Premium economy" },
-  { value: "BUSINESS", label: "Business" },
-  { value: "FIRST", label: "First" },
-] as const;
+const zodFlightResolver = zodResolver(flightOrderSchema);
 
-/** Free text in the schema (max 40 chars); offered as a short list here so
- *  the operator sourcing the fare reads the same handful of phrases. */
-const TIME_PREFERENCES = [
-  "Any time",
-  "Early morning",
-  "Morning",
-  "Afternoon",
-  "Evening",
-  "Red-eye",
-] as const;
+/**
+ * The schema's resolver, with each cross-flight itinerary error kept — it
+ * still blocks the submit and flags the field — but not printed under the
+ * field as well: the itinerary editor already explains it in the
+ * connection row or under the flight. See `flagItineraryErrors`.
+ */
+const flightOrderResolver: Resolver<
+  FlightOrderFormValues,
+  unknown,
+  FlightOrderInput
+> = async (values, context, options) =>
+  normalizeJourneyArrayErrors(
+    flagItineraryErrors(
+      await zodFlightResolver(values, context, options),
+      values.flight,
+    ),
+  );
 
 interface CreateFlightOrderFormProps {
   allowedBookingTypes: readonly BookingTypeT[];
@@ -124,40 +143,62 @@ export function CreateFlightOrderForm({
 }: CreateFlightOrderFormProps) {
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
+  /** The return journey while the trip is NOT a round trip, so switching
+   *  back restores what the operator had entered instead of a blank one. */
+  const stashedReturn = useRef<FlightJourneyFormValue | null>(null);
 
   const form = useForm<FlightOrderFormValues, unknown, FlightOrderInput>({
-    resolver: zodResolver(flightOrderSchema),
+    resolver: flightOrderResolver,
     defaultValues: {
       serviceType: "FLIGHT",
       bookingType: allowedBookingTypes[0] ?? BookingType.NEW_BOOKING,
       provider: providers[0]?.key ?? "",
       customer: { name: "", email: "", phone: "" },
       flight: {
-        tripType: "ONE_WAY",
-        airline: "",
-        flightNumber: "",
-        origin: "",
-        destination: "",
-        departureDate: "",
-        departureTimePreference: "Any time",
-        arrivalDate: "",
-        returnDate: "",
-        returnTimePreference: "Any time",
-        cabinClass: "ECONOMY",
+        tripType: FlightTripType.ONE_WAY,
+        outbound: { segments: [emptySegment()], connections: [] },
+        return: null,
+        cabinClass: CabinClass.ECONOMY,
         passengers: { adults: 1, children: 0, infants: 0 },
         passengerNotes: "",
         pnr: "",
+        airlineFare: null,
       },
       currency: defaultCurrency,
-      charges: [{ name: "Airfare", amount: 0, timing: PaymentTiming.PREPAID }],
+      charges: [
+        { name: "Service charge", amount: 0, timing: PaymentTiming.PREPAID },
+      ],
       notes: "",
     },
     mode: "onTouched",
   });
 
   const isSubmitting = form.formState.isSubmitting;
-  const tripType = form.watch("flight.tripType");
-  const isRoundTrip = tripType === "ROUND_TRIP";
+
+  /**
+   * The trip type decides which journeys exist. Becoming a round trip
+   * brings back the return journey the operator had, or starts one flight
+   * home from where the outbound ends. Leaving a round trip stashes the
+   * return and nulls it in the form, so a one-way or multi-city order can
+   * never carry a return the operator can no longer see. One way and
+   * multi-city share the outbound flights as they are.
+   */
+  function changeTripType(next: FlightTripType, previous: FlightTripType) {
+    if (next === previous) return;
+    if (next === FlightTripType.ROUND_TRIP) {
+      form.setValue(
+        "flight.return",
+        stashedReturn.current ??
+          initialReturnJourney(form.getValues("flight.outbound.segments")),
+        { shouldDirty: true },
+      );
+      stashedReturn.current = null;
+    } else if (previous === FlightTripType.ROUND_TRIP) {
+      stashedReturn.current = form.getValues("flight.return") ?? null;
+      form.setValue("flight.return", null, { shouldDirty: true });
+      form.clearErrors("flight.return");
+    }
+  }
 
   async function onSubmit(values: FlightOrderInput) {
     // Only the visible tab may post. Each tab owns its own <form>, so the
@@ -195,13 +236,12 @@ export function CreateFlightOrderForm({
 
         <Card>
           <CardHeader>
-            <CardTitle>Flight request</CardTitle>
+            <CardTitle>Trip</CardTitle>
             <CardDescription>
-              What the traveller is asking for. No fare is held — this is the
-              brief your team sources against.
+              Trip type and cabin class apply to the whole itinerary.
             </CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
+          <CardContent className="grid gap-4 sm:grid-cols-3">
             <FormField
               control={form.control}
               name="bookingType"
@@ -239,22 +279,10 @@ export function CreateFlightOrderForm({
                   <FormLabel>Trip type</FormLabel>
                   <Select
                     value={field.value}
-                    onValueChange={(next) => {
+                    onValueChange={(value) => {
+                      const next = normalizeTripType(value);
+                      changeTripType(next, normalizeTripType(field.value));
                       field.onChange(next);
-                      // Drop the return leg on the way to one-way, so a
-                      // one-way request can never ship a stale return date
-                      // the operator can no longer see or edit.
-                      if (next === "ONE_WAY") {
-                        form.setValue("flight.returnDate", "", {
-                          shouldDirty: true,
-                        });
-                        form.setValue(
-                          "flight.returnTimePreference",
-                          TIME_PREFERENCES[0],
-                          { shouldDirty: true },
-                        );
-                        form.clearErrors("flight.returnDate");
-                      }
                     }}
                     disabled={isSubmitting}
                   >
@@ -264,98 +292,9 @@ export function CreateFlightOrderForm({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {TRIP_TYPES.map((t) => (
-                        <SelectItem key={t.value} value={t.value}>
-                          {t.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="flight.origin"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>From</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="e.g. LHR — London Heathrow"
-                      disabled={isSubmitting}
-                      {...field}
-                      value={field.value ?? ""}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="flight.destination"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>To</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="e.g. JFK — New York"
-                      disabled={isSubmitting}
-                      {...field}
-                      value={field.value ?? ""}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="flight.departureDate"
-              render={({ field, fieldState }) => (
-                <FormItem>
-                  <FormLabel>Departure date</FormLabel>
-                  <FormControl>
-                    <DateTimePicker
-                      id="flight-departure-date"
-                      value={field.value ?? ""}
-                      onChange={field.onChange}
-                      disabled={isSubmitting}
-                      placeholder="Select departure"
-                      ariaInvalid={!!fieldState.error}
-                      minDate={new Date(new Date().setHours(0, 0, 0, 0))}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="flight.departureTimePreference"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Departure time preference</FormLabel>
-                  <Select
-                    value={field.value ?? TIME_PREFERENCES[0]}
-                    onValueChange={field.onChange}
-                    disabled={isSubmitting}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="No preference" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {TIME_PREFERENCES.map((t) => (
+                      {FLIGHT_TRIP_TYPES.map((t) => (
                         <SelectItem key={t} value={t}>
-                          {t}
+                          {FlightTripTypeLabel[t]}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -364,101 +303,6 @@ export function CreateFlightOrderForm({
                 </FormItem>
               )}
             />
-
-            {/* Outbound arrival. Optional, because a request is often quoted
-                before a specific itinerary is chosen — and chained off the
-                departure the same way the return leg is, so an arrival can
-                never be picked before the flight leaves. */}
-            <FormField
-              control={form.control}
-              name="flight.arrivalDate"
-              render={({ field, fieldState }) => {
-                const departure = form.watch("flight.departureDate");
-                const min = departure ? new Date(departure) : new Date();
-                return (
-                  <FormItem>
-                    <FormLabel>Arrival date (optional)</FormLabel>
-                    <FormControl>
-                      <DateTimePicker
-                        id="flight-arrival-date"
-                        value={field.value ?? ""}
-                        onChange={field.onChange}
-                        disabled={isSubmitting}
-                        placeholder="Select arrival"
-                        ariaInvalid={!!fieldState.error}
-                        minDate={min}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      Outbound arrival. Fill in once the itinerary is set.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                );
-              }}
-            />
-
-            {/* Return leg only exists on a round trip — and the schema only
-                requires it there, so hiding it keeps the form and the
-                validation telling the same story. */}
-            {isRoundTrip ? (
-              <>
-                <FormField
-                  control={form.control}
-                  name="flight.returnDate"
-                  render={({ field, fieldState }) => {
-                    const departure = form.watch("flight.departureDate");
-                    const min = departure ? new Date(departure) : new Date();
-                    return (
-                      <FormItem>
-                        <FormLabel>Return date</FormLabel>
-                        <FormControl>
-                          <DateTimePicker
-                            id="flight-return-date"
-                            value={field.value ?? ""}
-                            onChange={field.onChange}
-                            disabled={isSubmitting}
-                            placeholder="Select return"
-                            ariaInvalid={!!fieldState.error}
-                            minDate={min}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    );
-                  }}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="flight.returnTimePreference"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Return time preference</FormLabel>
-                      <Select
-                        value={field.value ?? TIME_PREFERENCES[0]}
-                        onValueChange={field.onChange}
-                        disabled={isSubmitting}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="No preference" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {TIME_PREFERENCES.map((t) => (
-                            <SelectItem key={t} value={t}>
-                              {t}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </>
-            ) : null}
 
             <FormField
               control={form.control}
@@ -478,8 +322,8 @@ export function CreateFlightOrderForm({
                     </FormControl>
                     <SelectContent>
                       {CABIN_CLASSES.map((c) => (
-                        <SelectItem key={c.value} value={c.value}>
-                          {c.label}
+                        <SelectItem key={c} value={c}>
+                          {CabinClassLabel[c]}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -490,6 +334,8 @@ export function CreateFlightOrderForm({
             />
           </CardContent>
         </Card>
+
+        <ItineraryEditor disabled={isSubmitting} />
 
         <Card>
           <CardHeader>
@@ -674,7 +520,7 @@ export function CreateFlightOrderForm({
 
         <Card>
           <CardHeader>
-            <CardTitle>Airline & supplier</CardTitle>
+            <CardTitle>{FLIGHT_PROVIDER_LABEL}</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
             <FormField
@@ -682,7 +528,7 @@ export function CreateFlightOrderForm({
               name="provider"
               render={({ field, fieldState }) => (
                 <FormItem className="sm:col-span-2">
-                  <FormLabel>Supplier</FormLabel>
+                  <FormLabel>{FLIGHT_PROVIDER_LABEL}</FormLabel>
                   <FormControl>
                     <ProviderSelector
                       id="flight-order-provider"
@@ -691,6 +537,7 @@ export function CreateFlightOrderForm({
                       onChange={field.onChange}
                       disabled={isSubmitting || providers.length === 0}
                       invalid={!!fieldState.error}
+                      heading="Airlines & suppliers"
                       placeholder={
                         providers.length === 0
                           ? "Configure a provider in Admin → Providers"
@@ -701,47 +548,6 @@ export function CreateFlightOrderForm({
                   <FormDescription>
                     Branding on the customer receipt is pulled from this
                     selection.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="flight.airline"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Operating airline (optional)</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="e.g. British Airways"
-                      disabled={isSubmitting}
-                      {...field}
-                      value={field.value ?? ""}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="flight.flightNumber"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Flight number (optional)</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="e.g. BA117"
-                      disabled={isSubmitting}
-                      {...field}
-                      value={field.value ?? ""}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Fill in once the fare has been sourced.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -777,21 +583,61 @@ export function CreateFlightOrderForm({
 
         <Card>
           <CardHeader>
-            <CardTitle>Charge details</CardTitle>
+            <CardTitle>Fare & service charge</CardTitle>
             <CardDescription>
-              Prepaid charges are collected online via the payment link.
-              Anything marked due later is shown to the customer for
-              transparency but is never charged by the link.
+              The payment link collects only the service charge. The airline
+              fare is shown to the customer as part of the total booking
+              value, but is never part of this payment.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Prepaid-only mode: no timing column and no counter wording,
+                and the rental breakdown swapped for fare + service charge =
+                total booking value. */}
             <ChargeLinesFieldset
               control={form.control as unknown as Control<ChargeLinesFormValues>}
               allowedCurrencies={allowedCurrencies}
               defaultCurrency={defaultCurrency}
               disabled={isSubmitting}
-              dueLaterLabel="Amount due later"
-              totalLabel="Total fare"
+              timings={FLIGHT_CHARGE_TIMINGS}
+              namePlaceholder="e.g. Service charge"
+              afterCurrency={
+                <FormField
+                  control={form.control}
+                  name="flight.airlineFare"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Airline fare (optional)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          className="sm:max-w-[200px]"
+                          disabled={isSubmitting}
+                          {...field}
+                          value={field.value ?? ""}
+                          onChange={(e) =>
+                            field.onChange(
+                              e.target.value === ""
+                                ? null
+                                : Number(e.target.value),
+                            )
+                          }
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Shown to the customer as part of the total booking
+                        value — never charged by the payment link.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              }
+              renderSummary={(live) => <FlightAmountsSummary {...live} />}
             />
 
             <FormField

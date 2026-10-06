@@ -10,7 +10,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
 import { useReleaseAuthorization } from "@/hooks/use-capture-payment";
 import { ApiClientError } from "@/lib/api-client";
+import { flightMoneyWording } from "@/lib/charges";
+import { ServiceType } from "@/lib/constants/enums";
 import { formatCurrency } from "@/lib/format";
+import { serviceTypeOf } from "@/lib/service-summary";
 import type { OrderDTO } from "@/types";
 
 interface ReleaseAuthorizationDialogProps {
@@ -44,6 +47,14 @@ export function ReleaseAuthorizationDialog({
   const capture = order.payment.capture;
   const amount = capture?.amountAuthorized ?? order.pricing.amount;
   const held = formatCurrency(amount, order.pricing.currency);
+  // An itinerary flight's hold is its service charge — never the airline
+  // fare. A flight created before itineraries usually held its whole fare,
+  // so it keeps the generic wording.
+  const hold =
+    serviceTypeOf(order) === ServiceType.FLIGHT &&
+    flightMoneyWording(order.flight, order.bookingType).serviceChargeModel
+      ? `${held} service charge hold`
+      : `${held} hold`;
 
   function onOpenChange(next: boolean) {
     if (isPending && !next) return;
@@ -79,7 +90,7 @@ export function ReleaseAuthorizationDialog({
         tone="destructive"
         icon={<ShieldOffIcon />}
         title="Release the authorization?"
-        description={`The ${held} hold on ${order.customer.name}'s card is released and the customer is NOT charged. No money has moved, so this is not a refund. Releasing cannot be reversed — a new payment link would be needed to charge this order.`}
+        description={`The ${hold} on ${order.customer.name}'s card is released and the customer is NOT charged. No money has moved, so this is not a refund. Releasing cannot be reversed — a new payment link would be needed to charge this order.`}
         confirmLabel="Release hold"
         cancelLabel="Keep hold"
         pending={isPending}

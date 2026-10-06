@@ -11,6 +11,7 @@ import {
   listMemberOrganizations,
 } from "@/server/auth/organization";
 import { requireUser } from "@/server/auth/session";
+import { serviceTypesOrDefault } from "@/server/services/organization-service-types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -68,9 +69,9 @@ export const GET = withApi(async () => {
       // this field existed must read as AUTOMATIC.
       captureMode: org?.payments?.captureMode ?? CaptureMode.AUTOMATIC,
     };
-    if (org?.serviceTypes && org.serviceTypes.length > 0) {
-      serviceTypes = org.serviceTypes;
-    }
+    // Read in the same query as `payments`; the defaulting rule is the
+    // shared one.
+    serviceTypes = serviceTypesOrDefault(org?.serviceTypes);
   }
 
   return jsonOk({

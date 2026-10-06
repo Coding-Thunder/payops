@@ -7,35 +7,12 @@ import { CURRENCIES, ServiceType } from "@/lib/constants/enums";
 import { Permission } from "@/lib/constants/permissions";
 import { requirePermission } from "@/server/auth/session";
 import { getSelectedOrganization } from "@/server/auth/organization";
-import { Organization } from "@/server/db/models";
-import { connectMongo } from "@/server/db/mongoose";
+import { resolveOrganizationServiceTypes } from "@/server/services/organization-service-types";
 import { listActiveProviders } from "@/server/services/provider.service";
 import { getSettings } from "@/server/services/settings.service";
 
 export const metadata = { title: "Create order" };
 export const dynamic = "force-dynamic";
-
-/**
- * Which service types this organization may sell.
- *
- * Same rule as `GET /api/orders/create-config`, resolved here instead of
- * over the wire because this page already has direct server access to
- * everything else the form binds against. Defaults to [CAR_RENTAL] for an
- * organization with no stored list and for a deployment with no
- * organization selected at all.
- */
-async function resolveServiceTypes(
-  organizationId: string | null,
-): Promise<ServiceType[]> {
-  if (!organizationId) return [ServiceType.CAR_RENTAL];
-  await connectMongo();
-  const org = await Organization.findById(organizationId)
-    .select("serviceTypes")
-    .lean<{ serviceTypes?: ServiceType[] } | null>();
-  return org?.serviceTypes && org.serviceTypes.length > 0
-    ? org.serviceTypes
-    : [ServiceType.CAR_RENTAL];
-}
 
 /**
  * Step 1 of the linear flow — booking entry.
@@ -57,7 +34,11 @@ export default async function CreateOrderPage() {
   await requirePermission(Permission.ORDER_CREATE);
   const selected = await getSelectedOrganization();
   const organizationId = selected?.id ?? null;
-  const serviceTypes = await resolveServiceTypes(organizationId);
+  // Which service types this organization may sell — the same rule as
+  // `GET /api/orders/create-config`, resolved here directly because this
+  // page already has server access to everything the form binds against.
+  // [CAR_RENTAL] with no stored list or no organization selected.
+  const serviceTypes = await resolveOrganizationServiceTypes(organizationId);
   const single = serviceTypes.length === 1 ? serviceTypes[0] : null;
 
   const [settings, providers] = await Promise.all([

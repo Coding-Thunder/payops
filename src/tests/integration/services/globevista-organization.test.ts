@@ -134,6 +134,17 @@ function desiredGlobeVista() {
       termsVersion: "",
       cancellationPolicy: "",
       cancellationPolicyVersion: "",
+      // Flight terms are per organization; empty means "not set", so flight
+      // orders freeze the built-in flight default until an admin enters
+      // FlightBizz's own text.
+      services: {
+        FLIGHT: {
+          termsAndConditions: "",
+          termsVersion: "",
+          cancellationPolicy: "",
+          cancellationPolicyVersion: "",
+        },
+      },
     },
   };
 }
@@ -231,6 +242,9 @@ describe("requirement 1: the GlobeVista seed is idempotent", () => {
           "branding.primaryColor": "#123456",
           "payments.publishableKey": "pk_live_edited",
           "legal.termsAndConditions": "Operator-authored flight terms.",
+          "legal.services.FLIGHT.termsAndConditions":
+            "Operator-authored FlightBizz flight terms.",
+          "legal.services.FLIGHT.termsVersion": "v2",
           serviceTypes: [ServiceType.FLIGHT],
         },
       },
@@ -243,7 +257,12 @@ describe("requirement 1: the GlobeVista seed is idempotent", () => {
       support: { email: string; phone: string };
       branding: { primaryColor: string };
       payments: { publishableKey: string };
-      legal: { termsAndConditions: string };
+      legal: {
+        termsAndConditions: string;
+        services: {
+          FLIGHT: { termsAndConditions: string; termsVersion: string };
+        };
+      };
       serviceTypes: string[];
     } | null>();
 
@@ -255,6 +274,10 @@ describe("requirement 1: the GlobeVista seed is idempotent", () => {
     expect(after!.legal.termsAndConditions).toBe(
       "Operator-authored flight terms.",
     );
+    expect(after!.legal.services.FLIGHT).toMatchObject({
+      termsAndConditions: "Operator-authored FlightBizz flight terms.",
+      termsVersion: "v2",
+    });
     expect(after!.serviceTypes).toEqual([ServiceType.FLIGHT]);
   });
 

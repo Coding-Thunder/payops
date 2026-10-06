@@ -119,17 +119,46 @@ export interface OrganizationPayments {
 /**
  * Legal text frozen onto each of this organization's orders at creation.
  *
- * Empty strings mean "inherit the deployment Settings singleton", which is
- * what both incumbent brands do and will keep doing — their orders carry
- * exactly the terms they carry today. A brand selling flights should not be
- * showing its customers car-rental terms in the receipt and the dispute
- * evidence chain, which is the only reason this block exists.
+ * The four top-level fields are the organization's CAR RENTAL (and, until it
+ * gets its own slot, HOTEL) text. Empty strings mean "inherit the deployment
+ * Settings singleton", which is what both incumbent brands do and will keep
+ * doing — their orders carry exactly the terms they carry today.
+ *
+ * FLIGHT orders never read these fields: they use `services.FLIGHT` below,
+ * else the built-in flight text. (Before per-service text existed these
+ * fields were also where a flight brand's terms went; an organization that
+ * put flight wording here must move it to `services.FLIGHT`.)
  */
 export interface OrganizationLegal {
   termsAndConditions: string;
   termsVersion: string;
   cancellationPolicy: string;
   cancellationPolicyVersion: string;
+  /**
+   * Legal text for one specific service type, keyed by ServiceType.
+   *
+   * The four top-level fields above are this organization's car rental /
+   * hotel text, resolved exactly as before for those orders. A service
+   * listed here never reads them — a brand's car-rental terms must not be
+   * frozen onto its flights — and never falls back to the deployment
+   * Settings singleton (which is car text) either. See `resolveOrderLegal`.
+   *
+   * Absent on every document written before it existed, which reads as
+   * "not set".
+   */
+  services?: OrganizationServicesLegal | null;
+}
+
+/** One service type's legal text. Empty strings mean "not set". */
+export interface OrganizationServiceLegal {
+  termsAndConditions: string;
+  termsVersion: string;
+  cancellationPolicy: string;
+  cancellationPolicyVersion: string;
+}
+
+export interface OrganizationServicesLegal {
+  FLIGHT?: OrganizationServiceLegal | null;
 }
 
 export interface OrganizationDoc {
@@ -264,6 +293,28 @@ const paymentsSubSchema = new Schema<OrganizationPayments>(
   { _id: false },
 );
 
+const serviceLegalSubSchema = new Schema<OrganizationServiceLegal>(
+  {
+    termsAndConditions: { type: String, default: "", maxlength: 8000 },
+    termsVersion: { type: String, default: "", maxlength: 16, trim: true },
+    cancellationPolicy: { type: String, default: "", maxlength: 4000 },
+    cancellationPolicyVersion: {
+      type: String,
+      default: "",
+      maxlength: 16,
+      trim: true,
+    },
+  },
+  { _id: false },
+);
+
+const servicesLegalSubSchema = new Schema<OrganizationServicesLegal>(
+  {
+    FLIGHT: { type: serviceLegalSubSchema, default: null },
+  },
+  { _id: false },
+);
+
 const legalSubSchema = new Schema<OrganizationLegal>(
   {
     termsAndConditions: { type: String, default: "", maxlength: 8000 },
@@ -275,6 +326,7 @@ const legalSubSchema = new Schema<OrganizationLegal>(
       maxlength: 16,
       trim: true,
     },
+    services: { type: servicesLegalSubSchema, default: null },
   },
   { _id: false },
 );

@@ -1,12 +1,18 @@
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { FlightItinerary } from "@/components/common/flight-itinerary";
 import { ProviderCard } from "@/components/features/providers";
-import { BookingTypeLabel } from "@/lib/constants/labels";
+import {
+  BookingTypeLabel,
+  FLIGHT_PROVIDER_LABEL,
+} from "@/lib/constants/labels";
 import { ServiceType } from "@/lib/constants/enums";
+import { buildFlightItinerary } from "@/lib/flight-itinerary";
 import { formatDateTime } from "@/lib/format";
 import {
   describeServiceItem,
@@ -27,11 +33,18 @@ export function OrderDetailsCard({ order }: OrderDetailsCardProps) {
   const imageUrl = vehicle?.imageUrl ?? null;
   // Identical to the old `${company} ${type}` for a CAR_RENTAL order.
   const itemDescription = describeServiceItem(order);
+  // FLIGHT only, so for a car rental every read below resolves to
+  // null/undefined and its markup is untouched. Legacy flat-field flights
+  // come back from `buildFlightItinerary` in the same shape, times in UTC.
+  const isFlight = serviceTypeOf(order) === ServiceType.FLIGHT;
+  const itinerary = isFlight ? buildFlightItinerary(order.flight) : null;
+  const passengerNotes = isFlight ? order.flight?.passengerNotes : null;
   return (
     <div className="space-y-4">
       <ProviderCard
         provider={order.provider}
         description={itemDescription}
+        label={isFlight ? FLIGHT_PROVIDER_LABEL : undefined}
         meta={
           <>
             <div className="font-mono text-[12px] text-foreground">
@@ -66,6 +79,21 @@ export function OrderDetailsCard({ order }: OrderDetailsCardProps) {
             <div className="border-t border-border px-5 py-2.5 text-[11.5px] text-muted-foreground">
               Public image used in the confirmation email and the hosted checkout page.
             </div>
+          </CardContent>
+        </Card>
+      ) : null}
+      {itinerary ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Itinerary</CardTitle>
+            <CardDescription>
+              {itinerary.legacy
+                ? "Booked before itineraries existed — times are shown in UTC."
+                : "Times are local to each airport."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <FlightItinerary itinerary={itinerary} showOverrideHint />
           </CardContent>
         </Card>
       ) : null}
@@ -105,6 +133,13 @@ export function OrderDetailsCard({ order }: OrderDetailsCardProps) {
               </>
             }
           />
+          {passengerNotes ? (
+            <Detail
+              label="Passenger notes"
+              value={<p className="whitespace-pre-line">{passengerNotes}</p>}
+              full
+            />
+          ) : null}
           {order.notes ? (
             <Detail
               label="Internal notes"
@@ -127,6 +162,8 @@ export function OrderDetailsCard({ order }: OrderDetailsCardProps) {
  * panel must not shift by a pixel for them. FLIGHT and HOTEL fall through
  * to the shared `serviceDetailRows` helper so the detail page, the emails
  * and the success page all agree on what a flight or a hotel looks like.
+ * A flight's rows are trip-level only (trip type, routes, cabin,
+ * passengers, PNR); its flights and layovers render in the itinerary card.
  */
 function ServiceDetails({ order }: { order: OrderDTO }) {
   if (serviceTypeOf(order) === ServiceType.CAR_RENTAL) {

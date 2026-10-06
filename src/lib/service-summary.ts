@@ -1,4 +1,17 @@
-import { ServiceType } from "@/lib/constants/enums";
+import { FlightTripType, ServiceType } from "@/lib/constants/enums";
+import {
+  cabinClassLabel,
+  FlightTripTypeLabel,
+} from "@/lib/constants/labels";
+import {
+  buildFlightItinerary,
+  type FlightItinerarySource,
+  formatLocalDate,
+  formatLocalTime,
+  itineraryFirstDeparture,
+  itineraryReturnDeparture,
+  truncateText,
+} from "@/lib/flight-itinerary";
 
 /**
  * ONE place that answers "what does this order actually describe?".
@@ -33,21 +46,15 @@ export interface ServiceSummarySource {
     pickupLocation?: string | null;
     dropoffLocation?: string | null;
   } | null;
-  flight?: {
-    tripType: "ONE_WAY" | "ROUND_TRIP";
-    airline?: string | null;
-    flightNumber?: string | null;
-    origin: string;
-    destination: string;
-    departureDate: DateLike;
-    /** Outbound arrival. Absent until an itinerary is chosen. */
-    arrivalDate?: DateLike | null;
-    returnDate?: DateLike | null;
+  /** Itinerary orders carry `outbound` / `return`; orders created before
+   *  itineraries carry the legacy flat fields. `buildFlightItinerary`
+   *  reads both. */
+  flight?: (FlightItinerarySource & {
     cabinClass?: string | null;
     /** Airline record locator, present once the booking is ticketed. */
     pnr?: string | null;
     passengers?: { adults: number; children: number; infants: number } | null;
-  } | null;
+  }) | null;
   hotel?: {
     destination: string;
     propertyName?: string | null;
@@ -63,6 +70,13 @@ export interface ServiceRow {
   label: string;
   value: string;
 }
+
+/**
+ * Cap on the flight "what was bought" string. A multi-city route can list a
+ * dozen airports, and this string lands in places with hard limits: the
+ * consent snapshot's `vehicle` (160 chars) and gateway line-item names.
+ */
+const FLIGHT_ITEM_MAX_LENGTH = 120;
 
 /** `YYYY-MM-DD`, matching what the rental description has always emitted. */
 function isoDay(value: DateLike): string {
@@ -91,9 +105,29 @@ export function describeServiceItem(order: ServiceSummarySource): string {
     case ServiceType.FLIGHT: {
       const f = order.flight;
       if (!f) return "Flight";
-      const route = `${f.origin} → ${f.destination}`;
-      const carrier = [f.airline, f.flightNumber].filter(Boolean).join(" ");
-      return carrier ? `${carrier} • ${route}` : route;
+      const view = buildFlightItinerary(f);
+      if (!view) return "Flight";
+      if (view.legacy) {
+        // Historic format, unchanged for orders created before itineraries.
+        const route = `${f.origin} → ${f.destination}`;
+        const carrier = [f.airline, f.flightNumber].filter(Boolean).join(" ");
+        return carrier ? `${carrier} • ${route}` : route;
+      }
+      const outbound = view.journeys[0];
+      // A single direct one-way keeps the "carrier • route" shape; anything
+      // with more flights shows every airport rather than collapsing a
+      // connecting itinerary into one origin → destination pair.
+      if (view.journeys.length === 1 && outbound.segments.length === 1) {
+        const s = outbound.segments[0];
+        const carrier = [s.airline, s.flightNumber].filter(Boolean).join(" ");
+        return truncateText(
+          carrier ? `${carrier} • ${outbound.route}` : outbound.route,
+          FLIGHT_ITEM_MAX_LENGTH,
+        );
+      }
+      const suffix =
+        view.tripType === FlightTripType.ROUND_TRIP ? " (round trip)" : "";
+      return truncateText(`${outbound.route}${suffix}`, FLIGHT_ITEM_MAX_LENGTH);
     }
     case ServiceType.HOTEL: {
       const h = order.hotel;
@@ -136,11 +170,35 @@ export function describeServiceDates(order: ServiceSummarySource): string {
     case ServiceType.FLIGHT: {
       const f = order.flight;
       if (!f) return "";
-      const out = `Departs: ${isoDay(f.departureDate)}`;
-      if (f.tripType === "ROUND_TRIP" && f.returnDate) {
-        return `${out} • Returns: ${isoDay(f.returnDate)}`;
+      const view = buildFlightItinerary(f);
+      if (!view) return "";
+      if (view.legacy) {
+        // Historic format, unchanged for orders created before itineraries.
+        if (!f.departureDate) return "";
+        const out = `Departs: ${isoDay(f.departureDate)}`;
+        if (f.tripType === FlightTripType.ROUND_TRIP && f.returnDate) {
+          return `${out} • Returns: ${isoDay(f.returnDate)}`;
+        }
+        return `${out} • One way`;
       }
-      return `${out} • One way`;
+      const first = itineraryFirstDeparture(view);
+      const out = first
+        ? `Departs: ${formatLocalDate(first.date)} ${formatLocalTime(first.time)}`
+        : "";
+      if (view.tripType === FlightTripType.ROUND_TRIP) {
+        const back = itineraryReturnDeparture(view);
+        return back
+          ? `${out} • Returns: ${formatLocalDate(back.date)} ${formatLocalTime(back.time)}`
+          : out;
+      }
+      const flights = view.journeys[0].segments.length;
+      if (view.tripType === FlightTripType.MULTI_CITY) {
+        return `${out} • Multi-city, ${flights} flights`;
+      }
+      const stops = flights - 1;
+      return stops > 0
+        ? `${out} • One way, ${stops} stop${stops === 1 ? "" : "s"}`
+        : `${out} • One way`;
     }
     case ServiceType.HOTEL: {
       const h = order.hotel;
@@ -188,30 +246,38 @@ export function serviceDetailRows(
 ): ServiceRow[] {
   switch (serviceTypeOf(order)) {
     case ServiceType.FLIGHT: {
+      // Trip-level summary only. The flights themselves — every segment,
+      // time and layover — are rendered from `buildFlightItinerary` by each
+      // surface's itinerary block, never squeezed into label/value rows.
       const f = order.flight;
       if (!f) return [];
-      const rows: ServiceRow[] = [
-        { label: "Route", value: `${f.origin} → ${f.destination}` },
-      ];
-      const carrier = [f.airline, f.flightNumber].filter(Boolean).join(" ");
-      if (carrier) rows.push({ label: "Airline", value: carrier });
-      if (f.pnr) rows.push({ label: "PNR", value: f.pnr });
-      rows.push({ label: "Departure", value: formatDate(f.departureDate) });
-      if (f.arrivalDate) {
-        rows.push({ label: "Arrival", value: formatDate(f.arrivalDate) });
+      const view = buildFlightItinerary(f);
+      const rows: ServiceRow[] = [];
+      if (view) {
+        rows.push({
+          label: "Trip type",
+          value: FlightTripTypeLabel[view.tripType],
+        });
+        for (const journey of view.journeys) {
+          rows.push({
+            label:
+              view.tripType === FlightTripType.ROUND_TRIP
+                ? journey.label
+                : "Route",
+            value: journey.route,
+          });
+        }
       }
-      if (f.tripType === "ROUND_TRIP" && f.returnDate) {
-        rows.push({ label: "Return", value: formatDate(f.returnDate) });
-      } else {
-        rows.push({ label: "Trip type", value: "One way" });
+      if (f.cabinClass) {
+        rows.push({ label: "Cabin", value: cabinClassLabel(f.cabinClass) });
       }
-      if (f.cabinClass) rows.push({ label: "Cabin", value: f.cabinClass });
       if (f.passengers) {
         rows.push({
           label: "Passengers",
           value: describePassengers(f.passengers),
         });
       }
+      if (f.pnr) rows.push({ label: "PNR", value: f.pnr });
       return rows;
     }
     case ServiceType.HOTEL: {

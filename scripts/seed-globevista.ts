@@ -183,11 +183,24 @@ async function main() {
       ServiceType.HOTEL,
       ServiceType.CAR_RENTAL,
     ],
+    // Empty means "not set". The top-level fields are the car-rental /
+    // general text: unset, FlightBizz car and hotel orders use the
+    // deployment Settings terms. Flight terms live under `services.FLIGHT`
+    // and are entered in Admin → Settings → Flight terms; until then flight
+    // orders freeze the built-in flight default, never car-rental terms.
     legal: {
       termsAndConditions: "",
       termsVersion: "",
       cancellationPolicy: "",
       cancellationPolicyVersion: "",
+      services: {
+        FLIGHT: {
+          termsAndConditions: "",
+          termsVersion: "",
+          cancellationPolicy: "",
+          cancellationPolicyVersion: "",
+        },
+      },
     },
   };
 
@@ -351,14 +364,20 @@ async function main() {
     "   2. Register the webhook endpoint + events in FlightBizz's own Stripe account.",
   );
   console.log(
-    "   3. Set the organization's support email/phone and legal text in the admin UI,",
+    "   3. Set the organization's support email/phone (there is no admin UI for these yet),",
   );
   console.log(
-    "      or FlightBizz customers will be shown no support contact and the deployment's",
+    "      or FlightBizz customers will be shown no support contact.",
   );
-  console.log("      car-rental terms.");
   console.log(
-    "   4. Run `npm run indexes:audit` — production runs autoIndex:false.",
+    "   4. Switch to FlightBizz and enter its flight terms and cancellation policy in",
+  );
+  console.log(
+    "      Admin → Settings → Flight terms. Until then flight orders freeze the built-in",
+  );
+  console.log("      flight default.");
+  console.log(
+    "   5. Run `npm run indexes:audit` — production runs autoIndex:false.",
   );
   console.log("✔ GlobeVista seed complete.");
 

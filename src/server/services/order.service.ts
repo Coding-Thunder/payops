@@ -12,6 +12,7 @@ import {
   CaptureMode,
   ConsentMethod,
   ConsentStatus,
+  FlightTripType,
   OrderEvidenceActorType,
   OrderEvidenceEventType,
   OrderStatus,
@@ -31,7 +32,13 @@ import {
 import { roleHasPermission, Permission } from "@/lib/constants/permissions";
 import { DomainEventType } from "@/lib/constants/events";
 import { resolveProvider } from "@/lib/constants/providers";
-import { summarizeCharges } from "@/lib/charges";
+import { summarizeCharges, summarizeFlightAmounts } from "@/lib/charges";
+import {
+  hasFlightItinerary,
+  normalizeTripType,
+  toPlainJourney,
+  truncateText,
+} from "@/lib/flight-itinerary";
 import {
   describeServiceDates,
   describeServiceItem,
@@ -39,7 +46,12 @@ import {
 } from "@/lib/service-summary";
 import { logger } from "@/lib/logger";
 import { publishEvent } from "@/server/events/bus";
-import { Order, type OrderDoc, Organization } from "@/server/db/models";
+import {
+  type FlightJourneyDoc,
+  Order,
+  type OrderDoc,
+  Organization,
+} from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 import {
   belongsToScope,
@@ -56,7 +68,12 @@ import type {
   HotelOrderInput,
   ListOrdersQuery,
 } from "@/lib/validation";
-import type { OrderDTO, PaginatedResult } from "@/types";
+import type {
+  OrderDTO,
+  OrderFlight,
+  OrderFlightJourney,
+  PaginatedResult,
+} from "@/types";
 
 import type { RequestContext } from "@/server/api/request-context";
 import type {
@@ -69,6 +86,10 @@ import { applyPaymentAuthorized } from "./webhook.service";
 import { captureEvidenceSafe } from "./evidence.service";
 import { getSettings } from "./settings.service";
 import { generateOrderNumber } from "./order-number";
+import {
+  pairFlightLegal,
+  type StoredFlightLegal,
+} from "./organization-legal.service";
 import {
   buildProviderSnapshotFromKey,
   currentProviderLogo,
@@ -178,32 +199,7 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
           dropoffLocation: doc.trip.dropoffLocation ?? null,
         }
       : null,
-    flight: doc.flight
-      ? {
-          tripType: doc.flight.tripType,
-          airline: doc.flight.airline ?? null,
-          flightNumber: doc.flight.flightNumber ?? null,
-          origin: doc.flight.origin,
-          destination: doc.flight.destination,
-          departureDate: new Date(doc.flight.departureDate).toISOString(),
-          departureTimePreference: doc.flight.departureTimePreference ?? null,
-          arrivalDate: doc.flight.arrivalDate
-            ? new Date(doc.flight.arrivalDate).toISOString()
-            : null,
-          returnDate: doc.flight.returnDate
-            ? new Date(doc.flight.returnDate).toISOString()
-            : null,
-          returnTimePreference: doc.flight.returnTimePreference ?? null,
-          cabinClass: doc.flight.cabinClass,
-          passengers: {
-            adults: doc.flight.passengers?.adults ?? 1,
-            children: doc.flight.passengers?.children ?? 0,
-            infants: doc.flight.passengers?.infants ?? 0,
-          },
-          passengerNotes: doc.flight.passengerNotes ?? null,
-          pnr: doc.flight.pnr ?? null,
-        }
-      : null,
+    flight: doc.flight ? flightToDTO(doc.flight) : null,
     hotel: doc.hotel
       ? {
           hotelId: doc.hotel.hotelId ? String(doc.hotel.hotelId) : null,
@@ -428,6 +424,7 @@ interface ResolvedLegal {
  */
 async function resolveOrderLegal(
   organizationId: Types.ObjectId | null,
+  serviceType: ServiceType,
   settings: {
     termsAndConditions: string;
     termsVersion: string;
@@ -435,6 +432,10 @@ async function resolveOrderLegal(
     cancellationPolicyVersion: string;
   },
 ): Promise<ResolvedLegal> {
+  if (serviceType === ServiceType.FLIGHT) {
+    return resolveFlightLegal(organizationId);
+  }
+
   const fallback: ResolvedLegal = {
     termsAndConditions: settings.termsAndConditions,
     termsVersion: settings.termsVersion,
@@ -463,6 +464,149 @@ async function resolveOrderLegal(
   };
 }
 
+/**
+ * Flight terms for ONE organization: its own `legal.services.FLIGHT` text,
+ * else the built-in flight default. Never the organization's top-level
+ * (car / general) legal text and never the deployment Settings singleton —
+ * both are car-rental terms, which is exactly the bug this exists to fix.
+ *
+ * Each text travels with its OWN version: an organization's flight terms
+ * with the organization's version, the built-in default with the default's.
+ * Never empty, because `order.terms.text` / `order.policy.text` are required.
+ */
+async function resolveFlightLegal(
+  organizationId: Types.ObjectId | null,
+): Promise<ResolvedLegal> {
+  if (!organizationId) {
+    // Unreachable: createOrder refuses an unowned non-car order first.
+    throw new ValidationError(
+      "Select an organization before creating this order.",
+    );
+  }
+  const org = await Organization.findById(organizationId)
+    .select("legal.services.FLIGHT")
+    .lean<{
+      legal?: {
+        services?: { FLIGHT?: StoredFlightLegal | null } | null;
+      } | null;
+    } | null>();
+
+  // The same pairing rule the admin form shows (`pairFlightLegal`).
+  const legal = pairFlightLegal(org?.legal?.services?.FLIGHT);
+  if (legal.termsIsDefault || legal.policyIsDefault) {
+    logger.warn("legal.flight.default_used", {
+      organizationId: String(organizationId),
+      terms: legal.termsIsDefault ? "default" : "organization",
+      policy: legal.policyIsDefault ? "default" : "organization",
+    });
+  }
+  return {
+    termsAndConditions: legal.termsAndConditions,
+    termsVersion: legal.termsVersion,
+    cancellationPolicy: legal.cancellationPolicy,
+    cancellationPolicyVersion: legal.cancellationPolicyVersion,
+  };
+}
+
+type FlightInput = FlightOrderInput["flight"];
+type FlightJourneyInput = FlightInput["outbound"];
+type StoredFlight = NonNullable<OrderDoc["flight"]>;
+
+/** Trimmed text, or null when blank. */
+function textOrNull(value: string | null | undefined): string | null {
+  const v = typeof value === "string" ? value.trim() : "";
+  return v.length > 0 ? v : null;
+}
+
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+function toJourneyDoc(journey: FlightJourneyInput): FlightJourneyDoc {
+  return {
+    segments: journey.segments.map((s) => ({
+      origin: s.origin.trim(),
+      destination: s.destination.trim(),
+      departure: { date: s.departure.date, time: s.departure.time },
+      arrival: { date: s.arrival.date, time: s.arrival.time },
+      airline: textOrNull(s.airline),
+      flightNumber: textOrNull(s.flightNumber),
+      details: textOrNull(s.details),
+    })),
+    // Already normalised by the schema to one entry per gap.
+    connections: journey.connections.map((c) => ({
+      layover: c.layover
+        ? {
+            location: textOrNull(c.layover.location),
+            durationMinutesOverride: c.layover.durationMinutesOverride ?? null,
+            notes: textOrNull(c.layover.notes),
+          }
+        : null,
+    })),
+  };
+}
+
+/** The stored shape of a new flight. The legacy flat fields stay unset. */
+function toFlightDoc(flight: FlightInput): StoredFlight {
+  return {
+    tripType: flight.tripType,
+    outbound: toJourneyDoc(flight.outbound),
+    return:
+      flight.tripType === FlightTripType.ROUND_TRIP && flight.return
+        ? toJourneyDoc(flight.return)
+        : null,
+    airlineFare:
+      typeof flight.airlineFare === "number"
+        ? round2(flight.airlineFare)
+        : null,
+    cabinClass: flight.cabinClass,
+    passengers: flight.passengers,
+    passengerNotes: textOrNull(flight.passengerNotes),
+    pnr: textOrNull(flight.pnr),
+  };
+}
+
+/** A stored journey as plain DTO data — positional, exactly one connection
+ *  per gap whatever was stored. The same mapper the consent snapshot uses. */
+function journeyToDTO(
+  journey: FlightJourneyDoc | null | undefined,
+): OrderFlightJourney | null {
+  return toPlainJourney(journey);
+}
+
+function isoOrNull(value: Date | string | null | undefined): string | null {
+  return value ? new Date(value).toISOString() : null;
+}
+
+/** Plain, serialisable flight — the DTO shape, also frozen into evidence. */
+function flightToDTO(f: StoredFlight): OrderFlight {
+  const tripType = normalizeTripType(f.tripType);
+  return {
+    tripType,
+    outbound: journeyToDTO(f.outbound),
+    return:
+      tripType === FlightTripType.ROUND_TRIP ? journeyToDTO(f.return) : null,
+    airlineFare: typeof f.airlineFare === "number" ? f.airlineFare : null,
+    cabinClass: f.cabinClass,
+    passengers: {
+      adults: f.passengers?.adults ?? 1,
+      children: f.passengers?.children ?? 0,
+      infants: f.passengers?.infants ?? 0,
+    },
+    passengerNotes: f.passengerNotes ?? null,
+    pnr: f.pnr ?? null,
+    airline: f.airline ?? null,
+    flightNumber: f.flightNumber ?? null,
+    origin: f.origin ?? null,
+    destination: f.destination ?? null,
+    departureDate: isoOrNull(f.departureDate),
+    departureTimePreference: f.departureTimePreference ?? null,
+    arrivalDate: isoOrNull(f.arrivalDate),
+    returnDate: isoOrNull(f.returnDate),
+    returnTimePreference: f.returnTimePreference ?? null,
+  };
+}
+
 export async function createOrder(
   input: CreateOrderRequestInput | CreateOrderInput,
   ctx: OrderContext,
@@ -485,12 +629,26 @@ export async function createOrder(
   const currency = input.currency ?? settings.defaultCurrency;
   const orderId = new Types.ObjectId();
   const orderNumber = generateOrderNumber(settings.orderPrefix);
-  const providerSnapshot = await buildProviderSnapshotFromKey(input.provider);
+  const providerSnapshot = await buildProviderSnapshotFromKey(
+    input.provider,
+    serviceType,
+  );
 
   // Charges are the source of truth. `pricing.amount` is the PREPAID total —
   // the ONLY figure ever sent to the gateway. Due-at-counter never touches
   // Stripe. Validation already guarantees prepaid >= Stripe's minimum.
   const chargeSummary = summarizeCharges(input.charges);
+  // FLIGHT: the airline fare is shown to the customer but never charged.
+  // It is not a charge line, so it cannot reach `pricing.amount` (= the
+  // prepaid total above = the service charge), which is all the gateway
+  // ever receives.
+  const flightAmounts =
+    serviceType === ServiceType.FLIGHT
+      ? summarizeFlightAmounts(
+          input.charges,
+          (input as FlightOrderInput).flight.airlineFare,
+        )
+      : null;
 
   // Transactional: Order doc + audit row + genesis evidence row are
   // written together. A failure on evidence aborts the order create —
@@ -518,23 +676,12 @@ export async function createOrder(
   // an organization that has none — which is both incumbent brands —
   // falls back to the deployment settings singleton, so their orders carry
   // exactly the terms they have always carried.
-  const legal = await resolveOrderLegal(organizationId, settings);
+  const legal = await resolveOrderLegal(organizationId, serviceType, settings);
 
   const serviceFields =
     serviceType === ServiceType.FLIGHT
       ? {
-          flight: {
-            ...(input as FlightOrderInput).flight,
-            departureDate: new Date(
-              (input as FlightOrderInput).flight.departureDate,
-            ),
-            arrivalDate: (input as FlightOrderInput).flight.arrivalDate
-              ? new Date((input as FlightOrderInput).flight.arrivalDate!)
-              : null,
-            returnDate: (input as FlightOrderInput).flight.returnDate
-              ? new Date((input as FlightOrderInput).flight.returnDate!)
-              : null,
-          },
+          flight: toFlightDoc((input as FlightOrderInput).flight),
           vehicle: null,
           trip: null,
           hotel: null,
@@ -633,6 +780,12 @@ export async function createOrder(
           currency: orderDoc.pricing.currency,
           bookingType: orderDoc.bookingType,
           serviceType,
+          ...(flightAmounts
+            ? {
+                airlineFare: flightAmounts.airlineFare,
+                bookingTotal: flightAmounts.bookingTotal,
+              }
+            : {}),
         },
       },
       session,
@@ -688,22 +841,13 @@ export async function createOrder(
                 dropoffLocation: orderDoc.trip.dropoffLocation ?? null,
               }
             : null,
+          // The full itinerary — every flight, connection and layover — plus
+          // the airline fare, frozen into the genesis row so a dispute can
+          // show exactly what the customer was sold.
           flight: orderDoc.flight
-            ? {
-                tripType: orderDoc.flight.tripType,
-                airline: orderDoc.flight.airline ?? null,
-                flightNumber: orderDoc.flight.flightNumber ?? null,
-                origin: orderDoc.flight.origin,
-                destination: orderDoc.flight.destination,
-                departureDate: new Date(
-                  orderDoc.flight.departureDate,
-                ).toISOString(),
-                returnDate: orderDoc.flight.returnDate
-                  ? new Date(orderDoc.flight.returnDate).toISOString()
-                  : null,
-                cabinClass: orderDoc.flight.cabinClass,
-                passengers: orderDoc.flight.passengers,
-              }
+            ? flightToDTO(
+                orderDoc.toObject({ getters: false }).flight as StoredFlight,
+              )
             : null,
           hotel: orderDoc.hotel
             ? {
@@ -729,6 +873,14 @@ export async function createOrder(
             dueAtCounter: chargeSummary.dueAtCounter,
             total: chargeSummary.total,
             currency: orderDoc.pricing.currency,
+            // FLIGHT only, so a car row keeps its exact historic shape.
+            ...(flightAmounts
+              ? {
+                  airlineFare: flightAmounts.airlineFare,
+                  serviceCharge: flightAmounts.serviceCharge,
+                  bookingTotal: flightAmounts.bookingTotal,
+                }
+              : {}),
           },
           terms: {
             text: orderDoc.terms?.text ?? "",
@@ -1105,6 +1257,11 @@ export async function initiatePayment(
   };
 }
 
+/** Gateway line-item names have hard limits (PayPal: 127 characters). */
+const FLIGHT_PRODUCT_NAME_MAX_LENGTH = 120;
+/** PayPal cuts a purchase-unit description at 127 characters. */
+const GATEWAY_DESCRIPTION_MAX_LENGTH = 127;
+
 /**
  * The line-item name on the gateway-hosted checkout page.
  *
@@ -1137,6 +1294,25 @@ function describeProductName(order: OrderDoc): string {
     }
   }
 
+  // An itinerary flight's gateway collects the SERVICE CHARGE only — the
+  // airline fare is the airline's — so the line item says so. A customer
+  // must never read the service charge on the checkout page as the price of
+  // the ticket. A flight created before itineraries usually charged its
+  // whole fare, so a link regenerated for it keeps its historic name below.
+  if (serviceType === ServiceType.FLIGHT && hasFlightItinerary(order.flight)) {
+    // The snapshot NAME, not the registry lookup above: airlines are admin-
+    // created providers, which `resolveProvider` only knows by their key
+    // ("AIR_INDIA"). Car keeps the lookup so its line items are unchanged.
+    const airline = order.provider?.name?.trim() || providerName;
+    const name =
+      order.bookingType === BookingType.MODIFICATION
+        ? `${airline} booking modification • ${item}`
+        : order.bookingType === BookingType.CANCELLATION_CHARGE
+          ? `${airline} cancellation charge • ${item}`
+          : `${airline} • Flight booking service charge • ${item}`;
+    return truncateText(name, FLIGHT_PRODUCT_NAME_MAX_LENGTH);
+  }
+
   const noun = serviceType === ServiceType.FLIGHT ? "flight" : "hotel";
   switch (order.bookingType) {
     case BookingType.NEW_BOOKING:
@@ -1156,6 +1332,25 @@ function describeProductName(order: OrderDoc): string {
  * string byte-for-byte.
  */
 function describeProductDescription(order: OrderDoc): string {
+  if (
+    serviceTypeOf(order) === ServiceType.FLIGHT &&
+    hasFlightItinerary(order.flight)
+  ) {
+    // PayPal shows the description, not the line-item name, on its approval
+    // page — so an itinerary flight's description also says what the money
+    // is, qualifier FIRST so the gateway's 127-character cut can never drop
+    // it. Car, hotel and legacy flights keep the plain dates line.
+    const qualifier =
+      order.bookingType === BookingType.MODIFICATION
+        ? "Booking modification"
+        : order.bookingType === BookingType.CANCELLATION_CHARGE
+          ? "Cancellation charge"
+          : "Flight booking service charge";
+    return truncateText(
+      `${qualifier} • ${describeServiceDates(order)}`,
+      GATEWAY_DESCRIPTION_MAX_LENGTH,
+    );
+  }
   return describeServiceDates(order);
 }
 

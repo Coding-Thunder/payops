@@ -14,11 +14,14 @@ import {
   ConsentStatus,
   CURRENCIES,
   Currency,
+  FLIGHT_TRIP_TYPES,
+  FlightTripType,
   PAYMENT_TIMINGS,
   PaymentTiming,
   SERVICE_TYPES,
   ServiceType,
 } from "@/lib/constants/enums";
+import type { PaymentConsentFlightSnapshot } from "@/types";
 
 /**
  * One PaymentConsent doc per acknowledgement attempt against an order.
@@ -86,6 +89,15 @@ export interface PaymentConsentDoc extends OrganizationScoped {
     charges?: Array<{ name: string; amount: number; timing: PaymentTiming }>;
     dueAtCounter?: number;
     total?: number;
+    /** FLIGHT only — the whole itinerary as it stood when consent was asked
+     *  for. Null on every other service type and on records written before
+     *  it existed, which render from the folded fields above. */
+    flight?: PaymentConsentFlightSnapshot | null;
+    /** FLIGHT only: the airline fare. Part of the booking value, never part
+     *  of `amount` — the payment link does not collect it. */
+    airlineFare?: number | null;
+    /** FLIGHT only: airline fare + service charge(s). */
+    bookingTotal?: number | null;
     paymentLinkRef?: string | null;
   };
 
@@ -124,6 +136,97 @@ const snapshotChargeSchema = new Schema(
   { _id: false },
 );
 
+/*
+ * The frozen flight itinerary. Same shape as `order.flight` (see
+ * order.model.ts), but deliberately WITHOUT its required / match / length
+ * validators: every value is copied from an order that already passed them,
+ * and a validator here could only ever reject the consent record — which the
+ * payment-request email swallows, so the customer would silently get no
+ * hosted consent link. A long multi-city itinerary must never cost them that.
+ */
+const snapshotLocalDateTimeSchema = new Schema(
+  {
+    date: { type: String, default: "" },
+    time: { type: String, default: "" },
+  },
+  { _id: false },
+);
+
+const snapshotFlightSegmentSchema = new Schema(
+  {
+    origin: { type: String, default: "" },
+    destination: { type: String, default: "" },
+    departure: { type: snapshotLocalDateTimeSchema, default: null },
+    arrival: { type: snapshotLocalDateTimeSchema, default: null },
+    airline: { type: String, default: null },
+    flightNumber: { type: String, default: null },
+    details: { type: String, default: null },
+  },
+  { _id: false },
+);
+
+const snapshotFlightLayoverSchema = new Schema(
+  {
+    location: { type: String, default: null },
+    durationMinutesOverride: { type: Number, default: null },
+    notes: { type: String, default: null },
+  },
+  { _id: false },
+);
+
+const snapshotFlightConnectionSchema = new Schema(
+  {
+    layover: { type: snapshotFlightLayoverSchema, default: null },
+  },
+  { _id: false },
+);
+
+const snapshotFlightJourneySchema = new Schema(
+  {
+    segments: { type: [snapshotFlightSegmentSchema], default: [] },
+    /** `connections[i]` sits between `segments[i]` and `segments[i + 1]`. */
+    connections: { type: [snapshotFlightConnectionSchema], default: [] },
+  },
+  { _id: false },
+);
+
+const snapshotFlightPassengersSchema = new Schema(
+  {
+    adults: { type: Number, default: 1 },
+    children: { type: Number, default: 0 },
+    infants: { type: Number, default: 0 },
+  },
+  { _id: false },
+);
+
+const snapshotFlightSchema = new Schema(
+  {
+    tripType: {
+      type: String,
+      enum: FLIGHT_TRIP_TYPES,
+      default: FlightTripType.ONE_WAY,
+    },
+    cabinClass: { type: String, default: "" },
+    passengers: {
+      type: snapshotFlightPassengersSchema,
+      default: () => ({ adults: 1, children: 0, infants: 0 }),
+    },
+    pnr: { type: String, default: null },
+    outbound: { type: snapshotFlightJourneySchema, default: null },
+    return: { type: snapshotFlightJourneySchema, default: null },
+    // Legacy flat itinerary, for a flight created before itineraries.
+    // ISO strings, exactly as the order DTO carries them.
+    origin: { type: String, default: null },
+    destination: { type: String, default: null },
+    departureDate: { type: String, default: null },
+    arrivalDate: { type: String, default: null },
+    returnDate: { type: String, default: null },
+    airline: { type: String, default: null },
+    flightNumber: { type: String, default: null },
+  },
+  { _id: false },
+);
+
 const snapshotSchema = new Schema(
   {
         /**
@@ -150,6 +253,11 @@ bookingType: { type: String, enum: BOOKING_TYPES, required: true },
     charges: { type: [snapshotChargeSchema], default: [] },
     dueAtCounter: { type: Number, default: 0, min: 0 },
     total: { type: Number, default: 0, min: 0 },
+    /** FLIGHT only. Null on every other record, and on every record written
+     *  before these existed — so old documents validate unchanged. */
+    flight: { type: snapshotFlightSchema, default: null },
+    airlineFare: { type: Number, default: null, min: 0 },
+    bookingTotal: { type: Number, default: null, min: 0 },
     paymentLinkRef: { type: String, default: null, maxlength: 2048 },
   },
   { _id: false },

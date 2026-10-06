@@ -155,6 +155,11 @@ async function main() {
       // Best-effort: Stripe test keys are prefixed. Only a hint for the UI.
       sandbox: secretKey.startsWith("sk_test"),
     },
+    // No `serviceTypes` and no `legal`, on purpose: the schema defaults —
+    // [CAR_RENTAL] and empty legal text — keep this brand's orders on the
+    // deployment Settings terms, exactly as before organizations existed.
+    // Flight terms are per organization (Admin → Settings → Flight terms)
+    // and only offered to a brand that sells FLIGHT.
   };
 
   console.log("  • resolved organization configuration:");

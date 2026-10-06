@@ -9,21 +9,27 @@ import {
 } from "@react-email/components";
 import * as React from "react";
 
+import { flightAmountLabels } from "@/lib/charges";
 import { BookingTypeLabel } from "@/lib/constants/labels";
 import { ServiceType, type BookingType } from "@/lib/constants/enums";
 import type { ProviderSnapshot } from "@/lib/constants/providers";
+import type { FlightItineraryView } from "@/lib/flight-itinerary";
 import type { ServiceRow } from "@/lib/service-summary";
 
 import { chargeWordingFor } from "../components/charge-breakdown";
-import { rentalBookingRows } from "./payment-confirmation";
+import { providerRowLabel, rentalBookingRows } from "./payment-confirmation";
 import {
+  AIRLINE_FARE_NOT_INCLUDED,
   ChargeBreakdown,
   COLOR,
   type EmailChargeBreakdown,
+  type EmailFlightAmounts,
   EmailFooter,
   EmailHeader,
   EmailLayout,
   EmailTermsSection,
+  FlightChargeBreakdown,
+  FlightItinerarySection,
   MetadataRow,
   ProviderBadge,
   RADIUS,
@@ -51,7 +57,8 @@ export interface PaymentRequestEmailProps {
   /**
    * WHAT is being booked. Optional and defaulting to CAR_RENTAL so the
    * previews and the admin template editor render exactly the rental email
-   * they rendered before service types existed.
+   * they rendered before service types existed. FLIGHT switches on the
+   * service-charge copy and the itinerary block.
    */
   serviceType?: ServiceType;
   /** CAR_RENTAL payload; null on a FLIGHT / HOTEL order. Its image is
@@ -74,6 +81,20 @@ export interface PaymentRequestEmailProps {
    * Drop-off triple it has always rendered from `vehicle` / `trip`.
    */
   serviceRows?: ServiceRow[] | null;
+  /**
+   * FLIGHT only: every flight and layover, from `buildFlightItinerary`.
+   * Rendered as its own block under the booking details, which carry only
+   * the trip-level rows.
+   */
+  flightItinerary?: FlightItineraryView | null;
+  /**
+   * FLIGHT only: the airline fare / service charge / booking value split.
+   * Replaces the generic charge breakdown — the payment link collects the
+   * service charge alone, so the amount must never read as the price of
+   * the trip. Its `serviceChargeModel` also picks the copy: a flight
+   * created before itineraries (false) gets the generic sentences.
+   */
+  flightAmounts?: EmailFlightAmounts | null;
   /** Pre-formatted charge breakdown — shows what the customer pays online
    *  today vs what's due at the counter. */
   chargeBreakdown?: EmailChargeBreakdown;
@@ -97,9 +118,9 @@ export interface PaymentRequestEmailProps {
   cancellationPolicy?: string;
   cancellationPolicyVersion?: string;
 
-  /** Rental Terms & Conditions — rendered via the shared EmailTermsSection
-   *  just before the footer (text only; the "I Agree" acknowledgement is
-   *  confirmation-email-only). */
+  /** The booking's Terms & Conditions (the order's frozen snapshot) —
+   *  rendered via the shared EmailTermsSection just before the footer (text
+   *  only; the "I Agree" acknowledgement is post-payment only). */
   termsText?: string | null;
   termsVersion?: string | null;
 
@@ -111,7 +132,8 @@ export interface PaymentRequestEmailProps {
    *    already been received (re-send case) or skipped by policy.
    *  - primaryCta.label     — button copy. "Review & Confirm Booking"
    *    for the consent variant; "Pay {amount} securely with Stripe →"
-   *    for the post-consent variant.
+   *    for the post-consent variant ("Pay the {amount} service charge
+   *    securely with Stripe →" on a flight).
    *  - primaryCta.helperText— tiny line under the button (e.g. the
    *    acknowledgement statement, or "Pays via Stripe").
    *
@@ -152,6 +174,8 @@ export function PaymentRequestEmail({
   vehicle,
   trip,
   serviceRows,
+  flightItinerary,
+  flightAmounts,
   chargeBreakdown,
   greeting,
   intro,
@@ -165,7 +189,18 @@ export function PaymentRequestEmail({
   consentRequired,
   gatewayLabel,
 }: PaymentRequestEmailProps) {
-  const preview = `Complete payment for ${orderNumber} — ${amount}`;
+  // An itinerary flight's payment link collects its service charge only;
+  // every amount and every sentence about it says so. A flight created
+  // before itineraries usually paid its WHOLE fare through the link, so it
+  // (and a flight rendered without `flightAmounts`) keeps the generic
+  // sentences, with neutral labels. Everything else renders as it always has.
+  const isFlight = serviceType === ServiceType.FLIGHT;
+  const serviceChargeModel =
+    isFlight && flightAmounts?.serviceChargeModel === true;
+  const flightLabels = flightAmountLabels(serviceChargeModel);
+  const preview = serviceChargeModel
+    ? `Complete payment for ${orderNumber} — ${amount} service charge`
+    : `Complete payment for ${orderNumber} — ${amount}`;
   const policyParagraphs = cancellationPolicy
     ? cancellationPolicy.split(/\n+/).filter((p) => p.trim().length > 0)
     : [];
@@ -181,9 +216,13 @@ export function PaymentRequestEmail({
   const introLine =
     intro && intro.trim().length > 0
       ? intro
-      : `Thanks for booking with ${provider.name}. Your ${BookingTypeLabel[
-          bookingType
-        ].toLowerCase()} is reserved — please complete payment using the secure link below to confirm it.`;
+      : serviceChargeModel
+        ? `Thanks for booking with ${provider.name}. Your ${BookingTypeLabel[
+            bookingType
+          ].toLowerCase()} is reserved — please pay the service charge using the secure link below to confirm it. ${AIRLINE_FARE_NOT_INCLUDED}`
+        : `Thanks for booking with ${provider.name}. Your ${BookingTypeLabel[
+            bookingType
+          ].toLowerCase()} is reserved — please complete payment using the secure link below to confirm it.`;
 
   return (
     <EmailLayout preview={preview}>
@@ -211,7 +250,7 @@ export function PaymentRequestEmail({
                 textTransform: "uppercase",
               }}
             >
-              You pay today
+              {isFlight ? flightLabels.payableNow : "You pay today"}
             </Text>
             <Text
               style={{
@@ -223,6 +262,19 @@ export function PaymentRequestEmail({
             >
               {amount}
             </Text>
+            {serviceChargeModel ? (
+              <Text
+                style={{
+                  ...typeStyle("legal"),
+                  margin: 0,
+                  marginTop: 4,
+                  color: COLOR.textMuted,
+                  fontSize: 11,
+                }}
+              >
+                {flightLabels.serviceCharge}
+              </Text>
+            ) : null}
           </Column>
           <Column align="right" style={{ verticalAlign: "top" }}>
             <Text
@@ -408,12 +460,13 @@ export function PaymentRequestEmail({
       >
         <MetadataRow label="Type" value={BookingTypeLabel[bookingType]} />
         <MetadataRow
-          label="Provider"
+          label={providerRowLabel(serviceType)}
           value={provider.name}
           isLast={bookingRows.length === 0}
         />
-        {/* Vehicle / Pick-up / Drop-off for a rental; Route / Airline /
-            Departure … for a flight; Property / Check-in … for a hotel. */}
+        {/* Vehicle / Pick-up / Drop-off for a rental; Trip type / Route /
+            Cabin … for a flight (its flights follow in the itinerary block);
+            Property / Check-in … for a hotel. */}
         {bookingRows.map((row, idx) => (
           <MetadataRow
             key={`${row.label}-${idx}`}
@@ -424,7 +477,16 @@ export function PaymentRequestEmail({
         ))}
       </SummaryCard>
 
-      {chargeBreakdown ? (
+      {isFlight && flightItinerary ? (
+        <FlightItinerarySection itinerary={flightItinerary} />
+      ) : null}
+
+      {isFlight && flightAmounts ? (
+        <FlightChargeBreakdown
+          amounts={flightAmounts}
+          settledLabel={flightLabels.payableNow}
+        />
+      ) : chargeBreakdown ? (
         <ChargeBreakdown
           breakdown={chargeBreakdown}
           title="What you're paying"

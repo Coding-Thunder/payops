@@ -1,10 +1,12 @@
 import {
   BookingStatus,
   BookingType,
+  CabinClass,
   CaptureMode,
   ConsentMethod,
   ConsentMode,
   ConsentStatus,
+  FlightTripType,
   OrderEvidenceActorType,
   OrderEvidenceEventType,
   OrderStatus,
@@ -157,6 +159,46 @@ export const ServiceTypeLabel: Record<ServiceType, string> = {
   FLIGHT: "Flight",
   HOTEL: "Hotel",
 };
+
+export const FlightTripTypeLabel: Record<FlightTripType, string> = {
+  ONE_WAY: "One way",
+  ROUND_TRIP: "Round trip",
+  MULTI_CITY: "Multi-city",
+};
+
+export const CabinClassLabel: Record<CabinClass, string> = {
+  ECONOMY: "Economy",
+  PREMIUM_ECONOMY: "Premium economy",
+  BUSINESS: "Business",
+  FIRST: "First",
+};
+
+/** Human cabin label; passes an unknown stored value through unchanged. */
+export function cabinClassLabel(value: string | null | undefined): string {
+  if (!value) return "";
+  return CabinClassLabel[value as CabinClass] ?? value;
+}
+
+/**
+ * What a FLIGHT calls its provider: the airline, or the travel supplier the
+ * booking was bought through. One copy for every flight surface — emails,
+ * customer pages, the consent mailto, the order page and the evidence
+ * packet. Never "Rental provider" on a flight.
+ */
+export const FLIGHT_PROVIDER_LABEL = "Airline / Supplier";
+
+/**
+ * The provider label for an order's service: `FLIGHT_PROVIDER_LABEL` on a
+ * flight, otherwise the surface's own label, passed in as `fallback` because
+ * surfaces have always worded it differently ("Provider" on a receipt,
+ * "Rental provider" on the order page) and each keeps its exact string.
+ */
+export function providerLabelFor(
+  serviceType: ServiceType | null | undefined,
+  fallback: string,
+): string {
+  return serviceType === ServiceType.FLIGHT ? FLIGHT_PROVIDER_LABEL : fallback;
+}
 
 /** Column header for the "what was bought" cell, per service type. */
 export const ServiceItemLabel: Record<ServiceType, string> = {

@@ -5,7 +5,7 @@ import { createElement, type ReactElement } from "react";
 import { renderToBuffer, type DocumentProps } from "@react-pdf/renderer";
 
 import { inlinePublicImage } from "@/server/email/inline-image";
-import type { OrderEvidenceChainDTO } from "@/types";
+import type { OrderEvidenceChainWithFlightDTO } from "@/server/services/evidence.service";
 
 import { EvidenceDocument } from "./evidence-document";
 
@@ -26,13 +26,13 @@ import { EvidenceDocument } from "./evidence-document";
  * returns one transparently.
  */
 export async function renderEvidencePdf(
-  chain: OrderEvidenceChainDTO,
+  chain: OrderEvidenceChainWithFlightDTO,
 ): Promise<Buffer> {
   const providerLogoInline =
     chain.order.provider?.logo
       ? await inlinePublicImage(chain.order.provider.logo)
       : null;
-  const enrichedChain: OrderEvidenceChainDTO = {
+  const enrichedChain: OrderEvidenceChainWithFlightDTO = {
     ...chain,
     order: {
       ...chain.order,

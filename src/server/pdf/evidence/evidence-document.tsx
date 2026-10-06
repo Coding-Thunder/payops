@@ -9,15 +9,32 @@ import {
   View,
 } from "@react-pdf/renderer";
 
+import { flightAmountLabels } from "@/lib/charges";
 import {
   OrderEvidenceActorLabel,
   OrderEvidenceEventLabel,
+  providerLabelFor,
   ServiceItemLabel,
   ServiceTypeLabel,
 } from "@/lib/constants/labels";
-import { ServiceType } from "@/lib/constants/enums";
+import { FlightTripType, ServiceType } from "@/lib/constants/enums";
+import {
+  type FlightJourneyView,
+  type FlightLayoverView,
+  type FlightSegmentView,
+  formatDuration,
+  formatLocalDate,
+  formatSegmentTime,
+  journeyStopsLabel,
+  type LocalDateTime,
+  segmentCarrier,
+} from "@/lib/flight-itinerary";
 import { formatCurrency, formatIp } from "@/lib/format";
-import type { OrderEvidenceChainDTO, OrderEvidenceEventDTO } from "@/types";
+import type {
+  EvidenceFlightDTO,
+  OrderEvidenceChainWithFlightDTO,
+} from "@/server/services/evidence.service";
+import type { OrderEvidenceEventDTO } from "@/types";
 
 /**
  * Dispute packet rendered as a PDF. Layout aims at "legal-grade":
@@ -147,11 +164,42 @@ const styles = StyleSheet.create({
   col2: { width: 130 },
   col3: { width: 110 },
   col4: { flex: 1 },
+  note: { fontSize: 8, color: "#64748b", marginTop: 4, marginBottom: 6 },
+  journeyTitle: {
+    fontSize: 9,
+    fontWeight: 700,
+    color: "#475569",
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  layover: {
+    borderColor: "#cbd5e1",
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderRadius: 4,
+    backgroundColor: "#f8fafc",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginBottom: 6,
+  },
+  layoverNotes: { fontSize: 8, color: "#64748b", marginTop: 2 },
 });
 
 interface EvidenceDocumentProps {
-  chain: OrderEvidenceChainDTO;
+  chain: OrderEvidenceChainWithFlightDTO;
   generatedAt: Date;
+}
+
+/**
+ * The PDF draws with the built-in Helvetica / Courier, which only carry the
+ * WinAnsi character set: "→" prints as "’" and "⏱" as "ñ". Flight copy —
+ * routes, segment titles, captured flight emails — leans on both, so swap
+ * them for characters these fonts can draw. Display only (the hashed
+ * payloads are untouched), and applied to flight packets alone, so a car
+ * rental's packet is byte-for-byte what it was.
+ */
+function pdfSafe(text: string): string {
+  return text.replace(/⏱️?\s?/g, "").replace(/→/g, "->");
 }
 
 export function EvidenceDocument({
@@ -167,6 +215,9 @@ export function EvidenceDocument({
   // ("LHR → JFK", "Hilton • Paris"). Never drop the line — this is the
   // packet a chargeback is defended with.
   const vehicle = order.vehicle;
+  const isFlight = serviceType === ServiceType.FLIGHT;
+  // FLIGHT only (see `getEvidenceChain`): the itinerary and money split.
+  const flight = chain.flight ?? null;
   return (
     <Document
       title={`Evidence — ${order.orderNumber}`}
@@ -199,11 +250,21 @@ export function EvidenceDocument({
         <Row label="Customer" value={order.customer.name} />
         <Row label="Email" value={order.customer.email} />
         <Row label="Phone" value={order.customer.phone} />
+        {flight ? (
+          <FlightAmountRows
+            flight={flight}
+            currency={order.pricing.currency}
+          />
+        ) : (
+          <Row
+            label="Amount"
+            value={formatCurrency(order.pricing.amount, order.pricing.currency)}
+          />
+        )}
         <Row
-          label="Amount"
-          value={formatCurrency(order.pricing.amount, order.pricing.currency)}
+          label={providerLabelFor(serviceType, "Provider")}
+          value={order.provider?.name ?? "—"}
         />
-        <Row label="Provider" value={order.provider?.name ?? "—"} />
         {isCarRental ? null : (
           <Row label="Service" value={ServiceTypeLabel[serviceType]} />
         )}
@@ -213,14 +274,19 @@ export function EvidenceDocument({
             value={`${vehicle.company} · ${vehicle.type}`}
           />
         ) : (
-          <Row label={ServiceItemLabel[serviceType]} value={order.item} />
+          <Row
+            label={ServiceItemLabel[serviceType]}
+            value={isFlight ? pdfSafe(order.item) : order.item}
+          />
         )}
         <Row label="Created" value={order.createdAt} />
 
         <View style={styles.imagesRow}>
           {order.provider?.logo ? (
             <View style={styles.imageTile}>
-              <Text style={styles.imageTileLabel}>Provider</Text>
+              <Text style={styles.imageTileLabel}>
+                {providerLabelFor(serviceType, "Provider")}
+              </Text>
               <Image
                 src={order.provider.logo}
                 style={styles.imageTileImg}
@@ -242,6 +308,8 @@ export function EvidenceDocument({
           ) : null}
         </View>
 
+        {flight ? <FlightBlock flight={flight} /> : null}
+
         <Text style={styles.h2}>Consent evidence</Text>
         <ConsentBlock events={events} />
 
@@ -249,7 +317,10 @@ export function EvidenceDocument({
         <PaymentBlock events={events} />
 
         <Text style={styles.h2}>Email evidence</Text>
-        <EmailBlock events={events} />
+        <EmailBlock
+          events={events}
+          display={isFlight ? pdfSafe : (text) => text}
+        />
 
         <View style={styles.footer} fixed>
           <Text>{order.orderNumber}</Text>
@@ -458,7 +529,15 @@ function PaymentBlock({ events }: { events: OrderEvidenceEventDTO[] }) {
   );
 }
 
-function EmailBlock({ events }: { events: OrderEvidenceEventDTO[] }) {
+function EmailBlock({
+  events,
+  display,
+}: {
+  events: OrderEvidenceEventDTO[];
+  /** Applied to the captured subject and body before they are drawn —
+   *  `pdfSafe` on a flight packet, identity otherwise. */
+  display: (text: string) => string;
+}) {
   const emails = events.filter(
     (e) =>
       e.eventType === "PAYMENT_REQUEST_EMAIL_SENT" ||
@@ -477,7 +556,7 @@ function EmailBlock({ events }: { events: OrderEvidenceEventDTO[] }) {
         // self-contained document. The HTML stays in the chain payload
         // for the on-page viewer; embedding it here would require an
         // HTML→PDF bridge and balloon the file with base64 images.
-        const text = asString(email.payload.text);
+        const text = display(asString(email.payload.text));
         const body =
           text.length > 0
             ? text
@@ -490,7 +569,10 @@ function EmailBlock({ events }: { events: OrderEvidenceEventDTO[] }) {
               </Text>
               <Text>{email.occurredAt}</Text>
             </View>
-            <Row label="Subject" value={asString(email.payload.subject)} />
+            <Row
+              label="Subject"
+              value={display(asString(email.payload.subject))}
+            />
             <Row label="To" value={asString(email.payload.to)} />
             <Row label="From" value={asString(email.payload.from)} />
             {asString(email.payload.replyTo) ? (
@@ -518,6 +600,190 @@ function EmailBlock({ events }: { events: OrderEvidenceEventDTO[] }) {
           </View>
         );
       })}
+    </View>
+  );
+}
+
+/**
+ * The money split that stands in for the single "Amount" row on a flight.
+ * The payment link only ever collects `pricing.amount` — on an itinerary
+ * flight, the service charge; the airline fare is part of the booking value
+ * but was never charged here — the distinction a flight chargeback turns on.
+ * A flight created before itineraries is labelled neutrally: its charge
+ * lines were usually the whole fare.
+ */
+function FlightAmountRows({
+  flight,
+  currency,
+}: {
+  flight: EvidenceFlightDTO;
+  currency: string;
+}) {
+  const { amounts, collection } = flight;
+  const labels = flightAmountLabels(flight.serviceChargeModel);
+  return (
+    <View>
+      {amounts.airlineFare > 0 ? (
+        <Row
+          label={labels.airlineFare}
+          value={`${formatCurrency(amounts.airlineFare, currency)} — not collected by the payment link`}
+        />
+      ) : null}
+      <Row
+        label={labels.serviceCharge}
+        value={formatCurrency(amounts.serviceCharge, currency)}
+      />
+      {amounts.dueLater > 0 ? (
+        <Row
+          label={labels.dueLater}
+          value={formatCurrency(amounts.dueLater, currency)}
+        />
+      ) : null}
+      <Row
+        label={labels.bookingTotal}
+        value={formatCurrency(amounts.bookingTotal, currency)}
+      />
+      <Row
+        label={labels.collectedOnline}
+        value={
+          collection.status === "COLLECTED" && collection.amount !== null
+            ? formatCurrency(collection.amount, currency)
+            : collection.status === "ON_HOLD"
+              ? labels.onHoldNotCollected
+              : labels.notCollected
+        }
+      />
+    </View>
+  );
+}
+
+/**
+ * The itinerary a flight dispute is about, as the operator recorded it:
+ * the trip-level rows, then every journey with its numbered flights and
+ * the layovers between them. The web page draws the same view with
+ * `FlightItinerary`; this is that view in react-pdf primitives.
+ */
+// Fragments rather than wrapping Views from here down: react-pdf only
+// honours `minPresenceAhead` for an element with earlier siblings in the
+// same container, so the journey headings must sit beside what precedes
+// them.
+function FlightBlock({ flight }: { flight: EvidenceFlightDTO }) {
+  const { itinerary } = flight;
+  return (
+    <>
+      <Text style={styles.h2}>Flight itinerary</Text>
+      {flight.details.map((row) => (
+        <Row key={row.label} label={row.label} value={pdfSafe(row.value)} />
+      ))}
+      {flight.passengerNotes ? (
+        <Row label="Passenger notes" value={pdfSafe(flight.passengerNotes)} />
+      ) : null}
+      {itinerary ? (
+        <>
+          <Text style={styles.note}>
+            {itinerary.legacy
+              ? "Booked before itineraries existed — times are in UTC."
+              : "Times are local to each airport."}
+          </Text>
+          {itinerary.journeys.map((journey) => (
+            <FlightJourney
+              key={journey.key}
+              journey={journey}
+              tripType={itinerary.tripType}
+            />
+          ))}
+        </>
+      ) : null}
+    </>
+  );
+}
+
+function FlightJourney({
+  journey,
+  tripType,
+}: {
+  journey: FlightJourneyView;
+  tripType: FlightTripType;
+}) {
+  // "Direct" / "2 stops" — or "3 flights" on a multi-city trip, whose legs
+  // are destinations in their own right, not stops.
+  const shape = journeyStopsLabel(journey, tripType);
+  return (
+    <>
+      {/* Keeps a journey heading from being stranded at the foot of a
+          page, apart from its first flight. */}
+      <Text style={styles.journeyTitle} minPresenceAhead={100}>
+        {pdfSafe(
+          `${journey.label.toUpperCase()} · ${journey.route} · ${shape}`,
+        )}
+      </Text>
+      {journey.segments.map((segment, index) => {
+        const layover = journey.connections[index]?.layover ?? null;
+        return (
+          <View key={segment.number}>
+            <FlightSegment
+              segment={segment}
+              timeZoneLabel={journey.timeZoneLabel}
+            />
+            {layover ? <FlightLayover layover={layover} /> : null}
+          </View>
+        );
+      })}
+    </>
+  );
+}
+
+function FlightSegment({
+  segment,
+  timeZoneLabel,
+}: {
+  segment: FlightSegmentView;
+  timeZoneLabel: string | null;
+}) {
+  const carrier = segmentCarrier(segment);
+  // Airport-local wall clock, printed as entered ("UTC" only on a legacy
+  // order). "—" where the order never recorded the time.
+  const at = (value: LocalDateTime | null) =>
+    value
+      ? `${formatLocalDate(value.date)} · ${formatSegmentTime(value, timeZoneLabel)}`
+      : "—";
+  return (
+    <View style={styles.card} wrap={false}>
+      <Text style={styles.eventTitle}>
+        {pdfSafe(
+          `Flight ${segment.number} · ${segment.origin} → ${segment.destination}`,
+        )}
+      </Text>
+      {carrier ? <Row label="Airline" value={pdfSafe(carrier)} /> : null}
+      <Row label="Departs" value={at(segment.departure)} />
+      <Row label="Arrives" value={at(segment.arrival)} />
+      {segment.details ? (
+        <Row label="Details" value={pdfSafe(segment.details)} />
+      ) : null}
+    </View>
+  );
+}
+
+function FlightLayover({ layover }: { layover: FlightLayoverView }) {
+  // Same wording as the web itinerary, operator hint included: this packet
+  // is read by the dispute team, not the customer.
+  const headline = `${
+    layover.minutes !== null
+      ? `Layover: ${formatDuration(layover.minutes)}`
+      : "Layover"
+  }${layover.location ? ` — ${layover.location}` : ""}`;
+  const adjusted =
+    layover.overrideMinutes === null
+      ? ""
+      : layover.calculatedMinutes !== null && layover.calculatedMinutes >= 0
+        ? ` (adjusted; flight times give ${formatDuration(layover.calculatedMinutes)})`
+        : " (adjusted)";
+  return (
+    <View style={styles.layover} wrap={false}>
+      <Text>{pdfSafe(`${headline}${adjusted}`)}</Text>
+      {layover.notes ? (
+        <Text style={styles.layoverNotes}>{pdfSafe(layover.notes)}</Text>
+      ) : null}
     </View>
   );
 }

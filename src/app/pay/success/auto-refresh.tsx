@@ -3,20 +3,24 @@
 import { useEffect, useState } from "react";
 
 interface PaymentSuccessAutoRefreshProps {
+  /** Customer-facing name of the order's gateway ("Stripe", "PayPal").
+   *  Null when the order names none — the copy then names no processor
+   *  rather than guessing one. */
+  gatewayLabel?: string | null;
   /** Total seconds the customer will see "still confirming" before the
    *  banner stops auto-refreshing. After the cap we still show a manual
    *  refresh hint so they're never stuck. */
   capSeconds?: number;
   /** How often we reload the page to re-query the server (which
-   *  reconciles with Stripe on each render). */
+   *  reconciles with the gateway on each render). */
   intervalSeconds?: number;
 }
 
 /**
- * Tiny client component the customer sees ONLY when Stripe sent them to
- * the success page but our backend hasn't recorded PAID yet — typically
+ * Tiny client component the customer sees ONLY when the gateway sent them
+ * to the success page but our backend hasn't recorded PAID yet — typically
  * because the webhook hasn't landed and our server-side reconcile
- * couldn't reach Stripe (offline / transient error).
+ * couldn't reach the gateway (offline / transient error).
  *
  * Strategy: reload the whole page on a short interval. Each reload
  * re-runs the server-side reconcile which is the only thing that
@@ -27,6 +31,7 @@ interface PaymentSuccessAutoRefreshProps {
  * payment; after the cap we tell the customer to refresh manually.
  */
 export function PaymentSuccessAutoRefresh({
+  gatewayLabel = null,
   capSeconds = 30,
   intervalSeconds = 3,
 }: PaymentSuccessAutoRefreshProps) {
@@ -48,6 +53,9 @@ export function PaymentSuccessAutoRefresh({
   }, []);
 
   const exhausted = elapsed >= capSeconds;
+  // Was hardcoded "Stripe", which told a PayPal brand's customer the wrong
+  // processor was holding their money.
+  const processor = gatewayLabel ?? "the payment provider";
   return (
     <div
       role="status"
@@ -56,11 +64,10 @@ export function PaymentSuccessAutoRefresh({
     >
       {exhausted ? (
         <>
-          Still confirming with Stripe. Try refreshing this page in a
-          minute, or contact support if the charge appears on your card.
+          {`Still confirming with ${processor}. Try refreshing this page in a minute, or contact support if the charge appears on your card.`}
         </>
       ) : (
-        <>Confirming with Stripe…</>
+        <>{`Confirming with ${processor}…`}</>
       )}
     </div>
   );

@@ -7,6 +7,7 @@ import {
   HashIcon,
   MailIcon,
   PenLineIcon,
+  PlaneIcon,
   ShieldCheckIcon,
   XCircleIcon,
 } from "lucide-react";
@@ -17,13 +18,16 @@ import {
   OrderEvidenceActorLabel,
   OrderEvidenceEventLabel,
 } from "@/lib/constants/labels";
-import { OrderEvidenceEventType } from "@/lib/constants/enums";
+import { OrderEvidenceEventType, ServiceType } from "@/lib/constants/enums";
 import { formatDateTime, formatIp, formatRelative } from "@/lib/format";
 import type { OrderEvidenceEventDTO } from "@/types";
 
 interface EvidenceTimelineProps {
   events: OrderEvidenceEventDTO[];
   brokenAtSequence?: number | null;
+  /** Only changes the "Order created" icon: a plane for a flight rather
+   *  than the car every other order keeps. */
+  serviceType?: ServiceType;
 }
 
 const ICONS: Partial<Record<OrderEvidenceEventDTO["eventType"], React.ComponentType<{ className?: string }>>> = {
@@ -58,11 +62,16 @@ const ICONS: Partial<Record<OrderEvidenceEventDTO["eventType"], React.ComponentT
 export function EvidenceTimeline({
   events,
   brokenAtSequence,
+  serviceType,
 }: EvidenceTimelineProps) {
   return (
     <ol className="divide-y divide-border">
       {events.map((event) => {
-        const Icon = ICONS[event.eventType] ?? HashIcon;
+        const Icon =
+          serviceType === ServiceType.FLIGHT &&
+          event.eventType === OrderEvidenceEventType.ORDER_CREATED
+            ? PlaneIcon
+            : (ICONS[event.eventType] ?? HashIcon);
         const isBrokenHead = brokenAtSequence === event.sequence;
         const isEmailEvent =
           event.eventType ===

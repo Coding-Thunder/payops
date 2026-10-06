@@ -291,9 +291,12 @@ export async function getProviderByKey(key: string): Promise<ProviderDoc | null>
  * Resolve a snapshot to attach to a newly-created order. Throws if the
  * provider key doesn't exist or is not ACTIVE — keeps stale references off
  * new orders without locking up the catalog when an admin disables a brand.
+ * `serviceType` only words the "unknown" error: a flight's provider is an
+ * airline or supplier, never a "rental provider".
  */
 export async function buildProviderSnapshotFromKey(
   key: string,
+  serviceType?: ServiceType,
 ): Promise<ProviderSnapshot> {
   await ensureSeedProviders();
   const normalised = key.trim().toUpperCase();
@@ -301,7 +304,13 @@ export async function buildProviderSnapshotFromKey(
     throw new ValidationError("That provider id is malformed");
   }
   const doc = await Provider.findOne({ key: normalised }).lean<ProviderDoc>();
-  if (!doc) throw new ValidationError("Unknown rental provider");
+  if (!doc) {
+    throw new ValidationError(
+      serviceType === ServiceType.FLIGHT
+        ? "Unknown airline or supplier"
+        : "Unknown rental provider",
+    );
+  }
   if (doc.status !== RecordState.ACTIVE) {
     throw new ValidationError("That provider is currently disabled");
   }

@@ -11,13 +11,27 @@ import {
   AuditEntity,
   OrderEvidenceActorType,
   type OrderEvidenceEventType,
+  ServiceType,
   type UserRole,
 } from "@/lib/constants/enums";
+import {
+  type FlightAmountSummary,
+  flightCollection,
+  type FlightCollection,
+  flightMoneyWording,
+  summarizeFlightAmounts,
+} from "@/lib/charges";
 import { computeEvidenceHash } from "@/lib/crypto/hash-chain";
 import { ForbiddenError, NotFoundError } from "@/lib/errors";
+import {
+  buildFlightItinerary,
+  type FlightItineraryView,
+} from "@/lib/flight-itinerary";
 import { Permission, roleHasPermission } from "@/lib/constants/permissions";
 import {
   describeServiceItem,
+  type ServiceRow,
+  serviceDetailRows,
   serviceTypeOf,
 } from "@/lib/service-summary";
 import { logger } from "@/lib/logger";
@@ -301,13 +315,49 @@ interface EvidenceContext {
 }
 
 /**
+ * FLIGHT only: what the evidence page and PDF show beside the order header
+ * — every journey, numbered flight and layover, the trip-level rows, and
+ * the money split between the airline fare and the service charge (all the
+ * payment link ever collects). A dispute over a flight is usually a dispute
+ * over WHICH flight and HOW MUCH, so both travel with the chain.
+ */
+export interface EvidenceFlightDTO {
+  /** Null only when the order carries no route at all. A legacy flat-field
+   *  flight is folded into the same view, its times labelled UTC. */
+  itinerary: FlightItineraryView | null;
+  /** Trip type, route(s), cabin, passengers, PNR. */
+  details: ServiceRow[];
+  passengerNotes: string | null;
+  amounts: FlightAmountSummary;
+  /**
+   * From `flightMoneyWording`: true when the charge lines are the
+   * operator's service charge (an itinerary flight). False for a flight
+   * created before itineraries, whose charge lines were usually the whole
+   * fare — the page and the PDF then label the money neutrally.
+   */
+  serviceChargeModel: boolean;
+  /** What the payment link has actually collected — set only once the order
+   *  is paid (`flightCollection`). */
+  collection: FlightCollection;
+}
+
+/**
+ * The chain as the evidence page, its JSON route and the PDF read it.
+ * `flight` is set on a FLIGHT order only and absent otherwise, so every
+ * other order's chain is exactly the `OrderEvidenceChainDTO` it was.
+ */
+export interface OrderEvidenceChainWithFlightDTO extends OrderEvidenceChainDTO {
+  flight?: EvidenceFlightDTO;
+}
+
+/**
  * Fetch the full evidence chain for an order, including verification
  * status. Requires EVIDENCE_VIEW.
  */
 export async function getEvidenceChain(
   orderId: string,
   ctx: EvidenceContext,
-): Promise<OrderEvidenceChainDTO> {
+): Promise<OrderEvidenceChainWithFlightDTO> {
   if (!roleHasPermission(ctx.actor.role, Permission.EVIDENCE_VIEW)) {
     throw new ForbiddenError(
       "You do not have permission to view evidence chains",
@@ -363,6 +413,8 @@ export async function getEvidenceChain(
           onPrimaryColor: fb.onPrimaryColor,
         };
       })();
+  // Built from the order already loaded above — no extra query.
+  const flight = flightEvidence(orderDoc);
 
   return {
     events,
@@ -392,6 +444,30 @@ export async function getEvidenceChain(
       item: describeServiceItem(orderDoc),
       createdAt: orderDoc.createdAt.toISOString(),
     },
+    // Spread rather than `flight: null`, so a car rental's chain does not
+    // even gain the key.
+    ...(flight ? { flight } : {}),
+  };
+}
+
+/**
+ * The FLIGHT block of an evidence chain. Null for every other service, and
+ * for a flight order with no flight payload at all.
+ */
+function flightEvidence(order: OrderDoc): EvidenceFlightDTO | null {
+  const f = order.flight;
+  if (serviceTypeOf(order) !== ServiceType.FLIGHT || !f) return null;
+  return {
+    itinerary: buildFlightItinerary(f),
+    details: serviceDetailRows(order),
+    passengerNotes: f.passengerNotes?.trim() || null,
+    amounts: summarizeFlightAmounts(
+      order.charges,
+      f.airlineFare,
+      order.pricing.amount,
+    ),
+    serviceChargeModel: flightMoneyWording(f, order.bookingType).serviceChargeModel,
+    collection: flightCollection(order),
   };
 }
 

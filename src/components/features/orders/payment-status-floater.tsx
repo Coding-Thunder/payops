@@ -10,8 +10,14 @@ import {
 
 import { useActivityFeed } from "@/hooks/use-activity-feed";
 import { DomainEventType } from "@/lib/constants/events";
-import { OrderStatus, PaymentCaptureStatus } from "@/lib/constants/enums";
+import {
+  OrderStatus,
+  PaymentCaptureStatus,
+  ServiceType,
+} from "@/lib/constants/enums";
+import { flightMoneyWording } from "@/lib/charges";
 import { PaymentCaptureStatusLabel } from "@/lib/constants/labels";
+import { serviceTypeOf } from "@/lib/service-summary";
 import { cn } from "@/lib/utils";
 import type { OrderDTO, OrderPaymentCapture } from "@/types";
 
@@ -71,7 +77,16 @@ function describeOrder(order: OrderDTO): FloaterDescriptor {
       // automatic-capture order, so this returns null for both incumbent
       // brands and the original banner below is reached unchanged.
       return (
-        describeCapture(order.payment.capture) ?? {
+        describeCapture(
+          order.payment.capture,
+          // An itinerary flight's authorization is its service charge,
+          // never the airline fare. A flight created before itineraries
+          // usually authorized its whole fare: the generic "amount".
+          serviceTypeOf(order) === ServiceType.FLIGHT &&
+            flightMoneyWording(order.flight, order.bookingType).serviceChargeModel
+            ? "service charge"
+            : "amount",
+        ) ?? {
           tone: "pending",
           label: "Awaiting payment",
           detail: `Watching for ${order.customer.name}'s payment in real time.`,
@@ -84,9 +99,12 @@ function describeOrder(order: OrderDTO): FloaterDescriptor {
  * Banner copy for the authorization lifecycle of a manual-capture order.
  * Returns null when there is nothing capture-specific to say, which
  * includes every automatic-capture order (`capture === null`).
+ * `heldNoun` names what the hold covers: "amount", or a flight's
+ * "service charge".
  */
 function describeCapture(
   capture: OrderPaymentCapture | null,
+  heldNoun: string,
 ): FloaterDescriptor | null {
   if (!capture) return null;
   switch (capture.status) {
@@ -102,7 +120,7 @@ function describeCapture(
       return {
         tone: "pending",
         label: PaymentCaptureStatusLabel[PaymentCaptureStatus.CAPTURE_PENDING],
-        detail: "Charging the authorized amount now.",
+        detail: `Charging the authorized ${heldNoun} now.`,
       };
     case PaymentCaptureStatus.CAPTURE_FAILED:
       return {

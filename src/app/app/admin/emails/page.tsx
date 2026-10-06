@@ -4,16 +4,18 @@ import { render } from "@react-email/render";
 import { PageHeader } from "@/components/common/page-header";
 import { EmailPreviewControls } from "@/components/features/emails/email-preview-controls";
 import { Permission } from "@/lib/constants/permissions";
-import { BookingType, BOOKING_TYPES } from "@/lib/constants/enums";
+import { BookingType, BOOKING_TYPES, ServiceType } from "@/lib/constants/enums";
 import { env } from "@/lib/env";
 import { cn } from "@/lib/utils";
 import { requirePermission } from "@/server/auth/session";
 import { getBranding } from "@/server/services/branding.service";
 import { ensureSettingsDocument } from "@/server/services/settings.service";
 import { listActiveProviders } from "@/server/services/provider.service";
+import { PaymentAuthorizedEmail } from "@/server/email/templates/payment-authorized";
 import { PaymentConfirmationEmail } from "@/server/email/templates/payment-confirmation";
 import { PaymentRequestEmail } from "@/server/email/templates/payment-request";
 import {
+  buildPaymentAuthorizedPreviewProps,
   buildPaymentPreviewProps,
   buildPaymentRequestPreviewProps,
 } from "@/server/email/preview-data";
@@ -32,6 +34,12 @@ const TEMPLATES = [
     label: "Payment request",
     description: "Sent by an agent right after order creation with the Stripe link.",
   },
+  {
+    key: "payment-authorized",
+    label: "Payment authorized",
+    description:
+      "Sent when a manual-capture payment is held on the card, before it is charged.",
+  },
 ] as const;
 
 type TemplateKey = (typeof TEMPLATES)[number]["key"];
@@ -40,11 +48,16 @@ function isTemplateKey(value: string | undefined): value is TemplateKey {
   return TEMPLATES.some((t) => t.key === value);
 }
 
+/** The sample data sets the previews can render. */
+const PREVIEW_SERVICES = [ServiceType.CAR_RENTAL, ServiceType.FLIGHT] as const;
+type PreviewService = (typeof PREVIEW_SERVICES)[number];
+
 interface EmailsPageProps {
   searchParams: Promise<{
     template?: string;
     provider?: string;
     bookingType?: string;
+    service?: string;
   }>;
 }
 
@@ -70,6 +83,10 @@ export default async function AdminEmailsPage({
   ).includes(params.bookingType ?? "")
     ? (params.bookingType as BookingType)
     : BookingType.NEW_BOOKING;
+  const activeService: PreviewService =
+    params.service === ServiceType.FLIGHT
+      ? ServiceType.FLIGHT
+      : ServiceType.CAR_RENTAL;
 
   if (!activeProvider) {
     return (
@@ -105,6 +122,8 @@ export default async function AdminEmailsPage({
     termsAndConditions: settings.termsAndConditions,
     termsVersion: settings.termsVersion,
     bookingType: activeBookingType,
+    // The flight sample carries its own built-in flight terms and policy.
+    serviceType: activeService,
   };
 
   const html =
@@ -112,9 +131,15 @@ export default async function AdminEmailsPage({
       ? await render(
           <PaymentRequestEmail {...buildPaymentRequestPreviewProps(baseArgs)} />,
         )
-      : await render(
-          <PaymentConfirmationEmail {...buildPaymentPreviewProps(baseArgs)} />,
-        );
+      : activeTemplate === "payment-authorized"
+        ? await render(
+            <PaymentAuthorizedEmail
+              {...buildPaymentAuthorizedPreviewProps(baseArgs)}
+            />,
+          )
+        : await render(
+            <PaymentConfirmationEmail {...buildPaymentPreviewProps(baseArgs)} />,
+          );
 
   const activeTemplateLabel = TEMPLATES.find((t) => t.key === activeTemplate)!
     .label;
@@ -133,11 +158,14 @@ export default async function AdminEmailsPage({
             activeKey={activeTemplate}
             provider={activeProvider.key}
             bookingType={activeBookingType}
+            service={activeService}
           />
           <EmailPreviewControls
             providers={providers.map((p) => ({ key: p.key, name: p.name }))}
             activeProvider={activeProvider.key}
             activeBookingType={activeBookingType}
+            services={PREVIEW_SERVICES}
+            activeService={activeService}
           />
         </aside>
 
@@ -169,10 +197,12 @@ function TemplateListCard({
   activeKey,
   provider,
   bookingType,
+  service,
 }: {
   activeKey: TemplateKey;
   provider: string;
   bookingType: BookingType;
+  service: PreviewService;
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
@@ -188,6 +218,7 @@ function TemplateListCard({
             template: t.key,
             provider,
             bookingType,
+            service,
           });
           return (
             <li

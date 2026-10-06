@@ -27,8 +27,15 @@ import { toast } from "@/components/ui/sonner";
 import { useActivityFeed } from "@/hooks/use-activity-feed";
 import { orderQueryKey } from "@/hooks/use-order-query";
 import { api, ApiClientError } from "@/lib/api-client";
+import { flightMoneyWording, summarizeFlightAmounts } from "@/lib/charges";
+import { ServiceType } from "@/lib/constants/enums";
 import { DomainEventType } from "@/lib/constants/events";
-import { describeServiceItem, serviceItemLabel } from "@/lib/service-summary";
+import { providerLabelFor } from "@/lib/constants/labels";
+import {
+  describeServiceItem,
+  serviceItemLabel,
+  serviceTypeOf,
+} from "@/lib/service-summary";
 import { cn } from "@/lib/utils";
 import type { OrderDTO } from "@/types";
 
@@ -576,6 +583,22 @@ function PaymentSummaryCard({
   paidAt,
   onCopyLink,
 }: PaymentSummaryCardProps) {
+  // An itinerary flight's payment link collects its service charge only —
+  // label it so, next to the airline fare and booking value it is part of.
+  // A flight created before itineraries usually charged its whole fare, so
+  // its amount is the neutral "Amount payable now".
+  const isFlight = serviceTypeOf(order) === ServiceType.FLIGHT;
+  const flightAmounts = isFlight
+    ? summarizeFlightAmounts(
+        order.charges,
+        order.flight?.airlineFare,
+        order.pricing.amount,
+      )
+    : null;
+  const { labels: flightLabels, serviceChargeModel } = flightMoneyWording(
+    order.flight,
+    order.bookingType,
+  );
   return (
     <Card>
       <CardHeader className="space-y-2 pb-3">
@@ -589,8 +612,34 @@ function PaymentSummaryCard({
       <CardContent className="space-y-3">
         <dl className="grid grid-cols-2 gap-3 text-[12.5px]">
           <Meta label="Customer" value={order.customer.name} />
-          <Meta label="Amount" value={formatAmount(order)} />
-          <Meta label="Provider" value={order.provider?.name ?? "—"} />
+          {flightAmounts ? (
+            <>
+              <Meta
+                label={
+                  serviceChargeModel
+                    ? `${flightLabels.serviceCharge} (payable now)`
+                    : flightLabels.payableNow
+                }
+                value={formatAmount(order)}
+              />
+              {flightAmounts.airlineFare > 0 ? (
+                <Meta
+                  label={flightLabels.airlineFare}
+                  value={formatAmount(order, flightAmounts.airlineFare)}
+                />
+              ) : null}
+              <Meta
+                label={flightLabels.bookingTotal}
+                value={formatAmount(order, flightAmounts.bookingTotal)}
+              />
+            </>
+          ) : (
+            <Meta label="Amount" value={formatAmount(order)} />
+          )}
+          <Meta
+            label={providerLabelFor(serviceTypeOf(order), "Provider")}
+            value={order.provider?.name ?? "—"}
+          />
           {/* `vehicle` is null on FLIGHT / HOTEL orders. The CAR_RENTAL
               branch reproduces the original label and the original
               " · "-joined value exactly. */}
@@ -673,13 +722,14 @@ function Meta({ label, value }: { label: string; value: string }) {
   );
 }
 
-function formatAmount(order: OrderDTO): string {
+/** An amount in the order's currency — by default the gateway amount. */
+function formatAmount(order: OrderDTO, amount = order.pricing.amount): string {
   try {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: order.pricing.currency,
-    }).format(order.pricing.amount);
+    }).format(amount);
   } catch {
-    return `${order.pricing.currency} ${order.pricing.amount.toFixed(2)}`;
+    return `${order.pricing.currency} ${amount.toFixed(2)}`;
   }
 }

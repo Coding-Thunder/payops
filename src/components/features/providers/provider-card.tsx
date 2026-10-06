@@ -13,6 +13,10 @@ interface ProviderCardProps {
   className?: string;
   /** Right-aligned slot for booking-id, status badges, etc. */
   meta?: React.ReactNode;
+  /** Eyebrow above the provider name. Defaults to the car-rental wording
+   *  every existing caller renders; a flight passes `FLIGHT_PROVIDER_LABEL`
+   *  ("Airline / Supplier"). */
+  label?: string;
 }
 
 /**
@@ -26,6 +30,7 @@ export function ProviderCard({
   description,
   className,
   meta,
+  label = "Rental provider",
 }: ProviderCardProps) {
   const p = resolveProvider(
     typeof provider === "string" ? { id: provider } : provider,
@@ -47,7 +52,7 @@ export function ProviderCard({
         <ProviderLogo provider={p} size="xl" framed />
         <div className="min-w-0 flex-1">
           <p className="text-[10.5px] font-medium uppercase tracking-wider text-muted-foreground">
-            Rental provider
+            {label}
           </p>
           <h3 className="mt-1 truncate text-[15px] font-semibold text-foreground">
             {p.name}

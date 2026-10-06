@@ -21,6 +21,7 @@ import { FormDialog } from "@/components/common/form-dialog";
 import { ColorInput, LogoPickerRow } from "@/components/common/logo-picker";
 import { toast } from "@/components/ui/sonner";
 import { api, ApiClientError } from "@/lib/api-client";
+import { ServiceType } from "@/lib/constants/enums";
 import {
   createProviderSchema,
   type CreateProviderInput,
@@ -45,6 +46,12 @@ export function CreateProviderDialog() {
   const [visibility, setVisibility] = useState<ProviderVisibilityValue>(
     defaultProviderVisibility(),
   );
+  // Terminology only: a supplier added for flights alone is an airline or
+  // travel supplier, not a "rental provider". Every other selection —
+  // including the car-rental default — keeps the original title.
+  const flightOnly =
+    visibility.serviceTypes.length === 1 &&
+    visibility.serviceTypes[0] === ServiceType.FLIGHT;
 
   const form = useForm<CreateProviderInput>({
     resolver: zodResolver(createProviderSchema),
@@ -143,7 +150,7 @@ export function CreateProviderDialog() {
           setOpen(o);
           if (!o) reset();
         }}
-        title="Add rental provider"
+        title={flightOnly ? "Add airline / supplier" : "Add rental provider"}
         description="The brand mark renders on orders, dashboards, and customer receipts. Use the provider's official logo when going live."
         submitLabel="Create provider"
         size="md"

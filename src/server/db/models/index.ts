@@ -8,7 +8,10 @@ export type {
   OrganizationDocument,
   OrganizationEmail,
   OrganizationEmailTransport,
+  OrganizationLegal,
   OrganizationPayments,
+  OrganizationServiceLegal,
+  OrganizationServicesLegal,
   OrganizationSupport,
 } from "./organization.model";
 
@@ -29,7 +32,13 @@ export type {
 } from "./organization-credential.model";
 
 export { Order } from "./order.model";
-export type { OrderDoc, OrderDocument } from "./order.model";
+export type {
+  FlightConnectionDoc,
+  FlightJourneyDoc,
+  FlightSegmentDoc,
+  OrderDoc,
+  OrderDocument,
+} from "./order.model";
 
 export { Provider } from "./provider.model";
 export type { ProviderDoc, ProviderDocument } from "./provider.model";

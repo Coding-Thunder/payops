@@ -4,6 +4,7 @@ import {
   BookingType,
   ConsentStatus,
   Currency,
+  FlightTripType,
   OrderStatus,
   PaymentTiming,
   RecordState,
@@ -13,6 +14,7 @@ import {
   buildProviderSnapshot,
   ProviderId,
 } from "@/lib/constants/providers";
+import { hasFlightItinerary } from "@/lib/flight-itinerary";
 import { Order, type OrderDoc, type OrderDocument } from "@/server/db/models";
 
 /**
@@ -31,6 +33,14 @@ import { Order, type OrderDoc, type OrderDocument } from "@/server/db/models";
  * car-rental payload for their own (and drop `vehicle` / `trip` to null,
  * which is what the model requires of them) without touching the rental
  * path above.
+ *
+ * FLIGHT has two shapes:
+ *   - LEGACY (`{ serviceType: FLIGHT }`): the flat origin / destination /
+ *     departureDate fields and a prepaid "Airfare" line — every flight
+ *     written before itineraries existed.
+ *   - ITINERARY (`{ serviceType: FLIGHT, flight: itineraryFlight() }`):
+ *     `outbound` / `return` journeys, an airline fare and a prepaid
+ *     "Service charge" — every flight `createOrder` writes today.
  */
 
 interface CreatorSeed {
@@ -90,29 +100,51 @@ export function buildOrder(seed: OrderSeed = {}): OrderDoc & { _id: Types.Object
         }
       : null,
     flight: wants(ServiceType.FLIGHT, seed.flight)
-      ? {
-          tripType: seed.flight?.tripType ?? "ONE_WAY",
-          airline: seed.flight?.airline ?? "Test Airways",
-          flightNumber: seed.flight?.flightNumber ?? "TA123",
-          origin: seed.flight?.origin ?? "LHR",
-          destination: seed.flight?.destination ?? "JFK",
-          departureDate: seed.flight?.departureDate ?? pickup,
-          departureTimePreference: seed.flight?.departureTimePreference ?? null,
-          // A round trip has to carry a return leg or the model's
-          // pre-validate hook rejects it, so seed one by default.
-          returnDate:
-            seed.flight?.returnDate ??
-            (seed.flight?.tripType === "ROUND_TRIP" ? dropoff : null),
-          returnTimePreference: seed.flight?.returnTimePreference ?? null,
-          cabinClass: seed.flight?.cabinClass ?? "ECONOMY",
-          passengers: {
-            adults: seed.flight?.passengers?.adults ?? 1,
-            children: seed.flight?.passengers?.children ?? 0,
-            infants: seed.flight?.passengers?.infants ?? 0,
-          },
-          passengerNotes: seed.flight?.passengerNotes ?? null,
-          pnr: seed.flight?.pnr ?? null,
-        }
+      ? hasFlightItinerary(seed.flight)
+        ? {
+            // ITINERARY seed — the shape of every flight created today. The
+            // legacy flat fields stay unset, exactly as `createOrder` leaves
+            // them.
+            tripType: seed.flight?.tripType ?? FlightTripType.ONE_WAY,
+            outbound: seed.flight!.outbound,
+            return: seed.flight?.return ?? null,
+            airlineFare: seed.flight?.airlineFare ?? null,
+            cabinClass: seed.flight?.cabinClass ?? "ECONOMY",
+            passengers: {
+              adults: seed.flight?.passengers?.adults ?? 1,
+              children: seed.flight?.passengers?.children ?? 0,
+              infants: seed.flight?.passengers?.infants ?? 0,
+            },
+            passengerNotes: seed.flight?.passengerNotes ?? null,
+            pnr: seed.flight?.pnr ?? null,
+          }
+        : {
+            // LEGACY seed — a flight created before itineraries existed:
+            // flat origin / destination / dates, no `outbound`.
+            tripType: seed.flight?.tripType ?? "ONE_WAY",
+            airline: seed.flight?.airline ?? "Test Airways",
+            flightNumber: seed.flight?.flightNumber ?? "TA123",
+            origin: seed.flight?.origin ?? "LHR",
+            destination: seed.flight?.destination ?? "JFK",
+            departureDate: seed.flight?.departureDate ?? pickup,
+            departureTimePreference:
+              seed.flight?.departureTimePreference ?? null,
+            arrivalDate: seed.flight?.arrivalDate ?? null,
+            // A round trip has to carry a return leg or the model's
+            // pre-validate hook rejects it, so seed one by default.
+            returnDate:
+              seed.flight?.returnDate ??
+              (seed.flight?.tripType === "ROUND_TRIP" ? dropoff : null),
+            returnTimePreference: seed.flight?.returnTimePreference ?? null,
+            cabinClass: seed.flight?.cabinClass ?? "ECONOMY",
+            passengers: {
+              adults: seed.flight?.passengers?.adults ?? 1,
+              children: seed.flight?.passengers?.children ?? 0,
+              infants: seed.flight?.passengers?.infants ?? 0,
+            },
+            passengerNotes: seed.flight?.passengerNotes ?? null,
+            pnr: seed.flight?.pnr ?? null,
+          }
       : null,
     hotel: wants(ServiceType.HOTEL, seed.hotel)
       ? {
@@ -136,7 +168,7 @@ export function buildOrder(seed: OrderSeed = {}): OrderDoc & { _id: Types.Object
     },
     charges: seed.charges ?? [
       {
-        name: "Rental cost",
+        name: defaultChargeName(serviceType, seed.flight),
         amount: seed.pricing?.amount ?? 199.5,
         timing: PaymentTiming.PREPAID,
       },
@@ -204,6 +236,79 @@ export function buildOrder(seed: OrderSeed = {}): OrderDoc & { _id: Types.Object
     ),
     createdAt: seed.createdAt ?? now,
     updatedAt: seed.updatedAt ?? now,
+  };
+}
+
+/**
+ * The single charge line a seed gets when it names none. A car keeps the
+ * "Rental cost" line it has always had. A LEGACY flight carries what the
+ * pre-itinerary form defaulted to — its whole fare as a prepaid "Airfare"
+ * line — and an ITINERARY flight its operator's "Service charge".
+ */
+function defaultChargeName(
+  serviceType: ServiceType,
+  flight: OrderSeed["flight"],
+): string {
+  if (serviceType !== ServiceType.FLIGHT) return "Rental cost";
+  return hasFlightItinerary(flight) ? "Service charge" : "Airfare";
+}
+
+type FlightSeed = NonNullable<OrderDoc["flight"]>;
+type FlightJourneySeed = NonNullable<FlightSeed["outbound"]>;
+
+/**
+ * An itinerary `flight` block for `createOrder({ serviceType: FLIGHT,
+ * flight: itineraryFlight() })`: one way, Delhi → Varanasi → Mumbai with a
+ * layover recorded at Varanasi (2h 30m, calculated) and a $400 airline fare.
+ * Pass `outbound` / `return` / `tripType` to seed any other shape.
+ *
+ * Omit `flight` altogether (`createOrder({ serviceType: FLIGHT })`) for the
+ * LEGACY flat-field flight every order created before itineraries carries.
+ */
+export function itineraryFlight(
+  overrides: Partial<FlightSeed> = {},
+): FlightSeed {
+  const outbound: FlightJourneySeed = {
+    segments: [
+      {
+        origin: "Delhi",
+        destination: "Varanasi",
+        departure: { date: "2026-10-10", time: "10:30" },
+        arrival: { date: "2026-10-10", time: "12:00" },
+        airline: "Air India",
+        flightNumber: "AI123",
+        details: null,
+      },
+      {
+        origin: "Varanasi",
+        destination: "Mumbai",
+        departure: { date: "2026-10-10", time: "14:30" },
+        arrival: { date: "2026-10-10", time: "16:30" },
+        airline: "IndiGo",
+        flightNumber: "6E456",
+        details: null,
+      },
+    ],
+    connections: [
+      {
+        layover: {
+          location: null,
+          durationMinutesOverride: null,
+          notes: "Change terminals",
+        },
+      },
+    ],
+  };
+  return {
+    tripType: FlightTripType.ONE_WAY,
+    outbound,
+    return: null,
+    airlineFare: 400,
+    cabinClass: "ECONOMY",
+    passengers: { adults: 1, children: 0, infants: 0 },
+    passengerNotes: null,
+    pnr: null,
+    ...overrides,
   };
 }
 

@@ -12,10 +12,13 @@ interface EmailTermsSectionProps {
 }
 
 /**
- * The ONE place the rental Terms & Conditions TEXT is rendered in email. Both
- * customer emails (payment request + payment confirmation) compose this so
- * the T&C copy/styling can never drift between templates. Sits just before
- * the support/footer block. Self-hides when there's no terms text.
+ * The ONE place the booking's Terms & Conditions TEXT is rendered in email.
+ * Every customer email (payment request, confirmation, authorization)
+ * composes this so the T&C copy/styling can never drift between templates.
+ * The text is the order's frozen `terms` snapshot — rental terms for a
+ * rental, flight terms for a flight — so the heading stays service-neutral.
+ * Sits just before the support/footer block. Self-hides when there's no
+ * terms text.
  *
  * The "I Agree" acknowledgement button is intentionally NOT here — it lives
  * in `EmailAgreeButton`, placed high in the confirmation email so the required

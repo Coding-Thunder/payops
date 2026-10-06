@@ -24,9 +24,16 @@ import { OrderDetailsSkeleton } from "@/components/common/skeletons";
 import { CenteredSpinner } from "@/components/ui/spinner";
 import { useOrderQuery } from "@/hooks/use-order-query";
 import { ApiClientError } from "@/lib/api-client";
-import { BookingTypeLabel } from "@/lib/constants/labels";
+import { flightMoneyWording, summarizeFlightAmounts } from "@/lib/charges";
+import { ServiceType } from "@/lib/constants/enums";
+import { BookingTypeLabel, providerLabelFor } from "@/lib/constants/labels";
 import { formatCurrency } from "@/lib/format";
-import { describeServiceItem, serviceItemLabel } from "@/lib/service-summary";
+import {
+  describeServiceItem,
+  serviceItemLabel,
+  serviceNoun,
+  serviceTypeOf,
+} from "@/lib/service-summary";
 
 interface EmailComposePageContentProps {
   orderId: string;
@@ -111,6 +118,22 @@ export function EmailComposePageContent({
   if (!order) return null;
 
   const orderHref = `/app/orders/${order.id}`;
+  // An itinerary flight's payment link collects its service charge only —
+  // label it so, next to the airline fare and booking value it is part of.
+  // A flight created before itineraries usually charged its whole fare, so
+  // its amount is the neutral "Amount payable now".
+  const isFlight = serviceTypeOf(order) === ServiceType.FLIGHT;
+  const flightAmounts = isFlight
+    ? summarizeFlightAmounts(
+        order.charges,
+        order.flight?.airlineFare,
+        order.pricing.amount,
+      )
+    : null;
+  const { labels: flightLabels, serviceChargeModel } = flightMoneyWording(
+    order.flight,
+    order.bookingType,
+  );
 
   return (
     <div className="space-y-6">
@@ -143,11 +166,46 @@ export function EmailComposePageContent({
               label="Booking"
               value={BookingTypeLabel[order.bookingType]}
             />
+            {flightAmounts ? (
+              <>
+                <SummaryRow
+                  label={
+                    serviceChargeModel
+                      ? `${flightLabels.serviceCharge} (payable now)`
+                      : flightLabels.payableNow
+                  }
+                  value={formatCurrency(
+                    order.pricing.amount,
+                    order.pricing.currency,
+                  )}
+                />
+                {flightAmounts.airlineFare > 0 ? (
+                  <SummaryRow
+                    label={flightLabels.airlineFare}
+                    value={formatCurrency(
+                      flightAmounts.airlineFare,
+                      order.pricing.currency,
+                    )}
+                  />
+                ) : null}
+                <SummaryRow
+                  label={flightLabels.bookingTotal}
+                  value={formatCurrency(
+                    flightAmounts.bookingTotal,
+                    order.pricing.currency,
+                  )}
+                />
+              </>
+            ) : (
+              <SummaryRow
+                label="Amount"
+                value={formatCurrency(order.pricing.amount, order.pricing.currency)}
+              />
+            )}
             <SummaryRow
-              label="Amount"
-              value={formatCurrency(order.pricing.amount, order.pricing.currency)}
+              label={providerLabelFor(serviceTypeOf(order), "Provider")}
+              value={order.provider?.name ?? "—"}
             />
-            <SummaryRow label="Provider" value={order.provider?.name ?? "—"} />
             {/* `vehicle` is null on FLIGHT / HOTEL orders. The CAR_RENTAL
                 branch reproduces the original label and the original
                 " · "-joined value exactly. */}
@@ -164,11 +222,14 @@ export function EmailComposePageContent({
         </CardContent>
       </Card>
 
+      {/* Without a provider name the subject falls back to the service's
+          noun — "rental" for a rental, exactly as before; never "rental"
+          on a flight or a hotel. */}
       <EmailComposer
         order={order}
         initialHtml=""
         defaultSubject={`Complete your ${
-          order.provider?.name ?? "rental"
+          order.provider?.name ?? serviceNoun(order)
         } payment • ${order.orderNumber}`}
         onSent={(at) => setSentAt(at)}
       />

@@ -9,9 +9,11 @@ import {
 } from "@react-email/components";
 import * as React from "react";
 
-import { BookingTypeLabel } from "@/lib/constants/labels";
+import { flightAmountLabels } from "@/lib/charges";
+import { BookingTypeLabel, providerLabelFor } from "@/lib/constants/labels";
 import { ServiceType, type BookingType } from "@/lib/constants/enums";
 import type { ProviderSnapshot } from "@/lib/constants/providers";
+import type { FlightItineraryView } from "@/lib/flight-itinerary";
 import type { ServiceRow } from "@/lib/service-summary";
 
 import { chargeWordingFor } from "../components/charge-breakdown";
@@ -19,11 +21,14 @@ import {
   ChargeBreakdown,
   COLOR,
   type EmailChargeBreakdown,
+  type EmailFlightAmounts,
   EmailAgreeButton,
   EmailFooter,
   EmailHeader,
   EmailLayout,
   EmailTermsSection,
+  FlightChargeBreakdown,
+  FlightItinerarySection,
   MetadataRow,
   ProviderBadge,
   RADIUS,
@@ -48,8 +53,9 @@ export interface PaymentConfirmationEmailProps {
   /**
    * WHAT was booked. Optional and defaulting to CAR_RENTAL so every
    * existing caller — the previews, the admin template editor — renders
-   * exactly the rental email it rendered before. Only the charge wording
-   * and the hero image read it; the booking rows come in pre-formatted.
+   * exactly the rental email it rendered before. It picks the charge
+   * wording, and for FLIGHT the service-charge copy and the itinerary; the
+   * booking rows come in pre-formatted.
    */
   serviceType?: ServiceType;
   /**
@@ -77,6 +83,20 @@ export interface PaymentConfirmationEmailProps {
    * would silently reword both incumbent brands' receipts.
    */
   serviceRows?: ServiceRow[] | null;
+  /**
+   * FLIGHT only: every flight and layover, from `buildFlightItinerary`.
+   * Rendered as its own block under the booking details, which carry only
+   * the trip-level rows.
+   */
+  flightItinerary?: FlightItineraryView | null;
+  /**
+   * FLIGHT only: the airline fare / service charge / booking value split.
+   * Replaces the generic charge breakdown — the payment covered the service
+   * charge alone, so the amount must never read as the price of the trip.
+   * Its `serviceChargeModel` also picks the copy: a flight created before
+   * itineraries (false) gets the generic sentences.
+   */
+  flightAmounts?: EmailFlightAmounts | null;
   /** Supplier confirmation number — surfaces prominently at the top. */
   confirmationNumber?: string | null;
   /** Pre-formatted charge breakdown (prepaid / due-at-counter / total). */
@@ -119,6 +139,8 @@ export function PaymentConfirmationEmail({
   vehicle,
   trip,
   serviceRows,
+  flightItinerary,
+  flightAmounts,
   confirmationNumber,
   chargeBreakdown,
   termsText,
@@ -129,7 +151,18 @@ export function PaymentConfirmationEmail({
   cancellationPolicyVersion,
   gatewayLabel,
 }: PaymentConfirmationEmailProps) {
-  const preview = `${brandName} — payment confirmed for ${orderNumber} (${amount})`;
+  // An itinerary flight's payment is its service charge only; every amount
+  // and every sentence about it says so. A flight created before
+  // itineraries usually paid its WHOLE fare, so it (and a flight rendered
+  // without `flightAmounts`) keeps the generic sentences, with neutral
+  // labels. Everything else renders as it always has.
+  const isFlight = serviceType === ServiceType.FLIGHT;
+  const serviceChargeModel =
+    isFlight && flightAmounts?.serviceChargeModel === true;
+  const flightLabels = flightAmountLabels(serviceChargeModel);
+  const preview = serviceChargeModel
+    ? `${brandName} — payment confirmed for ${orderNumber} (${amount} service charge)`
+    : `${brandName} — payment confirmed for ${orderNumber} (${amount})`;
   const policyParagraphs = cancellationPolicy
     ? cancellationPolicy.split(/\n+/).filter((p) => p.trim().length > 0)
     : [];
@@ -146,14 +179,26 @@ export function PaymentConfirmationEmail({
         label="Payment confirmed"
         title={`Thank you, ${customerName}.`}
         description={
-          <>
-            We&apos;ve received your payment for{" "}
-            <strong style={{ color: COLOR.textPrimary }}>
-              {BookingTypeLabel[bookingType].toLowerCase()}
-            </strong>
-            . Your booking details are below — please keep this email for
-            your records.
-          </>
+          serviceChargeModel ? (
+            <>
+              We&apos;ve received your service charge payment for{" "}
+              <strong style={{ color: COLOR.textPrimary }}>
+                {BookingTypeLabel[bookingType].toLowerCase()}
+              </strong>
+              {
+                ". Your booking details are below — please keep this email for your records."
+              }
+            </>
+          ) : (
+            <>
+              We&apos;ve received your payment for{" "}
+              <strong style={{ color: COLOR.textPrimary }}>
+                {BookingTypeLabel[bookingType].toLowerCase()}
+              </strong>
+              . Your booking details are below — please keep this email for
+              your records.
+            </>
+          )
         }
       />
 
@@ -211,13 +256,14 @@ export function PaymentConfirmationEmail({
       >
         <MetadataRow label="Type" value={BookingTypeLabel[bookingType]} />
         <MetadataRow
-          label="Provider"
+          label={providerRowLabel(serviceType)}
           value={provider.name}
           isLast={bookingRows.length === 0 && !receiptUrl}
         />
-        {/* Vehicle / Pick-up / Drop-off for a rental; Route / Airline /
-            Departure … for a flight; Property / Check-in … for a hotel.
-            Same rows, same order, same labels as before for CAR_RENTAL. */}
+        {/* Vehicle / Pick-up / Drop-off for a rental; Trip type / Route /
+            Cabin … for a flight (its flights follow in the itinerary block);
+            Property / Check-in … for a hotel. Same rows, same order, same
+            labels as before for CAR_RENTAL. */}
         {bookingRows.map((row, idx) => (
           <MetadataRow
             key={`${row.label}-${idx}`}
@@ -246,6 +292,12 @@ export function PaymentConfirmationEmail({
         ) : null}
       </SummaryCard>
 
+      {/* A flight's booking summary is its itinerary: every flight and
+          layover, before the action that asks the customer to accept it. */}
+      {isFlight && flightItinerary ? (
+        <FlightItinerarySection itinerary={flightItinerary} />
+      ) : null}
+
       {/* "I Agree" moved HIGH — immediately visible right after the booking
           summary. The full readable T&C stays at the bottom of the email. */}
       {acknowledgeUrl ? (
@@ -256,12 +308,18 @@ export function PaymentConfirmationEmail({
       ) : null}
 
       <PaymentSummary
+        label={isFlight ? flightLabels.paidNow : "Amount paid"}
         amount={amount}
         orderNumber={orderNumber}
         paidOn={paidOn}
       />
 
-      {chargeBreakdown ? (
+      {isFlight && flightAmounts ? (
+        <FlightChargeBreakdown
+          amounts={flightAmounts}
+          settledLabel={flightLabels.paidNow}
+        />
+      ) : chargeBreakdown ? (
         <ChargeBreakdown
           breakdown={chargeBreakdown}
           title="Charge breakdown"
@@ -421,7 +479,20 @@ export function rentalBookingRows(
   return rows;
 }
 
+/**
+ * Label of the booking card's provider row. A flight's provider is the
+ * airline or the supplier it was bought through (`FLIGHT_PROVIDER_LABEL`);
+ * every other service keeps the "Provider" its emails have always printed.
+ * Shared by all three templates, like `rentalBookingRows`.
+ */
+export function providerRowLabel(serviceType: ServiceType): string {
+  return providerLabelFor(serviceType, "Provider");
+}
+
 interface PaymentSummaryProps {
+  /** "Amount paid", or the flight label set's `paidNow` ("Service charge
+   *  paid" on an itinerary flight). */
+  label: string;
   amount: string;
   orderNumber: string;
   paidOn: string;
@@ -432,7 +503,12 @@ interface PaymentSummaryProps {
  * here because the payment-hero layout is specific to the confirmation
  * receipt — other templates won't reuse this exact shape.
  */
-function PaymentSummary({ amount, orderNumber, paidOn }: PaymentSummaryProps) {
+function PaymentSummary({
+  label,
+  amount,
+  orderNumber,
+  paidOn,
+}: PaymentSummaryProps) {
   return (
     <Section
       style={{ padding: `${SPACE.md}px ${SPACE.xxxl}px ${SPACE.xs}px` }}
@@ -447,7 +523,7 @@ function PaymentSummary({ amount, orderNumber, paidOn }: PaymentSummaryProps) {
               textTransform: "uppercase",
             }}
           >
-            Amount paid
+            {label}
           </Text>
           <Text
             style={{

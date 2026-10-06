@@ -33,9 +33,16 @@ import {
   OrderStatus,
   PaymentCaptureStatus,
   PaymentTiming,
+  ServiceType,
 } from "@/lib/constants/enums";
 import { PaymentGatewayLabel } from "@/lib/constants/labels";
-import { summarizeCharges } from "@/lib/charges";
+import {
+  flightCollection,
+  flightMoneyWording,
+  summarizeCharges,
+  summarizeFlightAmounts,
+} from "@/lib/charges";
+import { serviceTypeOf } from "@/lib/service-summary";
 import type { OrderDTO, OrderPaymentCapture } from "@/types";
 
 interface OrderPaymentCardProps {
@@ -77,6 +84,10 @@ export function OrderPaymentCard({
   const breakdown = summarizeCharges(order.charges, order.pricing.amount);
   const currency = order.pricing.currency;
   const hasCounterDue = breakdown.dueAtCounter > 0;
+  // A flight has no counter: its breakdown is airline fare + service charge,
+  // rendered by `FlightChargeBreakdown`. Every other service keeps the
+  // rental breakdown below exactly as it was.
+  const isFlight = serviceTypeOf(order) === ServiceType.FLIGHT;
 
   // MANUAL-CAPTURE ONLY. `payment.capture` is null on every automatic-capture
   // order — i.e. every order the two incumbent brands have ever created — so
@@ -285,50 +296,54 @@ export function OrderPaymentCard({
         {/* Charge breakdown — single source of truth for the three figures.
             Only render the per-line list / due-at-counter rows when there is
             something beyond a single prepaid line. */}
-        <div className="space-y-1.5 rounded-md border border-border bg-muted/30 p-3 text-sm">
-          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-            Charge breakdown
-          </p>
-          {breakdown.charges.length > 0 ? (
-            <div className="space-y-1 pb-1">
-              {breakdown.charges.map((c, i) => (
-                <div key={i} className="flex items-center justify-between gap-3">
-                  <span className="text-muted-foreground">
-                    {c.name}
-                    <span className="ml-1.5 text-[11px] uppercase tracking-wide">
-                      {c.timing === PaymentTiming.PREPAID
-                        ? "· prepaid"
-                        : "· at counter"}
+        {isFlight ? (
+          <FlightChargeBreakdown order={order} />
+        ) : (
+          <div className="space-y-1.5 rounded-md border border-border bg-muted/30 p-3 text-sm">
+            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              Charge breakdown
+            </p>
+            {breakdown.charges.length > 0 ? (
+              <div className="space-y-1 pb-1">
+                {breakdown.charges.map((c, i) => (
+                  <div key={i} className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground">
+                      {c.name}
+                      <span className="ml-1.5 text-[11px] uppercase tracking-wide">
+                        {c.timing === PaymentTiming.PREPAID
+                          ? "· prepaid"
+                          : "· at counter"}
+                      </span>
                     </span>
-                  </span>
-                  <span className="tabular-nums">
-                    {formatCurrency(c.amount, currency)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : null}
-          <div className="flex items-center justify-between border-t pt-1.5">
-            <span className="text-muted-foreground">Amount paid online</span>
-            <span className="font-medium tabular-nums">
-              {formatCurrency(breakdown.prepaid, currency)}
-            </span>
-          </div>
-          {hasCounterDue ? (
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Amount due at counter</span>
+                    <span className="tabular-nums">
+                      {formatCurrency(c.amount, currency)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <div className="flex items-center justify-between border-t pt-1.5">
+              <span className="text-muted-foreground">Amount paid online</span>
               <span className="font-medium tabular-nums">
-                {formatCurrency(breakdown.dueAtCounter, currency)}
+                {formatCurrency(breakdown.prepaid, currency)}
               </span>
             </div>
-          ) : null}
-          <div className="flex items-center justify-between">
-            <span className="font-medium">Total rental cost</span>
-            <span className="font-semibold tabular-nums">
-              {formatCurrency(breakdown.total, currency)}
-            </span>
+            {hasCounterDue ? (
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Amount due at counter</span>
+                <span className="font-medium tabular-nums">
+                  {formatCurrency(breakdown.dueAtCounter, currency)}
+                </span>
+              </div>
+            ) : null}
+            <div className="flex items-center justify-between">
+              <span className="font-medium">Total rental cost</span>
+              <span className="font-semibold tabular-nums">
+                {formatCurrency(breakdown.total, currency)}
+              </span>
+            </div>
           </div>
-        </div>
+        )}
 
         {order.payment.failureReason ? (
           <Alert variant="destructive">
@@ -431,6 +446,106 @@ export function OrderPaymentCard({
         ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * The FLIGHT money split. A flight's charge lines are the operator's
+ * service charge — the only money the payment link collects (= the
+ * `pricing.amount` the gateway is sent) — while the airline fare is shown
+ * for the booking value and never charged here. Nothing below says
+ * "counter" or "rental": a flight created before flights became
+ * prepaid-only shows its due-later line as the remaining balance instead.
+ * Such a flight's lines were usually the whole fare, so its labels come
+ * from the neutral legacy set (`flightMoneyWording`).
+ */
+function FlightChargeBreakdown({ order }: { order: OrderDTO }) {
+  const currency = order.pricing.currency;
+  const { labels } = flightMoneyWording(order.flight, order.bookingType);
+  const amounts = summarizeFlightAmounts(
+    order.charges,
+    order.flight?.airlineFare,
+    order.pricing.amount,
+  );
+  const collection = flightCollection(order);
+  return (
+    <div className="space-y-1.5 rounded-md border border-border bg-muted/30 p-3 text-sm">
+      <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+        Charge breakdown
+      </p>
+      {amounts.charges.length > 0 ? (
+        <div className="space-y-1 pb-1">
+          {amounts.charges.map((c, i) => (
+            <div key={i} className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">
+                {c.name}
+                <span className="ml-1.5 text-[11px] uppercase tracking-wide">
+                  {c.timing === PaymentTiming.PREPAID
+                    ? "· prepaid"
+                    : "· due later"}
+                </span>
+              </span>
+              <span className="tabular-nums">
+                {formatCurrency(c.amount, currency)}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <div className="space-y-1.5 border-t pt-1.5">
+        {amounts.airlineFare > 0 ? (
+          <div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">
+                {labels.airlineFare}
+              </span>
+              <span className="tabular-nums">
+                {formatCurrency(amounts.airlineFare, currency)}
+              </span>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Not collected by the payment link
+            </p>
+          </div>
+        ) : null}
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-muted-foreground">
+            {labels.serviceCharge}
+          </span>
+          <span className="font-medium tabular-nums">
+            {formatCurrency(amounts.serviceCharge, currency)}
+          </span>
+        </div>
+        {amounts.dueLater > 0 ? (
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground">
+              {labels.dueLater}
+            </span>
+            <span className="font-medium tabular-nums">
+              {formatCurrency(amounts.dueLater, currency)}
+            </span>
+          </div>
+        ) : null}
+        <div className="flex items-center justify-between gap-3">
+          <span className="font-medium">
+            {labels.bookingTotal}
+          </span>
+          <span className="font-semibold tabular-nums">
+            {formatCurrency(amounts.bookingTotal, currency)}
+          </span>
+        </div>
+      </div>
+      <div className="flex items-center justify-between gap-3 border-t pt-1.5">
+        <span className="text-muted-foreground">{labels.collectedOnline}</span>
+        <span className="font-medium tabular-nums">
+          {collection.status === "COLLECTED" && collection.amount !== null
+            ? formatCurrency(collection.amount, currency)
+            : collection.status === "ON_HOLD"
+              ? labels.onHoldNotCollected
+              : labels.notCollected}
+        </span>
+      </div>
+    </div>
   );
 }
 

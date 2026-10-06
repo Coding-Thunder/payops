@@ -7,22 +7,28 @@ import {
 } from "@react-email/components";
 import * as React from "react";
 
+import { flightAmountLabels } from "@/lib/charges";
 import { BookingTypeLabel } from "@/lib/constants/labels";
 import { ServiceType, type BookingType } from "@/lib/constants/enums";
 import type { ProviderSnapshot } from "@/lib/constants/providers";
+import type { FlightItineraryView } from "@/lib/flight-itinerary";
 import { serviceNoun, type ServiceRow } from "@/lib/service-summary";
 
 import { chargeWordingFor } from "../components/charge-breakdown";
-import { rentalBookingRows } from "./payment-confirmation";
+import { providerRowLabel, rentalBookingRows } from "./payment-confirmation";
 import {
+  AIRLINE_FARE_NOT_INCLUDED,
   ChargeBreakdown,
   COLOR,
   type EmailChargeBreakdown,
+  type EmailFlightAmounts,
   EmailAgreeButton,
   EmailFooter,
   EmailHeader,
   EmailLayout,
   EmailTermsSection,
+  FlightChargeBreakdown,
+  FlightItinerarySection,
   MetadataRow,
   ProviderBadge,
   RADIUS,
@@ -55,7 +61,8 @@ export interface PaymentAuthorizedEmailProps {
    */
   holdExpiresOn?: string | null;
   provider: ProviderSnapshot;
-  /** WHAT was booked. Drives the noun in the copy and the charge wording. */
+  /** WHAT was booked. Drives the noun in the copy and the charge wording;
+   *  FLIGHT also switches on the service-charge copy and the itinerary. */
   serviceType?: ServiceType;
   /** CAR_RENTAL payload; null on a FLIGHT / HOTEL order. */
   vehicle?: { company: string; type: string; imageUrl?: string | null } | null;
@@ -69,6 +76,20 @@ export interface PaymentAuthorizedEmailProps {
   /** Pre-formatted "what was booked" rows, from `serviceDetailRows()`.
    *  Omitted for CAR_RENTAL, which falls back to `vehicle` / `trip`. */
   serviceRows?: ServiceRow[] | null;
+  /**
+   * FLIGHT only: every flight and layover, from `buildFlightItinerary`.
+   * Rendered as its own block under the booking details, which carry only
+   * the trip-level rows.
+   */
+  flightItinerary?: FlightItineraryView | null;
+  /**
+   * FLIGHT only: the airline fare / service charge / booking value split.
+   * Replaces the generic charge breakdown — the hold covers the service
+   * charge alone, so the amount must never read as the price of the trip.
+   * Its `serviceChargeModel` also picks the copy: a flight created before
+   * itineraries (false) gets the generic sentences.
+   */
+  flightAmounts?: EmailFlightAmounts | null;
   /** Pre-formatted charge breakdown. The prepaid total is relabelled
    *  "Amount authorized" here — it has not been collected. */
   chargeBreakdown?: EmailChargeBreakdown;
@@ -123,6 +144,8 @@ export function PaymentAuthorizedEmail({
   vehicle,
   trip,
   serviceRows,
+  flightItinerary,
+  flightAmounts,
   chargeBreakdown,
   termsText,
   termsVersion,
@@ -131,7 +154,18 @@ export function PaymentAuthorizedEmail({
   cancellationPolicyVersion,
   gatewayLabel,
 }: PaymentAuthorizedEmailProps) {
-  const preview = `${brandName} — ${amount} held on your card for ${orderNumber}, not yet charged`;
+  // An itinerary flight's hold covers its service charge only — never the
+  // airline fare — and every sentence that names the amount says so. A
+  // flight created before itineraries usually put its WHOLE fare on the
+  // card, so it (and a flight rendered without `flightAmounts`) keeps the
+  // generic sentences, with neutral labels.
+  const isFlight = serviceType === ServiceType.FLIGHT;
+  const serviceChargeModel =
+    isFlight && flightAmounts?.serviceChargeModel === true;
+  const flightLabels = flightAmountLabels(serviceChargeModel);
+  const preview = serviceChargeModel
+    ? `${brandName} — ${amount} service charge held on your card for ${orderNumber}, not yet charged`
+    : `${brandName} — ${amount} held on your card for ${orderNumber}, not yet charged`;
   const noun = serviceNoun({ serviceType });
   const policyParagraphs = cancellationPolicy
     ? cancellationPolicy.split(/\n+/).filter((p) => p.trim().length > 0)
@@ -149,17 +183,29 @@ export function PaymentAuthorizedEmail({
         label="Card authorized — not charged"
         title={`Thank you, ${customerName}.`}
         description={
-          <>
-            Your card has been authorized for{" "}
-            <strong style={{ color: COLOR.textPrimary }}>{amount}</strong> —
-            this is a hold, and{" "}
-            <strong style={{ color: COLOR.textPrimary }}>
-              no money has been taken yet
-            </strong>
-            . We&apos;ll charge it only once your {noun} is confirmed with{" "}
-            {provider.name}. If we can&apos;t confirm it, we release the hold
-            in full and you are never charged.
-          </>
+          serviceChargeModel ? (
+            <>
+              Your card has been authorized for the{" "}
+              <strong style={{ color: COLOR.textPrimary }}>{amount}</strong>
+              {" service charge — this is a hold, and "}
+              <strong style={{ color: COLOR.textPrimary }}>
+                no money has been taken yet
+              </strong>
+              {`. We'll charge it only once your ${noun} is confirmed with ${provider.name}. If we can't confirm it, we release the hold in full and you are never charged.`}
+            </>
+          ) : (
+            <>
+              Your card has been authorized for{" "}
+              <strong style={{ color: COLOR.textPrimary }}>{amount}</strong> —
+              this is a hold, and{" "}
+              <strong style={{ color: COLOR.textPrimary }}>
+                no money has been taken yet
+              </strong>
+              . We&apos;ll charge it only once your {noun} is confirmed with{" "}
+              {provider.name}. If we can&apos;t confirm it, we release the hold
+              in full and you are never charged.
+            </>
+          )
         }
       />
 
@@ -176,7 +222,7 @@ export function PaymentAuthorizedEmail({
       >
         <MetadataRow label="Type" value={BookingTypeLabel[bookingType]} />
         <MetadataRow
-          label="Provider"
+          label={providerRowLabel(serviceType)}
           value={provider.name}
           isLast={bookingRows.length === 0}
         />
@@ -190,6 +236,10 @@ export function PaymentAuthorizedEmail({
         ))}
       </SummaryCard>
 
+      {isFlight && flightItinerary ? (
+        <FlightItinerarySection itinerary={flightItinerary} />
+      ) : null}
+
       {acknowledgeUrl ? (
         <EmailAgreeButton
           acknowledgeUrl={acknowledgeUrl}
@@ -198,6 +248,7 @@ export function PaymentAuthorizedEmail({
       ) : null}
 
       <AuthorizationSummary
+        label={isFlight ? flightLabels.heldNow : "Amount authorized"}
         amount={amount}
         orderNumber={orderNumber}
         authorizedOn={authorizedOn}
@@ -229,10 +280,16 @@ export function PaymentAuthorizedEmail({
           <NextStep>
             We&apos;re confirming your {noun} with {provider.name}.
           </NextStep>
-          <NextStep>
-            Once it&apos;s confirmed we charge exactly {amount} — not a penny
-            more — and email you the confirmation.
-          </NextStep>
+          {serviceChargeModel ? (
+            <NextStep>
+              {`Once it's confirmed we charge exactly the ${amount} service charge — not a penny more — and email you the confirmation. ${AIRLINE_FARE_NOT_INCLUDED}`}
+            </NextStep>
+          ) : (
+            <NextStep>
+              Once it&apos;s confirmed we charge exactly {amount} — not a penny
+              more — and email you the confirmation.
+            </NextStep>
+          )}
           <NextStep>
             If it can&apos;t be confirmed, the hold is released in full and
             nothing is ever taken from your account.
@@ -254,13 +311,24 @@ export function PaymentAuthorizedEmail({
               lineHeight: "16px",
             }}
           >
-            Your bank may show {amount} as pending until then. That is the
-            hold, not a charge.
+            {serviceChargeModel ? (
+              `Your bank may show the ${amount} service charge as pending until then. That is the hold, not a charge — the airline fare is not part of it.`
+            ) : (
+              <>
+                Your bank may show {amount} as pending until then. That is the
+                hold, not a charge.
+              </>
+            )}
           </Text>
         </div>
       </Section>
 
-      {chargeBreakdown ? (
+      {isFlight && flightAmounts ? (
+        <FlightChargeBreakdown
+          amounts={flightAmounts}
+          settledLabel={flightLabels.heldNow}
+        />
+      ) : chargeBreakdown ? (
         <ChargeBreakdown
           breakdown={chargeBreakdown}
           title="What you'll be charged"
@@ -378,6 +446,9 @@ function NextStep({ children }: { children: React.ReactNode }) {
 }
 
 interface AuthorizationSummaryProps {
+  /** "Amount authorized", or the flight label set's `heldNow` ("Service
+   *  charge on hold" on an itinerary flight). */
+  label: string;
   amount: string;
   orderNumber: string;
   authorizedOn: string;
@@ -390,6 +461,7 @@ interface AuthorizationSummaryProps {
  * placed — not when anything was collected.
  */
 function AuthorizationSummary({
+  label,
   amount,
   orderNumber,
   authorizedOn,
@@ -408,7 +480,7 @@ function AuthorizationSummary({
               textTransform: "uppercase",
             }}
           >
-            Amount authorized
+            {label}
           </Text>
           <Text
             style={{

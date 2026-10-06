@@ -1,10 +1,9 @@
 import { Permission } from "@/lib/constants/permissions";
-import { CURRENCIES, ServiceType } from "@/lib/constants/enums";
+import { CURRENCIES } from "@/lib/constants/enums";
 import { jsonOk, withApi } from "@/server/api/respond";
 import { requirePermission } from "@/server/auth/session";
 import { getSelectedOrganization } from "@/server/auth/organization";
-import { Organization } from "@/server/db/models";
-import { connectMongo } from "@/server/db/mongoose";
+import { resolveOrganizationServiceTypes } from "@/server/services/organization-service-types";
 import { getSettings } from "@/server/services/settings.service";
 import { listActiveProviders } from "@/server/services/provider.service";
 
@@ -26,16 +25,9 @@ export const GET = withApi(async () => {
   // [CAR_RENTAL] for an organization with no stored list and for a
   // deployment with no organization selected at all — so both incumbent
   // brands get exactly the single-service create page they have today.
-  let serviceTypes: ServiceType[] = [ServiceType.CAR_RENTAL];
-  if (selected) {
-    await connectMongo();
-    const org = await Organization.findById(selected.id)
-      .select("serviceTypes")
-      .lean<{ serviceTypes?: ServiceType[] } | null>();
-    if (org?.serviceTypes && org.serviceTypes.length > 0) {
-      serviceTypes = org.serviceTypes;
-    }
-  }
+  const serviceTypes = await resolveOrganizationServiceTypes(
+    selected?.id ?? null,
+  );
 
   const [settings, providers] = await Promise.all([
     getSettings(),

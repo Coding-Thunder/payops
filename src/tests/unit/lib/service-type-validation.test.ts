@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ServiceType } from "@/lib/constants/enums";
+import { FlightTripType, ServiceType } from "@/lib/constants/enums";
 import {
   createOrderRequestSchema,
   createOrderSchema,
@@ -8,7 +8,11 @@ import {
   hotelOrderSchema,
 } from "@/lib/validation/order";
 import {
+  FLIGHT_SEGMENTS,
+  flightJourneyInput,
+  flightSegmentInput,
   invalidTripDatesInput,
+  roundTripFlightInput,
   validCreateOrderInput,
   validFlightOrderInput,
   validHotelOrderInput,
@@ -43,67 +47,65 @@ function pathsOf(result: { success: boolean; error?: { issues: { path: PropertyK
 
 /* ------------------------------------------------------------------ *
  * Requirement 8 — flight validation
+ *
+ * A flight is now an ITINERARY — journeys of segments joined by
+ * connections (`@/lib/flight-itinerary`) — so the rules below are the same
+ * business rules the flat shape had, restated on segments: a round trip
+ * must come back, and not before it got there; From and To must differ.
+ * The full itinerary matrix lives in flight-order-schema.test.ts.
  * ------------------------------------------------------------------ */
 
 describe("requirement 8: FLIGHT validation", () => {
-  it("REJECTS a round trip whose return date is before departure", () => {
-    const input = validFlightOrderInput({
-      flight: {
-        ...validFlightOrderInput().flight,
-        tripType: "ROUND_TRIP",
-        departureDate: inDays(10),
-        returnDate: inDays(3),
+  it("REJECTS a round trip whose return departs before the outbound arrives", () => {
+    const input = roundTripFlightInput(
+      {},
+      {
+        return: flightJourneyInput([
+          // The outbound lands in Mumbai at 16:30; this leaves at 15:00.
+          flightSegmentInput("Mumbai", "Delhi", ["2026-10-10", "15:00"], ["2026-10-10", "17:00"]),
+        ]),
       },
-    });
-
-    const result = flightOrderSchema.safeParse(input);
-    expect(result.success).toBe(false);
-    expect(messagesOf(result)).toContain("Return must be on or after departure");
-    expect(pathsOf(result)).toContain("flight.returnDate");
-  });
-
-  it("REJECTS a round trip with no return date at all", () => {
-    // The neighbouring rule: a round trip that never comes back is not a
-    // round trip, and the operator cannot source the fare.
-    const input = validFlightOrderInput({
-      flight: {
-        ...validFlightOrderInput().flight,
-        tripType: "ROUND_TRIP",
-        returnDate: null,
-      },
-    });
+    );
 
     const result = flightOrderSchema.safeParse(input);
     expect(result.success).toBe(false);
     expect(messagesOf(result)).toContain(
-      "Return date is required for a round trip",
+      "The return flight departs before the outbound flights arrive. Please check the dates.",
     );
+    expect(pathsOf(result)).toContain("flight.return.segments.0.departure.date");
   });
 
-  it("ACCEPTS a round trip returning on the same day as departure", () => {
-    // "on or after" — a same-day return is a legitimate business day trip
-    // and must not be caught by the before-departure rule.
-    const sameDay = inDays(10);
-    const input = validFlightOrderInput({
-      flight: {
-        ...validFlightOrderInput().flight,
-        tripType: "ROUND_TRIP",
-        departureDate: sameDay,
-        returnDate: sameDay,
-      },
-    });
+  it("REJECTS a round trip with no return journey at all", () => {
+    // The neighbouring rule: a round trip that never comes back is not a
+    // round trip, and the operator cannot source the fare.
+    const input = roundTripFlightInput({}, { return: null });
 
-    expect(flightOrderSchema.safeParse(input).success).toBe(true);
+    const result = flightOrderSchema.safeParse(input);
+    expect(result.success).toBe(false);
+    expect(messagesOf(result)).toContain("Add the return flight.");
+    expect(pathsOf(result)).toContain("flight.return");
   });
 
-  it("ACCEPTS a one-way flight with NO return date", () => {
-    const input = validFlightOrderInput({
-      flight: {
-        ...validFlightOrderInput().flight,
-        tripType: "ONE_WAY",
-        returnDate: null,
+  it("ACCEPTS a round trip returning on the same day the outbound lands", () => {
+    // A same-day return is a legitimate business day trip and must not be
+    // caught by the return-before-arrival rule.
+    const input = validFlightOrderInput(
+      {},
+      {
+        tripType: FlightTripType.ROUND_TRIP,
+        outbound: flightJourneyInput([FLIGHT_SEGMENTS.delhiVaranasi()]),
+        return: flightJourneyInput([
+          flightSegmentInput("Varanasi", "Delhi", ["2026-10-10", "18:00"], ["2026-10-10", "19:30"]),
+        ]),
       },
-    });
+    );
+
+    const result = flightOrderSchema.safeParse(input);
+    expect(result.success, messagesOf(result).join("; ")).toBe(true);
+  });
+
+  it("ACCEPTS a one-way flight with NO return journey", () => {
+    const input = validFlightOrderInput({}, { tripType: FlightTripType.ONE_WAY, return: null });
 
     const result = flightOrderSchema.safeParse(input);
     expect(result.success, messagesOf(result).join("; ")).toBe(true);
@@ -112,8 +114,8 @@ describe("requirement 8: FLIGHT validation", () => {
   it("ACCEPTS a one-way flight with the return key omitted entirely", () => {
     // A client that simply never sends the key is not the same payload as
     // one sending null; both are legitimate one-way requests.
-    const flight = { ...validFlightOrderInput().flight, tripType: "ONE_WAY" as const };
-    delete (flight as Record<string, unknown>).returnDate;
+    const flight = { ...validFlightOrderInput().flight, tripType: FlightTripType.ONE_WAY };
+    delete (flight as Record<string, unknown>).return;
     const input = { ...validFlightOrderInput(), flight } as never;
 
     const result = flightOrderSchema.safeParse(input);
@@ -121,39 +123,39 @@ describe("requirement 8: FLIGHT validation", () => {
   });
 
   it("REJECTS an origin equal to the destination", () => {
-    const input = validFlightOrderInput({
-      flight: {
-        ...validFlightOrderInput().flight,
-        origin: "LHR",
-        destination: "LHR",
+    const input = validFlightOrderInput(
+      {},
+      {
+        outbound: flightJourneyInput([
+          flightSegmentInput("LHR", "LHR", ["2026-11-01", "09:15"], ["2026-11-01", "12:20"]),
+        ]),
       },
-    });
+    );
 
     const result = flightOrderSchema.safeParse(input);
     expect(result.success).toBe(false);
-    expect(messagesOf(result)).toContain("Destination must differ from origin");
-    expect(pathsOf(result)).toContain("flight.destination");
+    expect(messagesOf(result)).toContain("From and To can't be the same airport.");
+    expect(pathsOf(result)).toContain("flight.outbound.segments.0.destination");
   });
 
   it("REJECTS an origin equal to the destination ignoring case and padding", () => {
-    const input = validFlightOrderInput({
-      flight: {
-        ...validFlightOrderInput().flight,
-        origin: "lhr",
-        destination: "  LHR  ",
+    const input = validFlightOrderInput(
+      {},
+      {
+        outbound: flightJourneyInput([
+          flightSegmentInput("lhr", "  LHR  ", ["2026-11-01", "09:15"], ["2026-11-01", "12:20"]),
+        ]),
       },
-    });
+    );
 
     expect(flightOrderSchema.safeParse(input).success).toBe(false);
   });
 
   it("REJECTS zero adults", () => {
-    const input = validFlightOrderInput({
-      flight: {
-        ...validFlightOrderInput().flight,
-        passengers: { adults: 0, children: 2, infants: 0 },
-      },
-    });
+    const input = validFlightOrderInput(
+      {},
+      { passengers: { adults: 0, children: 2, infants: 0 } },
+    );
 
     const result = flightOrderSchema.safeParse(input);
     expect(result.success).toBe(false);
@@ -169,16 +171,17 @@ describe("requirement 8: FLIGHT validation", () => {
     // The union is what the API route actually parses; a discriminator that
     // fell through to the rental member would accept a flight with no
     // vehicle and reject a legitimate one.
-    const bad = validFlightOrderInput({
-      flight: {
-        ...validFlightOrderInput().flight,
-        origin: "JFK",
-        destination: "JFK",
+    const bad = validFlightOrderInput(
+      {},
+      {
+        outbound: flightJourneyInput([
+          flightSegmentInput("JFK", "JFK", ["2026-11-01", "09:15"], ["2026-11-01", "12:20"]),
+        ]),
       },
-    });
+    );
     const result = createOrderRequestSchema.safeParse(bad);
     expect(result.success).toBe(false);
-    expect(messagesOf(result)).toContain("Destination must differ from origin");
+    expect(messagesOf(result)).toContain("From and To can't be the same airport.");
 
     const good = createOrderRequestSchema.safeParse(validFlightOrderInput());
     expect(good.success, messagesOf(good).join("; ")).toBe(true);

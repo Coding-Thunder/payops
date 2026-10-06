@@ -20,6 +20,8 @@ import {
   DISPUTE_STATUSES,
   DisputeOutcome,
   DisputeStatus,
+  FLIGHT_TRIP_TYPES,
+  FlightTripType,
   ORDER_STATUSES,
   OrderStatus,
   PAYMENT_GATEWAY_KEYS,
@@ -34,6 +36,38 @@ import {
   ServiceType,
 } from "@/lib/constants/enums";
 import { PROVIDER_KEY_REGEX } from "@/lib/constants/providers";
+import {
+  hasFlightItinerary,
+  itineraryIssues,
+  MAX_LAYOVER_OVERRIDE_MINUTES,
+  MAX_SEGMENTS_PER_JOURNEY,
+} from "@/lib/flight-itinerary";
+
+/** One flight. Times are airport-local wall-clock strings. */
+export interface FlightSegmentDoc {
+  origin: string;
+  destination: string;
+  departure: { date: string; time: string };
+  arrival: { date: string; time: string };
+  airline?: string | null;
+  flightNumber?: string | null;
+  details?: string | null;
+}
+
+/** The gap between two adjacent flights. */
+export interface FlightConnectionDoc {
+  layover?: {
+    location?: string | null;
+    durationMinutesOverride?: number | null;
+    notes?: string | null;
+  } | null;
+}
+
+/** One direction of travel: flights in order, plus one connection per gap. */
+export interface FlightJourneyDoc {
+  segments: FlightSegmentDoc[];
+  connections: FlightConnectionDoc[];
+}
 
 export interface OrderDoc extends OrganizationScoped {
   orderNumber: string;
@@ -83,26 +117,38 @@ export interface OrderDoc extends OrganizationScoped {
     pickupLocation?: string | null;
     dropoffLocation?: string | null;
   } | null;
-  /** FLIGHT only. A booking REQUEST — this platform holds no airline
-   *  inventory and talks to no GDS. Null on every other service type. */
+  /** FLIGHT only. This platform holds no airline inventory and talks to no
+   *  GDS — the operator enters the itinerary they sourced. Null on every
+   *  other service type. */
   flight?: {
-    tripType: "ONE_WAY" | "ROUND_TRIP";
-    airline?: string | null;
-    flightNumber?: string | null;
-    origin: string;
-    destination: string;
-    departureDate: Date;
-    departureTimePreference?: string | null;
-    /** Scheduled arrival of the OUTBOUND leg. Null until the operator has
-     *  sourced an actual itinerary — a request may be quoted before a
-     *  specific flight is chosen. */
-    arrivalDate?: Date | null;
-    returnDate?: Date | null;
-    returnTimePreference?: string | null;
+    tripType: FlightTripType;
+    /** The whole itinerary for ONE_WAY / MULTI_CITY; the outbound journey
+     *  for ROUND_TRIP. Absent on orders created before itineraries. */
+    outbound?: FlightJourneyDoc | null;
+    /** ROUND_TRIP only: the return journey, independent of `outbound`. */
+    return?: FlightJourneyDoc | null;
+    /** Ticket cost charged by the airline, in MAJOR units of
+     *  `pricing.currency`. Part of the customer's booking value, never
+     *  part of `pricing.amount` and never sent to the gateway. */
+    airlineFare?: number | null;
     cabinClass: string;
     passengers: { adults: number; children: number; infants: number };
     passengerNotes?: string | null;
     pnr?: string | null;
+    // ── Legacy flat itinerary ────────────────────────────────────────
+    // Written only by orders created before `outbound` existed, and still
+    // read for them (see `buildFlightItinerary`). Itinerary orders leave
+    // these unset.
+    airline?: string | null;
+    flightNumber?: string | null;
+    origin?: string | null;
+    destination?: string | null;
+    departureDate?: Date | null;
+    departureTimePreference?: string | null;
+    /** Scheduled arrival of the outbound leg. */
+    arrivalDate?: Date | null;
+    returnDate?: Date | null;
+    returnTimePreference?: string | null;
   } | null;
   /** HOTEL only. A booking REQUEST — no hotel inventory API is involved.
    *  Null on every other service type. */
@@ -327,24 +373,147 @@ const flightPassengersSchema = new Schema(
   { _id: false },
 );
 
+/** Airport-local wall clock: "2026-10-10" + "10:30". Not a Date — see
+ *  `@/lib/flight-itinerary` for why. */
+const localDateTimeSchema = new Schema(
+  {
+    date: {
+      type: String,
+      required: true,
+      match: /^\d{4}-\d{2}-\d{2}$/,
+    },
+    time: {
+      type: String,
+      required: true,
+      match: /^([01]\d|2[0-3]):[0-5]\d$/,
+    },
+  },
+  { _id: false },
+);
+
+const flightSegmentSchema = new Schema(
+  {
+    origin: { type: String, required: true, trim: true, maxlength: 120 },
+    destination: { type: String, required: true, trim: true, maxlength: 120 },
+    departure: { type: localDateTimeSchema, required: true },
+    arrival: { type: localDateTimeSchema, required: true },
+    airline: { type: String, default: null, trim: true, maxlength: 80 },
+    flightNumber: { type: String, default: null, trim: true, maxlength: 16 },
+    details: { type: String, default: null, trim: true, maxlength: 500 },
+  },
+  { _id: false },
+);
+
+/** What a layover adds on top of its two adjacent flights. Its start and end
+ *  times are deliberately absent: they ARE the previous arrival and the next
+ *  departure, so the calculated duration is derived, never stored. */
+const flightLayoverSchema = new Schema(
+  {
+    location: { type: String, default: null, trim: true, maxlength: 120 },
+    durationMinutesOverride: {
+      type: Number,
+      default: null,
+      min: 1,
+      max: MAX_LAYOVER_OVERRIDE_MINUTES,
+      validate: {
+        validator: (v: number | null) => v === null || Number.isInteger(v),
+        message: "Layover duration must be a whole number of minutes",
+      },
+    },
+    notes: { type: String, default: null, trim: true, maxlength: 500 },
+  },
+  { _id: false },
+);
+
+const flightConnectionSchema = new Schema(
+  {
+    layover: { type: flightLayoverSchema, default: null },
+  },
+  { _id: false },
+);
+
+const flightJourneySchema = new Schema(
+  {
+    segments: {
+      type: [flightSegmentSchema],
+      default: undefined,
+      validate: {
+        validator: (v: unknown[] | undefined) =>
+          Array.isArray(v) &&
+          v.length >= 1 &&
+          v.length <= MAX_SEGMENTS_PER_JOURNEY,
+        message: `A journey needs between 1 and ${MAX_SEGMENTS_PER_JOURNEY} flights`,
+      },
+    },
+    /** `connections[i]` sits between `segments[i]` and `segments[i + 1]`. */
+    connections: {
+      type: [flightConnectionSchema],
+      default: [],
+      validate: {
+        validator: function (this: { segments?: unknown[] }, v: unknown[]) {
+          return v.length <= Math.max(0, (this.segments?.length ?? 0) - 1);
+        },
+        message: "A journey has one connection per gap between flights",
+      },
+    },
+  },
+  { _id: false },
+);
+
+/** True when the flight carries a structured itinerary rather than the
+ *  legacy flat fields — the shared predicate every surface uses. */
+const hasItinerary = hasFlightItinerary;
+
 /**
- * Flight booking REQUEST. Deliberately not an airline/GDS integration —
- * this platform holds no inventory. It captures enough for an operator to
- * source the fare manually and quote it back.
+ * Flight booking. Deliberately not an airline/GDS integration — this
+ * platform holds no inventory; the operator enters the itinerary they
+ * sourced, as journeys of segments joined by connections.
+ *
+ * The flat origin/destination/departureDate fields are the LEGACY shape.
+ * They stay required for a flight that has no itinerary — so every order
+ * written before itineraries existed validates exactly as it always did —
+ * and are left unset by itinerary orders.
  */
 const flightSchema = new Schema(
   {
     tripType: {
       type: String,
-      enum: ["ONE_WAY", "ROUND_TRIP"],
+      enum: FLIGHT_TRIP_TYPES,
       required: true,
-      default: "ONE_WAY",
+      default: FlightTripType.ONE_WAY,
+    },
+    outbound: { type: flightJourneySchema, default: null },
+    return: { type: flightJourneySchema, default: null },
+    airlineFare: {
+      type: Number,
+      default: null,
+      min: 0,
+      max: 1_000_000,
     },
     airline: { type: String, default: null, trim: true, maxlength: 80 },
     flightNumber: { type: String, default: null, trim: true, maxlength: 16 },
-    origin: { type: String, required: true, trim: true, maxlength: 120 },
-    destination: { type: String, required: true, trim: true, maxlength: 120 },
-    departureDate: { type: Date, required: true },
+    origin: {
+      type: String,
+      trim: true,
+      maxlength: 120,
+      required: function (this: { outbound?: { segments?: unknown[] } | null }) {
+        return !hasItinerary(this);
+      },
+    },
+    destination: {
+      type: String,
+      trim: true,
+      maxlength: 120,
+      required: function (this: { outbound?: { segments?: unknown[] } | null }) {
+        return !hasItinerary(this);
+      },
+    },
+    departureDate: {
+      type: Date,
+      required: function (this: { outbound?: { segments?: unknown[] } | null }) {
+        return !hasItinerary(this);
+      },
+    },
     departureTimePreference: {
       type: String,
       default: null,
@@ -775,19 +944,53 @@ orderSchema.pre("validate", function () {
   const serviceType = this.serviceType ?? ServiceType.CAR_RENTAL;
 
   if (serviceType === ServiceType.FLIGHT) {
+    const flight = this.flight;
+    if (flight && hasItinerary(flight)) {
+      // Itinerary orders. Checked when the itinerary is written, not on
+      // every later save (a webhook flipping the payment status must never
+      // fail because a rule was tightened after the order was placed).
+      if (this.isNew || this.isModified("flight")) {
+        if (
+          flight.tripType === FlightTripType.ROUND_TRIP &&
+          !(flight.return?.segments?.length ?? 0)
+        ) {
+          throw new Error("A round trip needs a return flight");
+        }
+        if (flight.tripType !== FlightTripType.ROUND_TRIP && flight.return) {
+          throw new Error("Only a round trip has a return flight");
+        }
+        const error = itineraryIssues(flight).find(
+          (issue) => issue.severity === "error",
+        );
+        if (error) throw new Error(error.message);
+      }
+      // A flight is prepaid, full stop: nothing is collected at an airport
+      // desk. Enforced on creation only, so a flight written before this
+      // rule (which may carry a "due later" line) still saves.
+      if (
+        this.isNew &&
+        (this.charges ?? []).some((c) => c.timing !== PaymentTiming.PREPAID)
+      ) {
+        throw new Error("Flight charges must be prepaid");
+      }
+      return;
+    }
+
+    // Legacy flat itinerary — the original rules, unchanged.
     // Arrival may equal departure (short hops cross no clock boundary that
     // matters here) but must never precede it.
     if (
-      this.flight?.arrivalDate &&
-      this.flight.arrivalDate < this.flight.departureDate
+      flight?.arrivalDate &&
+      flight.departureDate &&
+      flight.arrivalDate < flight.departureDate
     ) {
       throw new Error("Arrival must not be before departure");
     }
-    if (this.flight?.tripType === "ROUND_TRIP") {
-      if (!this.flight.returnDate) {
+    if (flight?.tripType === FlightTripType.ROUND_TRIP) {
+      if (!flight.returnDate) {
         throw new Error("Return date is required for a round trip");
       }
-      if (this.flight.returnDate < this.flight.departureDate) {
+      if (flight.departureDate && flight.returnDate < flight.departureDate) {
         throw new Error("Return date must not be before the departure date");
       }
     }

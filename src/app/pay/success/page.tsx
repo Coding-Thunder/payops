@@ -1,5 +1,6 @@
 import Image from "next/image";
 
+import { FlightItinerary } from "@/components/common/flight-itinerary";
 import { PublicBrandChrome } from "@/components/public/public-brand-chrome";
 import { resolvePublicBrandForOrderNumber } from "@/server/email/identity";
 import { getBranding } from "@/server/services/branding.service";
@@ -10,6 +11,7 @@ import {
 import {
   BookingTypeLabel,
   PaymentGatewayLabel as PAYMENT_GATEWAY_LABELS,
+  providerLabelFor,
 } from "@/lib/constants/labels";
 import { resolveProvider } from "@/lib/constants/providers";
 import {
@@ -18,7 +20,14 @@ import {
   PaymentGatewayKey,
   ServiceType,
 } from "@/lib/constants/enums";
-import { summarizeCharges } from "@/lib/charges";
+import {
+  type FlightAmountLabels,
+  type FlightAmountSummary,
+  flightMoneyWording,
+  summarizeCharges,
+  summarizeFlightAmounts,
+} from "@/lib/charges";
+import { buildFlightItinerary } from "@/lib/flight-itinerary";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { logger } from "@/lib/logger";
 import {
@@ -183,6 +192,26 @@ export default async function PaymentSuccessPage({
   const counterDueLabel = order
     ? balanceDueLabel(order)
     : "Remaining balance due at rental counter";
+  // An itinerary flight's payment link collects ONLY the service charge; the
+  // airline fare is part of the booking value but never of this payment.
+  // Every flight receipt says so, so a customer who sees "$50 paid" against a
+  // $550 trip is never left to guess where the rest went. A flight created
+  // before itineraries usually paid its whole fare here: same breakdown,
+  // neutral labels, generic sentences. Null for every other service.
+  const isFlight = order ? serviceTypeOf(order) === ServiceType.FLIGHT : false;
+  const flightAmounts =
+    order && isFlight
+      ? summarizeFlightAmounts(
+          order.charges,
+          order.flight?.airlineFare,
+          order.pricing.amount,
+        )
+      : null;
+  const flightWording =
+    order && isFlight ? flightMoneyWording(order.flight, order.bookingType) : null;
+  const flightLabels = flightWording?.labels ?? null;
+  const serviceChargeModel = flightWording?.serviceChargeModel ?? false;
+  const itinerary = flightAmounts ? buildFlightItinerary(order?.flight) : null;
 
   return (
     <PublicBrandChrome brand={publicBrand}>
@@ -263,13 +292,23 @@ export default async function PaymentSuccessPage({
                 : "Payment received"}
           </h1>
           <p className="mt-2 text-sm text-slate-600">
-            {isAuthorized
-              ? `${brand} has placed a hold on your card${amount ? ` for ${amount}` : ""}. You have not been charged yet — the amount is released to us only once your ${noun} is confirmed, and you’ll get a receipt then.`
-              : stillPending
-                ? `${brand} is waiting for ${gatewayLabel ?? "the payment provider"} to finalise this charge. This page refreshes automatically.`
-                : `Thank you. ${brand} has confirmed your payment and a receipt is on its way to your inbox.`}
+            {serviceChargeModel
+              ? flightHeroCopy({
+                  brand,
+                  amount,
+                  gatewayLabel,
+                  isAuthorized,
+                  stillPending,
+                })
+              : isAuthorized
+                ? `${brand} has placed a hold on your card${amount ? ` for ${amount}` : ""}. You have not been charged yet — the amount is released to us only once your ${noun} is confirmed, and you’ll get a receipt then.`
+                : stillPending
+                  ? `${brand} is waiting for ${gatewayLabel ?? "the payment provider"} to finalise this charge. This page refreshes automatically.`
+                  : `Thank you. ${brand} has confirmed your payment and a receipt is on its way to your inbox.`}
           </p>
-          {stillPending ? <PaymentSuccessAutoRefresh /> : null}
+          {stillPending ? (
+            <PaymentSuccessAutoRefresh gatewayLabel={gatewayLabel} />
+          ) : null}
         </div>
 
         {order && providerMeta && amount ? (
@@ -278,7 +317,15 @@ export default async function PaymentSuccessPage({
             <div className="grid grid-cols-2 gap-4 border-t border-slate-100 px-8 py-6">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.10em] text-slate-500">
-                  {isAuthorized ? "Amount on hold" : "Amount paid"}
+                  {flightLabels
+                    ? isAuthorized
+                      ? flightLabels.heldNow
+                      : stillPending && serviceChargeModel
+                        ? flightLabels.serviceCharge
+                        : flightLabels.paidNow
+                    : isAuthorized
+                      ? "Amount on hold"
+                      : "Amount paid"}
                 </p>
                 <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums text-slate-900">
                   {amount}
@@ -297,8 +344,15 @@ export default async function PaymentSuccessPage({
               </div>
             </div>
 
-            {/* ─── Charge breakdown (only when a counter balance remains) ─── */}
-            {hasCounterDue && breakdown ? (
+            {/* ─── Charge breakdown (always for a flight; otherwise only
+                when a counter balance remains) ─── */}
+            {flightAmounts && flightLabels ? (
+              <FlightAmountBreakdown
+                amounts={flightAmounts}
+                labels={flightLabels}
+                currency={order.pricing.currency}
+              />
+            ) : hasCounterDue && breakdown ? (
               <div className="border-t border-slate-100 px-8 py-5">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.10em] text-slate-500">
                   Charge breakdown
@@ -369,7 +423,10 @@ export default async function PaymentSuccessPage({
                   label="Type"
                   value={BookingTypeLabel[order.bookingType]}
                 />
-                <DetailRow label="Provider" value={providerMeta.name} />
+                <DetailRow
+                  label={providerLabelFor(serviceTypeOf(order), "Provider")}
+                  value={providerMeta.name}
+                />
                 <ServiceDetailRows order={order} />
                 {isAuthorized && capture?.captureExpiresAt ? (
                   <DetailRow
@@ -400,6 +457,16 @@ export default async function PaymentSuccessPage({
                 ) : null}
               </dl>
             </div>
+
+            {/* ─── Itinerary (flights only): every flight and layover ─── */}
+            {itinerary ? (
+              <div className="border-t border-slate-100 px-8 py-6">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.10em] text-slate-500">
+                  Itinerary
+                </p>
+                <FlightItinerary itinerary={itinerary} className="mt-3" />
+              </div>
+            ) : null}
 
             {/* ─── Processor trust line ─── */}
             <div className="border-t border-slate-100 px-8 py-4 text-center text-[11px] text-slate-500">
@@ -437,18 +504,109 @@ export default async function PaymentSuccessPage({
 
 /**
  * Where the remaining (not-collected-online) balance is settled. The
- * CAR_RENTAL string is the literal this page has always rendered.
+ * CAR_RENTAL string is the literal this page has always rendered. A flight
+ * renders `FlightAmountBreakdown` instead, so its case is only a safety net
+ * — and never says check-in: nothing is paid at an airport desk.
  */
 function balanceDueLabel(order: OrderDTO): string {
   switch (serviceTypeOf(order)) {
     case ServiceType.FLIGHT:
-      return "Remaining balance due at check-in";
+      return flightMoneyWording(order.flight, order.bookingType).labels.dueLater;
     case ServiceType.HOTEL:
       return "Remaining balance due at the property";
     case ServiceType.CAR_RENTAL:
     default:
       return "Remaining balance due at rental counter";
   }
+}
+
+/**
+ * Hero copy for an itinerary flight. Says outright that the payment — or the
+ * hold, on manual capture — covers the SERVICE CHARGE, because the airline
+ * fare is never part of what the payment link collects. A flight created
+ * before itineraries gets the generic copy instead.
+ */
+function flightHeroCopy({
+  brand,
+  amount,
+  gatewayLabel,
+  isAuthorized,
+  stillPending,
+}: {
+  brand: string;
+  amount: string | null;
+  gatewayLabel: string | null;
+  isAuthorized: boolean;
+  stillPending: boolean;
+}): string {
+  if (isAuthorized) {
+    return `${brand} has placed a hold on your card for the service charge${amount ? ` of ${amount}` : ""}. You have not been charged yet — the amount is released to us only once your flight is confirmed, and you’ll get a receipt then.`;
+  }
+  if (stillPending) {
+    return `${brand} is waiting for ${gatewayLabel ?? "the payment provider"} to finalise your service charge payment. This page refreshes automatically.`;
+  }
+  return `Thank you. ${brand} has confirmed your service charge payment and a receipt is on its way to your inbox.`;
+}
+
+/**
+ * A flight's money, every time: what was paid (the service charge, on an
+ * itinerary flight) set against what the booking is worth. Unlike a rental's
+ * breakdown it does not wait for a counter balance — its whole job is to
+ * show that the airline fare is not part of this payment. Labels come from
+ * `flightMoneyWording`, shared with the consent page and the emails.
+ */
+function FlightAmountBreakdown({
+  amounts,
+  labels,
+  currency,
+}: {
+  amounts: FlightAmountSummary;
+  labels: FlightAmountLabels;
+  currency: string;
+}) {
+  return (
+    <div className="border-t border-slate-100 px-8 py-5">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.10em] text-slate-500">
+        {labels.breakdownTitle}
+      </p>
+      <dl className="mt-3 space-y-1.5 text-sm">
+        {amounts.airlineFare > 0 ? (
+          <div className="flex items-start justify-between gap-3">
+            <dt className="text-slate-500">
+              {labels.airlineFare}
+              <span className="block text-xs text-slate-400">
+                {labels.airlineFareNote}
+              </span>
+            </dt>
+            <dd className="tabular-nums text-slate-900">
+              {formatCurrency(amounts.airlineFare, currency)}
+            </dd>
+          </div>
+        ) : null}
+        <div className="flex items-center justify-between gap-3">
+          <dt className="text-slate-500">{labels.serviceCharge}</dt>
+          <dd className="tabular-nums text-slate-900">
+            {formatCurrency(amounts.serviceCharge, currency)}
+          </dd>
+        </div>
+        {/* Only a flight created before flights became prepaid-only. */}
+        {amounts.dueLater > 0 ? (
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-slate-500">{labels.dueLater}</dt>
+            <dd className="tabular-nums text-slate-900">
+              {formatCurrency(amounts.dueLater, currency)}
+            </dd>
+          </div>
+        ) : null}
+        <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-1.5 font-medium">
+          <dt className="text-slate-700">{labels.bookingTotal}</dt>
+          <dd className="tabular-nums text-slate-900">
+            {formatCurrency(amounts.bookingTotal, currency)}
+          </dd>
+        </div>
+      </dl>
+    </div>
+  );
 }
 
 /**
@@ -461,7 +619,9 @@ function balanceDueLabel(order: OrderDTO): string {
  * because the DTO fields became nullable; on a real rental both are
  * present, so nothing disappears. FLIGHT and HOTEL fall through to the
  * shared `serviceDetailRows` helper, so this page, the order detail card
- * and the emails all describe a flight or a hotel identically.
+ * and the emails all describe a flight or a hotel identically. For a flight
+ * those are the trip-level rows only; the flights themselves render in the
+ * Itinerary section below the list.
  */
 function ServiceDetailRows({ order }: { order: OrderDTO }) {
   if (serviceTypeOf(order) === ServiceType.CAR_RENTAL) {

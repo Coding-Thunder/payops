@@ -15,6 +15,12 @@ export {
   type EmailChargeBreakdown,
   type EmailChargeLine,
 } from "./charge-breakdown";
+export {
+  AIRLINE_FARE_NOT_INCLUDED,
+  FlightChargeBreakdown,
+  type EmailFlightAmounts,
+} from "./flight-charge-breakdown";
+export { FlightItinerarySection } from "./flight-itinerary-section";
 export { EmailTermsSection } from "./terms-section";
 export { EmailAgreeButton } from "./agree-button";
 export { SupportSection } from "./support-section";

@@ -8,8 +8,10 @@ import { Pagination } from "@/components/features/orders/pagination";
 import { PageHeader } from "@/components/common/page-header";
 import { Permission, roleHasPermission } from "@/lib/constants/permissions";
 import { listOrdersQuerySchema } from "@/lib/validation";
+import { getSelectedOrganization } from "@/server/auth/organization";
 import { requirePermission } from "@/server/auth/session";
 import { listOrders } from "@/server/services/order.service";
+import { resolveOrganizationServiceTypes } from "@/server/services/organization-service-types";
 
 export const metadata = { title: "Orders" };
 export const dynamic = "force-dynamic";
@@ -25,7 +27,17 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
 
   const sp = await searchParams;
   const params = listOrdersQuerySchema.parse(flatten(sp));
-  const data = await listOrders(params, { actor: user });
+  // The selected organization's service types drive the filter bar: a
+  // multi-service organization gets a service filter, and a search
+  // placeholder that does not promise "vehicle". [CAR_RENTAL] — both
+  // incumbent brands, and no organization selected — renders exactly the
+  // bar it always has.
+  const [data, serviceTypes] = await Promise.all([
+    listOrders(params, { actor: user }),
+    getSelectedOrganization().then((selected) =>
+      resolveOrganizationServiceTypes(selected?.id ?? null),
+    ),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -46,7 +58,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
         }
       />
 
-      <OrderFilters canSeeAll={canSeeAll} />
+      <OrderFilters canSeeAll={canSeeAll} serviceTypes={serviceTypes} />
       <OrderTable
         items={data.items}
         canDelete={canDelete}

@@ -31,6 +31,9 @@ interface ProviderSelectorProps {
   disabled?: boolean;
   invalid?: boolean;
   placeholder?: string;
+  /** Heading above the list. Defaults to the car-rental wording; the
+   *  flight form passes "Airlines & suppliers". */
+  heading?: string;
   /** Optional id wired up by `<FormControl>` / `<Label htmlFor>`. */
   id?: string;
 }
@@ -47,6 +50,7 @@ export function ProviderSelector({
   disabled,
   invalid,
   placeholder = "Select a rental provider",
+  heading = "Rental providers",
   id,
 }: ProviderSelectorProps) {
   const [open, setOpen] = useState(false);
@@ -105,7 +109,7 @@ export function ProviderSelector({
                 ? "No providers configured yet."
                 : "No provider matches that search."}
             </CommandEmpty>
-            <CommandGroup heading="Rental providers">
+            <CommandGroup heading={heading}>
               {providers.map((p) => {
                 const active = p.key === value;
                 return (

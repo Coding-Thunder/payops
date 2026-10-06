@@ -10,6 +10,7 @@ import type {
   Currency,
   DisputeOutcome,
   DisputeStatus,
+  FlightTripType,
   OrderEvidenceActorType,
   OrderEvidenceEventType,
   OrderStatus,
@@ -85,23 +86,63 @@ export interface OrderTrip {
  * `timing` decides whether it is collected online now (PREPAID — the only
  * thing the gateway charges) or by the counter at pick-up (DUE_AT_COUNTER).
  */
-/** FLIGHT service payload. A booking request, not a ticketed itinerary. */
-export interface OrderFlight {
-  tripType: "ONE_WAY" | "ROUND_TRIP";
-  airline: string | null;
-  flightNumber: string | null;
+/** One flight of an itinerary. Times are airport-local wall-clock strings
+ *  ("2026-10-10", "10:30") — see `@/lib/flight-itinerary`. */
+export interface OrderFlightSegment {
   origin: string;
   destination: string;
-  departureDate: string;
-  departureTimePreference: string | null;
-  /** Outbound arrival. Null until an itinerary is chosen. */
-  arrivalDate: string | null;
-  returnDate: string | null;
-  returnTimePreference: string | null;
+  departure: { date: string; time: string };
+  arrival: { date: string; time: string };
+  airline: string | null;
+  flightNumber: string | null;
+  details: string | null;
+}
+
+/** The gap between two adjacent flights; carries an optional layover. */
+export interface OrderFlightConnection {
+  layover: {
+    /** Null = where the previous flight lands. */
+    location: string | null;
+    /** Operator override of the calculated duration (minutes); null = use
+     *  the duration calculated from the adjacent flight times. */
+    durationMinutesOverride: number | null;
+    notes: string | null;
+  } | null;
+}
+
+/** One direction of travel: flights in order, one connection per gap. */
+export interface OrderFlightJourney {
+  segments: OrderFlightSegment[];
+  connections: OrderFlightConnection[];
+}
+
+/** FLIGHT service payload. */
+export interface OrderFlight {
+  tripType: FlightTripType;
+  /** Whole itinerary for ONE_WAY / MULTI_CITY; outbound for ROUND_TRIP.
+   *  Null on orders created before itineraries existed. */
+  outbound: OrderFlightJourney | null;
+  /** ROUND_TRIP only. */
+  return: OrderFlightJourney | null;
+  /** Ticket cost charged by the airline (major units, order currency).
+   *  Never collected through the payment link. */
+  airlineFare: number | null;
   cabinClass: string;
   passengers: { adults: number; children: number; infants: number };
   passengerNotes: string | null;
   pnr: string | null;
+  // Legacy flat itinerary — populated only on orders created before
+  // `outbound` existed. Render through `buildFlightItinerary`, never directly.
+  airline: string | null;
+  flightNumber: string | null;
+  origin: string | null;
+  destination: string | null;
+  departureDate: string | null;
+  departureTimePreference: string | null;
+  /** Outbound arrival. */
+  arrivalDate: string | null;
+  returnDate: string | null;
+  returnTimePreference: string | null;
 }
 
 /** HOTEL service payload. A booking request, not a confirmed reservation. */
@@ -351,7 +392,38 @@ export interface PaymentConsentSnapshot {
   charges?: OrderCharge[];
   dueAtCounter?: number;
   total?: number;
+  /**
+   * FLIGHT only — the full itinerary as it stood when consent was asked
+   * for, so the hosted page can show every flight and layover instead of
+   * the folded `vehicle` / `pickupDate` / `dropoffDate` summary above.
+   * Absent on records written before it existed.
+   */
+  flight?: PaymentConsentFlightSnapshot | null;
+  /** FLIGHT only: the airline fare — part of the booking value, NOT part
+   *  of `amount` (the airline charges it, the payment link does not). */
+  airlineFare?: number | null;
+  /** FLIGHT only: airline fare + service charge(s). */
+  bookingTotal?: number | null;
   paymentLinkRef: string | null;
+}
+
+/** The itinerary frozen into a consent record. Same shape `OrderFlight`
+ *  uses for it, so one renderer (`buildFlightItinerary`) serves both. */
+export interface PaymentConsentFlightSnapshot {
+  tripType: FlightTripType;
+  cabinClass: string;
+  passengers: { adults: number; children: number; infants: number };
+  pnr: string | null;
+  outbound: OrderFlightJourney | null;
+  return: OrderFlightJourney | null;
+  // Legacy flat itinerary, for a flight created before itineraries.
+  origin: string | null;
+  destination: string | null;
+  departureDate: string | null;
+  arrivalDate: string | null;
+  returnDate: string | null;
+  airline: string | null;
+  flightNumber: string | null;
 }
 
 export interface PaymentConsentDTO {
@@ -394,6 +466,11 @@ export interface PublicConsentView {
   consentMessage: string;
   snapshot: PaymentConsentSnapshot;
   paymentUrl: string | null;
+  /** Customer-facing name of the gateway the payment link opens ("Stripe",
+   *  "PayPal"): the order's pinned gateway, or — when the order has none
+   *  yet — its organization's configured `payments.provider`. Null only
+   *  when neither exists. */
+  gatewayLabel: string | null;
   alreadyConfirmedAt: string | null;
 }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useFieldArray, useWatch, type Control } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,7 @@ import {
 } from "@/lib/constants/enums";
 import { summarizeCharges } from "@/lib/charges";
 import { formatCurrency } from "@/lib/format";
+import type { OrderCharge } from "@/types";
 
 /**
  * The money half of an order form — currency, the charge lines, and the
@@ -37,6 +39,12 @@ import { formatCurrency } from "@/lib/format";
  * The two labels that name the rental counter are props whose DEFAULTS are
  * the exact rental strings, which is the only reason flight and hotel can
  * share this without touching the rental output.
+ *
+ * The flight form's PREPAID-ONLY mode follows the same rule: `timings`,
+ * `namePlaceholder`, `afterCurrency` and `renderSummary` all default to
+ * "exactly what the rental form renders", and only a caller that passes
+ * them gets anything different (no timing column, no counter wording, its
+ * own breakdown).
  *
  * The component deliberately renders a fragment, not a wrapper element:
  * it sits directly inside `<CardContent className="space-y-4">` in all
@@ -66,6 +74,20 @@ interface ChargeLinesFieldsetProps {
    *  always shown — never change them. */
   dueLaterLabel?: string;
   totalLabel?: string;
+  /** Timings a line may take; every timing by default. With a single
+   *  timing (a flight is prepaid only) the timing selector is not rendered
+   *  at all, so there is nothing to get wrong. Must include PREPAID — new
+   *  lines are added as prepaid. */
+  timings?: readonly PaymentTiming[];
+  namePlaceholder?: string;
+  /** Rendered between the currency and the charge lines. */
+  afterCurrency?: ReactNode;
+  /** Replaces the prepaid / due-later / total box. Receives the same live,
+   *  normalised lines and currency that box is computed from. */
+  renderSummary?: (live: {
+    charges: OrderCharge[];
+    currency: Currency;
+  }) => ReactNode;
 }
 
 export function ChargeLinesFieldset({
@@ -75,57 +97,80 @@ export function ChargeLinesFieldset({
   disabled = false,
   dueLaterLabel = "Amount due at counter",
   totalLabel = "Total rental cost",
+  timings = PAYMENT_TIMINGS,
+  namePlaceholder = "e.g. Rental cost",
+  afterCurrency,
+  renderSummary,
 }: ChargeLinesFieldsetProps) {
   const chargeFields = useFieldArray({ control, name: "charges" });
+  const showTiming = timings.length > 1;
 
   // Live breakdown for the summary box — recomputed from the same helper the
   // server uses, so what the agent sees here is exactly what gets charged.
   const watchedCharges = useWatch({ control, name: "charges" });
   const watchedCurrency = useWatch({ control, name: "currency" }) ?? defaultCurrency;
-  const chargeSummary = summarizeCharges(
-    (watchedCharges ?? []).map((c) => ({
-      name: c?.name ?? "",
-      amount: typeof c?.amount === "number" ? c.amount : Number(c?.amount) || 0,
-      timing: (c?.timing as PaymentTiming) ?? PaymentTiming.PREPAID,
-    })),
+  const liveCharges: OrderCharge[] = (watchedCharges ?? []).map((c) => ({
+    name: c?.name ?? "",
+    amount: typeof c?.amount === "number" ? c.amount : Number(c?.amount) || 0,
+    timing: (c?.timing as PaymentTiming) ?? PaymentTiming.PREPAID,
+  }));
+  const chargeSummary = summarizeCharges(liveCharges);
+
+  const currencyField = (
+    <FormField
+      control={control}
+      name="currency"
+      render={({ field }) => (
+        <FormItem className="max-w-[200px]">
+          <FormLabel>Currency</FormLabel>
+          <Select
+            value={field.value ?? defaultCurrency}
+            onValueChange={field.onChange}
+            disabled={disabled}
+          >
+            <FormControl>
+              <SelectTrigger>
+                <SelectValue placeholder="Currency" />
+              </SelectTrigger>
+            </FormControl>
+            <SelectContent>
+              {allowedCurrencies.map((c) => (
+                <SelectItem key={c} value={c}>
+                  {c}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
   );
 
   return (
     <>
-      <FormField
-        control={control}
-        name="currency"
-        render={({ field }) => (
-          <FormItem className="max-w-[200px]">
-            <FormLabel>Currency</FormLabel>
-            <Select
-              value={field.value ?? defaultCurrency}
-              onValueChange={field.onChange}
-              disabled={disabled}
-            >
-              <FormControl>
-                <SelectTrigger>
-                  <SelectValue placeholder="Currency" />
-                </SelectTrigger>
-              </FormControl>
-              <SelectContent>
-                {allowedCurrencies.map((c) => (
-                  <SelectItem key={c} value={c}>
-                    {c}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
+      {/* `afterCurrency` shares the currency's slot rather than taking one
+          of its own: an extra child here would shift the ids React
+          generates (`useId`) for everything rendered after it, and the
+          rental markup must not change at all. */}
+      {afterCurrency ? (
+        <>
+          {currencyField}
+          {afterCurrency}
+        </>
+      ) : (
+        currencyField
+      )}
 
       <div className="space-y-3">
         {chargeFields.fields.map((row, index) => (
           <div
             key={row.id}
-            className="grid gap-3 sm:grid-cols-[1fr_140px_170px_auto] sm:items-end"
+            className={
+              showTiming
+                ? "grid gap-3 sm:grid-cols-[1fr_140px_170px_auto] sm:items-end"
+                : "grid gap-3 sm:grid-cols-[1fr_140px_auto] sm:items-end"
+            }
           >
             <FormField
               control={control}
@@ -135,7 +180,7 @@ export function ChargeLinesFieldset({
                   {index === 0 ? <FormLabel>Charge name</FormLabel> : null}
                   <FormControl>
                     <Input
-                      placeholder="e.g. Rental cost"
+                      placeholder={namePlaceholder}
                       disabled={disabled}
                       {...field}
                       value={field.value ?? ""}
@@ -176,34 +221,36 @@ export function ChargeLinesFieldset({
               )}
             />
 
-            <FormField
-              control={control}
-              name={`charges.${index}.timing`}
-              render={({ field }) => (
-                <FormItem>
-                  {index === 0 ? <FormLabel>Payment timing</FormLabel> : null}
-                  <Select
-                    value={field.value ?? PaymentTiming.PREPAID}
-                    onValueChange={field.onChange}
-                    disabled={disabled}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Timing" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {PAYMENT_TIMINGS.map((t) => (
-                        <SelectItem key={t} value={t}>
-                          {PaymentTimingLabel[t]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {showTiming ? (
+              <FormField
+                control={control}
+                name={`charges.${index}.timing`}
+                render={({ field }) => (
+                  <FormItem>
+                    {index === 0 ? <FormLabel>Payment timing</FormLabel> : null}
+                    <Select
+                      value={field.value ?? PaymentTiming.PREPAID}
+                      onValueChange={field.onChange}
+                      disabled={disabled}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Timing" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {timings.map((t) => (
+                          <SelectItem key={t} value={t}>
+                            {PaymentTimingLabel[t]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            ) : null}
 
             <Button
               type="button"
@@ -236,33 +283,37 @@ export function ChargeLinesFieldset({
 
       {/* Live breakdown — uses the same helper the server uses, so the
           agent sees exactly what will be charged online. */}
-      <div className="space-y-1.5 rounded-md border bg-muted/30 p-4 text-sm">
-        <div className="flex items-center justify-between">
-          <span className="text-muted-foreground">
-            Amount paid online (today)
-          </span>
-          <span className="font-medium tabular-nums">
-            {formatCurrency(chargeSummary.prepaid, watchedCurrency)}
-          </span>
+      {renderSummary ? (
+        renderSummary({ charges: liveCharges, currency: watchedCurrency })
+      ) : (
+        <div className="space-y-1.5 rounded-md border bg-muted/30 p-4 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">
+              Amount paid online (today)
+            </span>
+            <span className="font-medium tabular-nums">
+              {formatCurrency(chargeSummary.prepaid, watchedCurrency)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">{dueLaterLabel}</span>
+            <span className="font-medium tabular-nums">
+              {formatCurrency(chargeSummary.dueAtCounter, watchedCurrency)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between border-t pt-1.5">
+            <span className="font-medium">{totalLabel}</span>
+            <span className="font-semibold tabular-nums">
+              {formatCurrency(chargeSummary.total, watchedCurrency)}
+            </span>
+          </div>
+          <p className="pt-1 text-xs text-muted-foreground">
+            The payment link charges only the {" "}
+            <strong>{formatCurrency(chargeSummary.prepaid, watchedCurrency)}</strong>{" "}
+            prepaid amount.
+          </p>
         </div>
-        <div className="flex items-center justify-between">
-          <span className="text-muted-foreground">{dueLaterLabel}</span>
-          <span className="font-medium tabular-nums">
-            {formatCurrency(chargeSummary.dueAtCounter, watchedCurrency)}
-          </span>
-        </div>
-        <div className="flex items-center justify-between border-t pt-1.5">
-          <span className="font-medium">{totalLabel}</span>
-          <span className="font-semibold tabular-nums">
-            {formatCurrency(chargeSummary.total, watchedCurrency)}
-          </span>
-        </div>
-        <p className="pt-1 text-xs text-muted-foreground">
-          The payment link charges only the {" "}
-          <strong>{formatCurrency(chargeSummary.prepaid, watchedCurrency)}</strong>{" "}
-          prepaid amount.
-        </p>
-      </div>
+      )}
     </>
   );
 }

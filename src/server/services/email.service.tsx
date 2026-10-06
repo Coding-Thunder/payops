@@ -23,9 +23,16 @@ import {
 import { PaymentGatewayLabel as PAYMENT_GATEWAY_LABELS } from "@/lib/constants/labels";
 import { env } from "@/lib/env";
 import { DomainEventType } from "@/lib/constants/events";
+import {
+  buildFlightItinerary,
+  type FlightItineraryView,
+  type LocalDateTime,
+  truncateText,
+  wallClockMinutes,
+} from "@/lib/flight-itinerary";
 import { logger } from "@/lib/logger";
 import { publishEvent } from "@/server/events/bus";
-import type { OrderDTO } from "@/types";
+import type { OrderDTO, OrderFlight, PaymentConsentSnapshot } from "@/types";
 
 import { getMailer, getMailerFor } from "@/server/email/smtp";
 import {
@@ -35,7 +42,10 @@ import {
   type EmailIdentity,
 } from "@/server/email/identity";
 import { inlinePublicImage } from "@/server/email/inline-image";
-import type { EmailChargeBreakdown } from "@/server/email/components";
+import type {
+  EmailChargeBreakdown,
+  EmailFlightAmounts,
+} from "@/server/email/components";
 import {
   PaymentRequestEmail,
   type PaymentRequestEmailProps,
@@ -50,7 +60,11 @@ import {
 } from "@/server/email/templates/payment-authorized";
 import { formatEmailDate, formatEmailDay, formatMoney } from "@/server/email/format";
 import { buildConsentMailto } from "@/server/email/consent-mailto";
-import { summarizeCharges } from "@/lib/charges";
+import {
+  flightMoneyWording,
+  summarizeCharges,
+  summarizeFlightAmounts,
+} from "@/lib/charges";
 
 import { recordAudit } from "./audit.service";
 import { captureEvidenceSafe } from "./evidence.service";
@@ -80,6 +94,57 @@ function buildEmailChargeBreakdown(order: OrderDTO): EmailChargeBreakdown {
     dueAtCounter: s.dueAtCounter > 0 ? formatMoney(s.dueAtCounter, currency) : null,
     total: formatMoney(s.total, currency),
   };
+}
+
+/**
+ * FLIGHT only: the airline fare / service charge / booking value split,
+ * formatted in the order currency. Null for every other service, whose
+ * templates keep rendering `chargeBreakdown` exactly as before.
+ *
+ * The fare is shown, never charged: `pricing.amount` — what the gateway
+ * collects and what every email headline prints — is the service charge.
+ * `serviceChargeModel` says whether that holds for THIS flight: a flight
+ * created before itineraries usually charged its whole fare online, so the
+ * templates word its money neutrally.
+ */
+function buildEmailFlightAmounts(order: OrderDTO): EmailFlightAmounts | null {
+  if (serviceTypeOf(order) !== ServiceType.FLIGHT) return null;
+  const a = summarizeFlightAmounts(
+    order.charges,
+    order.flight?.airlineFare,
+    order.pricing.amount,
+  );
+  const currency = order.pricing.currency;
+  return {
+    lines: a.charges.map((c) => ({
+      name: c.name,
+      amount: formatMoney(c.amount, currency),
+      timing: c.timing,
+    })),
+    airlineFare: a.airlineFare > 0 ? formatMoney(a.airlineFare, currency) : null,
+    serviceCharge: formatMoney(a.serviceCharge, currency),
+    dueLater: a.dueLater > 0 ? formatMoney(a.dueLater, currency) : null,
+    bookingTotal: formatMoney(a.bookingTotal, currency),
+    serviceChargeModel: flightMoneyWording(order.flight, order.bookingType).serviceChargeModel,
+  };
+}
+
+/** FLIGHT only: every flight and layover — a legacy flat-field flight is
+ *  folded into the same view. Null for every other service. */
+function emailFlightItinerary(order: OrderDTO): FlightItineraryView | null {
+  if (serviceTypeOf(order) !== ServiceType.FLIGHT) return null;
+  return buildFlightItinerary(order.flight);
+}
+
+/** FLIGHT only: the fare and booking value an email showed beside the
+ *  service charge, for its evidence row. Empty for every other service, so
+ *  a rental's evidence payload keeps its exact historic shape. */
+function flightEvidenceAmounts(
+  amounts: EmailFlightAmounts | null | undefined,
+): { airlineFare?: string | null; bookingTotal?: string } {
+  return amounts
+    ? { airlineFare: amounts.airlineFare, bookingTotal: amounts.bookingTotal }
+    : {};
 }
 
 /* ─────────────────── Service-aware email prop builders ─────────────────── */
@@ -117,11 +182,107 @@ function rentalTripProps(
  *
  * FLIGHT and HOTEL — which have no vehicle and no trip at all — take the
  * shared helper, formatted with the same long UTC stamp the rental dates
- * use so the two services read consistently inside one email.
+ * use so the two services read consistently inside one email. A flight's
+ * rows are trip-level only (trip type, routes, cabin, passengers, PNR);
+ * its flights render from `emailFlightItinerary` in their own block.
  */
 function emailServiceRows(order: OrderDTO): ServiceRow[] | undefined {
   if (serviceTypeOf(order) === ServiceType.CAR_RENTAL) return undefined;
   return serviceDetailRows(order, formatEmailDay);
+}
+
+/** The consent model's maxlength on the snapshot's `vehicle`. */
+const CONSENT_ITEM_MAX_LENGTH = 160;
+
+/**
+ * An airport-local wall-clock time as the ISO string a snapshot date slot
+ * needs: the wall clock written as if it were UTC (`Date.UTC(...)`), so
+ * reading it back in UTC gives the time printed on the ticket. Null when
+ * the date or time is missing or malformed.
+ */
+function wallClockIso(value: LocalDateTime | null | undefined): string | null {
+  const minutes = wallClockMinutes(value);
+  return minutes === null ? null : new Date(minutes * 60_000).toISOString();
+}
+
+/**
+ * Where and when a flight starts and ends, for the snapshot's rental-shaped
+ * date and location slots.
+ *
+ * A legacy flat-field flight stores exactly what it always has. An
+ * itinerary flight starts at its first departure and ends at the return
+ * departure on a round trip (what the legacy `returnDate` meant) or at its
+ * final arrival otherwise. The itinerary itself travels in
+ * `snapshot.flight` — these slots only keep the required fields valid.
+ */
+function flightConsentSlots(f: OrderFlight): {
+  pickupDate: string;
+  dropoffDate: string;
+  pickupLocation: string | null;
+  dropoffLocation: string | null;
+} {
+  const view = buildFlightItinerary(f);
+  if (!view || view.legacy) {
+    const departure = f.departureDate ?? new Date().toISOString();
+    return {
+      pickupDate: departure,
+      dropoffDate: f.returnDate ?? departure,
+      pickupLocation: f.origin,
+      dropoffLocation: f.destination,
+    };
+  }
+  const outbound = view.journeys[0];
+  const first = outbound.segments[0];
+  const last = outbound.segments[outbound.segments.length - 1];
+  const back = view.journeys.find((j) => j.key === "return")?.segments[0];
+  const end = back
+    ? { at: back.departure, place: back.origin }
+    : { at: last.arrival, place: last.destination };
+  const pickupDate = wallClockIso(first.departure) ?? new Date().toISOString();
+  return {
+    pickupDate,
+    dropoffDate: wallClockIso(end.at) ?? pickupDate,
+    pickupLocation: first.origin || null,
+    dropoffLocation: end.place || null,
+  };
+}
+
+/**
+ * FLIGHT only: the itinerary frozen into the consent record — so the hosted
+ * consent page can show every flight and layover instead of the folded
+ * item and date slots — plus the fare and booking value shown beside the
+ * service charge (`amount`). Empty for every other service, so a rental's
+ * snapshot keeps exactly its historic keys.
+ */
+function consentSnapshotFlight(
+  order: OrderDTO,
+): Partial<Pick<PaymentConsentSnapshot, "flight" | "airlineFare" | "bookingTotal">> {
+  const f = order.flight;
+  if (serviceTypeOf(order) !== ServiceType.FLIGHT || !f) return {};
+  const amounts = summarizeFlightAmounts(
+    order.charges,
+    f.airlineFare,
+    order.pricing.amount,
+  );
+  return {
+    flight: {
+      tripType: f.tripType,
+      cabinClass: f.cabinClass,
+      passengers: f.passengers,
+      pnr: f.pnr,
+      outbound: f.outbound,
+      return: f.return,
+      origin: f.origin,
+      destination: f.destination,
+      departureDate: f.departureDate,
+      arrivalDate: f.arrivalDate,
+      returnDate: f.returnDate,
+      airline: f.airline,
+      flightNumber: f.flightNumber,
+    },
+    airlineFare: amounts.airlineFare,
+    bookingTotal: amounts.bookingTotal,
+  };
 }
 
 /**
@@ -132,8 +293,8 @@ function emailServiceRows(order: OrderDTO): ServiceRow[] | undefined {
  * required. CAR_RENTAL fills them from the trip verbatim — same string,
  * same ISO stamps, so an existing consent record is byte-identical.
  * FLIGHT and HOTEL map their own item and their own start/end dates into
- * the same slots; a one-way flight has no return, so its end date repeats
- * the departure rather than being left blank.
+ * the same slots (see `flightConsentSlots`); a flight's route is cut to the
+ * slot's length, since a multi-city route can outgrow it.
  */
 function consentSnapshotService(order: OrderDTO): {
   serviceType: ServiceType;
@@ -160,11 +321,8 @@ function consentSnapshotService(order: OrderDTO): {
   if (f) {
     return {
       serviceType: serviceTypeOf(order),
-      vehicle: describeServiceItem(order),
-      pickupDate: f.departureDate,
-      dropoffDate: f.returnDate ?? f.departureDate,
-      pickupLocation: f.origin,
-      dropoffLocation: f.destination,
+      vehicle: truncateText(describeServiceItem(order), CONSENT_ITEM_MAX_LENGTH),
+      ...flightConsentSlots(f),
     };
   }
   const h = order.hotel;
@@ -384,6 +542,8 @@ export async function sendPaymentConfirmationEmail(
     vehicle: order.vehicle,
     trip: rentalTripProps(order),
     serviceRows: emailServiceRows(order),
+    flightItinerary: emailFlightItinerary(order),
+    flightAmounts: buildEmailFlightAmounts(order),
     confirmationNumber: order.confirmationNumber ?? null,
     chargeBreakdown: buildEmailChargeBreakdown(order),
     termsText: order.terms?.text || null,
@@ -441,6 +601,9 @@ export async function sendPaymentConfirmationEmail(
         supportPhone: identity.supportPhone,
       },
       amount: props.amount,
+      // FLIGHT: the fare and booking value shown beside `amount` (the
+      // service charge, on an itinerary flight).
+      ...flightEvidenceAmounts(props.flightAmounts),
       paidOn: props.paidOn,
       receiptUrl: props.receiptUrl ?? null,
       html,
@@ -514,6 +677,8 @@ export async function sendPaymentAuthorizedEmail(
     vehicle: order.vehicle,
     trip: rentalTripProps(order),
     serviceRows: emailServiceRows(order),
+    flightItinerary: emailFlightItinerary(order),
+    flightAmounts: buildEmailFlightAmounts(order),
     chargeBreakdown: buildEmailChargeBreakdown(order),
     termsText: order.terms?.text || null,
     termsVersion: order.terms?.version ?? null,
@@ -564,6 +729,9 @@ export async function sendPaymentAuthorizedEmail(
         supportPhone: identity.supportPhone,
       },
       amountAuthorized: props.amount,
+      // FLIGHT: the fare and booking value shown beside the hold (the
+      // service charge, on an itinerary flight).
+      ...flightEvidenceAmounts(props.flightAmounts),
       authorizedOn: props.authorizedOn,
       holdExpiresOn: props.holdExpiresOn ?? null,
       html,
@@ -689,7 +857,15 @@ export async function composePaymentRequestProps(
   const gatewayLabel = order.payment.gateway
     ? PAYMENT_GATEWAY_LABELS[order.payment.gateway as PaymentGatewayKey]
     : null;
-  const payLabel = `Pay ${formatMoney(order.pricing.amount, order.pricing.currency)} securely with ${gatewayLabel ?? "our secure checkout"} →`;
+  // An itinerary flight's link collects its service charge only, and the
+  // button says so — "Pay $95.00" alone reads as paying for the whole trip.
+  // A flight created before itineraries usually charged its whole fare, so
+  // it keeps the generic label.
+  const payLabel =
+    serviceTypeOf(order) === ServiceType.FLIGHT &&
+    flightMoneyWording(order.flight, order.bookingType).serviceChargeModel
+      ? `Pay the ${formatMoney(order.pricing.amount, order.pricing.currency)} service charge securely with ${gatewayLabel ?? "our secure checkout"} →`
+      : `Pay ${formatMoney(order.pricing.amount, order.pricing.currency)} securely with ${gatewayLabel ?? "our secure checkout"} →`;
   const primaryCta = alreadyConsented && checkoutUrl
     ? {
         url: checkoutUrl,
@@ -734,6 +910,8 @@ export async function composePaymentRequestProps(
     vehicle: order.vehicle,
     trip: rentalTripProps(order),
     serviceRows: emailServiceRows(order),
+    flightItinerary: emailFlightItinerary(order),
+    flightAmounts: buildEmailFlightAmounts(order),
     chargeBreakdown: buildEmailChargeBreakdown(order),
     paymentUrl: checkoutUrl,
     gatewayLabel,
@@ -843,6 +1021,9 @@ export async function sendPaymentRequestEmail(
               charges: s.charges,
               dueAtCounter: s.dueAtCounter,
               total: s.total,
+              // FLIGHT only: the full itinerary, the airline fare and the
+              // booking value (`amount` above is the service charge alone).
+              ...consentSnapshotFlight(order),
               paymentLinkRef: order.payment.paymentUrl,
             };
           })(),
@@ -915,6 +1096,9 @@ export async function sendPaymentRequestEmail(
         supportPhone: props.supportPhone,
       },
       amount: props.amount,
+      // FLIGHT: the fare and booking value shown beside `amount` (the
+      // service charge, on an itinerary flight).
+      ...flightEvidenceAmounts(props.flightAmounts),
       gateway: order.payment.gateway ?? null,
       gatewayLabel: props.gatewayLabel ?? null,
       cta: props.primaryCta

@@ -11,18 +11,27 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { FlightItinerary } from "@/components/common/flight-itinerary";
 import { PageHeader } from "@/components/common/page-header";
-import { ServiceItemLabel, ServiceTypeLabel } from "@/lib/constants/labels";
+import { flightAmountLabels } from "@/lib/charges";
+import {
+  providerLabelFor,
+  ServiceItemLabel,
+  ServiceTypeLabel,
+} from "@/lib/constants/labels";
 import { ServiceType } from "@/lib/constants/enums";
 import { formatCurrency, formatDateTime } from "@/lib/format";
-import type { OrderEvidenceChainDTO } from "@/types";
+import type {
+  EvidenceFlightDTO,
+  OrderEvidenceChainWithFlightDTO,
+} from "@/server/services/evidence.service";
 
 import { ConsentEvidenceCard } from "./consent-evidence-card";
 import { EvidenceTimeline } from "./evidence-timeline";
 import { IntegrityBadge } from "./integrity-badge";
 
 interface EvidenceChainViewProps {
-  chain: OrderEvidenceChainDTO;
+  chain: OrderEvidenceChainWithFlightDTO;
   canExport: boolean;
 }
 
@@ -55,6 +64,8 @@ export function EvidenceChainView({
   // service-agnostic equivalent ("LHR → JFK", "Hilton • Paris"), so the
   // header never loses the "what was bought" line.
   const vehicle = order.vehicle;
+  // FLIGHT only (see `getEvidenceChain`): the itinerary and money split.
+  const flight = chain.flight ?? null;
   // Authed app surfaces live under `/app/*` (the route folder is `app`,
   // not the `(app)` route-group that would have been URL-transparent).
   // Anchor + back-to-order link must carry the same prefix or every
@@ -108,10 +119,17 @@ export function EvidenceChainView({
             <Row label="Status" value={order.status} />
             <Row label="Customer" value={order.customer.name} />
             <Row label="Customer email" value={order.customer.email} />
-            <Row
-              label="Amount"
-              value={formatCurrency(order.pricing.amount, order.pricing.currency)}
-            />
+            {flight ? (
+              <FlightAmountRows
+                flight={flight}
+                currency={order.pricing.currency}
+              />
+            ) : (
+              <Row
+                label="Amount"
+                value={formatCurrency(order.pricing.amount, order.pricing.currency)}
+              />
+            )}
             <Row
               label="Created"
               value={formatDateTime(order.createdAt)}
@@ -124,7 +142,7 @@ export function EvidenceChainView({
 
           <div className="space-y-1.5">
             <h4 className="text-[12.5px] font-semibold text-foreground">
-              Provider
+              {providerLabelFor(serviceType, "Provider")}
             </h4>
             <div className="flex items-center gap-2 text-[13px]">
               {order.provider?.logo ? (
@@ -184,6 +202,41 @@ export function EvidenceChainView({
         </CardContent>
       </Card>
 
+      {flight ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Flight itinerary</CardTitle>
+            <CardDescription>
+              {flight.itinerary?.legacy
+                ? "Every flight on this order. Booked before itineraries existed — times are shown in UTC."
+                : "Every flight and layover on this order. Times are local to each airport."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {flight.details.length > 0 ? (
+              <div className="grid gap-3 text-[12.5px] sm:grid-cols-2">
+                {flight.details.map((row) => (
+                  <Row key={row.label} label={row.label} value={row.value} />
+                ))}
+              </div>
+            ) : null}
+            {flight.itinerary ? (
+              <FlightItinerary itinerary={flight.itinerary} showOverrideHint />
+            ) : null}
+            {flight.passengerNotes ? (
+              <div className="space-y-1">
+                <h4 className="text-[12.5px] font-semibold text-foreground">
+                  Passenger notes
+                </h4>
+                <p className="whitespace-pre-line text-[13px]">
+                  {flight.passengerNotes}
+                </p>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
       <ConsentEvidenceCard events={events} />
 
       <Card>
@@ -207,11 +260,65 @@ export function EvidenceChainView({
             <EvidenceTimeline
               events={events}
               brokenAtSequence={verification.brokenAtSequence}
+              serviceType={serviceType}
             />
           )}
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/**
+ * A flight's money split in place of the single "Amount" row. The payment
+ * link only ever collects `pricing.amount` — on an itinerary flight, the
+ * service charge; the airline fare is part of the booking value but was
+ * never charged here — the distinction a flight chargeback turns on. A
+ * flight created before itineraries is labelled neutrally: its charge lines
+ * were usually the whole fare.
+ */
+function FlightAmountRows({
+  flight,
+  currency,
+}: {
+  flight: EvidenceFlightDTO;
+  currency: string;
+}) {
+  const { amounts, collection } = flight;
+  const labels = flightAmountLabels(flight.serviceChargeModel);
+  return (
+    <>
+      {amounts.airlineFare > 0 ? (
+        <Row
+          label={labels.airlineFare}
+          value={`${formatCurrency(amounts.airlineFare, currency)} — not collected by the payment link`}
+        />
+      ) : null}
+      <Row
+        label={labels.serviceCharge}
+        value={formatCurrency(amounts.serviceCharge, currency)}
+      />
+      {amounts.dueLater > 0 ? (
+        <Row
+          label={labels.dueLater}
+          value={formatCurrency(amounts.dueLater, currency)}
+        />
+      ) : null}
+      <Row
+        label={labels.bookingTotal}
+        value={formatCurrency(amounts.bookingTotal, currency)}
+      />
+      <Row
+        label={labels.collectedOnline}
+        value={
+          collection.status === "COLLECTED" && collection.amount !== null
+            ? formatCurrency(collection.amount, currency)
+            : collection.status === "ON_HOLD"
+              ? labels.onHoldNotCollected
+              : labels.notCollected
+        }
+      />
+    </>
   );
 }
 

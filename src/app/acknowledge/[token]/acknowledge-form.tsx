@@ -117,14 +117,21 @@ export function AcknowledgeForm({ token, initialView }: AcknowledgeFormProps) {
             </button>
             <p className="mt-3 text-center text-[11px] text-slate-500">
               Your acknowledgement, timestamp, and IP are recorded against this
-              booking.{" "}
-              <a
-                href={`mailto:${view.supportEmail}`}
-                className="text-slate-600 underline-offset-2 hover:underline"
-              >
-                Email {view.supportEmail}
-              </a>{" "}
-              if you need help.
+              booking.
+              {/* A brand that publishes no support address (its organization
+                  has none configured) gets no dead "Email " link. */}
+              {view.supportEmail ? (
+                <>
+                  {" "}
+                  <a
+                    href={`mailto:${view.supportEmail}`}
+                    className="text-slate-600 underline-offset-2 hover:underline"
+                  >
+                    Email {view.supportEmail}
+                  </a>{" "}
+                  if you need help.
+                </>
+              ) : null}
             </p>
           </>
         )}

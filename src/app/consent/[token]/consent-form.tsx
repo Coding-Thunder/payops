@@ -4,10 +4,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ShieldCheckIcon } from "lucide-react";
 
 import { api, ApiClientError } from "@/lib/api-client";
+import { FlightItinerary } from "@/components/common/flight-itinerary";
 import { Checkbox } from "@/components/ui/checkbox";
+import { flightMoneyWording, LEGACY_FLIGHT_AMOUNT_LABELS } from "@/lib/charges";
 import { ServiceType } from "@/lib/constants/enums";
-import { BookingTypeLabel } from "@/lib/constants/labels";
+import {
+  BookingTypeLabel,
+  FLIGHT_PROVIDER_LABEL,
+} from "@/lib/constants/labels";
+import {
+  buildFlightItinerary,
+  type FlightItineraryView,
+} from "@/lib/flight-itinerary";
 import { formatCurrency, formatDateTime } from "@/lib/format";
+import { serviceDetailRows } from "@/lib/service-summary";
 import type { BrandingDTO, PublicConsentView } from "@/types";
 
 interface ConsentFormProps {
@@ -17,10 +27,11 @@ interface ConsentFormProps {
 }
 
 /**
- * Hosted consent → Stripe handoff.
+ * Hosted consent → gateway checkout handoff.
  *
  * The page has one job: capture a digital signature and push the customer
- * into Stripe Checkout. There's no intermediate "you're confirmed" screen
+ * into the gateway's hosted checkout (Stripe or PayPal, named from
+ * `view.gatewayLabel`). There's no intermediate "you're confirmed" screen
  * because the spec demands an immediate handoff — any dead state between
  * sign and pay erodes conversion.
  *
@@ -28,7 +39,7 @@ interface ConsentFormProps {
  *  1. fresh REQUESTED — render the form (booking summary + required
  *     signature + confirm button).
  *  2. submitting       — disabled CTA + inline spinner copy.
- *  3. redirecting      — page replaces itself to the Stripe URL via
+ *  3. redirecting      — page replaces itself to the checkout URL via
  *     `window.location.replace`. We render a slim "Redirecting…" shell
  *     so the brief window before the browser navigates isn't blank. If
  *     the redirect hasn't completed after 5 s (mobile browser quirk,
@@ -130,7 +141,13 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
   }
 
   if (redirecting) {
-    return <RedirectingShell fallbackUrl={fallbackUrl} branding={branding} />;
+    return (
+      <RedirectingShell
+        fallbackUrl={fallbackUrl}
+        branding={branding}
+        gatewayLabel={view.gatewayLabel}
+      />
+    );
   }
 
   return (
@@ -145,7 +162,10 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-slate-600">
           Review the details below, sign with your full name, and you&apos;ll
-          continue to {view.brandName}&apos;s secure Stripe checkout.
+          continue to {view.brandName}
+          {view.gatewayLabel
+            ? `'s secure ${view.gatewayLabel} checkout.`
+            : "'s secure checkout."}
         </p>
       </div>
 
@@ -222,16 +242,20 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
         </button>
 
         <p className="text-center text-[11px] text-slate-500">
-          You&apos;ll be taken directly to Stripe Checkout to complete
-          payment. Your timestamp and IP are recorded against this booking
-          as evidence of consent.{" "}
-          <a
-            href={`mailto:${branding.supportEmail}`}
-            className="text-slate-600 underline-offset-2 hover:underline"
-          >
-            Email {branding.supportEmail}
-          </a>{" "}
-          if you need help.
+          {`You'll be taken directly to ${checkoutName(view.gatewayLabel)} to complete payment. Your timestamp and IP are recorded against this booking as evidence of consent.`}
+          {/* A brand that publishes no support address gets no dead link. */}
+          {branding.supportEmail ? (
+            <>
+              {" "}
+              <a
+                href={`mailto:${branding.supportEmail}`}
+                className="text-slate-600 underline-offset-2 hover:underline"
+              >
+                Email {branding.supportEmail}
+              </a>{" "}
+              if you need help.
+            </>
+          ) : null}
         </p>
       </form>
     </div>
@@ -240,12 +264,21 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
 
 function SummaryBlock({ view }: { view: PublicConsentView }) {
   const { snapshot } = view;
+  // Consent records written before `serviceType` existed are car rentals.
+  const serviceType = snapshot.serviceType ?? ServiceType.CAR_RENTAL;
+  // A flight request freezes its whole itinerary. One written before that
+  // existed has only the folded rows below, and renders exactly as before.
+  const itinerary =
+    serviceType === ServiceType.FLIGHT && snapshot.flight
+      ? buildFlightItinerary(snapshot.flight)
+      : null;
+  if (itinerary) {
+    return <FlightSummaryBlock view={view} itinerary={itinerary} />;
+  }
   const currency = snapshot.currency;
   const dueAtCounter = snapshot.dueAtCounter ?? 0;
   const total = snapshot.total ?? snapshot.amount;
   const hasCounterDue = dueAtCounter > 0;
-  // Consent records written before `serviceType` existed are car rentals.
-  const serviceType = snapshot.serviceType ?? ServiceType.CAR_RENTAL;
   const wording = CONSENT_WORDING[serviceType];
   return (
     <div className="border-t border-slate-100 px-6 py-5 sm:px-8">
@@ -292,7 +325,10 @@ function SummaryBlock({ view }: { view: PublicConsentView }) {
       <dl className="mt-4 divide-y divide-slate-100 text-sm">
         <DetailRow label="Customer" value={view.customerName} />
         <DetailRow label="Email" value={view.customerEmail} mono />
-        <DetailRow label="Provider" value={snapshot.provider || "—"} />
+        <DetailRow
+          label={wording.providerLabel}
+          value={snapshot.provider || "—"}
+        />
         <DetailRow label={wording.itemLabel} value={snapshot.vehicle} />
         <DetailRow
           label={wording.startLabel}
@@ -324,12 +360,135 @@ function SummaryBlock({ view }: { view: PublicConsentView }) {
   );
 }
 
+/**
+ * A flight's booking summary: what this payment covers (the service charge)
+ * set against the full booking value, then the trip and every flight and
+ * layover. The money block is shown for every flight — not gated on a
+ * counter balance like a rental's — because its job is to make clear that
+ * the airline fare is not part of this payment.
+ *
+ * Worded from the FROZEN itinerary: a record whose `snapshot.flight` has an
+ * outbound journey is the service-charge model; one frozen from a flight
+ * created before itineraries (flat fields only) usually paid its whole fare
+ * here, so its labels are neutral and the "service charge" line is left out.
+ */
+function FlightSummaryBlock({
+  view,
+  itinerary,
+}: {
+  view: PublicConsentView;
+  itinerary: FlightItineraryView;
+}) {
+  const { snapshot } = view;
+  const { labels, serviceChargeModel } = flightMoneyWording(snapshot.flight, snapshot.bookingType);
+  const currency = snapshot.currency;
+  const airlineFare = snapshot.airlineFare ?? 0;
+  // Non-zero only for a flight created before flights became prepaid-only.
+  const dueLater = snapshot.dueAtCounter ?? 0;
+  const bookingTotal =
+    snapshot.bookingTotal ?? airlineFare + snapshot.amount + dueLater;
+  return (
+    <>
+      <div className="border-t border-slate-100 px-6 py-5 sm:px-8">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.10em] text-slate-500">
+          Booking summary
+        </p>
+        <div className="mt-3 flex items-baseline justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+              {labels.payableNow}
+            </p>
+            <span className="text-2xl font-semibold tracking-tight tabular-nums text-slate-900">
+              {formatCurrency(snapshot.amount, currency)}
+            </span>
+            {serviceChargeModel ? (
+              <p className="text-xs text-slate-500">{labels.serviceCharge}</p>
+            ) : null}
+          </div>
+          <span className="text-xs text-slate-500">
+            {BookingTypeLabel[snapshot.bookingType]}
+          </span>
+        </div>
+
+        <div className="mt-3 space-y-1 rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-3 text-sm">
+          {airlineFare > 0 ? (
+            <div className="flex items-start justify-between gap-3">
+              <span className="text-slate-500">
+                {labels.airlineFare}
+                <span className="block text-[11px] text-slate-400">
+                  {labels.airlineFareNote}
+                </span>
+              </span>
+              <span className="tabular-nums text-slate-900">
+                {formatCurrency(airlineFare, currency)}
+              </span>
+            </div>
+          ) : null}
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-slate-500">{labels.serviceCharge}</span>
+            <span className="tabular-nums text-slate-900">
+              {formatCurrency(snapshot.amount, currency)}
+            </span>
+          </div>
+          {dueLater > 0 ? (
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-slate-500">{labels.dueLater}</span>
+              <span className="tabular-nums text-slate-900">
+                {formatCurrency(dueLater, currency)}
+              </span>
+            </div>
+          ) : null}
+          <div className="flex items-center justify-between gap-3 border-t border-slate-200 pt-1.5 font-medium">
+            <span className="text-slate-700">{labels.bookingTotal}</span>
+            <span className="tabular-nums text-slate-900">
+              {formatCurrency(bookingTotal, currency)}
+            </span>
+          </div>
+        </div>
+
+        <dl className="mt-4 divide-y divide-slate-100 text-sm">
+          <DetailRow label="Customer" value={view.customerName} />
+          <DetailRow label="Email" value={view.customerEmail} mono />
+          <DetailRow
+            label={CONSENT_WORDING.FLIGHT.providerLabel}
+            value={snapshot.provider || "—"}
+          />
+          {serviceDetailRows({
+            serviceType: ServiceType.FLIGHT,
+            flight: snapshot.flight,
+          }).map((row) => (
+            <DetailRow key={row.label} label={row.label} value={row.value} />
+          ))}
+        </dl>
+      </div>
+
+      <div className="border-t border-slate-100 px-6 py-5 sm:px-8">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.10em] text-slate-500">
+          Itinerary
+        </p>
+        <FlightItinerary itinerary={itinerary} className="mt-3" />
+      </div>
+    </>
+  );
+}
+
+/**
+ * Name of the hosted checkout the customer is sent to. Neutral when the
+ * record names no gateway: telling a PayPal brand's customer they are off
+ * to "Stripe Checkout" is the phishing tell this replaced.
+ */
+function checkoutName(gatewayLabel: string | null | undefined): string {
+  return gatewayLabel ? `${gatewayLabel} Checkout` : "our secure checkout";
+}
+
 function RedirectingShell({
   fallbackUrl,
   branding,
+  gatewayLabel,
 }: {
   fallbackUrl: string | null;
   branding: BrandingDTO;
+  gatewayLabel: string | null;
 }) {
   return (
     <div
@@ -343,8 +502,7 @@ function RedirectingShell({
           Opening secure payment…
         </h1>
         <p className="mt-1.5 max-w-md text-sm text-slate-600">
-          We&apos;ve recorded your acknowledgement. You&apos;re being taken
-          straight to Stripe Checkout to complete payment.
+          {`We've recorded your acknowledgement. You're being taken straight to ${checkoutName(gatewayLabel)} to complete payment.`}
         </p>
         {fallbackUrl ? (
           <div className="mt-6 w-full max-w-sm rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-left">
@@ -352,8 +510,7 @@ function RedirectingShell({
               Redirect failed.
             </p>
             <p className="mt-1 text-[11px] text-amber-800">
-              Your browser didn&apos;t open Stripe automatically. Continue
-              securely below.
+              {`Your browser didn't open ${gatewayLabel ?? "the payment page"} automatically. Continue securely below.`}
             </p>
             <a
               href={fallbackUrl}
@@ -363,15 +520,17 @@ function RedirectingShell({
             </a>
           </div>
         ) : null}
-        <p className="mt-6 text-[11px] text-slate-500">
-          Trouble?{" "}
-          <a
-            href={`mailto:${branding.supportEmail}`}
-            className="font-medium text-slate-700 underline-offset-2 hover:underline"
-          >
-            Email {branding.supportEmail}
-          </a>
-        </p>
+        {branding.supportEmail ? (
+          <p className="mt-6 text-[11px] text-slate-500">
+            Trouble?{" "}
+            <a
+              href={`mailto:${branding.supportEmail}`}
+              className="font-medium text-slate-700 underline-offset-2 hover:underline"
+            >
+              Email {branding.supportEmail}
+            </a>
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -390,16 +549,21 @@ function Spinner({ large = false }: { large?: boolean }) {
 /**
  * Row labels and charge-breakdown copy, per service type.
  *
- * The consent snapshot is deliberately ONE shape — an item plus a start and
- * an end date — so the append-only consent chain never forks. That makes
- * these labels the only thing standing between a flight passenger and a
- * page asking them to confirm a "Vehicle" and a "Drop-off" before they pay.
+ * The consent snapshot's base is deliberately ONE shape — an item plus a
+ * start and an end date — so the append-only consent chain never forks. For
+ * a record without a frozen itinerary (every one written before flights
+ * carried it), these labels are the only thing standing between a flight
+ * passenger and a page asking them to confirm a "Vehicle" and a "Drop-off"
+ * before they pay. Such a record is a flight frozen before itineraries, so
+ * its money labels are the neutral `LEGACY_FLIGHT_AMOUNT_LABELS` — the copy
+ * source the receipt page and the emails share.
  *
  * CAR_RENTAL reproduces the exact strings this page has always rendered.
  */
 const CONSENT_WORDING: Record<
   ServiceType,
   {
+    providerLabel: string;
     itemLabel: string;
     startLabel: string;
     endLabel: string | null;
@@ -408,6 +572,7 @@ const CONSENT_WORDING: Record<
   }
 > = {
   CAR_RENTAL: {
+    providerLabel: "Provider",
     itemLabel: "Vehicle",
     startLabel: "Pick-up",
     endLabel: "Drop-off",
@@ -415,13 +580,15 @@ const CONSENT_WORDING: Record<
     totalLabel: "Total rental cost",
   },
   FLIGHT: {
+    providerLabel: FLIGHT_PROVIDER_LABEL,
     itemLabel: "Route",
     startLabel: "Departure",
     endLabel: "Return",
-    dueLabel: "Remaining balance due later",
-    totalLabel: "Total flight cost",
+    dueLabel: LEGACY_FLIGHT_AMOUNT_LABELS.dueLater,
+    totalLabel: LEGACY_FLIGHT_AMOUNT_LABELS.bookingTotal,
   },
   HOTEL: {
+    providerLabel: "Provider",
     itemLabel: "Property",
     startLabel: "Check-in",
     endLabel: "Check-out",

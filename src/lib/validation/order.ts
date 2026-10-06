@@ -2,7 +2,10 @@ import { z } from "zod";
 
 import {
   BOOKING_TYPES,
+  CABIN_CLASSES,
   CURRENCIES,
+  FLIGHT_TRIP_TYPES,
+  FlightTripType,
   ORDER_STATUSES,
   PAYMENT_TIMINGS,
   PaymentTiming,
@@ -11,6 +14,13 @@ import {
   ServiceType,
 } from "@/lib/constants/enums";
 import { PROVIDER_KEY_REGEX } from "@/lib/constants/providers";
+import {
+  isLocalDate,
+  isLocalTime,
+  itineraryIssues,
+  MAX_LAYOVER_OVERRIDE_MINUTES,
+  MAX_SEGMENTS_PER_JOURNEY,
+} from "@/lib/flight-itinerary";
 
 const isoDateString = z
   .string()
@@ -169,12 +179,111 @@ const flightPassengersSchema = z
     message: "Each infant must travel with an adult",
   });
 
+/** Airport-local wall-clock date and time — see `@/lib/flight-itinerary`
+ *  for why these are strings rather than instants. */
+const localDateInputSchema = z
+  .string()
+  .trim()
+  .min(1, "Date is required")
+  .refine(isLocalDate, "Enter a valid date");
+const localTimeInputSchema = z
+  .string()
+  .trim()
+  .min(1, "Time is required")
+  .refine(isLocalTime, "Enter a valid time");
+
+/** One flight: from, to, departure, arrival, carrier. */
+export const flightSegmentInputSchema = z.object({
+  // Two checks so a blank field says "required" and a one-letter entry
+  // says what is actually wrong. `abort` stops a blank at the first, so it
+  // reports exactly one message (to the form and to an API caller alike).
+  origin: z
+    .string()
+    .trim()
+    .min(1, { error: "From is required", abort: true })
+    .min(2, "Enter at least 2 characters")
+    .max(120),
+  destination: z
+    .string()
+    .trim()
+    .min(1, { error: "To is required", abort: true })
+    .min(2, "Enter at least 2 characters")
+    .max(120),
+  departure: z.object({ date: localDateInputSchema, time: localTimeInputSchema }),
+  arrival: z.object({ date: localDateInputSchema, time: localTimeInputSchema }),
+  airline: z.string().trim().max(80).optional().nullable(),
+  flightNumber: z.string().trim().max(16).optional().nullable(),
+  details: z.string().trim().max(500).optional().nullable(),
+});
+
 /**
- * Flight booking REQUEST.
+ * A layover on the connection between two adjacent flights. Its start and
+ * end are NOT here — they are the previous flight's arrival and the next
+ * flight's departure — so only what those cannot express is accepted.
+ */
+const flightLayoverInputSchema = z.object({
+  location: z.string().trim().max(120).optional().nullable(),
+  durationMinutesOverride: z
+    .number({ error: "Enter a valid duration" })
+    .int("Enter a whole number of minutes")
+    .min(1, "Enter a duration of at least 1 minute")
+    .max(MAX_LAYOVER_OVERRIDE_MINUTES, "A layover can't be longer than 7 days")
+    .optional()
+    .nullable(),
+  notes: z.string().trim().max(500).optional().nullable(),
+});
+
+const flightConnectionInputSchema = z.object({
+  layover: flightLayoverInputSchema.optional().nullable(),
+});
+
+/**
+ * One direction of travel: an ordered list of flights and the connections
+ * between them. `connections` is normalised to exactly one entry per gap,
+ * so connection `i` always means "between flight i+1 and flight i+2".
+ */
+export const flightJourneyInputSchema = z
+  .object({
+    segments: z
+      .array(flightSegmentInputSchema)
+      .min(1, "Add at least one flight")
+      .max(
+        MAX_SEGMENTS_PER_JOURNEY,
+        `A journey can have at most ${MAX_SEGMENTS_PER_JOURNEY} flights`,
+      ),
+    connections: z
+      .array(flightConnectionInputSchema)
+      .max(MAX_SEGMENTS_PER_JOURNEY - 1)
+      .optional()
+      .nullable(),
+  })
+  .transform((journey) => ({
+    segments: journey.segments,
+    connections: journey.segments.slice(1).map((_, i) => ({
+      layover: journey.connections?.[i]?.layover ?? null,
+    })),
+  }));
+
+/** A flight charge is always collected online, now. There is no
+ *  due-at-counter for a flight — nothing is paid at an airport desk. */
+const flightChargeInputSchema = chargeInputSchema.extend({
+  timing: z.literal(PaymentTiming.PREPAID, {
+    error: "Flight charges are always prepaid",
+  }),
+});
+
+/**
+ * Flight booking.
  *
  * No airline or GDS integration is implied — this platform holds no
- * inventory. The fields are what an operator needs to source a fare by
- * hand and quote it back.
+ * inventory. The operator enters the itinerary they sourced: every flight,
+ * every connection, and the money split between the airline fare (never
+ * collected here) and the service charge (the only thing the payment link
+ * charges).
+ *
+ * Every business rule about the itinerary itself — chronology, connections,
+ * round-trip ordering, multi-city size — lives in `itineraryIssues`, so the
+ * form's live warnings and this schema can never disagree.
  */
 export const flightOrderSchema = z
   .object({
@@ -188,71 +297,47 @@ export const flightOrderSchema = z
     customer: customerInputSchema,
     flight: z
       .object({
-        tripType: z.enum(["ONE_WAY", "ROUND_TRIP"]),
-        airline: z.string().trim().max(80).optional().nullable(),
-        flightNumber: z.string().trim().max(16).optional().nullable(),
-        origin: z.string().trim().min(2, "Origin is required").max(120),
-        destination: z
-          .string()
-          .trim()
-          .min(2, "Destination is required")
-          .max(120),
-        departureDate: isoDateString,
-        departureTimePreference: z.string().trim().max(40).optional().nullable(),
-        /** Outbound arrival. Optional: a request can be quoted before a
-         *  specific itinerary is chosen. */
-        arrivalDate: z.string().optional().nullable(),
-        /** Airline record locator, entered once the booking is ticketed. */
-        pnr: z.string().trim().max(32).optional().nullable(),
-        returnDate: z.string().optional().nullable(),
-        returnTimePreference: z.string().trim().max(40).optional().nullable(),
-        cabinClass: z.enum([
-          "ECONOMY",
-          "PREMIUM_ECONOMY",
-          "BUSINESS",
-          "FIRST",
-        ]),
+        tripType: z.enum(FLIGHT_TRIP_TYPES),
+        /** The whole itinerary for ONE_WAY / MULTI_CITY; the outbound
+         *  journey for ROUND_TRIP. */
+        outbound: flightJourneyInputSchema,
+        /** ROUND_TRIP only. Dropped for every other trip type. */
+        return: flightJourneyInputSchema.optional().nullable(),
+        cabinClass: z.enum(CABIN_CLASSES),
         passengers: flightPassengersSchema,
         passengerNotes: z.string().trim().max(2000).optional().nullable(),
+        /** Airline record locator, entered once the booking is ticketed. */
+        pnr: z.string().trim().max(32).optional().nullable(),
+        /**
+         * The ticket cost the airline charges. Shown to the customer as part
+         * of the booking value; NEVER sent to the payment gateway, which
+         * charges only the service charge in `charges`.
+         */
+        airlineFare: z
+          .number({ error: "Enter a valid amount" })
+          .min(0, "The airline fare can't be negative")
+          .max(1_000_000, "Amount looks unrealistic")
+          .optional()
+          .nullable(),
       })
-      .refine(
-        (f) =>
-          f.tripType !== "ROUND_TRIP" ||
-          (typeof f.returnDate === "string" && f.returnDate.length > 0),
-        {
-          path: ["returnDate"],
-          message: "Return date is required for a round trip",
-        },
-      )
-      .refine(
-        (f) =>
-          f.tripType !== "ROUND_TRIP" ||
-          !f.returnDate ||
-          new Date(f.returnDate) >= new Date(f.departureDate),
-        {
-          path: ["returnDate"],
-          message: "Return must be on or after departure",
-        },
-      )
-      .refine(
-        (f) =>
-          f.origin.trim().toUpperCase() !== f.destination.trim().toUpperCase(),
-        {
-          path: ["destination"],
-          message: "Destination must differ from origin",
-        },
-      )
-      .refine(
-        (f) =>
-          !f.arrivalDate ||
-          new Date(f.arrivalDate) >= new Date(f.departureDate),
-        {
-          path: ["arrivalDate"],
-          message: "Arrival must not be before departure",
-        },
+      .superRefine((flight, ctx) => {
+        for (const issue of itineraryIssues(flight)) {
+          if (issue.severity !== "error") continue;
+          ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
+        }
+      })
+      .transform((flight) =>
+        flight.tripType === FlightTripType.ROUND_TRIP
+          ? { ...flight, return: flight.return ?? null }
+          : { ...flight, return: null },
       ),
     currency: z.enum(CURRENCIES),
-    charges: chargesInputSchema,
+    /** The operator's service charge — the ONLY amount the payment link
+     *  collects. Prepaid by definition. */
+    charges: z
+      .array(flightChargeInputSchema)
+      .min(1, "Add the service charge")
+      .max(20, "Too many charge lines"),
     notes: z.string().trim().max(2000).optional(),
   });
 

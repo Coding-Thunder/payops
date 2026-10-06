@@ -1,6 +1,7 @@
 import { Column, Row, Text } from "@react-email/components";
 import * as React from "react";
 
+import { LEGACY_FLIGHT_AMOUNT_LABELS } from "@/lib/charges";
 import { PaymentTiming, ServiceType } from "@/lib/constants/enums";
 
 import { MetadataRow } from "./metadata-row";
@@ -54,6 +55,24 @@ export const RENTAL_CHARGE_WORDING: Required<ChargeWording> = {
 };
 
 /**
+ * FLIGHT wording. A flight is prepaid-only and its airline fare is never a
+ * charge line, so nothing is ever "due at the airport". Real flight sends
+ * render `FlightChargeBreakdown` (fare / service charge / booking value)
+ * instead of this block; this covers a flight rendered without that split,
+ * and the "due later" line a flight created before prepaid-only can carry.
+ *
+ * Neutral on purpose: without the split there is no telling an itinerary
+ * flight's service charge from a legacy flight's whole fare, so the prepaid
+ * row uses the legacy label ("Charged online"), true of both.
+ */
+export const FLIGHT_CHARGE_WORDING: Required<ChargeWording> = {
+  prepaidLabel: LEGACY_FLIGHT_AMOUNT_LABELS.serviceCharge,
+  dueLabel: LEGACY_FLIGHT_AMOUNT_LABELS.dueLater,
+  totalLabel: "Total charges",
+  dueSuffix: "(due later)",
+};
+
+/**
  * Service-appropriate wording for the charge block.
  *
  * CAR_RENTAL returns `RENTAL_CHARGE_WORDING` — the incumbents' strings,
@@ -66,12 +85,7 @@ export function chargeWordingFor(
 ): Required<ChargeWording> {
   switch (serviceType) {
     case ServiceType.FLIGHT:
-      return {
-        prepaidLabel: "Amount paid online",
-        dueLabel: "Amount due at the airport",
-        totalLabel: "Total flight cost",
-        dueSuffix: "(due at the airport)",
-      };
+      return FLIGHT_CHARGE_WORDING;
     case ServiceType.HOTEL:
       return {
         prepaidLabel: "Amount paid online",
@@ -137,8 +151,9 @@ export function ChargeBreakdown({
   );
 }
 
-/** Like MetadataRow but the value can be emphasised (used for the total). */
-function TotalRow({
+/** Like MetadataRow but the value can be emphasised (used for the total).
+ *  Shared with `FlightChargeBreakdown` so both blocks' totals match. */
+export function TotalRow({
   label,
   value,
   emphasise,

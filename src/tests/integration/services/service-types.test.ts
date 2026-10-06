@@ -16,6 +16,7 @@ import { createSettings } from "@/tests/factories/settings.factory";
 import { setNextHeaders } from "@/tests/utils/next-headers";
 import { ensureMongo } from "@/tests/utils/db";
 import {
+  roundTripFlightInput,
   validCreateOrderInput,
   validFlightOrderInput,
   validHotelOrderInput,
@@ -95,7 +96,7 @@ afterEach(() => {
  * ------------------------------------------------------------------ */
 
 describe("requirement 5: serviceType FLIGHT works end to end through createOrder", () => {
-  it("persists the flight payload and leaves vehicle and trip null", async () => {
+  it("persists the flight itinerary and leaves vehicle and trip null", async () => {
     actingAs(multiServiceOrg);
     const input = validFlightOrderInput();
     const { order } = await createOrder(input, { actor });
@@ -107,14 +108,24 @@ describe("requirement 5: serviceType FLIGHT works end to end through createOrder
       hotel?: unknown;
       flight?: {
         tripType: string;
-        airline: string | null;
-        flightNumber: string | null;
-        origin: string;
-        destination: string;
-        departureDate: Date;
-        returnDate: Date | null;
+        outbound: {
+          segments: {
+            origin: string;
+            destination: string;
+            departure: { date: string; time: string };
+            arrival: { date: string; time: string };
+            airline: string | null;
+            flightNumber: string | null;
+          }[];
+          connections: unknown[];
+        } | null;
+        return: unknown;
+        airlineFare: number | null;
         cabinClass: string;
         passengers: { adults: number; children: number; infants: number };
+        origin?: string | null;
+        destination?: string | null;
+        departureDate?: Date | null;
       };
     } | null>();
 
@@ -127,19 +138,28 @@ describe("requirement 5: serviceType FLIGHT works end to end through createOrder
     expect(doc!.trip ?? null).toBeNull();
     expect(doc!.hotel ?? null).toBeNull();
 
+    const segment = input.flight.outbound.segments[0]!;
     expect(doc!.flight!.tripType).toBe("ONE_WAY");
-    expect(doc!.flight!.origin).toBe(input.flight.origin);
-    expect(doc!.flight!.destination).toBe(input.flight.destination);
-    expect(doc!.flight!.airline).toBe(input.flight.airline);
-    expect(doc!.flight!.flightNumber).toBe(input.flight.flightNumber);
+    expect(doc!.flight!.outbound!.segments).toHaveLength(1);
+    expect(doc!.flight!.outbound!.segments[0]).toMatchObject({
+      origin: segment.origin,
+      destination: segment.destination,
+      airline: segment.airline,
+      flightNumber: segment.flightNumber,
+      // Airport-local wall clock, stored verbatim — never converted to an
+      // instant.
+      departure: { date: "2026-11-01", time: "09:15" },
+      arrival: { date: "2026-11-01", time: "12:20" },
+    });
+    expect(doc!.flight!.outbound!.connections).toEqual([]);
+    expect(doc!.flight!.return ?? null).toBeNull();
+    expect(doc!.flight!.airlineFare).toBe(400);
     expect(doc!.flight!.cabinClass).toBe("ECONOMY");
     expect(doc!.flight!.passengers.adults).toBe(1);
-    // Dates are stored as Dates, not the ISO strings that came in.
-    expect(doc!.flight!.departureDate).toBeInstanceOf(Date);
-    expect(new Date(doc!.flight!.departureDate).toISOString()).toBe(
-      input.flight.departureDate,
-    );
-    expect(doc!.flight!.returnDate ?? null).toBeNull();
+    // The legacy flat fields are left unset by an itinerary order.
+    expect(doc!.flight!.origin ?? null).toBeNull();
+    expect(doc!.flight!.destination ?? null).toBeNull();
+    expect(doc!.flight!.departureDate ?? null).toBeNull();
   });
 
   it("reads back through getOrderById as a FLIGHT with a flight block and no vehicle or trip", async () => {
@@ -154,30 +174,45 @@ describe("requirement 5: serviceType FLIGHT works end to end through createOrder
     expect(dto.hotel).toBeNull();
     expect(dto.flight).toMatchObject({
       tripType: "ONE_WAY",
-      origin: input.flight.origin,
-      destination: input.flight.destination,
+      outbound: {
+        segments: [
+          {
+            origin: "LHR",
+            destination: "JFK",
+            departure: { date: "2026-11-01", time: "09:15" },
+            arrival: { date: "2026-11-01", time: "12:20" },
+          },
+        ],
+        connections: [],
+      },
+      return: null,
+      airlineFare: 400,
       cabinClass: "ECONOMY",
+      origin: null,
+      destination: null,
+      departureDate: null,
     });
-    expect(dto.pricing.amount).toBe(420.5);
+    // The payment link collects the SERVICE CHARGE only — never the fare.
+    expect(dto.pricing.amount).toBe(100);
     expect(dto.status).toBe(OrderStatus.NOT_INITIATED);
   });
 
-  it("persists a ROUND_TRIP return date", async () => {
+  it("persists a ROUND_TRIP return journey, independent of the outbound", async () => {
     actingAs(multiServiceOrg);
-    const base = validFlightOrderInput();
-    const returnDate = new Date(
-      Date.now() + 14 * 24 * 60 * 60 * 1000,
-    ).toISOString();
-    const { order } = await createOrder(
-      validFlightOrderInput({
-        flight: { ...base.flight, tripType: "ROUND_TRIP", returnDate },
-      }),
-      { actor },
-    );
+    const { order } = await createOrder(roundTripFlightInput(), { actor });
 
     const dto = await getOrderById(order.id, { actor });
     expect(dto.flight!.tripType).toBe("ROUND_TRIP");
-    expect(dto.flight!.returnDate).toBe(returnDate);
+    expect(
+      dto.flight!.outbound!.segments.map((s) => `${s.origin}-${s.destination}`),
+    ).toEqual(["Delhi-Varanasi", "Varanasi-Mumbai"]);
+    expect(
+      dto.flight!.return!.segments.map((s) => `${s.origin}-${s.destination}`),
+    ).toEqual(["Mumbai-Varanasi", "Varanasi-Delhi"]);
+    expect(dto.flight!.return!.connections[0]!.layover).toMatchObject({
+      durationMinutesOverride: 120,
+      notes: "Lounge access included",
+    });
   });
 
   it("is filterable by serviceType on the orders list", async () => {

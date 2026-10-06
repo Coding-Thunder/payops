@@ -15,16 +15,24 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { LoadingButton } from "@/components/ui/loading-button";
+import { FlightItinerary } from "@/components/common/flight-itinerary";
 import { BookingStatusBadge } from "@/components/common/status-badges";
 import { toast } from "@/components/ui/sonner";
 import { useCapturePayment } from "@/hooks/use-capture-payment";
 import { ApiClientError } from "@/lib/api-client";
 import { formatCurrency, formatDate, formatDateTime } from "@/lib/format";
-import { BookingStatus, PaymentCaptureStatus } from "@/lib/constants/enums";
+import {
+  BookingStatus,
+  PaymentCaptureStatus,
+  ServiceType,
+} from "@/lib/constants/enums";
+import { flightMoneyWording } from "@/lib/charges";
+import { buildFlightItinerary } from "@/lib/flight-itinerary";
 import {
   describeServiceItem,
   serviceDetailRows,
   serviceItemLabel,
+  serviceTypeOf,
 } from "@/lib/service-summary";
 import type { OrderDTO } from "@/types";
 
@@ -60,6 +68,17 @@ export function CapturePaymentDialog({ order }: CapturePaymentDialogProps) {
   const amount = capture?.amountAuthorized ?? order.pricing.amount;
   const rows = serviceDetailRows(order, (value) => formatDate(value));
   const retry = capture?.status === PaymentCaptureStatus.CAPTURE_FAILED;
+  // An itinerary flight's hold is the SERVICE CHARGE only — the airline
+  // fare is never collected here — so every amount below says so. A flight
+  // created before itineraries usually held its whole fare, so it keeps the
+  // generic wording. A flight's rows are trip-level (no dates or carrier),
+  // so the flights themselves render as an itinerary in place of the
+  // one-line route. Every other service's dialog is unchanged.
+  const isFlight = serviceTypeOf(order) === ServiceType.FLIGHT;
+  const serviceCharge =
+    isFlight && flightMoneyWording(order.flight, order.bookingType).serviceChargeModel;
+  const itinerary = isFlight ? buildFlightItinerary(order.flight) : null;
+  const money = formatCurrency(amount, currency);
 
   function reset(next: boolean) {
     setOpen(next);
@@ -72,7 +91,11 @@ export function CapturePaymentDialog({ order }: CapturePaymentDialogProps) {
       // No `amount` — capture the whole authorized hold. Partial capture is
       // supported by the API but is not an operator-facing control yet.
       await run();
-      toast.success(`Captured ${formatCurrency(amount, currency)}`);
+      toast.success(
+        serviceCharge
+          ? `Captured the ${money} service charge`
+          : `Captured ${formatCurrency(amount, currency)}`,
+      );
       reset(false);
     } catch (err) {
       const message =
@@ -106,7 +129,11 @@ export function CapturePaymentDialog({ order }: CapturePaymentDialogProps) {
         >
           <DialogHeader icon={<BanknoteIcon />} tone="warning">
             <DialogTitle>
-              Charge {formatCurrency(amount, currency)} to this customer?
+              {serviceCharge ? (
+                `Charge the ${money} service charge to this customer?`
+              ) : (
+                <>Charge {formatCurrency(amount, currency)} to this customer?</>
+              )}
             </DialogTitle>
             <DialogDescription>
               This captures the authorization and moves real money now.
@@ -130,11 +157,13 @@ export function CapturePaymentDialog({ order }: CapturePaymentDialogProps) {
               />
               <SummaryRow label="Customer" value={order.customer.name} />
               <SummaryRow label="Email" value={order.customer.email} />
-              <SummaryRow
-                label={serviceItemLabel(order)}
-                value={describeServiceItem(order)}
-                className="sm:col-span-2"
-              />
+              {itinerary ? null : (
+                <SummaryRow
+                  label={serviceItemLabel(order)}
+                  value={describeServiceItem(order)}
+                  className="sm:col-span-2"
+                />
+              )}
               {rows.map((row) => (
                 <SummaryRow
                   key={row.label}
@@ -144,9 +173,15 @@ export function CapturePaymentDialog({ order }: CapturePaymentDialogProps) {
               ))}
             </dl>
 
+            {itinerary ? (
+              <FlightItinerary itinerary={itinerary} showOverrideHint />
+            ) : null}
+
             <div className="grid grid-cols-1 gap-3 rounded-md border border-warning-border/60 bg-warning-soft/60 p-3 text-sm sm:grid-cols-2">
               <SummaryRow
-                label="Amount to charge"
+                label={
+                  serviceCharge ? "Service charge to capture" : "Amount to charge"
+                }
                 value={
                   <span className="text-base font-semibold tabular-nums">
                     {formatCurrency(amount, currency)}
@@ -187,13 +222,21 @@ export function CapturePaymentDialog({ order }: CapturePaymentDialogProps) {
                 className="mt-0.5"
                 aria-label="Confirm this capture"
               />
-              <span className="text-muted-foreground">
-                I have checked the details above and want to charge{" "}
-                <span className="font-medium text-foreground">
-                  {formatCurrency(amount, currency)}
-                </span>{" "}
-                to {order.customer.name} now.
-              </span>
+              {serviceCharge ? (
+                <span className="text-muted-foreground">
+                  {"I have checked the details above and want to charge the "}
+                  <span className="font-medium text-foreground">{money}</span>
+                  {` service charge to ${order.customer.name} now.`}
+                </span>
+              ) : (
+                <span className="text-muted-foreground">
+                  I have checked the details above and want to charge{" "}
+                  <span className="font-medium text-foreground">
+                    {formatCurrency(amount, currency)}
+                  </span>{" "}
+                  to {order.customer.name} now.
+                </span>
+              )}
             </label>
           </DialogBody>
 
@@ -215,7 +258,11 @@ export function CapturePaymentDialog({ order }: CapturePaymentDialogProps) {
               loading={isPending}
               loadingText="Capturing"
             >
-              Capture {formatCurrency(amount, currency)}
+              {serviceCharge ? (
+                `Capture ${money} service charge`
+              ) : (
+                <>Capture {formatCurrency(amount, currency)}</>
+              )}
             </LoadingButton>
           </DialogFooter>
         </DialogContent>

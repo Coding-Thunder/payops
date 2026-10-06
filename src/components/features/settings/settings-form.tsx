@@ -307,8 +307,8 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
           </Section>
 
           <Section
-            title="Cancellation & refund policy"
-            description="Shown in every confirmation email. Snapshotted onto each order at creation so disputes can attach the exact terms the customer paid against. Saving a change auto-bumps the policy version; existing orders keep pointing at the older version they were created under."
+            title="Car rental & hotel cancellation & refund policy"
+            description="The deployment-wide default for car rental and hotel orders on every brand without a policy of its own — flight orders never use it. Shown in every confirmation email. Snapshotted onto each order at creation so disputes can attach the exact terms the customer paid against. Saving a change auto-bumps the policy version; existing orders keep pointing at the older version they were created under."
           >
             <FormField
               control={form.control}
@@ -334,8 +334,8 @@ export function SettingsForm({ initial, canEdit }: SettingsFormProps) {
           </Section>
 
           <Section
-            title="Terms & Conditions"
-            description="Shown in the confirmation email with an 'I Agree' acknowledgement action, and snapshotted onto each order at creation. Saving a change auto-bumps the terms version; existing orders keep the version they were created under."
+            title="Car rental & hotel Terms & Conditions"
+            description="The deployment-wide default for car rental and hotel orders on every brand without terms of its own — flight orders never use it. Shown in the confirmation email with an 'I Agree' acknowledgement action, and snapshotted onto each order at creation. Saving a change auto-bumps the terms version; existing orders keep the version they were created under."
           >
             <FormField
               control={form.control}

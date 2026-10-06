@@ -47,6 +47,31 @@ export type ServiceType = (typeof ServiceType)[keyof typeof ServiceType];
 export const SERVICE_TYPES = Object.values(ServiceType) as ServiceType[];
 
 /**
+ * The shape of a FLIGHT itinerary. ONE_WAY and MULTI_CITY carry a single
+ * ordered list of segments; ROUND_TRIP carries two independent ones
+ * (outbound and return). Passengers and cabin are common to all three.
+ */
+export const FlightTripType = {
+  ONE_WAY: "ONE_WAY",
+  ROUND_TRIP: "ROUND_TRIP",
+  MULTI_CITY: "MULTI_CITY",
+} as const;
+export type FlightTripType =
+  (typeof FlightTripType)[keyof typeof FlightTripType];
+export const FLIGHT_TRIP_TYPES = Object.values(
+  FlightTripType,
+) as FlightTripType[];
+
+export const CabinClass = {
+  ECONOMY: "ECONOMY",
+  PREMIUM_ECONOMY: "PREMIUM_ECONOMY",
+  BUSINESS: "BUSINESS",
+  FIRST: "FIRST",
+} as const;
+export type CabinClass = (typeof CabinClass)[keyof typeof CabinClass];
+export const CABIN_CLASSES = Object.values(CabinClass) as CabinClass[];
+
+/**
  * The BOOKING lifecycle, which is NOT the payment lifecycle.
  *
  * Under manual capture an operator confirms the booking with the supplier
@@ -214,6 +239,7 @@ export const AuditAction = {
   EMAIL_FAILED: "EMAIL_FAILED",
 
   SETTINGS_UPDATED: "SETTINGS_UPDATED",
+  ORGANIZATION_LEGAL_UPDATED: "ORGANIZATION_LEGAL_UPDATED",
 
   PROVIDER_CREATED: "PROVIDER_CREATED",
   PROVIDER_UPDATED: "PROVIDER_UPDATED",
@@ -261,6 +287,7 @@ export const AuditEntity = {
   ORDER: "ORDER",
   PAYMENT: "PAYMENT",
   SETTINGS: "SETTINGS",
+  ORGANIZATION: "ORGANIZATION",
   WEBHOOK: "WEBHOOK",
   SYSTEM: "SYSTEM",
   PROVIDER: "PROVIDER",

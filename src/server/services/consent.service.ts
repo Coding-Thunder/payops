@@ -9,8 +9,10 @@ import {
   ConsentMethod,
   ConsentStatus,
   type Currency,
+  FlightTripType,
   OrderEvidenceActorType,
   OrderEvidenceEventType,
+  type PaymentGatewayKey,
   ServiceType,
   type UserRole,
 } from "@/lib/constants/enums";
@@ -21,11 +23,25 @@ import {
   NotFoundError,
   ValidationError,
 } from "@/lib/errors";
+import {
+  buildFlightItinerary,
+  type FlightItinerarySource,
+  type FlightJourneyLike,
+  type FlightLayoverView,
+  type FlightSegmentView,
+  formatDuration,
+  type LocalDateTime,
+  normalizeTripType,
+  segmentCarrier,
+  toPlainJourney,
+  truncateText,
+} from "@/lib/flight-itinerary";
 import { logger } from "@/lib/logger";
+import { PaymentGatewayLabel } from "@/lib/constants/labels";
 import { Permission, roleHasPermission } from "@/lib/constants/permissions";
 import { DomainEventType } from "@/lib/constants/events";
 import { publishEvent } from "@/server/events/bus";
-import { Order, PaymentConsent } from "@/server/db/models";
+import { Order, Organization, PaymentConsent } from "@/server/db/models";
 import type { PaymentConsentDoc } from "@/server/db/models";
 import { resolvePublicBrand } from "@/server/email/identity";
 import { connectMongo } from "@/server/db/mongoose";
@@ -35,7 +51,9 @@ import {
 } from "@/server/db/organization-filter";
 import { getRequestOrganizationScope } from "@/server/auth/organization";
 import type {
+  OrderFlightJourney,
   PaymentConsentDTO,
+  PaymentConsentFlightSnapshot,
   PaymentConsentSnapshot,
   PublicConsentView,
 } from "@/types";
@@ -60,6 +78,236 @@ interface ConsentActor {
   role: UserRole;
 }
 
+/** Schema limits of the rental-shaped slots a flight folds its route into
+ *  (`vehicle`, `pickupLocation`, `dropoffLocation` in payment-consent.model.ts). */
+const SNAPSHOT_VEHICLE_MAX_LENGTH = 160;
+const SNAPSHOT_LOCATION_MAX_LENGTH = 200;
+
+function finiteOrNull(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/** A finite, non-negative amount, or null. */
+function amountOrNull(value: number | null | undefined): number | null {
+  const n = finiteOrNull(value);
+  return n !== null && n >= 0 ? n : null;
+}
+
+function isoOrNull(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function clampText(value: string | null | undefined, max: number): string | null {
+  return typeof value === "string" ? truncateText(value, max) : null;
+}
+
+/** One journey as plain data, with exactly one connection per gap — the
+ *  same mapper the order DTO uses, so the two can never shape it apart. */
+function journeySnapshot(
+  journey: FlightJourneyLike | null | undefined,
+): OrderFlightJourney | null {
+  return toPlainJourney(journey);
+}
+
+/** What a flight snapshot is read from: the one the email service built, or
+ *  a stored record (Mongoose subdocuments included). */
+type FlightSnapshotSource = FlightItinerarySource & {
+  cabinClass?: string | null;
+  pnr?: string | null;
+  passengers?: {
+    adults?: number | null;
+    children?: number | null;
+    infants?: number | null;
+  } | null;
+};
+
+/**
+ * A flight snapshot as plain data, in exactly the
+ * `PaymentConsentFlightSnapshot` shape. The one mapper both ways — persisting
+ * what the email service built, and reading a stored record back for the
+ * hosted page, the admin DTO and the evidence rows — so the frozen itinerary
+ * only ever has one shape.
+ */
+function toFlightSnapshot(f: FlightSnapshotSource): PaymentConsentFlightSnapshot {
+  const tripType = normalizeTripType(f.tripType);
+  return {
+    tripType,
+    cabinClass: f.cabinClass ?? "",
+    passengers: {
+      adults: finiteOrNull(f.passengers?.adults) ?? 1,
+      children: finiteOrNull(f.passengers?.children) ?? 0,
+      infants: finiteOrNull(f.passengers?.infants) ?? 0,
+    },
+    pnr: f.pnr ?? null,
+    outbound: journeySnapshot(f.outbound),
+    return:
+      tripType === FlightTripType.ROUND_TRIP ? journeySnapshot(f.return) : null,
+    origin: f.origin ?? null,
+    destination: f.destination ?? null,
+    departureDate: isoOrNull(f.departureDate),
+    arrivalDate: isoOrNull(f.arrivalDate),
+    returnDate: isoOrNull(f.returnDate),
+    airline: f.airline ?? null,
+    flightNumber: f.flightNumber ?? null,
+  };
+}
+
+interface FlightFieldsSource {
+  serviceType?: ServiceType | null;
+  flight?: FlightSnapshotSource | null;
+  airlineFare?: number | null;
+  bookingTotal?: number | null;
+}
+
+/**
+ * The FLIGHT-only keys of a snapshot. Empty for every other service type,
+ * so a rental's stored record and DTO keep their exact historic shape.
+ */
+function flightSnapshotFields(
+  s: FlightFieldsSource,
+): Pick<PaymentConsentSnapshot, "flight" | "airlineFare" | "bookingTotal"> {
+  if (s.serviceType !== ServiceType.FLIGHT) return {};
+  return {
+    flight: s.flight ? toFlightSnapshot(s.flight) : null,
+    airlineFare: amountOrNull(s.airlineFare),
+    bookingTotal: amountOrNull(s.bookingTotal),
+  };
+}
+
+/**
+ * The snapshot as it is stored. Identity for every service type but FLIGHT,
+ * so a rental is persisted exactly as the email service built it.
+ *
+ * A flight folds its route into the rental-shaped `vehicle` and location
+ * slots, and a long multi-city route can overrun their schema limits. A
+ * rejected record is swallowed by the payment-request email, so the customer
+ * would silently get no hosted consent link — the slots are clamped instead,
+ * and the itinerary itself is plain data the schema cannot reject.
+ */
+function storableSnapshot(s: PaymentConsentSnapshot): PaymentConsentSnapshot {
+  if (s.serviceType !== ServiceType.FLIGHT) return s;
+  const pickupDate = isoOrNull(s.pickupDate) ?? new Date().toISOString();
+  return {
+    ...s,
+    vehicle: truncateText(s.vehicle, SNAPSHOT_VEHICLE_MAX_LENGTH),
+    pickupDate,
+    dropoffDate: isoOrNull(s.dropoffDate) ?? pickupDate,
+    pickupLocation: clampText(s.pickupLocation, SNAPSHOT_LOCATION_MAX_LENGTH),
+    dropoffLocation: clampText(s.dropoffLocation, SNAPSHOT_LOCATION_MAX_LENGTH),
+  };
+}
+
+/**
+ * A stored snapshot as the API returns it — one mapper for the admin DTO and
+ * the public hosted-page view, so the two can never disagree.
+ */
+function snapshotToDTO(s: PaymentConsentDoc["snapshot"]): PaymentConsentSnapshot {
+  return {
+    bookingType: s.bookingType as BookingType,
+    provider: s.provider,
+    serviceType: s.serviceType ?? ServiceType.CAR_RENTAL,
+    vehicle: s.vehicle,
+    pickupDate: s.pickupDate.toISOString(),
+    dropoffDate: s.dropoffDate.toISOString(),
+    pickupLocation: s.pickupLocation ?? null,
+    dropoffLocation: s.dropoffLocation ?? null,
+    amount: s.amount,
+    currency: s.currency as Currency,
+    charges: (s.charges ?? []).map((c) => ({
+      name: c.name,
+      amount: c.amount,
+      timing: c.timing,
+    })),
+    dueAtCounter: s.dueAtCounter ?? 0,
+    total: s.total ?? s.amount,
+    ...flightSnapshotFields(s),
+    paymentLinkRef: s.paymentLinkRef ?? null,
+  };
+}
+
+/** "1. Delhi → Varanasi · Air India • AI123 · departs 2026-10-10 10:30 · arrives 2026-10-10 12:00" */
+function segmentEvidenceLine(
+  s: FlightSegmentView,
+  timeZoneLabel: string | null,
+): string {
+  const at = (v: LocalDateTime) =>
+    [v.date, v.time, timeZoneLabel].filter(Boolean).join(" ");
+  return [
+    `${s.number}. ${s.origin} → ${s.destination}`,
+    segmentCarrier(s),
+    s.departure ? `departs ${at(s.departure)}` : "",
+    s.arrival ? `arrives ${at(s.arrival)}` : "",
+    s.details ?? "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** "Layover after flight 1: 2h 30m — Varanasi · Change terminals" */
+function layoverEvidenceLine(after: number, l: FlightLayoverView): string {
+  const head =
+    l.minutes !== null
+      ? `Layover after flight ${after}: ${formatDuration(l.minutes)}`
+      : `Layover after flight ${after}`;
+  return [l.location ? `${head} — ${l.location}` : head, l.notes ?? ""]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/**
+ * The FLIGHT-only part of a consent evidence row: the money split and a
+ * compact itinerary — one line per flight and per layover, as the hosted page
+ * showed them. (The full structured itinerary is frozen on the consent record
+ * itself.) Empty for every other service type, so a rental's evidence row
+ * keeps its exact historic shape.
+ */
+function flightEvidence(s: FlightFieldsSource): Record<string, unknown> {
+  if (s.serviceType !== ServiceType.FLIGHT) return {};
+  const { flight, airlineFare, bookingTotal } = flightSnapshotFields(s);
+  const view = flight ? buildFlightItinerary(flight) : null;
+  return {
+    airlineFare: airlineFare ?? null,
+    bookingTotal: bookingTotal ?? null,
+    itinerary:
+      flight && view
+        ? {
+            tripType: view.tripType,
+            cabinClass: flight.cabinClass || null,
+            passengers: flight.passengers,
+            pnr: flight.pnr,
+            journeys: view.journeys.map((journey) => ({
+              label: journey.label,
+              route: journey.route,
+              flights: journey.segments.map((segment) =>
+                segmentEvidenceLine(segment, journey.timeZoneLabel),
+              ),
+              layovers: journey.connections.flatMap((c) =>
+                c.layover ? [layoverEvidenceLine(c.after, c.layover)] : [],
+              ),
+            })),
+          }
+        : null,
+  };
+}
+
+/**
+ * The gateway an organization's next payment link would open — its
+ * configured default. Only consulted for an order not yet pinned to a
+ * gateway, which an order with a consent request (always sent alongside a
+ * live link) practically never is.
+ */
+async function organizationDefaultGateway(
+  organizationId: string | null,
+): Promise<PaymentGatewayKey | null> {
+  if (!organizationId) return null;
+  const org = await Organization.findById(organizationId)
+    .select("payments.provider")
+    .lean<{ payments?: { provider?: PaymentGatewayKey | null } | null } | null>();
+  return org?.payments?.provider ?? null;
+}
+
 function consentToDTO(doc: PaymentConsentDoc & { _id: Types.ObjectId | string }): PaymentConsentDTO {
   return {
     id: String(doc._id),
@@ -72,26 +320,7 @@ function consentToDTO(doc: PaymentConsentDoc & { _id: Types.ObjectId | string })
     consentMessage: doc.consentMessage,
     consentEmailSubject: doc.consentEmailSubject ?? null,
     signedName: doc.signedName ?? null,
-    snapshot: {
-      bookingType: doc.snapshot.bookingType as BookingType,
-      provider: doc.snapshot.provider,
-      serviceType: doc.snapshot.serviceType ?? ServiceType.CAR_RENTAL,
-      vehicle: doc.snapshot.vehicle,
-      pickupDate: doc.snapshot.pickupDate.toISOString(),
-      dropoffDate: doc.snapshot.dropoffDate.toISOString(),
-      pickupLocation: doc.snapshot.pickupLocation ?? null,
-      dropoffLocation: doc.snapshot.dropoffLocation ?? null,
-      amount: doc.snapshot.amount,
-      currency: doc.snapshot.currency as Currency,
-      charges: (doc.snapshot.charges ?? []).map((c) => ({
-        name: c.name,
-        amount: c.amount,
-        timing: c.timing,
-      })),
-      dueAtCounter: doc.snapshot.dueAtCounter ?? 0,
-      total: doc.snapshot.total ?? doc.snapshot.amount,
-      paymentLinkRef: doc.snapshot.paymentLinkRef ?? null,
-    },
+    snapshot: snapshotToDTO(doc.snapshot),
     requestedAt: doc.requestedAt.toISOString(),
     receivedAt: doc.receivedAt ? doc.receivedAt.toISOString() : null,
     verifiedAt: doc.verifiedAt ? doc.verifiedAt.toISOString() : null,
@@ -161,22 +390,25 @@ export async function requestConsent(
       : null;
 
   // Single persisted snapshot shape, reused by the create + refresh paths so
-  // the frozen record always carries locations + the full charge breakdown.
+  // the frozen record always carries locations + the full charge breakdown
+  // (and, for a flight, the itinerary and the airline fare).
+  const snapshot = storableSnapshot(input.snapshot);
   const persistedSnapshot = {
-    bookingType: input.snapshot.bookingType,
-    provider: input.snapshot.provider,
-    serviceType: input.snapshot.serviceType ?? ServiceType.CAR_RENTAL,
-    vehicle: input.snapshot.vehicle,
-    pickupDate: new Date(input.snapshot.pickupDate),
-    dropoffDate: new Date(input.snapshot.dropoffDate),
-    pickupLocation: input.snapshot.pickupLocation ?? null,
-    dropoffLocation: input.snapshot.dropoffLocation ?? null,
-    amount: input.snapshot.amount,
-    currency: input.snapshot.currency,
-    charges: input.snapshot.charges ?? [],
-    dueAtCounter: input.snapshot.dueAtCounter ?? 0,
-    total: input.snapshot.total ?? input.snapshot.amount,
-    paymentLinkRef: input.snapshot.paymentLinkRef ?? null,
+    bookingType: snapshot.bookingType,
+    provider: snapshot.provider,
+    serviceType: snapshot.serviceType ?? ServiceType.CAR_RENTAL,
+    vehicle: snapshot.vehicle,
+    pickupDate: new Date(snapshot.pickupDate),
+    dropoffDate: new Date(snapshot.dropoffDate),
+    pickupLocation: snapshot.pickupLocation ?? null,
+    dropoffLocation: snapshot.dropoffLocation ?? null,
+    amount: snapshot.amount,
+    currency: snapshot.currency,
+    charges: snapshot.charges ?? [],
+    dueAtCounter: snapshot.dueAtCounter ?? 0,
+    total: snapshot.total ?? snapshot.amount,
+    ...flightSnapshotFields(snapshot),
+    paymentLinkRef: snapshot.paymentLinkRef ?? null,
   };
 
   let doc: PaymentConsentDoc & { _id: Types.ObjectId };
@@ -273,15 +505,16 @@ export async function requestConsent(
       method: ConsentMethod.HOSTED_PAGE,
       resend: Boolean(existing),
       snapshot: {
-        bookingType: input.snapshot.bookingType,
-        provider: input.snapshot.provider,
-        serviceType: input.snapshot.serviceType ?? ServiceType.CAR_RENTAL,
-    vehicle: input.snapshot.vehicle,
-        pickupDate: new Date(input.snapshot.pickupDate).toISOString(),
-        dropoffDate: new Date(input.snapshot.dropoffDate).toISOString(),
-        amount: input.snapshot.amount,
-        currency: input.snapshot.currency,
-        paymentLinkRef: input.snapshot.paymentLinkRef ?? null,
+        bookingType: snapshot.bookingType,
+        provider: snapshot.provider,
+        serviceType: snapshot.serviceType ?? ServiceType.CAR_RENTAL,
+        vehicle: snapshot.vehicle,
+        pickupDate: new Date(snapshot.pickupDate).toISOString(),
+        dropoffDate: new Date(snapshot.dropoffDate).toISOString(),
+        amount: snapshot.amount,
+        currency: snapshot.currency,
+        ...flightEvidence(snapshot),
+        paymentLinkRef: snapshot.paymentLinkRef ?? null,
       },
     },
     refs: {
@@ -328,6 +561,10 @@ export async function getPublicConsentView(
     supportEmail: branding.supportEmail ?? "",
     supportPhone: branding.supportPhone ?? "",
   });
+  // Name the processor the payment link actually opens. The page used to say
+  // "Stripe" to every brand, including the ones that take PayPal.
+  const gateway =
+    order?.payment?.gateway ?? (await organizationDefaultGateway(organizationId));
   return {
     status: doc.status as ConsentStatus,
     customerName: doc.customerName,
@@ -335,27 +572,9 @@ export async function getPublicConsentView(
     brandName: brand.brandName,
     organizationId,
     consentMessage: doc.consentMessage,
-    snapshot: {
-      bookingType: doc.snapshot.bookingType as BookingType,
-      provider: doc.snapshot.provider,
-      serviceType: doc.snapshot.serviceType ?? ServiceType.CAR_RENTAL,
-      vehicle: doc.snapshot.vehicle,
-      pickupDate: doc.snapshot.pickupDate.toISOString(),
-      dropoffDate: doc.snapshot.dropoffDate.toISOString(),
-      pickupLocation: doc.snapshot.pickupLocation ?? null,
-      dropoffLocation: doc.snapshot.dropoffLocation ?? null,
-      amount: doc.snapshot.amount,
-      currency: doc.snapshot.currency as Currency,
-      charges: (doc.snapshot.charges ?? []).map((c) => ({
-        name: c.name,
-        amount: c.amount,
-        timing: c.timing,
-      })),
-      dueAtCounter: doc.snapshot.dueAtCounter ?? 0,
-      total: doc.snapshot.total ?? doc.snapshot.amount,
-      paymentLinkRef: doc.snapshot.paymentLinkRef ?? null,
-    },
+    snapshot: snapshotToDTO(doc.snapshot),
     paymentUrl: order?.payment?.checkoutUrl ?? null,
+    gatewayLabel: gateway ? PaymentGatewayLabel[gateway] : null,
     alreadyConfirmedAt: doc.receivedAt ? doc.receivedAt.toISOString() : null,
   };
 }
@@ -480,11 +699,12 @@ export async function recordConsentFromToken(
         bookingType: doc.snapshot.bookingType,
         provider: doc.snapshot.provider,
         serviceType: doc.snapshot.serviceType ?? ServiceType.CAR_RENTAL,
-      vehicle: doc.snapshot.vehicle,
+        vehicle: doc.snapshot.vehicle,
         pickupDate: doc.snapshot.pickupDate.toISOString(),
         dropoffDate: doc.snapshot.dropoffDate.toISOString(),
         amount: doc.snapshot.amount,
         currency: doc.snapshot.currency,
+        ...flightEvidence(doc.snapshot),
         paymentLinkRef: doc.snapshot.paymentLinkRef ?? null,
       },
       receivedAt: (doc.receivedAt ?? now).toISOString(),

@@ -1,10 +1,27 @@
 import "server-only";
 
-import { ServiceType } from "@/lib/constants/enums";
+import { flightMoneyWording, summarizeFlightAmounts } from "@/lib/charges";
+import { FlightTripType, ServiceType } from "@/lib/constants/enums";
+import { providerLabelFor } from "@/lib/constants/labels";
+import {
+  buildFlightItinerary,
+  formatLocalDate,
+  formatSegmentTime,
+  journeyStopsLabel,
+  truncateText,
+} from "@/lib/flight-itinerary";
 import { serviceDetailRows, serviceTypeOf } from "@/lib/service-summary";
 import type { OrderDTO } from "@/types";
 
 import { formatEmailDay } from "./format";
+
+/** A multi-city route can list a dozen airports; one line each keeps the
+ *  body inside its length budget. */
+const FLIGHT_ROUTE_MAX_LENGTH = 90;
+
+/** The trip-level rows a flight's body keeps from `serviceDetailRows` —
+ *  its routes are written per journey below, with their departures. */
+const FLIGHT_SUMMARY_ROWS = new Set(["Cabin", "Passengers", "PNR"]);
 
 /**
  * The order-facts block: what was booked, in the booking's own vocabulary.
@@ -29,9 +46,83 @@ function serviceLines(order: OrderDTO): string[] {
     }
     return lines;
   }
+  if (serviceTypeOf(order) === ServiceType.FLIGHT) return flightLines(order);
   return serviceDetailRows(order, formatEmailDay).map(
     (row) => `${row.label}: ${row.value}`,
   );
+}
+
+/**
+ * A flight, compactly: one line per journey with its route, first
+ * departure and stops — "Outbound: Delhi → Varanasi → Mumbai • Sat, Oct 10,
+ * 2026 10:30 AM • 1 stop" ("2 flights" on a multi-city trip) — then cabin,
+ * passengers and PNR. Every flight and layover is already in the email
+ * above; this is the customer's written acknowledgement of what they are
+ * booking.
+ */
+function flightLines(order: OrderDTO): string[] {
+  const lines: string[] = [];
+  const itinerary = buildFlightItinerary(order.flight);
+  const tripType = itinerary?.tripType ?? FlightTripType.ONE_WAY;
+  for (const journey of itinerary?.journeys ?? []) {
+    const parts = [truncateText(journey.route, FLIGHT_ROUTE_MAX_LENGTH)];
+    const departure = journey.segments[0]?.departure;
+    if (departure) {
+      parts.push(
+        `${formatLocalDate(departure.date)} ${formatSegmentTime(
+          departure,
+          journey.timeZoneLabel,
+        )}`,
+      );
+    }
+    // Lower-case: "direct", "1 stop", "2 flights".
+    parts.push(journeyStopsLabel(journey, tripType).toLowerCase());
+    lines.push(`${journey.label}: ${parts.join(" • ")}`);
+  }
+  for (const row of serviceDetailRows(order, formatEmailDay)) {
+    if (FLIGHT_SUMMARY_ROWS.has(row.label)) {
+      lines.push(`${row.label}: ${row.value}`);
+    }
+  }
+  return lines;
+}
+
+/**
+ * The money line(s). A flight labels each figure — on an itinerary flight
+ * the payment link collects only the service charge, so an unlabelled
+ * "Amount" would read as the price of the trip. A flight created before
+ * itineraries usually charged its whole fare, so its line is the neutral
+ * "Amount payable now". Every other service keeps its historic line.
+ */
+function amountLines(order: OrderDTO): string[] {
+  const currency = order.pricing.currency;
+  if (serviceTypeOf(order) !== ServiceType.FLIGHT) {
+    return [`Amount: ${order.pricing.amount.toFixed(2)} ${currency}`];
+  }
+  const { labels, serviceChargeModel } = flightMoneyWording(order.flight, order.bookingType);
+  const a = summarizeFlightAmounts(
+    order.charges,
+    order.flight?.airlineFare,
+    order.pricing.amount,
+  );
+  const payable = `${order.pricing.amount.toFixed(2)} ${currency}`;
+  const lines = [
+    serviceChargeModel
+      ? `${labels.serviceCharge} payable now: ${payable}`
+      : `${labels.payableNow}: ${payable}`,
+  ];
+  if (a.airlineFare > 0) {
+    lines.push(
+      `${labels.airlineFare}: ${a.airlineFare.toFixed(2)} ${currency} (${labels.airlineFareNote.toLowerCase()})`,
+    );
+  }
+  if (a.dueLater > 0) {
+    lines.push(`${labels.dueLater}: ${a.dueLater.toFixed(2)} ${currency}`);
+  }
+  lines.push(
+    `${labels.bookingTotal}: ${a.bookingTotal.toFixed(2)} ${currency}`,
+  );
+  return lines;
 }
 
 /**
@@ -55,6 +146,7 @@ export function buildConsentMailto(args: {
 }): string {
   const { order } = args;
   const subject = `Acknowledgement • Order ${order.orderNumber}`;
+  const providerLabel = providerLabelFor(serviceTypeOf(order), "Provider");
   const lines = [
     `Hi ${args.brandName} team,`,
     "",
@@ -62,9 +154,9 @@ export function buildConsentMailto(args: {
     "",
     `Customer: ${order.customer.name}`,
     `Order: ${order.orderNumber}`,
-    `Provider: ${order.provider?.name ?? "—"}`,
+    `${providerLabel}: ${order.provider?.name ?? "—"}`,
     ...serviceLines(order),
-    `Amount: ${order.pricing.amount.toFixed(2)} ${order.pricing.currency}`,
+    ...amountLines(order),
     order.payment.paymentUrl
       ? `Payment link: ${order.payment.paymentUrl}`
       : "",

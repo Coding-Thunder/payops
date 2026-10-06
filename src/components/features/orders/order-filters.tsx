@@ -16,7 +16,7 @@ import {
 import {
   ORDER_STATUSES,
   BOOKING_TYPES,
-  type ServiceType,
+  ServiceType,
 } from "@/lib/constants/enums";
 import {
   BookingTypeLabel,
@@ -29,18 +29,20 @@ const ALL = "__all__";
 /** Today's placeholder, kept verbatim for single-service organizations. */
 const RENTAL_SEARCH_PLACEHOLDER =
   "Search by order, customer, phone, or vehicle";
-/** Used only once the service filter is on screen, where "vehicle" is
- *  no longer the only thing an order can be about. */
+/** Used once the service filter is on screen, where "vehicle" is no longer
+ *  the only thing an order can be about — and for an organization that
+ *  sells flights alone, whose orders have no vehicle at all. */
 const MULTI_SERVICE_SEARCH_PLACEHOLDER = "Search by order, customer, or phone";
 
 interface OrderFiltersProps {
   canSeeAll: boolean;
   /**
-   * Service types the viewing organization actually sells. Omit — as every
-   * existing caller does — and the service filter is not rendered at all
-   * and the search placeholder is unchanged, so the two incumbent brands
-   * see exactly the filter bar they see today. The control appears only
-   * when there is a genuine choice to make, i.e. more than one type.
+   * Service types the viewing organization actually sells (the orders page
+   * passes the selected organization's list). Omitted, or [CAR_RENTAL] —
+   * the two incumbent brands — and the service filter is not rendered at
+   * all and the search placeholder is unchanged, so they see exactly the
+   * filter bar they always have. The control appears only when there is a
+   * genuine choice to make, i.e. more than one type.
    */
   serviceTypes?: ServiceType[];
 }
@@ -71,6 +73,8 @@ export function OrderFilters({ canSeeAll, serviceTypes }: OrderFiltersProps) {
 
   const serviceOptions = serviceTypes ?? [];
   const showServiceFilter = serviceOptions.length > 1;
+  const flightOnly =
+    serviceOptions.length === 1 && serviceOptions[0] === ServiceType.FLIGHT;
 
 // `flex-wrap` rather than a hard md:flex-row: at ~1100px the controls wrap
   // onto a second line gracefully instead of squeezing the search field down
@@ -91,7 +95,7 @@ export function OrderFilters({ canSeeAll, serviceTypes }: OrderFiltersProps) {
             }
           }}
           placeholder={
-            showServiceFilter
+            showServiceFilter || flightOnly
               ? MULTI_SERVICE_SEARCH_PLACEHOLDER
               : RENTAL_SEARCH_PLACEHOLDER
           }

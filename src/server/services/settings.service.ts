@@ -11,6 +11,7 @@ import {
 } from "@/lib/constants/enums";
 import { ValidationError } from "@/lib/errors";
 import { env } from "@/lib/env";
+import { isEqual, nextPolicyVersion } from "@/lib/policy-version";
 import {
   Setting,
   SETTINGS_KEY,
@@ -201,26 +202,4 @@ export async function updateSettings(
   });
 
   return toDTO(updated);
-}
-
-/** Structural equality good enough for primitive fields + sorted arrays of
- *  primitives. Order-sensitive on arrays (intentional — booking-type order
- *  shouldn't matter today, but we surface re-ordering as a change anyway). */
-function isEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length !== b.length) return false;
-    return a.every((v, i) => v === b[i]);
-  }
-  if (typeof a === "string" && typeof b === "string") {
-    return a.trim() === b.trim();
-  }
-  return false;
-}
-
-/** "v3" → "v4". Falls back to "v1" if the previous label isn't parseable. */
-function nextPolicyVersion(current: string): string {
-  const match = current.match(/^v(\d+)$/i);
-  const n = match ? Number(match[1]) : 0;
-  return `v${(Number.isFinite(n) && n > 0 ? n : 1) + 1}`;
 }
