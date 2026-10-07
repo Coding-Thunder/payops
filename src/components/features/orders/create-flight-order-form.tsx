@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { useForm, type Control, type Resolver } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
 import { Button } from "@/components/ui/button";
@@ -51,15 +51,12 @@ import {
   FlightTripType,
   PaymentTiming,
 } from "@/lib/constants/enums";
+import { FLIGHT_SERVICE_CHARGE_LINE_NAME } from "@/lib/charges";
 import { normalizeTripType } from "@/lib/flight-itinerary";
 import { flightOrderSchema, type FlightOrderInput } from "@/lib/validation";
 import type { OrderDTO, ProviderDTO } from "@/types";
 import { ProviderSelector } from "@/components/features/providers";
-import {
-  ChargeLinesFieldset,
-  type ChargeLinesFormValues,
-} from "./charge-lines-fieldset";
-import { FlightAmountsSummary } from "./flight/flight-amounts-summary";
+import { FlightMoneyFields } from "./flight/flight-money-fields";
 import { ItineraryEditor } from "./flight/itinerary-editor";
 import {
   emptySegment,
@@ -81,10 +78,11 @@ import {
  * one resolver, one form state per tab.
  *
  * The itinerary itself — journeys, numbered flights, connections, layovers
- * and their live validation — lives in `./flight/`. The money is PREPAID
- * only: the charge lines are the operator's service charge, the one amount
- * the payment link collects, and the airline fare sits beside them as part
- * of the booking value the customer is shown, never sent to the gateway.
+ * and their live validation — lives in `./flight/`. The money is two fixed
+ * fields (`./flight/flight-money-fields`): the service charge — the order's
+ * one charge line, prepaid, the only amount the payment link collects — and
+ * the airline charge, its own field on the flight, shown to the customer as
+ * part of the booking value and never sent to the gateway.
  *
  * Nothing here touches the car-rental path.
  */
@@ -94,9 +92,6 @@ import {
 function numberFieldValue(value: unknown): string | number {
   return typeof value === "number" || typeof value === "string" ? value : "";
 }
-
-/** No due-at-counter for a flight — nothing is paid at an airport desk. */
-const FLIGHT_CHARGE_TIMINGS = [PaymentTiming.PREPAID] as const;
 
 const zodFlightResolver = zodResolver(flightOrderSchema);
 
@@ -165,8 +160,14 @@ export function CreateFlightOrderForm({
         airlineFare: null,
       },
       currency: defaultCurrency,
+      // The service charge: the one charge line a flight has. Blank until
+      // the operator enters it, like the airline charge above.
       charges: [
-        { name: "Service charge", amount: 0, timing: PaymentTiming.PREPAID },
+        {
+          name: FLIGHT_SERVICE_CHARGE_LINE_NAME,
+          amount: null,
+          timing: PaymentTiming.PREPAID,
+        },
       ],
       notes: "",
     },
@@ -583,61 +584,18 @@ export function CreateFlightOrderForm({
 
         <Card>
           <CardHeader>
-            <CardTitle>Fare & service charge</CardTitle>
+            <CardTitle>Airline charge & service charge</CardTitle>
             <CardDescription>
               The payment link collects only the service charge. The airline
-              fare is shown to the customer as part of the total booking
-              value, but is never part of this payment.
+              charge is shown to the customer for the total booking value, but
+              is never collected through the payment link.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Prepaid-only mode: no timing column and no counter wording,
-                and the rental breakdown swapped for fare + service charge =
-                total booking value. */}
-            <ChargeLinesFieldset
-              control={form.control as unknown as Control<ChargeLinesFormValues>}
+            <FlightMoneyFields
               allowedCurrencies={allowedCurrencies}
               defaultCurrency={defaultCurrency}
               disabled={isSubmitting}
-              timings={FLIGHT_CHARGE_TIMINGS}
-              namePlaceholder="e.g. Service charge"
-              afterCurrency={
-                <FormField
-                  control={form.control}
-                  name="flight.airlineFare"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Airline fare (optional)</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          inputMode="decimal"
-                          placeholder="0.00"
-                          className="sm:max-w-[200px]"
-                          disabled={isSubmitting}
-                          {...field}
-                          value={field.value ?? ""}
-                          onChange={(e) =>
-                            field.onChange(
-                              e.target.value === ""
-                                ? null
-                                : Number(e.target.value),
-                            )
-                          }
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        Shown to the customer as part of the total booking
-                        value — never charged by the payment link.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              }
-              renderSummary={(live) => <FlightAmountsSummary {...live} />}
             />
 
             <FormField

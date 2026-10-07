@@ -90,6 +90,7 @@ import { captureEvidenceSafe } from "./evidence.service";
 import { getSettings } from "./settings.service";
 import { generateOrderNumber } from "./order-number";
 import {
+  pairCarLegal,
   pairServiceLegal,
   type StoredServiceLegal,
 } from "./organization-legal.service";
@@ -414,7 +415,8 @@ interface ResolvedLegal {
 }
 
 /** How a refusal names a service an organization does not sell. */
-const SERVICE_NOUN: Record<ServiceWithOwnLegal, string> = {
+const SERVICE_NOUN: Record<ServiceType, string> = {
+  [ServiceType.CAR_RENTAL]: "car rental",
   [ServiceType.FLIGHT]: "flights",
   [ServiceType.HOTEL]: "hotel stays",
 };
@@ -427,16 +429,22 @@ const SERVICE_NOUN: Record<ServiceWithOwnLegal, string> = {
  * actually bought — a brand selling flights or hotel stays cannot be
  * freezing car-rental terms onto its orders.
  *
- * FLIGHT and HOTEL terms are frozen ONLY for an organization that sells
- * that service — the same rule (`serviceTypesOrDefault`) that decides which
- * order forms and legal editors it is offered — so a crafted request is
- * refused here, before anything is written. Car rental is resolved exactly
- * as it always was.
+ * THE ORDER'S SERVICE TYPE AND THE ORDER'S ORGANIZATION DECIDE — nothing
+ * else: car rental → that organization's car rental text, flight → its
+ * flight text, hotel → its hotel text. Never another service's text, never
+ * another organization's, never anything from the admin's screen.
  *
- * CAR RENTAL: the organization's own text WINS; an empty value falls through
- * to the deployment Settings singleton. Both incumbent brands have no
- * per-org legal text, so every field falls through and their orders are
- * frozen with exactly the terms they are frozen with today.
+ * Terms are frozen ONLY for a service the order's organization sells — the
+ * same rule (`serviceTypesOrDefault`) that decides which order forms and
+ * legal editors it is offered — so a crafted request is refused here, before
+ * anything is written. An order with no organization at all is the historic
+ * pre-migration car rental.
+ *
+ * CAR RENTAL (`pairCarLegal`, the rule car orders have always used): the
+ * organization's own text WINS; an empty value falls through to the
+ * deployment default. Both incumbent brands have no per-org legal text, so
+ * every field falls through and their orders are frozen with exactly the
+ * terms they are frozen with today.
  *
  * FLIGHT and HOTEL: the organization's own text for that service, else that
  * service's built-in default (`resolveServiceLegal`).
@@ -481,12 +489,13 @@ async function resolveOrderLegal(
         | null;
     } | null>();
 
+  if (!serviceTypesOrDefault(org?.serviceTypes).includes(serviceType)) {
+    throw new ValidationError(
+      `${org?.brandName ?? "This organization"} does not sell ${SERVICE_NOUN[serviceType]}, so this order cannot be created for it.`,
+    );
+  }
+
   if (serviceType === ServiceType.FLIGHT || serviceType === ServiceType.HOTEL) {
-    if (!serviceTypesOrDefault(org?.serviceTypes).includes(serviceType)) {
-      throw new ValidationError(
-        `${org?.brandName ?? "This organization"} does not sell ${SERVICE_NOUN[serviceType]}, so this order cannot be created for it.`,
-      );
-    }
     return resolveServiceLegal(
       organizationId,
       serviceType,
@@ -494,21 +503,14 @@ async function resolveOrderLegal(
     );
   }
 
-  // CAR RENTAL — exactly as before.
-  const legal = org?.legal;
-  if (!legal) return fallback;
-
-  // Field by field, so an organization can override only its T&Cs and
-  // still inherit the deployment cancellation policy.
+  // CAR RENTAL — the organization's own car rental text, field by field,
+  // else the deployment default: the rule car orders have always used.
+  const car = pairCarLegal(org?.legal, fallback);
   return {
-    termsAndConditions:
-      legal.termsAndConditions?.trim() || fallback.termsAndConditions,
-    termsVersion: legal.termsVersion?.trim() || fallback.termsVersion,
-    cancellationPolicy:
-      legal.cancellationPolicy?.trim() || fallback.cancellationPolicy,
-    cancellationPolicyVersion:
-      legal.cancellationPolicyVersion?.trim() ||
-      fallback.cancellationPolicyVersion,
+    termsAndConditions: car.termsAndConditions,
+    termsVersion: car.termsVersion,
+    cancellationPolicy: car.cancellationPolicy,
+    cancellationPolicyVersion: car.cancellationPolicyVersion,
   };
 }
 
@@ -709,7 +711,7 @@ export async function createOrder(
     );
   }
 
-  // Legal text frozen onto the order — refused for a flight or hotel the
+  // Legal text frozen onto the order — refused for a service the
   // organization does not sell. Car rental: the organization's own text
   // wins; an organization that has none — which is both incumbent brands —
   // falls back to the deployment settings singleton, so their orders carry

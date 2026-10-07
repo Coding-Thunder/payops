@@ -2,30 +2,30 @@
 
 import { useFormContext, useWatch } from "react-hook-form";
 
-import { flightAmountLabels, summarizeFlightAmounts } from "@/lib/charges";
-import { BookingType, type Currency } from "@/lib/constants/enums";
+import {
+  flightAmountLabels,
+  showsAirlineCharge,
+  summarizeFlightAmounts,
+} from "@/lib/charges";
+import { BookingType, type Currency, PaymentTiming } from "@/lib/constants/enums";
 import { formatCurrency } from "@/lib/format";
 import type { FlightOrderInput } from "@/lib/validation";
-import type { OrderCharge } from "@/types";
 
 import type { FlightOrderFormValues } from "./itinerary-form";
 
 /**
- * The flight form's live breakdown, in place of the rental prepaid /
- * due-at-counter / total box: airline fare + service charge = total
- * booking value, of which the payment link charges only the service
- * charge. Same helper and the same copy the customer pages and emails use,
- * so the operator sees exactly what the customer will — including the
- * neutral wording a modification or cancellation charge gets, which is a
- * fee for the change rather than the service charge for the booking.
+ * The flight form's live breakdown: airline charge + service charge = total
+ * booking value, of which the payment link charges only the service charge
+ * — the amount payable now. Same helper, same rows and the same copy the
+ * customer pages and emails use, so the operator sees exactly what the
+ * customer will — including the neutral wording a modification or
+ * cancellation charge gets, which is a fee for the change rather than the
+ * service charge for the booking.
  */
 export function FlightAmountsSummary({
-  charges,
-  currency,
+  defaultCurrency,
 }: {
-  /** Live, normalised service-charge lines from the charge fieldset. */
-  charges: readonly OrderCharge[];
-  currency: Currency;
+  defaultCurrency: Currency;
 }) {
   const { control } = useFormContext<
     FlightOrderFormValues,
@@ -33,16 +33,28 @@ export function FlightAmountsSummary({
     FlightOrderInput
   >();
   const airlineFare = useWatch({ control, name: "flight.airlineFare" });
+  const serviceCharge = useWatch({ control, name: "charges.0.amount" });
   const bookingType = useWatch({ control, name: "bookingType" });
-  const amounts = summarizeFlightAmounts(charges, airlineFare);
+  const currency = useWatch({ control, name: "currency" }) ?? defaultCurrency;
+  const amounts = summarizeFlightAmounts(
+    [
+      {
+        name: "",
+        amount: typeof serviceCharge === "number" ? serviceCharge : 0,
+        timing: PaymentTiming.PREPAID,
+      },
+    ],
+    typeof airlineFare === "number" ? airlineFare : null,
+  );
   // This form only creates itinerary flights, so the service-charge model
   // comes down to the booking type (see `flightMoneyWording`).
   const serviceChargeModel = bookingType === BookingType.NEW_BOOKING;
   const labels = flightAmountLabels(serviceChargeModel);
+  const showAirline = showsAirlineCharge(amounts);
 
   return (
     <div className="space-y-1.5 rounded-md border bg-muted/30 p-4 text-sm">
-      {amounts.airlineFare > 0 ? (
+      {showAirline ? (
         <div className="flex items-start justify-between gap-3">
           <span className="min-w-0 text-muted-foreground">
             {labels.airlineFare}
@@ -65,6 +77,17 @@ export function FlightAmountsSummary({
           {formatCurrency(amounts.bookingTotal, currency)}
         </span>
       </div>
+      <div className="flex items-center justify-between gap-3">
+        <span className="font-medium">{labels.payableNow}</span>
+        <span className="font-semibold tabular-nums">
+          {formatCurrency(amounts.payableNow, currency)}
+        </span>
+      </div>
+      {showAirline ? (
+        <p className="pt-1 text-xs text-muted-foreground">
+          {labels.airlineFareExplainer}
+        </p>
+      ) : null}
       <p className="pt-1 text-xs text-muted-foreground">
         {serviceChargeModel
           ? "The payment link charges only the "

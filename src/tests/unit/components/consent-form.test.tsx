@@ -246,6 +246,37 @@ describe("a flight's consent page, frozen with its itinerary", () => {
     expect(text).toContain("$1,335.00");
   });
 
+  it("lists the four rows in order, then says the airline charge is not collected", () => {
+    const { container } = render(
+      <ConsentForm
+        token="test-token"
+        initialView={view(itineraryFlightSnapshot())}
+        branding={BRANDING}
+      />,
+    );
+    const text = (container.textContent ?? "").replace(/\s+/g, " ");
+    // The breakdown box, after the "Amount Payable Now" hero.
+    const box = text.slice(text.indexOf(FLIGHT_AMOUNT_LABELS.airlineFare));
+    expect(box).toContain(
+      `${FLIGHT_AMOUNT_LABELS.airlineFare}${FLIGHT_AMOUNT_LABELS.airlineFareNote}$1,240.00` +
+        `${FLIGHT_AMOUNT_LABELS.serviceCharge}$95.00` +
+        `${FLIGHT_AMOUNT_LABELS.bookingTotal}$1,335.00` +
+        `${FLIGHT_AMOUNT_LABELS.payableNow}$95.00` +
+        FLIGHT_AMOUNT_LABELS.airlineFareExplainer,
+    );
+  });
+
+  it("leaves the airline row and its explainer out when there is no airline charge", () => {
+    const text = pageText(
+      view({ ...itineraryFlightSnapshot(), airlineFare: 0, bookingTotal: 95 }),
+    );
+    expect(text).not.toContain(FLIGHT_AMOUNT_LABELS.airlineFare);
+    expect(text).not.toContain(FLIGHT_AMOUNT_LABELS.airlineFareExplainer);
+    expect(text).toContain(`${FLIGHT_AMOUNT_LABELS.bookingTotal}$95.00`);
+    expect(text).toContain(`${FLIGHT_AMOUNT_LABELS.payableNow}$95.00`);
+    expect(text).not.toContain("$0.00");
+  });
+
   it("calls the provider the airline or supplier and lists the trip-level rows", () => {
     const text = pageText(view(itineraryFlightSnapshot()));
     expect(text).toContain(FLIGHT_PROVIDER_LABEL);

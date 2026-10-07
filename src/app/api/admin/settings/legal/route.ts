@@ -3,7 +3,10 @@ import { z } from "zod";
 
 import { ServiceType } from "@/lib/constants/enums";
 import { Permission } from "@/lib/constants/permissions";
-import { SERVICE_LEGAL_TYPES, updateServiceLegalSchema } from "@/lib/validation";
+import {
+  ORGANIZATION_LEGAL_SERVICES,
+  updateServiceLegalSchema,
+} from "@/lib/validation";
 import { getRequestContext } from "@/server/api/request-context";
 import { jsonOk, withApi } from "@/server/api/respond";
 import { requireOrganization } from "@/server/auth/organization";
@@ -17,13 +20,14 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** `?serviceType=` — FLIGHT when absent, which is what this route served
- *  before hotel terms existed. */
+ *  before car rental and hotel terms were edited per brand. */
 const serviceTypeQuery = z
-  .enum(SERVICE_LEGAL_TYPES)
+  .enum(ORGANIZATION_LEGAL_SERVICES)
   .default(ServiceType.FLIGHT);
 
 /**
- * The selected organization's flight or hotel terms (Admin → Settings).
+ * The selected organization's OWN car rental, flight or hotel terms
+ * (Admin → Settings).
  *
  * Unlike `/api/admin/settings`, which edits the deployment-wide singleton,
  * this is scoped to ONE organization — always the one in the validated

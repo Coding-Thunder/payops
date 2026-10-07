@@ -49,18 +49,26 @@ export const updateSettingsSchema = z.object({
 
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;
 
-/** The service types with a legal slot of their own on an organization.
- *  Car rental has none: its text is the organization's top-level legal,
- *  else the deployment settings above. */
+/** The service types with a legal slot of their own on an organization
+ *  (`legal.services.*`). Car rental has none: its text is the
+ *  organization's top-level legal, else the deployment settings above. */
 export const SERVICE_LEGAL_TYPES = [ServiceType.FLIGHT, ServiceType.HOTEL] as const;
 export type ServiceWithOwnLegal = (typeof SERVICE_LEGAL_TYPES)[number];
+
+/** Every service whose terms an organization edits for ITSELF in Admin →
+ *  Settings: car rental (its top-level legal) plus the services above. */
+export const ORGANIZATION_LEGAL_SERVICES = [
+  ServiceType.CAR_RENTAL,
+  ...SERVICE_LEGAL_TYPES,
+] as const;
+export type OrganizationLegalService = (typeof ORGANIZATION_LEGAL_SERVICES)[number];
 
 // One organization's own legal text for one service type. There is
 // deliberately no organization field: the route writes the selected
 // organization and nothing else, and only for a service it sells. Same
 // limits and messages as the deployment-wide text above.
 export const updateServiceLegalSchema = z.object({
-  serviceType: z.enum(SERVICE_LEGAL_TYPES),
+  serviceType: z.enum(ORGANIZATION_LEGAL_SERVICES),
   termsAndConditions: z
     .string()
     .trim()

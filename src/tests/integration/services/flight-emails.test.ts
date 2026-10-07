@@ -23,7 +23,6 @@ import {
   OrganizationMember,
 } from "@/server/db/models";
 import { orgCookieName } from "@/server/auth/org-cookie";
-import { AIRLINE_FARE_NOT_INCLUDED } from "@/server/email/components";
 import { buildConsentMailto } from "@/server/email/consent-mailto";
 import {
   createOrder,
@@ -269,17 +268,53 @@ describe("a round-trip flight's emails", () => {
     }
   });
 
-  it("show the airline fare, service charge and total booking value", async () => {
+  it("show the four rows — Airline Charge, Service Charge, Total Booking Value, the amount settled — and say the airline charge is not collected", async () => {
     const emails = await sendAllThree(await roundTrip());
+    const settled = {
+      request: FLIGHT_AMOUNT_LABELS.payableNow,
+      confirmation: FLIGHT_AMOUNT_LABELS.paidNow,
+      authorized: FLIGHT_AMOUNT_LABELS.heldNow,
+    };
     for (const [name, email] of Object.entries(emails)) {
       expect(email.html, name).toContain(FLIGHT_AMOUNT_LABELS.breakdownTitle);
-      expect(email.html, name).toContain(FLIGHT_AMOUNT_LABELS.airlineFare);
-      expect(email.html, name).toContain(FLIGHT_AMOUNT_LABELS.airlineFareNote);
-      expect(email.html, name).toContain(FLIGHT_AMOUNT_LABELS.serviceCharge);
-      expect(email.html, name).toContain(FLIGHT_AMOUNT_LABELS.bookingTotal);
-      expect(email.html, name).toContain("$1,240.00");
-      expect(email.html, name).toContain("$95.00");
-      expect(email.html, name).toContain("$1,335.00");
+      for (const body of [email.html, email.text]) {
+        expect(body, name).toContain(FLIGHT_AMOUNT_LABELS.airlineFare);
+        expect(body, name).toContain(FLIGHT_AMOUNT_LABELS.airlineFareNote);
+        expect(body, name).toContain(FLIGHT_AMOUNT_LABELS.serviceCharge);
+        expect(body, name).toContain(FLIGHT_AMOUNT_LABELS.bookingTotal);
+        expect(body, name).toContain(settled[name as keyof typeof settled]);
+        expect(body, name).toContain(FLIGHT_AMOUNT_LABELS.airlineFareExplainer);
+        expect(body, name).toContain("$1,240.00");
+        expect(body, name).toContain("$95.00");
+        expect(body, name).toContain("$1,335.00");
+      }
+      // In that order, in the breakdown.
+      const from = email.html.indexOf(FLIGHT_AMOUNT_LABELS.breakdownTitle);
+      const at = (label: string) => email.html.indexOf(`>${label}<`, from);
+      const rows = [
+        at(FLIGHT_AMOUNT_LABELS.airlineFare),
+        at(FLIGHT_AMOUNT_LABELS.serviceCharge),
+        at(FLIGHT_AMOUNT_LABELS.bookingTotal),
+        at(settled[name as keyof typeof settled]),
+        email.html.indexOf(FLIGHT_AMOUNT_LABELS.airlineFareExplainer, from),
+      ];
+      expect(rows[0], name).toBeGreaterThan(from);
+      expect([...rows].sort((a, b) => a - b), name).toEqual(rows);
+    }
+  });
+
+  it("list the money as the fixed rows, never as a typed line name", async () => {
+    const order = await linkedOrder(
+      roundTripFlightInput({
+        provider: "AIRINDIA",
+        // Whatever a request called the one line, it is the service charge.
+        charges: flightServiceCharge(95, "Airfare"),
+      }),
+    );
+    const emails = await sendAllThree(order);
+    for (const [name, email] of Object.entries(emails)) {
+      expect(email.html, name).not.toContain("Airfare");
+      expect(email.html, name).toContain(`>${FLIGHT_AMOUNT_LABELS.serviceCharge}<`);
     }
   });
 
@@ -315,7 +350,7 @@ describe("a round-trip flight's emails", () => {
     expect(request.html).toContain(
       "please pay the service charge using the secure link below to confirm it.",
     );
-    expect(request.html).toContain(AIRLINE_FARE_NOT_INCLUDED);
+    expect(request.html).toContain(FLIGHT_AMOUNT_LABELS.airlineFareExplainer);
     expect(request.html).toContain("— $95.00 service charge");
 
     expect(confirmation.html).toContain(FLIGHT_AMOUNT_LABELS.paidNow);
@@ -323,6 +358,7 @@ describe("a round-trip flight's emails", () => {
 
     expect(authorized.html).toContain(FLIGHT_AMOUNT_LABELS.heldNow);
     expect(authorized.html).toContain("we charge exactly the $95.00 service charge");
+    expect(authorized.html).toContain("The Airline Charge is not part of it.");
     expect(authorized.html).toContain(
       "Your bank may show the $95.00 service charge as pending until then.",
     );
@@ -372,12 +408,17 @@ describe("a multi-city flight's emails count flights, not stops", () => {
   });
 });
 
-describe("a flight booked with no airline fare recorded", () => {
-  it("leaves the fare row out — never '$0.00' — and totals the service charge alone", async () => {
+describe("a flight with no airline charge", () => {
+  // 0 is what the form takes when there is none; null is a flight stored
+  // before the airline charge was required.
+  it.each([
+    { airlineFare: 0, what: "an airline charge of 0" },
+    { airlineFare: null, what: "no airline charge recorded (an older flight)" },
+  ])("$what: leaves the airline row out — never '$0.00' — and totals the service charge alone", async ({ airlineFare }) => {
     const order = await linkedOrder(
       oneWayConnectingFlightInput(
         { provider: "AIRINDIA", charges: flightServiceCharge(60) },
-        { airlineFare: null },
+        { airlineFare: airlineFare as never },
       ),
     );
     const { request, confirmation, authorized } = await sendAllThree(order);
@@ -389,12 +430,14 @@ describe("a flight booked with no airline fare recorded", () => {
       // Still the service-charge model: it is an itinerary flight.
       expect(email.html, name).toContain(FLIGHT_AMOUNT_LABELS.serviceCharge);
     }
+    expect(authorized.html).not.toContain("Airline Charge is not part of it");
 
     actingAs(flightco);
     const body = decodedMailtoBody((await composePaymentRequestProps(order)).consentMailto!);
-    expect(body).toContain("Service charge payable now: 60.00 USD");
-    expect(body).not.toContain("Airline fare");
-    expect(body).toContain("Total booking value: 60.00 USD");
+    expect(body).toContain("Service Charge: 60.00 USD");
+    expect(body).not.toContain("Airline Charge");
+    expect(body).toContain("Total Booking Value: 60.00 USD");
+    expect(body).toContain("Amount Payable Now: 60.00 USD");
   });
 });
 
@@ -404,7 +447,6 @@ describe("a MODIFICATION of an itinerary flight keeps the generic wording", () =
       roundTripFlightInput({
         provider: "AIRINDIA",
         bookingType: BookingType.MODIFICATION,
-        // Named for what it is, so only the wording around it is under test.
         charges: flightServiceCharge(95, "Change fee"),
       }),
     );
@@ -412,7 +454,9 @@ describe("a MODIFICATION of an itinerary flight keeps the generic wording", () =
     for (const [name, email] of Object.entries({ request, confirmation, authorized })) {
       for (const body of [email.html, email.text]) {
         expect(body.toLowerCase(), name).not.toContain("service charge");
-        expect(body, name).not.toContain(AIRLINE_FARE_NOT_INCLUDED);
+        // The airline charge is still shown — and still not collected.
+        expect(body, name).toContain(LEGACY_FLIGHT_AMOUNT_LABELS.airlineFare);
+        expect(body, name).toContain(LEGACY_FLIGHT_AMOUNT_LABELS.airlineFareExplainer);
       }
       // Still a flight email, with its whole itinerary.
       expect(email.html, name).toContain("1. Mumbai → Varanasi");
@@ -590,7 +634,7 @@ describe("a LEGACY flight's emails keep the generic wording", () => {
     expect(request.html).toContain("9:15 AM UTC → 5:40 PM UTC");
   });
 
-  it("labels the consent mailto 'Amount payable now' — itinerary flights keep 'Service charge payable now'", async () => {
+  it("labels the consent mailto neutrally — itinerary flights list Airline Charge, Service Charge, Total Booking Value, Amount Payable Now", async () => {
     const legacyBody = decodedMailtoBody(
       buildConsentMailto({
         toEmail: "support@flightco.test",
@@ -599,7 +643,7 @@ describe("a LEGACY flight's emails keep the generic wording", () => {
         consentMessage: "I agree.",
       }),
     );
-    expect(legacyBody).toContain("Amount payable now: 420.50 USD");
+    expect(legacyBody).toContain("Amount Payable Now: 420.50 USD");
     expect(legacyBody.toLowerCase()).not.toContain("service charge");
     expect(legacyBody).toContain(`${FLIGHT_PROVIDER_LABEL}: Budget`);
     expect(legacyBody).toContain("One way: LHR → JFK • Sun, Nov 1, 2026 9:15 AM UTC • direct");
@@ -612,11 +656,14 @@ describe("a LEGACY flight's emails keep the generic wording", () => {
         consentMessage: "I agree.",
       }),
     );
-    expect(itineraryBody).toContain("Service charge payable now: 95.00 USD");
     expect(itineraryBody).toContain(
-      "Airline fare: 1240.00 USD (charged separately — not part of this payment)",
+      [
+        "Airline Charge: 1240.00 USD (not collected through this payment link)",
+        "Service Charge: 95.00 USD",
+        "Total Booking Value: 1335.00 USD",
+        "Amount Payable Now: 95.00 USD",
+      ].join("\n"),
     );
-    expect(itineraryBody).toContain("Total booking value: 1335.00 USD");
     expect(itineraryBody).toContain(
       "Outbound: Delhi → Varanasi → Mumbai • Sat, Oct 10, 2026 10:30 AM • 1 stop",
     );

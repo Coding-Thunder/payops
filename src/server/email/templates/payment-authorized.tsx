@@ -17,7 +17,6 @@ import { serviceNoun, type ServiceRow } from "@/lib/service-summary";
 import { chargeWordingFor } from "../components/charge-breakdown";
 import { providerRowLabel, rentalBookingRows } from "./payment-confirmation";
 import {
-  AIRLINE_FARE_NOT_INCLUDED,
   ChargeBreakdown,
   COLOR,
   type EmailChargeBreakdown,
@@ -163,6 +162,9 @@ export function PaymentAuthorizedEmail({
   const serviceChargeModel =
     isFlight && flightAmounts?.serviceChargeModel === true;
   const flightLabels = flightAmountLabels(serviceChargeModel);
+  // The breakdown below shows an Airline Charge row only when there is one;
+  // the next-step line names it only then, too.
+  const showsAirlineCharge = isFlight && Boolean(flightAmounts?.airlineFare);
   const preview = serviceChargeModel
     ? `${brandName} — ${amount} service charge held on your card for ${orderNumber}, not yet charged`
     : `${brandName} — ${amount} held on your card for ${orderNumber}, not yet charged`;
@@ -282,7 +284,9 @@ export function PaymentAuthorizedEmail({
           </NextStep>
           {serviceChargeModel ? (
             <NextStep>
-              {`Once it's confirmed we charge exactly the ${amount} service charge — not a penny more — and email you the confirmation. ${AIRLINE_FARE_NOT_INCLUDED}`}
+              {`Once it's confirmed we charge exactly the ${amount} service charge — not a penny more — and email you the confirmation.${
+                showsAirlineCharge ? " The Airline Charge is not part of it." : ""
+              }`}
             </NextStep>
           ) : (
             <NextStep>
@@ -312,7 +316,7 @@ export function PaymentAuthorizedEmail({
             }}
           >
             {serviceChargeModel ? (
-              `Your bank may show the ${amount} service charge as pending until then. That is the hold, not a charge — the airline fare is not part of it.`
+              `Your bank may show the ${amount} service charge as pending until then. That is the hold, not a charge.`
             ) : (
               <>
                 Your bank may show {amount} as pending until then. That is the

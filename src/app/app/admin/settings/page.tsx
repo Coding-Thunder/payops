@@ -3,9 +3,11 @@ import { ServiceLegalForm } from "@/components/features/settings/service-legal-f
 import { SettingsForm } from "@/components/features/settings/settings-form";
 import { ServiceType } from "@/lib/constants/enums";
 import { Permission, roleHasPermission } from "@/lib/constants/permissions";
+import type { OrganizationLegalService } from "@/lib/validation";
 import { getSelectedOrganization } from "@/server/auth/organization";
 import { requirePermission } from "@/server/auth/session";
 import {
+  getOrganizationCarLegal,
   getOrganizationFlightLegal,
   getOrganizationHotelLegal,
 } from "@/server/services/organization-legal.service";
@@ -15,24 +17,32 @@ import { getSettings, ensureSettingsDocument } from "@/server/services/settings.
 export const metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
 
+type LegalView = Awaited<ReturnType<typeof getOrganizationFlightLegal>>;
+
 export default async function AdminSettingsPage() {
   const user = await requirePermission(Permission.SETTINGS_VIEW);
   await ensureSettingsDocument();
   const settings = await getSettings();
   const canEdit = roleHasPermission(user.role, Permission.SETTINGS_UPDATE);
 
-  // Terms are offered per service the SELECTED organization sells — the
-  // same rule as its order forms (an organization with no stored list, and
-  // no selection at all, read as car rental only). The car rental text is
-  // the deployment-wide part of SettingsForm; flight and hotel terms belong
-  // to the selected organization alone.
+  // Terms belong to the SELECTED organization, one form per service it
+  // sells — the same rule as its order forms. Each form edits that brand's
+  // OWN text for that service only, so no edit here can reach another
+  // brand's orders or another service's.
+  //
+  // The deployment-wide car rental text is only the default that brands
+  // without car rental terms of their own inherit; it is edited in
+  // SettingsForm with no brand selected (a single-brand deployment), never
+  // from inside a brand.
   const organization = await getSelectedOrganization();
-  const serviceTypes = await resolveOrganizationServiceTypes(
-    organization?.id ?? null,
-  );
-  const sellsCarRental = serviceTypes.includes(ServiceType.CAR_RENTAL);
-  const [flightLegal, hotelLegal] = organization
+  const serviceTypes = organization
+    ? await resolveOrganizationServiceTypes(organization.id)
+    : [];
+  const [carLegal, flightLegal, hotelLegal] = organization
     ? await Promise.all([
+        serviceTypes.includes(ServiceType.CAR_RENTAL)
+          ? getOrganizationCarLegal(organization.id)
+          : null,
         serviceTypes.includes(ServiceType.FLIGHT)
           ? getOrganizationFlightLegal(organization.id)
           : null,
@@ -40,7 +50,33 @@ export default async function AdminSettingsPage() {
           ? getOrganizationHotelLegal(organization.id)
           : null,
       ])
-    : [null, null];
+    : [null, null, null];
+  const editsDeploymentCarText = !organization;
+
+  const legalForm = (
+    serviceType: OrganizationLegalService,
+    view: Omit<LegalView, "sellsFlight"> | null,
+  ) =>
+    view ? (
+      // Keyed by organization and service so each form remounts with that
+      // brand's own text — never one brand's text under another's title.
+      <ServiceLegalForm
+        key={`${view.organizationId}:${serviceType}`}
+        serviceType={serviceType}
+        initial={{
+          organizationId: view.organizationId,
+          brandName: view.brandName,
+          termsAndConditions: view.termsAndConditions,
+          termsVersion: view.termsVersion,
+          termsIsDefault: view.termsIsDefault,
+          cancellationPolicy: view.cancellationPolicy,
+          cancellationPolicyVersion: view.cancellationPolicyVersion,
+          policyIsDefault: view.policyIsDefault,
+          hasOrganizationWideText: view.hasOrganizationWideText,
+        }}
+        canEdit={canEdit}
+      />
+    ) : null;
 
   return (
     <div className="space-y-6">
@@ -58,9 +94,9 @@ export default async function AdminSettingsPage() {
           cancelRedirectUrl: settings.cancelRedirectUrl,
           consentMode: settings.consentMode,
           consentMessage: settings.consentMessage,
-          // The car rental text goes to the browser — and comes back in a
-          // save — only for a brand that sells car rental.
-          ...(sellsCarRental
+          // The deployment default car rental text goes to the browser — and
+          // comes back in a save — only with no brand selected.
+          ...(editsDeploymentCarText
             ? {
                 cancellationPolicy: settings.cancellationPolicy,
                 termsAndConditions: settings.termsAndConditions,
@@ -68,46 +104,11 @@ export default async function AdminSettingsPage() {
             : {}),
         }}
         canEdit={canEdit}
-        showCarRentalLegal={sellsCarRental}
+        showCarRentalLegal={editsDeploymentCarText}
       />
-      {/* Keyed by organization so each form remounts with that brand's own
-          text — never one brand's text under another brand's title. */}
-      {flightLegal?.sellsFlight ? (
-        <ServiceLegalForm
-          key={`${flightLegal.organizationId}:FLIGHT`}
-          serviceType={ServiceType.FLIGHT}
-          initial={{
-            organizationId: flightLegal.organizationId,
-            brandName: flightLegal.brandName,
-            termsAndConditions: flightLegal.termsAndConditions,
-            termsVersion: flightLegal.termsVersion,
-            termsIsDefault: flightLegal.termsIsDefault,
-            cancellationPolicy: flightLegal.cancellationPolicy,
-            cancellationPolicyVersion: flightLegal.cancellationPolicyVersion,
-            policyIsDefault: flightLegal.policyIsDefault,
-            hasOrganizationWideText: flightLegal.hasOrganizationWideText,
-          }}
-          canEdit={canEdit}
-        />
-      ) : null}
-      {hotelLegal?.sellsHotel ? (
-        <ServiceLegalForm
-          key={`${hotelLegal.organizationId}:HOTEL`}
-          serviceType={ServiceType.HOTEL}
-          initial={{
-            organizationId: hotelLegal.organizationId,
-            brandName: hotelLegal.brandName,
-            termsAndConditions: hotelLegal.termsAndConditions,
-            termsVersion: hotelLegal.termsVersion,
-            termsIsDefault: hotelLegal.termsIsDefault,
-            cancellationPolicy: hotelLegal.cancellationPolicy,
-            cancellationPolicyVersion: hotelLegal.cancellationPolicyVersion,
-            policyIsDefault: hotelLegal.policyIsDefault,
-            hasOrganizationWideText: hotelLegal.hasOrganizationWideText,
-          }}
-          canEdit={canEdit}
-        />
-      ) : null}
+      {legalForm(ServiceType.CAR_RENTAL, carLegal)}
+      {legalForm(ServiceType.FLIGHT, flightLegal)}
+      {legalForm(ServiceType.HOTEL, hotelLegal)}
     </div>
   );
 }

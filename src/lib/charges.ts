@@ -95,13 +95,14 @@ export function summarizeCharges(
 /**
  * The four figures a FLIGHT shows its customer.
  *
- *   airlineFare   → the ticket cost. Charged by the airline, never by us:
- *                   it is NOT a charge line, so it can never reach
- *                   `prepaid`, `pricing.amount` or the gateway.
- *   serviceCharge → the operator's charge lines (all PREPAID) — the only
+ *   airlineFare   → the AIRLINE CHARGE (`flight.airlineFare`), the ticket
+ *                   cost. Its own field on the flight, never a charge line,
+ *                   so it can never reach `prepaid`, `pricing.amount` or
+ *                   the gateway.
+ *   serviceCharge → the operator's single charge line (PREPAID) — the only
  *                   money the payment link collects.
  *   payableNow    → what the payment link charges: the service charge.
- *   bookingTotal  → airline fare + service charge: the full booking value.
+ *   bookingTotal  → airline charge + service charge: the full booking value.
  *
  * `dueLater` exists only for flights created before flights became
  * prepaid-only, which could carry a "due later" line; it is 0 for every
@@ -131,19 +132,39 @@ export interface FlightAmountSummary {
  * itinerary flights, uses it as is.)
  */
 export const FLIGHT_AMOUNT_LABELS = {
-  airlineFare: "Airline fare",
-  airlineFareNote: "Charged separately — not part of this payment",
-  serviceCharge: "Service charge",
-  bookingTotal: "Total booking value",
-  payableNow: "Amount payable now",
-  paidNow: "Service charge paid",
-  heldNow: "Service charge on hold",
-  dueLater: "Remaining balance due later",
+  airlineFare: "Airline Charge",
+  airlineFareNote: "Not collected through this payment link",
+  /** Shown under every breakdown that shows an Airline Charge row. */
+  airlineFareExplainer:
+    "Airline Charge is shown for the total booking value and is not collected through this payment link.",
+  serviceCharge: "Service Charge",
+  bookingTotal: "Total Booking Value",
+  payableNow: "Amount Payable Now",
+  paidNow: "Service Charge Paid",
+  heldNow: "Service Charge On Hold",
+  dueLater: "Remaining Balance Due Later",
   breakdownTitle: "Price breakdown",
   collectedOnline: "Collected online",
   notCollected: "Not collected yet",
   onHoldNotCollected: "On hold — not collected yet",
 } as const;
+
+/**
+ * The name of a flight's one charge line. A flight has exactly one — its
+ * service charge — whatever name a request sent (`flightOrderSchema`); the
+ * airline charge is never a line.
+ */
+export const FLIGHT_SERVICE_CHARGE_LINE_NAME = "Service charge";
+
+/**
+ * Whether a flight's breakdown shows the Airline Charge row (and its
+ * explainer): only for an airline charge above zero. A flight with none —
+ * 0, or never recorded — shows service charge, booking value and the
+ * amount payable, rather than an "Airline Charge $0.00" row.
+ */
+export function showsAirlineCharge(amounts: { airlineFare: number }): boolean {
+  return amounts.airlineFare > 0;
+}
 
 /** One wording for the flight money slots: same keys as
  *  `FLIGHT_AMOUNT_LABELS`, whatever the copy. */
@@ -161,9 +182,9 @@ export type FlightAmountLabels = {
  */
 export const LEGACY_FLIGHT_AMOUNT_LABELS: FlightAmountLabels = {
   ...FLIGHT_AMOUNT_LABELS,
-  serviceCharge: "Charged online",
-  paidNow: "Amount paid",
-  heldNow: "Amount on hold",
+  serviceCharge: "Charged Online",
+  paidNow: "Amount Paid",
+  heldNow: "Amount On Hold",
 };
 
 /** The label set for a flight: the service-charge wording when its charge

@@ -113,6 +113,26 @@ describe("an itinerary flight's receipt", () => {
     expect(text).toContain("$500.00");
   });
 
+  it("lists the four rows in order — the last one what was paid — then says the airline charge was not collected", async () => {
+    const order = await seeded(itineraryFlightSeed());
+    const text = await receiptText(order.orderNumber);
+    const box = text.slice(text.indexOf(FLIGHT_AMOUNT_LABELS.breakdownTitle));
+    expect(box).toContain(
+      [
+        FLIGHT_AMOUNT_LABELS.airlineFare,
+        FLIGHT_AMOUNT_LABELS.airlineFareNote,
+        "$400.00",
+        FLIGHT_AMOUNT_LABELS.serviceCharge,
+        "$100.00",
+        FLIGHT_AMOUNT_LABELS.bookingTotal,
+        "$500.00",
+        FLIGHT_AMOUNT_LABELS.paidNow,
+        "$100.00",
+        FLIGHT_AMOUNT_LABELS.airlineFareExplainer,
+      ].join(" "),
+    );
+  });
+
   it("names the airline or supplier and shows every flight and layover", async () => {
     const order = await seeded(itineraryFlightSeed());
     const text = await receiptText(order.orderNumber);
@@ -127,12 +147,37 @@ describe("an itinerary flight's receipt", () => {
     }
   });
 
-  it("leaves the airline-fare row out when no fare was recorded", async () => {
-    const order = await seeded(itineraryFlightSeed(null));
+  it.each([0, null])(
+    "leaves the airline row and its explainer out with no airline charge (%s)",
+    async (airlineFare) => {
+      const order = await seeded(itineraryFlightSeed(airlineFare));
+      const text = await receiptText(order.orderNumber);
+      expect(text).not.toContain(FLIGHT_AMOUNT_LABELS.airlineFare);
+      expect(text).not.toContain(FLIGHT_AMOUNT_LABELS.airlineFareNote);
+      expect(text).not.toContain(FLIGHT_AMOUNT_LABELS.airlineFareExplainer);
+      expect(text).toContain(`${FLIGHT_AMOUNT_LABELS.bookingTotal} $100.00`);
+      expect(text).not.toContain("$0.00");
+    },
+  );
+
+  it("while the payment is still being confirmed, ends with Amount Payable Now — never a second Service Charge row", async () => {
+    const order = await seeded({ ...itineraryFlightSeed(), status: OrderStatus.PAYMENT_PENDING });
     const text = await receiptText(order.orderNumber);
-    expect(text).not.toContain(FLIGHT_AMOUNT_LABELS.airlineFare);
-    expect(text).not.toContain(FLIGHT_AMOUNT_LABELS.airlineFareNote);
-    expect(text).toContain(FLIGHT_AMOUNT_LABELS.bookingTotal);
+    expect(text).toContain("Confirming with Stripe…");
+    const box = text.slice(text.indexOf(FLIGHT_AMOUNT_LABELS.breakdownTitle));
+    expect(box).toContain(
+      [
+        FLIGHT_AMOUNT_LABELS.serviceCharge,
+        "$100.00",
+        FLIGHT_AMOUNT_LABELS.bookingTotal,
+        "$500.00",
+        FLIGHT_AMOUNT_LABELS.payableNow,
+        "$100.00",
+        FLIGHT_AMOUNT_LABELS.airlineFareExplainer,
+      ].join(" "),
+    );
+    expect(box.split(`${FLIGHT_AMOUNT_LABELS.serviceCharge} $`).length - 1).toBe(1);
+    expect(text).not.toContain(FLIGHT_AMOUNT_LABELS.paidNow);
   });
 
   it("says the service charge is ON HOLD on a manual-capture authorization", async () => {
@@ -152,6 +197,9 @@ describe("an itinerary flight's receipt", () => {
     const text = await receiptText(order.orderNumber);
     expect(text).toContain(FLIGHT_AMOUNT_LABELS.heldNow);
     expect(text).not.toContain(FLIGHT_AMOUNT_LABELS.paidNow);
+    // The breakdown ends with the hold, too.
+    const box = text.slice(text.indexOf(FLIGHT_AMOUNT_LABELS.breakdownTitle));
+    expect(box).toContain(`${FLIGHT_AMOUNT_LABELS.heldNow} $100.00`);
   });
 });
 
@@ -167,6 +215,52 @@ describe("a MODIFICATION of an itinerary flight", () => {
     expect(text).toContain(LEGACY_FLIGHT_AMOUNT_LABELS.serviceCharge);
     expect(text.toLowerCase()).not.toContain("service charge");
     expect(text).toContain("Delhi → Varanasi");
+  });
+});
+
+describe("a flight receipt names what ACTUALLY happened to the money", () => {
+  it.each([PaymentCaptureStatus.CAPTURE_PENDING, PaymentCaptureStatus.CAPTURE_FAILED])(
+    "a hold that is %s still reads as ON HOLD — never paid, never payable",
+    async (captureStatus) => {
+      const order = await seeded({
+        ...itineraryFlightSeed(),
+        status: OrderStatus.PAYMENT_PENDING,
+        payment: {
+          capture: {
+            method: CaptureMode.MANUAL,
+            status: captureStatus,
+            authorizedAt: new Date("2026-10-06T10:00:00.000Z"),
+            amountAuthorized: 100,
+            captureExpiresAt: new Date("2026-10-13T10:00:00.000Z"),
+          },
+        } as OrderSeed["payment"],
+      });
+      const text = await receiptText(order.orderNumber);
+      const box = text.slice(text.indexOf(FLIGHT_AMOUNT_LABELS.breakdownTitle));
+      expect(box).toContain(`${FLIGHT_AMOUNT_LABELS.heldNow} $100.00`);
+      expect(text).not.toContain(FLIGHT_AMOUNT_LABELS.paidNow);
+      expect(box).not.toContain(FLIGHT_AMOUNT_LABELS.payableNow);
+    },
+  );
+
+  it("an order that is neither paid nor pending never says Paid", async () => {
+    const order = await seeded({ ...itineraryFlightSeed(), status: OrderStatus.EXPIRED });
+    const text = await receiptText(order.orderNumber);
+    const box = text.slice(text.indexOf(FLIGHT_AMOUNT_LABELS.breakdownTitle));
+    expect(box).toContain(`${FLIGHT_AMOUNT_LABELS.payableNow} $100.00`);
+    expect(text).not.toContain(FLIGHT_AMOUNT_LABELS.paidNow);
+  });
+
+  it("a pending LEGACY flight says Amount Payable Now in the hero and the breakdown — never Amount Paid", async () => {
+    const order = await seeded({
+      serviceType: ServiceType.FLIGHT,
+      status: OrderStatus.PAYMENT_PENDING,
+      pricing: { amount: 420.5, currency: "USD" as never },
+    });
+    const text = await receiptText(order.orderNumber);
+    expect(text).not.toContain(LEGACY_FLIGHT_AMOUNT_LABELS.paidNow);
+    expect(text).toContain(`${LEGACY_FLIGHT_AMOUNT_LABELS.payableNow} $420.50`);
+    expect(text.split(LEGACY_FLIGHT_AMOUNT_LABELS.payableNow).length - 1).toBe(2);
   });
 });
 

@@ -129,15 +129,17 @@ async function renderSettings(): Promise<string> {
   return renderToStaticMarkup(await AdminSettingsPage());
 }
 
-/** Which sections the page rendered. The car sections are found by their
- *  field labels, which predate this change, so the same check would catch
- *  the old page showing them to a brand that does not sell car rental. */
+/** Which sections the page rendered: each service's per-brand form, and
+ *  the deployment DEFAULT car text editor — found by its field labels, which
+ *  predate this change, so the same check catches the old page offering it
+ *  inside a brand. */
 function sectionsShown(html: string) {
   return {
-    carTerms: html.includes(">Terms text</label>"),
-    carPolicy: html.includes(">Policy text</label>"),
+    car: html.includes("Car rental terms &amp; cancellation policy"),
     flight: html.includes("Flight terms &amp; cancellation policy"),
     hotel: html.includes("Hotel terms &amp; cancellation policy"),
+    deploymentDefault:
+      html.includes(">Terms text</label>") || html.includes(">Policy text</label>"),
   };
 }
 
@@ -297,22 +299,22 @@ describe("Admin → Settings offers terms only for the services the selected org
     {
       who: "Car only",
       org: () => carOnly,
-      expected: { carTerms: true, carPolicy: true, flight: false, hotel: false },
+      expected: { car: true, flight: false, hotel: false, deploymentDefault: false },
     },
     {
       who: "Flight only",
       org: () => flightOnly,
-      expected: { carTerms: false, carPolicy: false, flight: true, hotel: false },
+      expected: { car: false, flight: true, hotel: false, deploymentDefault: false },
     },
     {
       who: "Car + Flight",
       org: () => carFlight,
-      expected: { carTerms: true, carPolicy: true, flight: true, hotel: false },
+      expected: { car: true, flight: true, hotel: false, deploymentDefault: false },
     },
     {
       who: "Car + Flight + Hotel",
       org: () => trio,
-      expected: { carTerms: true, carPolicy: true, flight: true, hotel: true },
+      expected: { car: true, flight: true, hotel: true, deploymentDefault: false },
     },
   ])("$who", async ({ org, expected }) => {
     actingAs(org());
@@ -322,37 +324,48 @@ describe("Admin → Settings offers terms only for the services the selected org
   it("names the selected brand on each per-organization section", async () => {
     actingAs(trio);
     const html = await renderSettings();
+    expect(html).toContain("Car rental terms &amp; cancellation policy — Trio Travel");
     expect(html).toContain("Flight terms &amp; cancellation policy — Trio Travel");
     expect(html).toContain("Hotel terms &amp; cancellation policy — Trio Travel");
   });
 
-  it("never sends the deployment-wide car text to a brand that does not sell car rental", async () => {
+  it("inside a brand, never offers the deployment default editor; each car form shows what THAT brand's car orders freeze", async () => {
     const settings = await storedSettings();
-    const carLine = String(settings!.termsAndConditions).split("\n")[0]!;
+    const carLine = String(settings!.termsAndConditions).split("\n")[0]!.slice(0, 40);
 
+    for (const org of [carOnly, flightOnly, carFlight, trio]) {
+      actingAs(org);
+      const form = await settingsFormProps();
+      expect(form.showCarRentalLegal).toBe(false);
+      expect(form.initial).not.toHaveProperty("termsAndConditions");
+      expect(form.initial).not.toHaveProperty("cancellationPolicy");
+    }
+
+    // A brand with no car text of its own: its form shows the inherited
+    // deployment default, flagged as such.
     actingAs(carOnly);
-    const car = await settingsFormProps();
-    expect(car.initial).toMatchObject({
-      termsAndConditions: settings!.termsAndConditions,
-      cancellationPolicy: settings!.cancellationPolicy,
-    });
-    expect(await renderSettings()).toContain(carLine.slice(0, 40));
+    const inherited = await renderSettings();
+    expect(inherited).toContain(carLine);
+    expect(inherited).toContain("Deployment default in use");
 
+    // A brand with its own: only its own.
+    actingAs(carFlight);
+    const own = await renderSettings();
+    expect(own).toContain(ORG_CAR_TERMS);
+    expect(own).not.toContain(carLine);
+
+    // A brand that does not sell car rental: no car text at all.
     actingAs(flightOnly);
-    const flight = await settingsFormProps();
-    expect(flight.showCarRentalLegal).toBe(false);
-    expect(flight.initial).not.toHaveProperty("termsAndConditions");
-    expect(flight.initial).not.toHaveProperty("cancellationPolicy");
-    expect(await renderSettings()).not.toContain(carLine.slice(0, 40));
+    expect(await renderSettings()).not.toContain(carLine);
   });
 
-  it("shows only car rental terms with no organization selected, as before", async () => {
+  it("offers only the deployment default car text with no organization selected, as before", async () => {
     actingAs(null);
     expect(sectionsShown(await renderSettings())).toEqual({
-      carTerms: true,
-      carPolicy: true,
+      car: false,
       flight: false,
       hotel: false,
+      deploymentDefault: true,
     });
   });
 });
@@ -384,13 +397,32 @@ describe("the API enforces the same service rule as the page", () => {
     expect(await legalAudits()).toHaveLength(0);
   });
 
-  it("Car only: the car rental terms stay editable", async () => {
+  it("Car only: its OWN car rental terms are edited — never the deployment default, never another brand's", async () => {
     actingAs(carOnly);
-    const res = await patchSettings(
-      await settingsForm({ termsAndConditions: "CARS ONLY — REVISED deployment car rental terms." }),
+    const settingsBefore = await storedSettings();
+    const trioBefore = await rawLegal(trio);
+    const carFlightBefore = await rawLegal(carFlight);
+
+    const res = await patchLegal(
+      legalBody("CAR_RENTAL", "CARS ONLY — its own car rental terms.", String(settingsBefore!.cancellationPolicy)),
     );
     expect(res.status).toBe(200);
-    expect((await storedSettings())!.termsVersion).toBe("v2");
+    expect(await rawLegal(carOnly)).toMatchObject({
+      termsAndConditions: "CARS ONLY — its own car rental terms.",
+      termsVersion: "v2",
+    });
+    // The policy was saved untouched, so it stays on the inherited default.
+    expect((await rawLegal(carOnly))!.cancellationPolicy ?? "").toBe("");
+    expect(await storedSettings()).toEqual(settingsBefore);
+    expect(await rawLegal(trio)).toEqual(trioBefore);
+    expect(await rawLegal(carFlight)).toEqual(carFlightBefore);
+
+    // The deployment default cannot be changed from inside a brand.
+    const viaSettings = await patchSettings(
+      await settingsForm({ termsAndConditions: "CARS ONLY trying to change every brand's car terms." }),
+    );
+    expect(viaSettings.status).toBe(422);
+    expect(await storedSettings()).toEqual(settingsBefore);
   });
 
   it("Flight only: car rental terms cannot be changed, but the rest of the form still saves", async () => {
@@ -402,8 +434,14 @@ describe("the API enforces the same service rule as the page", () => {
     );
     expect(carEdit.status).toBe(422);
     expect(await errorMessage(carEdit)).toBe(
-      "Flights Only does not sell car rental, so it has no car rental terms to set. Switch to a brand that does to edit them.",
+      "Car rental terms are set per brand. Edit Flights Only's own under its Car rental terms in Admin → Settings.",
     );
+    const carSlot = await patchLegal(legalBody("CAR_RENTAL", "SNEAKED-IN car terms for a flight brand.", A_FLIGHT_POLICY));
+    expect(carSlot.status).toBe(422);
+    expect(await errorMessage(carSlot)).toBe(
+      "Flights Only does not sell car rental, so it has no car rental terms to set.",
+    );
+    expect((await getLegal("CAR_RENTAL")).status).toBe(422);
     const policyEdit = await patchSettings(
       await settingsForm({ cancellationPolicy: "SNEAKED-IN car rental policy from a flight brand." }),
     );
@@ -481,10 +519,10 @@ describe("the API enforces the same service rule as the page", () => {
     expect(String(audits[0]!.organizationId)).toBe(String(trio));
   });
 
-  it("refuses a service with no slot of its own, by query or by body", async () => {
+  it("refuses an unknown service, by query or by body", async () => {
     actingAs(trio);
-    expect((await getLegal("CAR_RENTAL")).status).toBe(422);
-    expect((await patchLegal(legalBody("CAR_RENTAL", A_FLIGHT_TERMS, A_FLIGHT_POLICY))).status).toBe(422);
+    expect((await getLegal("TRAIN")).status).toBe(422);
+    expect((await patchLegal(legalBody("TRAIN", A_FLIGHT_TERMS, A_FLIGHT_POLICY))).status).toBe(422);
   });
 
   it("writes only the selected organization, whatever organization a manipulated body names", async () => {
@@ -517,14 +555,20 @@ describe("each supported service is configured independently", () => {
       cancellationPolicyVersion: "v3",
     });
 
-    const carEdit = await patchSettings(
-      await settingsForm({ termsAndConditions: "DEPLOYMENT car terms, revised by Car And Flight." }),
+    const carEdit = await patchLegal(
+      legalBody("CAR_RENTAL", "CAR AND FLIGHT — revised car rental terms.", ORG_CAR_POLICY),
     );
     expect(carEdit.status).toBe(200);
     expect((await rawLegal(carFlight))!.services!.FLIGHT).toEqual(afterFlight!.services!.FLIGHT);
+    expect(await storedSettings()).toEqual(settingsBefore);
 
     const { order: car } = await createOrder(validCreateOrderInput(), { actor: admin });
-    expect((await frozen(car.id))!.terms).toEqual({ text: ORG_CAR_TERMS, version: "v3" });
+    expect((await frozen(car.id))!.terms).toEqual({
+      text: "CAR AND FLIGHT — revised car rental terms.",
+      version: "v4",
+    });
+    const { order: flight } = await createOrder(validFlightOrderInput(), { actor: admin });
+    expect((await frozen(flight.id))!.terms).toEqual({ text: A_FLIGHT_TERMS, version: "v2" });
   });
 
   it.each([

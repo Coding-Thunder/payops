@@ -8,7 +8,6 @@ import {
   type BookingType,
   type ConsentMode,
   type Currency,
-  ServiceType,
 } from "@/lib/constants/enums";
 import { ValidationError } from "@/lib/errors";
 import { env } from "@/lib/env";
@@ -28,7 +27,6 @@ import { getSelectedOrganization } from "@/server/auth/organization";
 import type { UpdateSettingsInput } from "@/lib/validation";
 
 import { recordAudit } from "./audit.service";
-import { resolveOrganizationServiceTypes } from "./organization-service-types";
 
 export interface OperationalSettings {
   paymentExpiryHours: number;
@@ -161,21 +159,18 @@ export async function updateSettings(
     throw new ValidationError("No changes to apply");
   }
 
-  // The car rental terms and policy are deployment-wide, but they are
-  // offered — and so editable — only while the selected organization sells
-  // car rental, exactly as the settings page shows them. The page leaves
-  // them out for any other brand and posts them back unchanged, so the rest
-  // of the form still saves; a request that does change them is refused.
+  // The deployment-wide car rental text is only the DEFAULT that brands
+  // without car rental terms of their own inherit. With a brand selected,
+  // car rental terms are that brand's own (Admin → Settings → its Car
+  // rental terms), so a change here — which would reach every OTHER
+  // inheriting brand's car orders — is refused. The settings page never
+  // sends this text while a brand is selected, so the rest of the form still
+  // saves; with no brand selected the default is edited as before.
   if ("termsAndConditions" in changes || "cancellationPolicy" in changes) {
     const organization = await getSelectedOrganization();
-    if (
-      organization &&
-      !(await resolveOrganizationServiceTypes(organization.id)).includes(
-        ServiceType.CAR_RENTAL,
-      )
-    ) {
+    if (organization) {
       throw new ValidationError(
-        `${organization.brandName} does not sell car rental, so it has no car rental terms to set. Switch to a brand that does to edit them.`,
+        `Car rental terms are set per brand. Edit ${organization.brandName}'s own under its Car rental terms in Admin → Settings.`,
       );
     }
   }

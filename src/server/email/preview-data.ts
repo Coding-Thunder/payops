@@ -39,6 +39,15 @@ interface BuildPaymentPreviewArgs {
   /** FLIGHT swaps in the sample flight; anything else renders the sample
    *  car rental the previews have always shown. */
   serviceType?: ServiceType;
+  /** The flight terms and policy the flight sample shows — the selected
+   *  organization's own, or its default. Absent: the built-in flight text.
+   *  Never the car rental text above. */
+  flightLegal?: {
+    termsAndConditions: string;
+    termsVersion: string;
+    cancellationPolicy: string;
+    cancellationPolicyVersion: string;
+  };
 }
 
 /** Sample split breakdown so previews exercise the prepaid / due-at-counter
@@ -121,7 +130,7 @@ const SAMPLE_FLIGHT = {
   pnr: "QX7T2L",
 };
 
-/** Airline fare $1,240 (shown, never charged) + service charge $95. */
+/** Airline charge $1,240 (shown, never charged) + service charge $95. */
 const SAMPLE_FLIGHT_AMOUNTS: EmailFlightAmounts = {
   lines: [
     { name: "Service charge", amount: "$95.00", timing: PaymentTiming.PREPAID },
@@ -130,6 +139,7 @@ const SAMPLE_FLIGHT_AMOUNTS: EmailFlightAmounts = {
   serviceCharge: "$95.00",
   dueLater: null,
   bookingTotal: "$1,335.00",
+  hasItinerary: true,
   // An itinerary flight, so the service-charge copy (true).
   serviceChargeModel: flightMoneyWording(SAMPLE_FLIGHT, BookingType.NEW_BOOKING).serviceChargeModel,
 };
@@ -139,7 +149,7 @@ const SAMPLE_FLIGHT_AMOUNTS: EmailFlightAmounts = {
  * the built-in flight terms and policy: the args carry the deployment's
  * rental text, which a flight order never receives.
  */
-function flightPreviewFields() {
+function flightPreviewFields(args: BuildPaymentPreviewArgs) {
   return {
     amount: SAMPLE_FLIGHT_AMOUNTS.serviceCharge,
     serviceType: ServiceType.FLIGHT,
@@ -151,10 +161,13 @@ function flightPreviewFields() {
     }),
     flightItinerary: buildFlightItinerary(SAMPLE_FLIGHT),
     flightAmounts: SAMPLE_FLIGHT_AMOUNTS,
-    termsText: DEFAULT_FLIGHT_TERMS_AND_CONDITIONS,
-    termsVersion: DEFAULT_FLIGHT_LEGAL_VERSION,
-    cancellationPolicy: DEFAULT_FLIGHT_CANCELLATION_POLICY,
-    cancellationPolicyVersion: DEFAULT_FLIGHT_LEGAL_VERSION,
+    termsText:
+      args.flightLegal?.termsAndConditions ?? DEFAULT_FLIGHT_TERMS_AND_CONDITIONS,
+    termsVersion: args.flightLegal?.termsVersion ?? DEFAULT_FLIGHT_LEGAL_VERSION,
+    cancellationPolicy:
+      args.flightLegal?.cancellationPolicy ?? DEFAULT_FLIGHT_CANCELLATION_POLICY,
+    cancellationPolicyVersion:
+      args.flightLegal?.cancellationPolicyVersion ?? DEFAULT_FLIGHT_LEGAL_VERSION,
   };
 }
 
@@ -192,7 +205,7 @@ export function buildPaymentPreviewProps(
     cancellationPolicyVersion: args.cancellationPolicyVersion,
   };
   return args.serviceType === ServiceType.FLIGHT
-    ? { ...props, ...flightPreviewFields() }
+    ? { ...props, ...flightPreviewFields(args) }
     : props;
 }
 
@@ -241,7 +254,7 @@ export function buildPaymentRequestPreviewProps(
     consentRequired: false,
   };
   return args.serviceType === ServiceType.FLIGHT
-    ? { ...props, ...flightPreviewFields() }
+    ? { ...props, ...flightPreviewFields(args) }
     : props;
 }
 
@@ -279,6 +292,6 @@ export function buildPaymentAuthorizedPreviewProps(
     gatewayLabel: "Stripe",
   };
   return args.serviceType === ServiceType.FLIGHT
-    ? { ...props, ...flightPreviewFields() }
+    ? { ...props, ...flightPreviewFields(args) }
     : props;
 }

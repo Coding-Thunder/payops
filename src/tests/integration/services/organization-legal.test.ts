@@ -581,11 +581,11 @@ describe("/api/admin/settings/legal", () => {
     expect((await getOrganizationFlightLegal(bravo)).termsIsDefault).toBe(true);
   });
 
-  it("PATCH answers 422 for an invalid body, a service with no slot, and a service the brand does not sell", async () => {
+  it("PATCH answers 422 for an invalid body, an unknown service, and a service the brand does not sell", async () => {
     actingAs(alpha);
     expect((await patch({ ...input(), termsAndConditions: "too short" })).status).toBe(422);
     expect(
-      (await patch({ ...input({ termsAndConditions: OWN_TERMS }), serviceType: ServiceType.CAR_RENTAL }))
+      (await patch({ ...input({ termsAndConditions: OWN_TERMS }), serviceType: "TRAIN" }))
         .status,
     ).toBe(422);
     // HOTEL has a slot, but alpha sells car rental and flights only.
@@ -606,7 +606,7 @@ describe("/api/admin/settings/legal", () => {
   });
 });
 
-describe("the deployment-wide settings PATCH is unchanged", () => {
+describe("the deployment-wide settings PATCH", () => {
   function patchSettings(body: unknown) {
     return patchSettingsRoute(buildRequest("/api/admin/settings", { method: "PATCH", body }));
   }
@@ -629,9 +629,9 @@ describe("the deployment-wide settings PATCH is unchanged", () => {
     };
   }
 
-  it("re-versions changed car terms, audits the diff, and leaves every organization alone", async () => {
+  it("with no brand selected, re-versions the default car terms, audits the diff, and leaves every organization alone", async () => {
     const orgBefore = await rawLegal(alpha);
-    actingAs(alpha);
+    actingAs(null);
     const newTerms = "SETTINGS CAR TERMS, REVISED: present a valid licence when collecting the car.";
     const { status, body } = await jsonBody<{
       ok: true;
@@ -654,6 +654,21 @@ describe("the deployment-wide settings PATCH is unchanged", () => {
     ]);
     expect(await rawLegal(alpha)).toEqual(orgBefore);
     expect(await legalAudits()).toHaveLength(0);
+  });
+
+  it("refuses a change to the default car terms from inside a brand — they are each brand's own now", async () => {
+    const before = await Setting.findOne({ key: SETTINGS_KEY }).lean<Record<string, unknown>>();
+    actingAs(alpha);
+    const res = await patchSettings(
+      await currentSettingsForm({ termsAndConditions: "A BRAND trying to change every brand's car terms." }),
+    );
+    expect(res.status).toBe(422);
+    const { body } = await jsonBody<{ ok: false; error: { message: string } }>(res);
+    expect(body.error.message).toBe(
+      "Car rental terms are set per brand. Edit alphaair brand's own under its Car rental terms in Admin → Settings.",
+    );
+    const after = await Setting.findOne({ key: SETTINGS_KEY }).lean<Record<string, unknown>>();
+    expect({ ...after, updatedAt: null }).toEqual({ ...before, updatedAt: null });
   });
 
   it("still refuses a save that changes nothing", async () => {

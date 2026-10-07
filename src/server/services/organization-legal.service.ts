@@ -16,6 +16,7 @@ import {
 } from "@/lib/errors";
 import { isEqual, nextPolicyVersion } from "@/lib/policy-version";
 import type {
+  OrganizationLegalService,
   ServiceWithOwnLegal,
   UpdateServiceLegalInput,
 } from "@/lib/validation";
@@ -33,54 +34,72 @@ import {
 } from "@/server/db/models/setting.model";
 import { connectMongo } from "@/server/db/mongoose";
 import { organizationStamp } from "@/server/db/organization-filter";
-import { getRequestOrganizationScope } from "@/server/auth/organization";
+import {
+  getRequestOrganizationScope,
+  getSelectedOrganization,
+} from "@/server/auth/organization";
 
 import type { RequestContext } from "@/server/api/request-context";
 import { recordAudit } from "./audit.service";
 import { serviceTypesOrDefault } from "./organization-service-types";
+import { getSettings } from "./settings.service";
 
 /**
- * An organization's own FLIGHT and HOTEL terms and cancellation policy
- * (`legal.services.FLIGHT` / `legal.services.HOTEL`), edited in Admin →
- * Settings — and only for a service the organization sells.
+ * An organization's OWN terms and cancellation policy for each service it
+ * sells, edited in Admin → Settings:
  *
- * Organization-scoped on purpose, unlike everything else on that page. The
- * Settings singleton is shared by every brand, so a flight or hotel text
- * stored there would let one brand's legal wording reach another brand's
- * orders. An organization with no text of its own freezes that service's
- * built-in default onto its orders — never its car-rental text, and never
- * the singleton (see `resolveOrderLegal` in order.service.ts).
+ *   - CAR_RENTAL — its top-level `legal` text. Until the organization saves
+ *     its own, it inherits the deployment default (the Settings singleton),
+ *     exactly as it always has.
+ *   - FLIGHT / HOTEL — `legal.services.FLIGHT` / `legal.services.HOTEL`,
+ *     else that service's built-in, brand-neutral default.
+ *
+ * Every save writes the SELECTED organization's own text for ONE service and
+ * nothing else — never the deployment default, never another brand's text,
+ * never another service's. So one brand's edit can never reach another
+ * brand's orders, and a service's text can never reach another service's
+ * orders (see `resolveOrderLegal` in order.service.ts).
  */
 
-/** Each service with a legal slot of its own: its built-in text, and how a
- *  refusal names it. */
-const SERVICE_LEGAL: Record<
-  ServiceWithOwnLegal,
-  {
-    termsAndConditions: string;
-    cancellationPolicy: string;
-    version: string;
-    notSold: (brandName: string) => string;
-    staleEdit: string;
-  }
+/** How a refusal names each service. */
+const SERVICE_COPY: Record<
+  OrganizationLegalService,
+  { notSold: (brandName: string) => string; staleEdit: string }
 > = {
+  [ServiceType.CAR_RENTAL]: {
+    notSold: (brandName) =>
+      `${brandName} does not sell car rental, so it has no car rental terms to set.`,
+    staleEdit:
+      "These car rental terms changed since you opened this page. Reload to see the latest version before saving.",
+  },
   [ServiceType.FLIGHT]: {
-    termsAndConditions: DEFAULT_FLIGHT_TERMS_AND_CONDITIONS,
-    cancellationPolicy: DEFAULT_FLIGHT_CANCELLATION_POLICY,
-    version: DEFAULT_FLIGHT_LEGAL_VERSION,
     notSold: (brandName) =>
       `${brandName} does not sell flights, so it has no flight terms to set.`,
     staleEdit:
       "These flight terms changed since you opened this page. Reload to see the latest version before saving.",
   },
   [ServiceType.HOTEL]: {
-    termsAndConditions: DEFAULT_HOTEL_TERMS_AND_CONDITIONS,
-    cancellationPolicy: DEFAULT_HOTEL_CANCELLATION_POLICY,
-    version: DEFAULT_HOTEL_LEGAL_VERSION,
     notSold: (brandName) =>
       `${brandName} does not sell hotel stays, so it has no hotel terms to set.`,
     staleEdit:
       "These hotel terms changed since you opened this page. Reload to see the latest version before saving.",
+  },
+};
+
+/** Each service with a legal slot of its own: its built-in text. */
+const SERVICE_DEFAULTS: Record<
+  ServiceWithOwnLegal,
+  { termsAndConditions: string; cancellationPolicy: string; version: string }
+> = {
+  [ServiceType.FLIGHT]: {
+    termsAndConditions: DEFAULT_FLIGHT_TERMS_AND_CONDITIONS,
+    cancellationPolicy: DEFAULT_FLIGHT_CANCELLATION_POLICY,
+    version: DEFAULT_FLIGHT_LEGAL_VERSION,
+  },
+  [ServiceType.HOTEL]: {
+    termsAndConditions: DEFAULT_HOTEL_TERMS_AND_CONDITIONS,
+    cancellationPolicy: DEFAULT_HOTEL_CANCELLATION_POLICY,
+    version: DEFAULT_HOTEL_LEGAL_VERSION,
   },
 };
 
@@ -94,17 +113,25 @@ interface OrganizationServiceLegalView {
   cancellationPolicy: string;
   cancellationPolicyVersion: string;
   /** True when the organization has no text of its own, so the text and
-   *  version above are the built-in default's. */
+   *  version above are the default's: the built-in one for flight and
+   *  hotel, the inherited deployment default for car rental. */
   termsIsDefault: boolean;
   policyIsDefault: boolean;
   /**
-   * True when the organization has organization-wide (top-level) legal
-   * text. Car rental orders use it; flight and hotel orders never do — and
-   * before per-service text existed, that is where such a brand's terms
-   * were written. The editor says so, so wording left there is not
-   * mistaken for the terms in force.
+   * Flight and hotel only: true when the organization has organization-wide
+   * (top-level) legal text. Car rental orders use it; flight and hotel orders
+   * never do — and before per-service text existed, that is where such a
+   * brand's terms were written. The editor says so, so wording left there is
+   * not mistaken for the terms in force. Always false for car rental, whose
+   * own text that IS.
    */
   hasOrganizationWideText: boolean;
+}
+
+export interface OrganizationCarLegal extends OrganizationServiceLegalView {
+  /** Whether CAR_RENTAL is one of the organization's service types. The
+   *  form is only offered, and a save only accepted, when it is. */
+  sellsCarRental: boolean;
 }
 
 export interface OrganizationFlightLegal extends OrganizationServiceLegalView {
@@ -132,17 +159,40 @@ interface OrganizationLegalRow {
   serviceTypes?: ServiceType[] | null;
   legal?: {
     termsAndConditions?: string | null;
+    termsVersion?: string | null;
     cancellationPolicy?: string | null;
+    cancellationPolicyVersion?: string | null;
     services?: Partial<
       Record<ServiceWithOwnLegal, Partial<OrganizationServiceLegal> | null>
     > | null;
   } | null;
 }
 
+/** The deployment-wide car rental text: what a car rental order freezes for
+ *  any field its organization has not set itself. */
+export interface DeploymentCarLegal {
+  termsAndConditions: string;
+  termsVersion: string;
+  cancellationPolicy: string;
+  cancellationPolicyVersion: string;
+}
+
 /** What a view needs: the organization, its service list, its top-level
- *  text (for the hint), and the one service's slot. */
-function viewFields(serviceType: ServiceWithOwnLegal): string {
-  return `brandName serviceTypes legal.termsAndConditions legal.cancellationPolicy legal.services.${serviceType}`;
+ *  text, and — for flight or hotel — that service's slot. */
+function viewFields(serviceType: OrganizationLegalService): string {
+  return serviceType === ServiceType.CAR_RENTAL
+    ? "brandName serviceTypes legal.termsAndConditions legal.termsVersion legal.cancellationPolicy legal.cancellationPolicyVersion"
+    : `brandName serviceTypes legal.termsAndConditions legal.cancellationPolicy legal.services.${serviceType}`;
+}
+
+async function deploymentCarLegal(): Promise<DeploymentCarLegal> {
+  const settings = await getSettings();
+  return {
+    termsAndConditions: settings.termsAndConditions,
+    termsVersion: settings.termsVersion,
+    cancellationPolicy: settings.cancellationPolicy,
+    cancellationPolicyVersion: settings.cancellationPolicyVersion,
+  };
 }
 
 /** What an organization stores for one service's legal text, as read back
@@ -179,7 +229,7 @@ export function pairServiceLegal(
   serviceType: ServiceWithOwnLegal,
   own: StoredServiceLegal | null | undefined,
 ): PairedServiceLegal {
-  const builtIn = SERVICE_LEGAL[serviceType];
+  const builtIn = SERVICE_DEFAULTS[serviceType];
   const terms = own?.termsAndConditions?.trim();
   const policy = own?.cancellationPolicy?.trim();
   return {
@@ -191,6 +241,34 @@ export function pairServiceLegal(
     cancellationPolicyVersion: policy
       ? own?.cancellationPolicyVersion?.trim() || "v1"
       : builtIn.version,
+    termsIsDefault: !terms,
+    policyIsDefault: !policy,
+  };
+}
+
+/**
+ * THE car rental T&C rule — the only place it lives, and exactly the rule
+ * car rental orders have always been frozen with: field by field, the
+ * organization's own (trimmed) value, else the deployment default's. So an
+ * organization can override only its terms and still inherit the deployment
+ * policy. Never a flight or hotel text, never another organization's.
+ *
+ * Pure, and shared by the admin form and `resolveOrderLegal`, so the form
+ * always shows exactly what the next car rental order freezes.
+ */
+export function pairCarLegal(
+  own: StoredServiceLegal | null | undefined,
+  deployment: DeploymentCarLegal,
+): PairedServiceLegal {
+  const terms = own?.termsAndConditions?.trim();
+  const policy = own?.cancellationPolicy?.trim();
+  return {
+    termsAndConditions: terms || deployment.termsAndConditions,
+    termsVersion: own?.termsVersion?.trim() || deployment.termsVersion,
+    cancellationPolicy: policy || deployment.cancellationPolicy,
+    cancellationPolicyVersion:
+      own?.cancellationPolicyVersion?.trim() ||
+      deployment.cancellationPolicyVersion,
     termsIsDefault: !terms,
     policyIsDefault: !policy,
   };
@@ -211,11 +289,21 @@ function sells(org: OrganizationLegalRow, serviceType: ServiceType): boolean {
   return serviceTypesOrDefault(org.serviceTypes).includes(serviceType);
 }
 
-/** Resolved by `pairServiceLegal`, exactly as a new order resolves it. */
+/** Resolved exactly as a new order of that service resolves it. The
+ *  deployment default is needed for car rental only. */
 function toServiceView(
   org: OrganizationLegalRow,
-  serviceType: ServiceWithOwnLegal,
+  serviceType: OrganizationLegalService,
+  deployment: DeploymentCarLegal | null,
 ): OrganizationServiceLegalView {
+  if (serviceType === ServiceType.CAR_RENTAL) {
+    return {
+      organizationId: String(org._id),
+      brandName: org.brandName,
+      ...pairCarLegal(org.legal, deployment!),
+      hasOrganizationWideText: false,
+    };
+  }
   return {
     organizationId: String(org._id),
     brandName: org.brandName,
@@ -227,24 +315,41 @@ function toServiceView(
   };
 }
 
+function toCarView(
+  org: OrganizationLegalRow,
+  deployment: DeploymentCarLegal,
+): OrganizationCarLegal {
+  return {
+    ...toServiceView(org, ServiceType.CAR_RENTAL, deployment),
+    sellsCarRental: sells(org, ServiceType.CAR_RENTAL),
+  };
+}
+
 function toFlightView(org: OrganizationLegalRow): OrganizationFlightLegal {
   return {
-    ...toServiceView(org, ServiceType.FLIGHT),
+    ...toServiceView(org, ServiceType.FLIGHT, null),
     sellsFlight: sells(org, ServiceType.FLIGHT),
   };
 }
 
 function toHotelView(org: OrganizationLegalRow): OrganizationHotelLegal {
   return {
-    ...toServiceView(org, ServiceType.HOTEL),
+    ...toServiceView(org, ServiceType.HOTEL, null),
     sellsHotel: sells(org, ServiceType.HOTEL),
   };
 }
 
+type AnyServiceLegalView =
+  | OrganizationCarLegal
+  | OrganizationFlightLegal
+  | OrganizationHotelLegal;
+
 function toView(
   org: OrganizationLegalRow,
-  serviceType: ServiceWithOwnLegal,
-): OrganizationFlightLegal | OrganizationHotelLegal {
+  serviceType: OrganizationLegalService,
+  deployment: DeploymentCarLegal | null,
+): AnyServiceLegalView {
+  if (serviceType === ServiceType.CAR_RENTAL) return toCarView(org, deployment!);
   return serviceType === ServiceType.FLIGHT
     ? toFlightView(org)
     : toHotelView(org);
@@ -278,6 +383,16 @@ export async function getOrganizationHotelLegal(
   );
 }
 
+export async function getOrganizationCarLegal(
+  organizationId: string | Types.ObjectId,
+): Promise<OrganizationCarLegal> {
+  const [org, deployment] = await Promise.all([
+    readLegalRow(organizationId, viewFields(ServiceType.CAR_RENTAL)),
+    deploymentCarLegal(),
+  ]);
+  return toCarView(org, deployment);
+}
+
 /**
  * The named service's text, for a service the organization SELLS — the
  * legal route's read. A service it does not sell is refused rather than
@@ -286,18 +401,48 @@ export async function getOrganizationHotelLegal(
  */
 export async function getOrganizationServiceLegal(
   organizationId: string | Types.ObjectId,
-  serviceType: ServiceWithOwnLegal,
-): Promise<OrganizationFlightLegal | OrganizationHotelLegal> {
+  serviceType: OrganizationLegalService,
+): Promise<AnyServiceLegalView> {
   const org = await readLegalRow(organizationId, viewFields(serviceType));
   if (!sells(org, serviceType)) {
-    throw new ValidationError(SERVICE_LEGAL[serviceType].notSold(org.brandName));
+    throw new ValidationError(SERVICE_COPY[serviceType].notSold(org.brandName));
   }
-  return toView(org, serviceType);
+  const deployment =
+    serviceType === ServiceType.CAR_RENTAL ? await deploymentCarLegal() : null;
+  return toView(org, serviceType, deployment);
 }
 
 /**
- * Save the SELECTED organization's terms and cancellation policy for one
- * service (FLIGHT or HOTEL).
+ * The terms an admin email preview shows for one service: exactly what the
+ * SELECTED organization's next order of that service would freeze — its own
+ * text, else that service's default. With no organization selected: the
+ * deployment car rental text, or the built-in flight/hotel text. Never
+ * another service's text.
+ */
+export async function previewLegalFor(
+  serviceType: OrganizationLegalService,
+): Promise<DeploymentCarLegal> {
+  const organization = await getSelectedOrganization();
+  const pick = (paired: PairedServiceLegal): DeploymentCarLegal => ({
+    termsAndConditions: paired.termsAndConditions,
+    termsVersion: paired.termsVersion,
+    cancellationPolicy: paired.cancellationPolicy,
+    cancellationPolicyVersion: paired.cancellationPolicyVersion,
+  });
+  if (serviceType === ServiceType.CAR_RENTAL) {
+    const deployment = await deploymentCarLegal();
+    if (!organization) return deployment;
+    const org = await readLegalRow(organization.id, viewFields(serviceType));
+    return pick(pairCarLegal(org.legal, deployment));
+  }
+  if (!organization) return pick(pairServiceLegal(serviceType, null));
+  const org = await readLegalRow(organization.id, viewFields(serviceType));
+  return pick(pairServiceLegal(serviceType, org.legal?.services?.[serviceType]));
+}
+
+/**
+ * Save the SELECTED organization's own terms and cancellation policy for one
+ * service (CAR_RENTAL, FLIGHT or HOTEL).
  *
  * The organization comes only from the request's organization scope — the
  * selected-org cookie, validated against the caller's memberships — so an
@@ -308,9 +453,10 @@ export async function getOrganizationServiceLegal(
 export async function updateOrganizationServiceLegal(
   input: UpdateServiceLegalInput,
   ctx: UpdateOrganizationLegalContext,
-): Promise<OrganizationFlightLegal | OrganizationHotelLegal> {
+): Promise<AnyServiceLegalView> {
   const serviceType = input.serviceType;
-  const builtIn = SERVICE_LEGAL[serviceType];
+  const copy = SERVICE_COPY[serviceType];
+  const isCar = serviceType === ServiceType.CAR_RENTAL;
   const organizationId = organizationStamp(await getRequestOrganizationScope());
   if (!organizationId) {
     throw new ForbiddenError("Select an organization to continue");
@@ -319,9 +465,10 @@ export async function updateOrganizationServiceLegal(
   const org = await readLegalRow(organizationId, viewFields(serviceType));
 
   if (!sells(org, serviceType)) {
-    throw new ValidationError(builtIn.notSold(org.brandName));
+    throw new ValidationError(copy.notSold(org.brandName));
   }
-  const current = toServiceView(org, serviceType);
+  const deployment = isCar ? await deploymentCarLegal() : null;
+  const current = toServiceView(org, serviceType, deployment);
 
   // Stale-tab guards. The organization above came from the selection
   // cookie; the editor says which one it was showing. A tab opened for one
@@ -342,23 +489,27 @@ export async function updateOrganizationServiceLegal(
       input.expectedCancellationPolicyVersion !==
         current.cancellationPolicyVersion)
   ) {
-    throw new ConflictError(builtIn.staleEdit);
+    throw new ConflictError(copy.staleEdit);
   }
 
   // Diffed against the text new orders of this service freeze today — the
-  // organization's own, or the built-in default it is still on. A field
-  // saved untouched therefore stays on the default and keeps its version;
-  // only a text that really changed is written, re-versioned and audited.
-  const stored = org.legal?.services?.[serviceType] ?? null;
+  // organization's own, or the default it is still on. A field saved
+  // untouched therefore stays on the default and keeps its version; only a
+  // text that really changed is written, re-versioned and audited.
+  const stored: StoredServiceLegal | null = isCar
+    ? (org.legal ?? null)
+    : (org.legal?.services?.[serviceType] ?? null);
   const changes: Record<string, { from: unknown; to: unknown }> = {};
   const next: Partial<OrganizationServiceLegal> = {};
 
   // Versions bump from the STORED label — the same rule as the deployment
-  // settings — and from "v1", the built-in default's, when there is none.
-  // An organization's first text of its own is therefore "v2".
+  // settings — and from the version in force when there is none: "v1" for a
+  // built-in default (so a first text of its own is "v2"), the deployment
+  // default's for car rental (so the version a customer sees never goes
+  // backwards).
   if (!isEqual(current.termsAndConditions, input.termsAndConditions)) {
     const bumped = nextPolicyVersion(
-      stored?.termsVersion?.trim() || builtIn.version,
+      stored?.termsVersion?.trim() || current.termsVersion,
     );
     next.termsAndConditions = input.termsAndConditions;
     next.termsVersion = bumped;
@@ -371,7 +522,8 @@ export async function updateOrganizationServiceLegal(
 
   if (!isEqual(current.cancellationPolicy, input.cancellationPolicy)) {
     const bumped = nextPolicyVersion(
-      stored?.cancellationPolicyVersion?.trim() || builtIn.version,
+      stored?.cancellationPolicyVersion?.trim() ||
+        current.cancellationPolicyVersion,
     );
     next.cancellationPolicy = input.cancellationPolicy;
     next.cancellationPolicyVersion = bumped;
@@ -389,28 +541,34 @@ export async function updateOrganizationServiceLegal(
     throw new ValidationError("No changes to apply");
   }
 
-  // `$set` creates missing parents but cannot write THROUGH a stored null,
-  // and Mongoose stores `legal.services` and each of its slots as null by
-  // default on a new document. So `legal.services` is first made an object
-  // — only while it is still null, so a first save of the OTHER service
-  // racing this one is never replaced — and then this service's slot gets
-  // just the changed fields when its block exists, otherwise the whole
-  // block, with an untouched text left empty (still on the built-in
-  // default). Nothing outside this one slot is ever written.
-  if (!org.legal?.services) {
-    await Organization.updateOne(
-      { _id: organizationId, "legal.services": null },
-      { $set: { "legal.services": {} } },
-    );
-  }
   const set: Record<string, unknown> = {
     updatedBy: new Types.ObjectId(ctx.actorId),
   };
-  if (stored) {
+  if (isCar) {
+    // Car rental's own text is the organization's top-level legal: plain
+    // string fields, written in place. The deployment default is never
+    // touched, so no other brand's car rental orders change.
+    for (const [field, value] of Object.entries(next)) {
+      set[`legal.${field}`] = value;
+    }
+  } else if (stored) {
     for (const [field, value] of Object.entries(next)) {
       set[`legal.services.${serviceType}.${field}`] = value;
     }
   } else {
+    // `$set` creates missing parents but cannot write THROUGH a stored
+    // null, and Mongoose stores `legal.services` and each of its slots as
+    // null by default on a new document. So `legal.services` is first made
+    // an object — only while it is still null, so a first save of the OTHER
+    // service racing this one is never replaced — and then this service's
+    // whole block is written, with an untouched text left empty (still on
+    // the built-in default). Nothing outside this one slot is ever written.
+    if (!org.legal?.services) {
+      await Organization.updateOne(
+        { _id: organizationId, "legal.services": null },
+        { $set: { "legal.services": {} } },
+      );
+    }
     const block: OrganizationServiceLegal = {
       termsAndConditions: "",
       termsVersion: "",
@@ -446,7 +604,7 @@ export async function updateOrganizationServiceLegal(
     organizationId,
   });
 
-  return toView(updated, serviceType);
+  return toView(updated, serviceType, deployment);
 }
 
 /** The flight save: `updateOrganizationServiceLegal` for FLIGHT. */

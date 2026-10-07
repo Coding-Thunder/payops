@@ -1,6 +1,10 @@
 import "server-only";
 
-import { flightMoneyWording, summarizeFlightAmounts } from "@/lib/charges";
+import {
+  flightMoneyWording,
+  showsAirlineCharge,
+  summarizeFlightAmounts,
+} from "@/lib/charges";
 import { FlightTripType, ServiceType } from "@/lib/constants/enums";
 import { providerLabelFor } from "@/lib/constants/labels";
 import {
@@ -88,39 +92,38 @@ function flightLines(order: OrderDTO): string[] {
 }
 
 /**
- * The money line(s). A flight labels each figure — on an itinerary flight
+ * The money line(s). A flight labels each figure, in the order every flight
+ * breakdown uses — Airline Charge (when there is one), Service Charge,
+ * Total Booking Value, Amount Payable Now — because on an itinerary flight
  * the payment link collects only the service charge, so an unlabelled
  * "Amount" would read as the price of the trip. A flight created before
- * itineraries usually charged its whole fare, so its line is the neutral
- * "Amount payable now". Every other service keeps its historic line.
+ * itineraries usually charged its whole fare, so its labels are the
+ * neutral legacy set. Every other service keeps its historic line.
  */
 function amountLines(order: OrderDTO): string[] {
   const currency = order.pricing.currency;
   if (serviceTypeOf(order) !== ServiceType.FLIGHT) {
     return [`Amount: ${order.pricing.amount.toFixed(2)} ${currency}`];
   }
-  const { labels, serviceChargeModel } = flightMoneyWording(order.flight, order.bookingType);
+  const { labels } = flightMoneyWording(order.flight, order.bookingType);
   const a = summarizeFlightAmounts(
     order.charges,
     order.flight?.airlineFare,
     order.pricing.amount,
   );
-  const payable = `${order.pricing.amount.toFixed(2)} ${currency}`;
-  const lines = [
-    serviceChargeModel
-      ? `${labels.serviceCharge} payable now: ${payable}`
-      : `${labels.payableNow}: ${payable}`,
-  ];
-  if (a.airlineFare > 0) {
+  const lines: string[] = [];
+  if (showsAirlineCharge(a)) {
     lines.push(
       `${labels.airlineFare}: ${a.airlineFare.toFixed(2)} ${currency} (${labels.airlineFareNote.toLowerCase()})`,
     );
   }
+  lines.push(`${labels.serviceCharge}: ${a.serviceCharge.toFixed(2)} ${currency}`);
   if (a.dueLater > 0) {
     lines.push(`${labels.dueLater}: ${a.dueLater.toFixed(2)} ${currency}`);
   }
   lines.push(
     `${labels.bookingTotal}: ${a.bookingTotal.toFixed(2)} ${currency}`,
+    `${labels.payableNow}: ${order.pricing.amount.toFixed(2)} ${currency}`,
   );
   return lines;
 }

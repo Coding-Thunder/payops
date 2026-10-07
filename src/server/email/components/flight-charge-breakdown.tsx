@@ -21,18 +21,27 @@ import { COLOR, SPACE, typeStyle } from "./tokens";
 export interface EmailFlightAmounts {
   /** The charge lines as entered — the service charge on an itinerary
    *  flight, all PREPAID. A flight created before prepaid-only may also
-   *  carry one due later. */
+   *  carry one due later. Listed one by one only for a flight created
+   *  before itineraries (`hasItinerary` false). */
   lines: EmailChargeLine[];
-  /** The airline fare, or null when none was recorded — the row is then
-   *  left out rather than printed as $0.00. */
+  /** The airline charge, or null when there is none (0, or never
+   *  recorded) — the row and its explainer are then left out rather than
+   *  printed as $0.00. */
   airlineFare: string | null;
   /** Sum of the prepaid lines — ALL the payment link ever collects: the
    *  service charge, on an itinerary flight. */
   serviceCharge: string;
   /** Legacy flights only: the balance due later, else null. */
   dueLater: string | null;
-  /** Airline fare + service charge (+ any legacy balance). */
+  /** Airline charge + service charge (+ any legacy balance). */
   bookingTotal: string;
+  /**
+   * True for an itinerary flight: its money is the fixed rows — Airline
+   * Charge, Service Charge, Total Booking Value and the amount settled —
+   * whatever its charge line was called. A flight created before
+   * itineraries (false) lists its lines as entered instead.
+   */
+  hasItinerary: boolean;
   /**
    * From `flightMoneyWording(order.flight)`: true when the charge lines are
    * the operator's service charge (every itinerary flight). False for a
@@ -41,16 +50,6 @@ export interface EmailFlightAmounts {
    */
   serviceChargeModel: boolean;
 }
-
-/**
- * The sentence flight emails use, next to the amount, so the service charge
- * can never read as the price of the trip. Says what is true about this
- * payment without claiming who collects the fare — the same stance as
- * `FLIGHT_AMOUNT_LABELS.airlineFareNote`. Itinerary flights only
- * (`serviceChargeModel`): on a legacy flight the payment usually WAS the fare.
- */
-export const AIRLINE_FARE_NOT_INCLUDED =
-  "The airline fare is charged separately and is not part of this payment.";
 
 interface FlightChargeBreakdownProps {
   amounts: EmailFlightAmounts;
@@ -69,15 +68,19 @@ interface FlightChargeBreakdownProps {
 /**
  * The FLIGHT money block:
  *
- *   Airline fare                         $1,240.00
- *   Charged separately — not part of this payment
- *   Service charge                          $95.00
- *   Total booking value                  $1,335.00
- *   Amount payable now                      $95.00
+ *   Airline Charge                       $1,240.00
+ *   Not collected through this payment link
+ *   Service Charge                          $95.00
+ *   Total Booking Value                  $1,335.00
+ *   Amount Payable Now                      $95.00
+ *   Airline Charge is shown for the total booking value and is not
+ *   collected through this payment link.
  *
  * Takes the place of `ChargeBreakdown` for a flight, whose prepaid / due /
- * total rows have no way to show a fare the payment link never collects.
- * Built from the same row primitives so the two blocks read as one design.
+ * total rows have no way to show an airline charge the payment link never
+ * collects. Built from the same row primitives so the two blocks read as
+ * one design. The Service Charge row is the order's prepaid total — exactly
+ * what the gateway is sent — never a line name an operator typed.
  */
 export function FlightChargeBreakdown({
   amounts,
@@ -96,17 +99,21 @@ export function FlightChargeBreakdown({
       {amounts.airlineFare ? (
         <FareRow value={amounts.airlineFare} labels={labels} />
       ) : null}
-      {amounts.lines.map((line, idx) => (
-        <MetadataRow
-          key={idx}
-          label={
-            line.timing === PaymentTiming.DUE_AT_COUNTER
-              ? `${line.name} ${FLIGHT_CHARGE_WORDING.dueSuffix}`
-              : line.name
-          }
-          value={line.amount}
-        />
-      ))}
+      {amounts.hasItinerary ? (
+        <MetadataRow label={labels.serviceCharge} value={amounts.serviceCharge} />
+      ) : (
+        amounts.lines.map((line, idx) => (
+          <MetadataRow
+            key={idx}
+            label={
+              line.timing === PaymentTiming.DUE_AT_COUNTER
+                ? `${line.name} ${FLIGHT_CHARGE_WORDING.dueSuffix}`
+                : line.name
+            }
+            value={line.amount}
+          />
+        ))
+      )}
       <TotalRow label={labels.bookingTotal} value={amounts.bookingTotal} />
       {amounts.dueLater ? (
         <TotalRow label={labels.dueLater} value={amounts.dueLater} />
@@ -117,14 +124,28 @@ export function FlightChargeBreakdown({
         emphasise
         isLast
       />
+      {amounts.airlineFare ? (
+        <Text
+          style={{
+            ...typeStyle("legal"),
+            margin: 0,
+            paddingTop: SPACE.xs,
+            color: COLOR.textMuted,
+            fontSize: 11,
+            lineHeight: "16px",
+          }}
+        >
+          {labels.airlineFareExplainer}
+        </Text>
+      ) : null}
     </SummaryCard>
   );
 }
 
 /**
- * The airline-fare line: a MetadataRow look, with the "not part of this
- * payment" note on a full-width line beneath it — too long for the label
- * column on a phone.
+ * The airline-charge line: a MetadataRow look, with the "not collected
+ * through this payment link" note on a full-width line beneath it — too
+ * long for the label column on a phone.
  */
 function FareRow({
   value,

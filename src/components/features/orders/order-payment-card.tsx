@@ -39,9 +39,11 @@ import { PaymentGatewayLabel } from "@/lib/constants/labels";
 import {
   flightCollection,
   flightMoneyWording,
+  showsAirlineCharge,
   summarizeCharges,
   summarizeFlightAmounts,
 } from "@/lib/charges";
+import { hasFlightItinerary } from "@/lib/flight-itinerary";
 import { serviceTypeOf } from "@/lib/service-summary";
 import type { OrderDTO, OrderPaymentCapture } from "@/types";
 
@@ -450,10 +452,11 @@ export function OrderPaymentCard({
 }
 
 /**
- * The FLIGHT money split. A flight's charge lines are the operator's
+ * The FLIGHT money split. A flight's charge line is the operator's
  * service charge — the only money the payment link collects (= the
- * `pricing.amount` the gateway is sent) — while the airline fare is shown
- * for the booking value and never charged here. Nothing below says
+ * `pricing.amount` the gateway is sent) — while the airline charge
+ * (`flight.airlineFare`) is shown for the booking value and never charged
+ * here. Nothing below says
  * "counter" or "rental": a flight created before flights became
  * prepaid-only shows its due-later line as the remaining balance instead.
  * Such a flight's lines were usually the whole fare, so its labels come
@@ -468,12 +471,19 @@ function FlightChargeBreakdown({ order }: { order: OrderDTO }) {
     order.pricing.amount,
   );
   const collection = flightCollection(order);
+  // An itinerary flight's one line IS the Service Charge row below, so it
+  // is not listed twice. A flight with lines of another shape — created
+  // before itineraries, or before a flight was limited to one line — still
+  // lists them as entered.
+  const listLines =
+    amounts.charges.length > 1 ||
+    (amounts.charges.length === 1 && !hasFlightItinerary(order.flight));
   return (
     <div className="space-y-1.5 rounded-md border border-border bg-muted/30 p-3 text-sm">
       <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
         Charge breakdown
       </p>
-      {amounts.charges.length > 0 ? (
+      {listLines ? (
         <div className="space-y-1 pb-1">
           {amounts.charges.map((c, i) => (
             <div key={i} className="flex items-center justify-between gap-3">
@@ -493,7 +503,7 @@ function FlightChargeBreakdown({ order }: { order: OrderDTO }) {
         </div>
       ) : null}
       <div className="space-y-1.5 border-t pt-1.5">
-        {amounts.airlineFare > 0 ? (
+        {showsAirlineCharge(amounts) ? (
           <div>
             <div className="flex items-center justify-between gap-3">
               <span className="text-muted-foreground">
@@ -504,7 +514,7 @@ function FlightChargeBreakdown({ order }: { order: OrderDTO }) {
               </span>
             </div>
             <p className="text-[11px] text-muted-foreground">
-              Not collected by the payment link
+              {labels.airlineFareNote}
             </p>
           </div>
         ) : null}

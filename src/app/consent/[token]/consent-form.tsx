@@ -6,7 +6,11 @@ import { ShieldCheckIcon } from "lucide-react";
 import { api, ApiClientError } from "@/lib/api-client";
 import { FlightItinerary } from "@/components/common/flight-itinerary";
 import { Checkbox } from "@/components/ui/checkbox";
-import { flightMoneyWording, LEGACY_FLIGHT_AMOUNT_LABELS } from "@/lib/charges";
+import {
+  flightMoneyWording,
+  LEGACY_FLIGHT_AMOUNT_LABELS,
+  showsAirlineCharge,
+} from "@/lib/charges";
 import { ServiceType } from "@/lib/constants/enums";
 import {
   BookingTypeLabel,
@@ -365,7 +369,9 @@ function SummaryBlock({ view }: { view: PublicConsentView }) {
  * set against the full booking value, then the trip and every flight and
  * layover. The money block is shown for every flight — not gated on a
  * counter balance like a rental's — because its job is to make clear that
- * the airline fare is not part of this payment.
+ * the airline charge is not part of this payment: Airline Charge, Service
+ * Charge, Total Booking Value and Amount Payable Now, the same rows as the
+ * emails.
  *
  * Worded from the FROZEN itinerary: a record whose `snapshot.flight` has an
  * outbound journey is the service-charge model; one frozen from a flight
@@ -383,6 +389,7 @@ function FlightSummaryBlock({
   const { labels, serviceChargeModel } = flightMoneyWording(snapshot.flight, snapshot.bookingType);
   const currency = snapshot.currency;
   const airlineFare = snapshot.airlineFare ?? 0;
+  const showAirline = showsAirlineCharge({ airlineFare });
   // Non-zero only for a flight created before flights became prepaid-only.
   const dueLater = snapshot.dueAtCounter ?? 0;
   const bookingTotal =
@@ -411,7 +418,7 @@ function FlightSummaryBlock({
         </div>
 
         <div className="mt-3 space-y-1 rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-3 text-sm">
-          {airlineFare > 0 ? (
+          {showAirline ? (
             <div className="flex items-start justify-between gap-3">
               <span className="text-slate-500">
                 {labels.airlineFare}
@@ -444,6 +451,17 @@ function FlightSummaryBlock({
               {formatCurrency(bookingTotal, currency)}
             </span>
           </div>
+          <div className="flex items-center justify-between gap-3 font-semibold">
+            <span className="text-slate-900">{labels.payableNow}</span>
+            <span className="tabular-nums text-slate-900">
+              {formatCurrency(snapshot.amount, currency)}
+            </span>
+          </div>
+          {showAirline ? (
+            <p className="pt-1 text-xs text-slate-500">
+              {labels.airlineFareExplainer}
+            </p>
+          ) : null}
         </div>
 
         <dl className="mt-4 divide-y divide-slate-100 text-sm">

@@ -26,6 +26,7 @@ import { DomainEventType } from "@/lib/constants/events";
 import {
   buildFlightItinerary,
   type FlightItineraryView,
+  hasFlightItinerary,
   type LocalDateTime,
   truncateText,
   wallClockMinutes,
@@ -62,6 +63,7 @@ import { formatEmailDate, formatEmailDay, formatMoney } from "@/server/email/for
 import { buildConsentMailto } from "@/server/email/consent-mailto";
 import {
   flightMoneyWording,
+  showsAirlineCharge,
   summarizeCharges,
   summarizeFlightAmounts,
 } from "@/lib/charges";
@@ -121,10 +123,11 @@ function buildEmailFlightAmounts(order: OrderDTO): EmailFlightAmounts | null {
       amount: formatMoney(c.amount, currency),
       timing: c.timing,
     })),
-    airlineFare: a.airlineFare > 0 ? formatMoney(a.airlineFare, currency) : null,
+    airlineFare: showsAirlineCharge(a) ? formatMoney(a.airlineFare, currency) : null,
     serviceCharge: formatMoney(a.serviceCharge, currency),
     dueLater: a.dueLater > 0 ? formatMoney(a.dueLater, currency) : null,
     bookingTotal: formatMoney(a.bookingTotal, currency),
+    hasItinerary: hasFlightItinerary(order.flight),
     serviceChargeModel: flightMoneyWording(order.flight, order.bookingType).serviceChargeModel,
   };
 }

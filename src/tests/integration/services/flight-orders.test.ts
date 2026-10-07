@@ -11,6 +11,7 @@ import {
   ServiceType,
   UserRole,
 } from "@/lib/constants/enums";
+import { summarizeFlightAmounts } from "@/lib/charges";
 import {
   buildFlightItinerary,
   CONNECTION_CHRONOLOGY_MESSAGE,
@@ -61,10 +62,11 @@ import {
  * the money rule the whole flight change exists for — what the payment
  * gateway is asked to charge.
  *
- * THE RULE: airline fare + service charge = booking value, and the gateway
- * (Stripe or PayPal) receives ONLY the service charge. The fare is a figure
- * shown to the customer, never a charge line, so it can never reach
- * `pricing.amount`. Car rentals keep collecting their PREPAID total exactly
+ * THE RULE: airline charge + service charge = booking value, and the
+ * gateway (Stripe or PayPal) receives ONLY the service charge. The airline
+ * charge is its own field on the flight (`flight.airlineFare`), never a
+ * charge line — a flight has exactly one, the service charge — so it can
+ * never reach `pricing.amount`. Car rentals keep collecting their PREPAID total exactly
  * as before, due-at-counter lines excluded.
  */
 
@@ -265,30 +267,39 @@ describe("createOrder FLIGHT stores the itinerary it was given", () => {
     ]);
   });
 
-  it("sums several service-charge lines, all PREPAID", async () => {
+  it("stores the airline charge on the flight, outside the charge lines, decimals as entered", async () => {
     actingAs(skyways);
     const { order } = await createOrder(
       oneWayConnectingFlightInput(
-        {
-          charges: [
-            { name: "Service charge", amount: 60, timing: PaymentTiming.PREPAID },
-            { name: "Seat selection", amount: 15.5, timing: PaymentTiming.PREPAID },
-          ],
-        },
-        { airlineFare: 300 },
+        { charges: flightServiceCharge(75.5) },
+        { airlineFare: 825.25 },
       ),
       { actor },
     );
-    const dto = await getOrderById(order.id, { actor });
-    expect(dto.pricing.amount).toBe(75.5);
-    expect(dto.charges.every((c) => c.timing === PaymentTiming.PREPAID)).toBe(true);
-    expect(dto.flight!.airlineFare).toBe(300);
+    const doc = await Order.findById(order.id).lean<{
+      pricing: { amount: number };
+      charges: { name: string; amount: number; timing: string }[];
+      flight: { airlineFare: number };
+    } | null>();
+    expect(doc!.flight.airlineFare).toBe(825.25);
+    expect(doc!.charges).toEqual([
+      { name: "Service charge", amount: 75.5, timing: PaymentTiming.PREPAID },
+    ]);
+    expect(doc!.pricing.amount).toBe(75.5);
   });
 
-  it("stores a blank airline fare as null", async () => {
+  it("stores an airline charge of 0 as 0 — the booking value is the service charge alone", async () => {
+    const order = await flightIn(skyways, 0, 100);
+    const dto = await getOrderById(order.id, { actor });
+    expect(dto.flight!.airlineFare).toBe(0);
+    expect(dto.pricing.amount).toBe(100);
+    expect(summarizeFlightAmounts(dto.charges, dto.flight!.airlineFare).bookingTotal).toBe(100);
+  });
+
+  it("reads a flight stored before the airline charge was required (null) as having none", async () => {
     actingAs(skyways);
     const { order } = await createOrder(
-      oneWayConnectingFlightInput({}, { airlineFare: null }),
+      oneWayConnectingFlightInput({}, { airlineFare: null as never }),
       { actor },
     );
     const dto = await getOrderById(order.id, { actor });
@@ -413,6 +424,57 @@ describe("POST /api/orders normalises a flight before it is stored", () => {
     expect(await Order.countDocuments({ serviceType: ServiceType.FLIGHT })).toBe(0);
   });
 
+  it("answers 422 — and stores nothing — for a second charge line: an airline charge can never ride along into the payment", async () => {
+    actingAs(skyways);
+    const res = await createOrderRoute(
+      buildRequest("/api/orders", {
+        method: "POST",
+        body: validFlightOrderInput({
+          charges: [
+            { name: "Airline charge", amount: 400, timing: PaymentTiming.PREPAID },
+            { name: "Service charge", amount: 100, timing: PaymentTiming.PREPAID },
+          ],
+        }),
+      }),
+    );
+    const { status, body } = await jsonBody<unknown>(res);
+    expect(status).toBe(422);
+    expect(JSON.stringify(body)).toContain(
+      "A flight has one charge: its service charge. Enter the airline charge in its own field",
+    );
+    expect(await Order.countDocuments({ serviceType: ServiceType.FLIGHT })).toBe(0);
+    expect(getCurrentTestStripe().sessionsCreated).toHaveLength(0);
+  });
+
+  it("answers 422 for a flight with no airline charge — 0 when there is none", async () => {
+    actingAs(skyways);
+    const payload = validFlightOrderInput();
+    delete (payload.flight as Record<string, unknown>).airlineFare;
+    const res = await createOrderRoute(
+      buildRequest("/api/orders", { method: "POST", body: payload }),
+    );
+    const { status, body } = await jsonBody<unknown>(res);
+    expect(status).toBe(422);
+    expect(JSON.stringify(body)).toContain("Enter the airline charge (0 if there is none)");
+    expect(await Order.countDocuments({ serviceType: ServiceType.FLIGHT })).toBe(0);
+  });
+
+  it("stores the one line as the service charge, whatever the request called it", async () => {
+    actingAs(skyways);
+    const res = await createOrderRoute(
+      buildRequest("/api/orders", {
+        method: "POST",
+        body: validFlightOrderInput({ charges: flightServiceCharge(100, "Airline fare") }),
+      }),
+    );
+    const { status, body } = await jsonBody<{ ok: boolean; data: { order: { id: string } } }>(res);
+    expect(status, JSON.stringify(body)).toBe(201);
+    const dto = await getOrderById(body.data.order.id, { actor });
+    expect(dto.charges).toEqual([
+      { name: "Service charge", amount: 100, timing: PaymentTiming.PREPAID },
+    ]);
+  });
+
   it("answers 422 for a DUE_AT_COUNTER flight charge", async () => {
     actingAs(skyways);
     const res = await createOrderRoute(
@@ -457,6 +519,21 @@ describe("the order model guards a NEW flight even when zod is bypassed", () => 
 
     await expect(createOrder(input, { actor })).rejects.toThrow(
       /Flight charges must be prepaid/,
+    );
+    expect(await Order.countDocuments({ serviceType: ServiceType.FLIGHT })).toBe(0);
+  });
+
+  it("refuses a new flight order carrying a second charge line", async () => {
+    actingAs(skyways);
+    const input = validFlightOrderInput({
+      charges: [
+        { name: "Airline charge", amount: 400, timing: PaymentTiming.PREPAID },
+        { name: "Service charge", amount: 100, timing: PaymentTiming.PREPAID },
+      ],
+    });
+
+    await expect(createOrder(input, { actor })).rejects.toThrow(
+      /A flight has exactly one charge: its service charge/,
     );
     expect(await Order.countDocuments({ serviceType: ServiceType.FLIGHT })).toBe(0);
   });
@@ -514,6 +591,35 @@ describe("the order model guards a NEW flight even when zod is bypassed", () => 
     const doc = await Order.findById(order._id);
     doc!.status = OrderStatus.PAID;
     await expect(doc!.save()).resolves.toBeTruthy();
+  });
+
+  it("still saves an itinerary flight stored with several lines, from before a flight had one", async () => {
+    const order = await factoryCreateOrder({
+      serviceType: ServiceType.FLIGHT,
+      organizationId: skyways,
+      flight: itineraryFlight(),
+    });
+    // What the old form could store: the service charge plus another line.
+    await Order.collection.updateOne(
+      { _id: order._id },
+      {
+        $set: {
+          charges: [
+            { name: "Service charge", amount: 60, timing: PaymentTiming.PREPAID },
+            { name: "Seat selection", amount: 15.5, timing: PaymentTiming.PREPAID },
+          ],
+          "pricing.amount": 75.5,
+        },
+      },
+    );
+
+    const doc = await Order.findById(order._id);
+    doc!.status = OrderStatus.PAID;
+    await expect(doc!.save()).resolves.toBeTruthy();
+    actingAs(skyways);
+    const dto = await getOrderById(String(order._id), { actor });
+    expect(dto.charges).toHaveLength(2);
+    expect(dto.pricing.amount).toBe(75.5);
   });
 });
 
@@ -606,6 +712,106 @@ describe("a LEGACY flight order (created before itineraries) still works", () =>
       arrival: { date: "2026-11-01", time: "17:40" },
     });
   });
+});
+
+/* ------------------------------------------------------------------ *
+ * The money rule end to end — through POST /api/orders, then the link
+ * ------------------------------------------------------------------ */
+
+/** Every value under a key that names money (`unit_amount`, `amount`, …),
+ *  anywhere in a gateway request. */
+function amountsIn(value: unknown): unknown[] {
+  if (!value || typeof value !== "object") return [];
+  return Object.entries(value as Record<string, unknown>).flatMap(([key, v]) =>
+    /amount/i.test(key) ? [v] : amountsIn(v),
+  );
+}
+
+describe("the Airline Charge never reaches Stripe or PayPal — end to end", () => {
+  it.each([
+    { gateway: "Stripe", airline: 400, service: 100, booking: 500, currency: "USD" },
+    { gateway: "Stripe", airline: 825, service: 75, booking: 900, currency: "USD" },
+    { gateway: "Stripe", airline: 825.25, service: 75.5, booking: 900.75, currency: "EUR" },
+    { gateway: "Stripe", airline: 0, service: 60, booking: 60, currency: "USD" },
+    { gateway: "PayPal", airline: 400, service: 100, booking: 500, currency: "USD" },
+    { gateway: "PayPal", airline: 825, service: 75, booking: 900, currency: "USD" },
+    { gateway: "PayPal", airline: 825.25, service: 75.5, booking: 900.75, currency: "EUR" },
+    { gateway: "PayPal", airline: 0, service: 60, booking: 60, currency: "USD" },
+  ])(
+    "$gateway: airline $airline + service $service $currency → booking value $booking, payable $service, gateway $service",
+    async ({ gateway, airline, service, booking, currency }) => {
+      actingAs(gateway === "Stripe" ? skyways : paypalair);
+      const res = await createOrderRoute(
+        buildRequest("/api/orders", {
+          method: "POST",
+          body: validFlightOrderInput(
+            { charges: flightServiceCharge(service), currency: currency as never },
+            { airlineFare: airline },
+          ),
+        }),
+      );
+      const { status, body } = await jsonBody<{ ok: boolean; data: { order: { id: string } } }>(res);
+      expect(status, JSON.stringify(body)).toBe(201);
+      const orderId = body.data.order.id;
+
+      // Stored: the airline charge on the flight, the service charge as the
+      // one line, and pricing.amount — the gateway amount — = the service charge.
+      const dto = await getOrderById(orderId, { actor });
+      expect(dto.flight!.airlineFare).toBe(airline);
+      expect(dto.charges).toEqual([
+        { name: "Service charge", amount: service, timing: PaymentTiming.PREPAID },
+      ]);
+      expect(dto.pricing).toEqual({ amount: service, currency });
+      const amounts = summarizeFlightAmounts(dto.charges, dto.flight!.airlineFare);
+      expect(amounts.bookingTotal).toBe(booking);
+      expect(amounts.payableNow).toBe(service);
+      // Frozen into the dispute evidence the same way.
+      expect((await genesisPayload(orderId)).chargeBreakdown).toMatchObject({
+        prepaid: service,
+        airlineFare: airline,
+        serviceCharge: service,
+        bookingTotal: booking,
+      });
+
+      await initiatePayment(orderId, { actor });
+      if (gateway === "Stripe") {
+        const sessions = getCurrentTestStripe().sessionsCreated;
+        expect(sessions).toHaveLength(1);
+        const lineItems = sessions[0]!.params.line_items!;
+        expect(lineItems).toHaveLength(1);
+        expect(lineItems[0]!.quantity).toBe(1);
+        expect(lineItems[0]!.price_data!.unit_amount).toBe(Math.round(service * 100));
+        expect(lineItems[0]!.price_data!.currency).toBe(currency.toLowerCase());
+        // Every amount Stripe was sent is the service charge — neither the
+        // airline charge nor the booking value is anywhere in the request.
+        expect(amountsIn(sessions[0]!.params)).toEqual([Math.round(service * 100)]);
+        if (airline > 0) {
+          const items = JSON.stringify(lineItems);
+          for (const figure of [airline, booking]) {
+            expect(items).not.toContain(String(Math.round(figure * 100)));
+            expect(items).not.toContain(figure.toFixed(2));
+          }
+        }
+      } else {
+        const created = paypalBodies.find((b) => "purchase_units" in b) as {
+          purchase_units: { amount: { currency_code: string; value: string } }[];
+        };
+        expect(created.purchase_units).toHaveLength(1);
+        expect(created.purchase_units[0]!.amount).toEqual({
+          currency_code: currency,
+          value: service.toFixed(2),
+        });
+        // Its only money field is the service charge.
+        expect(amountsIn(created)).toEqual([{ currency_code: currency, value: service.toFixed(2) }]);
+        if (airline > 0) {
+          const sent = JSON.stringify(created);
+          expect(sent).not.toContain(airline.toFixed(2));
+          expect(sent).not.toContain(booking.toFixed(2));
+        }
+        expect(getCurrentTestStripe().sessionsCreated).toHaveLength(0);
+      }
+    },
+  );
 });
 
 /* ------------------------------------------------------------------ *

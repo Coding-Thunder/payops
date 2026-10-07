@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { FLIGHT_SERVICE_CHARGE_LINE_NAME } from "@/lib/charges";
 import {
   BOOKING_TYPES,
   CABIN_CLASSES,
@@ -264,20 +265,65 @@ export const flightJourneyInputSchema = z
     })),
   }));
 
+/**
+ * A required amount that a form starts EMPTY (null): refused with `message`
+ * until one is entered, so a forgotten field can never pass as 0.
+ */
+function requiredAmount(amount: z.ZodNumber, message: string) {
+  return amount.nullable().transform((value, ctx) => {
+    if (value === null) {
+      ctx.addIssue({ code: "custom", message });
+      return z.NEVER;
+    }
+    return value;
+  });
+}
+
+const SERVICE_CHARGE_REQUIRED = "Enter the service charge";
+const AIRLINE_CHARGE_REQUIRED = "Enter the airline charge (0 if there is none)";
+
 /** A flight charge is always collected online, now. There is no
- *  due-at-counter for a flight — nothing is paid at an airport desk. */
+ *  due-at-counter for a flight — nothing is paid at an airport desk. Its
+ *  name is not the caller's to choose (see below). */
 const flightChargeInputSchema = chargeInputSchema.extend({
+  name: z.string().trim().max(120).optional(),
+  amount: requiredAmount(
+    z
+      .number({ error: SERVICE_CHARGE_REQUIRED })
+      .positive("The service charge must be greater than zero")
+      .max(1_000_000, "Amount looks unrealistic"),
+    SERVICE_CHARGE_REQUIRED,
+  ),
   timing: z.literal(PaymentTiming.PREPAID, {
     error: "Flight charges are always prepaid",
   }),
 });
 
 /**
+ * A flight's charges: EXACTLY ONE line — the service charge, the only amount
+ * the payment link collects. The airline charge has its own field
+ * (`flight.airlineFare`) and is never a line, so a second line — the way an
+ * airline charge could otherwise ride along into the gateway amount — is
+ * refused rather than charged. Whatever the line was called, it is stored
+ * as the service charge.
+ */
+const flightChargesInputSchema = z
+  .array(flightChargeInputSchema)
+  .min(1, SERVICE_CHARGE_REQUIRED)
+  .max(
+    1,
+    "A flight has one charge: its service charge. Enter the airline charge in its own field — it is never collected through the payment link.",
+  )
+  .transform((lines) =>
+    lines.map((line) => ({ ...line, name: FLIGHT_SERVICE_CHARGE_LINE_NAME })),
+  );
+
+/**
  * Flight booking.
  *
  * No airline or GDS integration is implied — this platform holds no
  * inventory. The operator enters the itinerary they sourced: every flight,
- * every connection, and the money split between the airline fare (never
+ * every connection, and the money split between the airline charge (never
  * collected here) and the service charge (the only thing the payment link
  * charges).
  *
@@ -309,16 +355,19 @@ export const flightOrderSchema = z
         /** Airline record locator, entered once the booking is ticketed. */
         pnr: z.string().trim().max(32).optional().nullable(),
         /**
-         * The ticket cost the airline charges. Shown to the customer as part
-         * of the booking value; NEVER sent to the payment gateway, which
-         * charges only the service charge in `charges`.
+         * The AIRLINE CHARGE — the ticket cost. Its own field, required (0
+         * when there is none) so every new flight states its booking value.
+         * Shown to the customer as part of that value; NEVER sent to the
+         * payment gateway, which charges only the service charge in
+         * `charges`.
          */
-        airlineFare: z
-          .number({ error: "Enter a valid amount" })
-          .min(0, "The airline fare can't be negative")
-          .max(1_000_000, "Amount looks unrealistic")
-          .optional()
-          .nullable(),
+        airlineFare: requiredAmount(
+          z
+            .number({ error: AIRLINE_CHARGE_REQUIRED })
+            .min(0, "The airline charge can't be negative")
+            .max(1_000_000, "Amount looks unrealistic"),
+          AIRLINE_CHARGE_REQUIRED,
+        ),
       })
       .superRefine((flight, ctx) => {
         for (const issue of itineraryIssues(flight)) {
@@ -333,11 +382,8 @@ export const flightOrderSchema = z
       ),
     currency: z.enum(CURRENCIES),
     /** The operator's service charge — the ONLY amount the payment link
-     *  collects. Prepaid by definition. */
-    charges: z
-      .array(flightChargeInputSchema)
-      .min(1, "Add the service charge")
-      .max(20, "Too many charge lines"),
+     *  collects. Prepaid by definition, and the only line. */
+    charges: flightChargesInputSchema,
     notes: z.string().trim().max(2000).optional(),
   });
 

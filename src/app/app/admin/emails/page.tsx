@@ -11,6 +11,7 @@ import { requirePermission } from "@/server/auth/session";
 import { getBranding } from "@/server/services/branding.service";
 import { ensureSettingsDocument } from "@/server/services/settings.service";
 import { listActiveProviders } from "@/server/services/provider.service";
+import { previewLegalFor } from "@/server/services/organization-legal.service";
 import { PaymentAuthorizedEmail } from "@/server/email/templates/payment-authorized";
 import { PaymentConfirmationEmail } from "@/server/email/templates/payment-confirmation";
 import { PaymentRequestEmail } from "@/server/email/templates/payment-request";
@@ -66,13 +67,22 @@ export default async function AdminEmailsPage({
 }: EmailsPageProps) {
   await requirePermission(Permission.SETTINGS_VIEW);
 
-  const [branding, settings, providers] = await Promise.all([
+  const params = await searchParams;
+  const activeService: PreviewService =
+    params.service === ServiceType.FLIGHT
+      ? ServiceType.FLIGHT
+      : ServiceType.CAR_RENTAL;
+
+  // Only providers of the previewed service — a flight sample is never shown
+  // under a car rental brand — and that service's terms as the selected
+  // organization's next order of it would freeze them.
+  const [branding, , providers, legal] = await Promise.all([
     getBranding(),
     ensureSettingsDocument(),
-    listActiveProviders(),
+    listActiveProviders({ serviceType: activeService }),
+    previewLegalFor(activeService),
   ]);
 
-  const params = await searchParams;
   const activeTemplate: TemplateKey = isTemplateKey(params.template)
     ? params.template
     : "payment-confirmation";
@@ -83,10 +93,6 @@ export default async function AdminEmailsPage({
   ).includes(params.bookingType ?? "")
     ? (params.bookingType as BookingType)
     : BookingType.NEW_BOOKING;
-  const activeService: PreviewService =
-    params.service === ServiceType.FLIGHT
-      ? ServiceType.FLIGHT
-      : ServiceType.CAR_RENTAL;
 
   if (!activeProvider) {
     return (
@@ -97,9 +103,16 @@ export default async function AdminEmailsPage({
           description="Preview the customer transactional emails that this workspace sends."
         />
         <div className="rounded-lg border border-dashed border-border bg-card p-6 text-sm text-muted-foreground">
-          No active providers configured. Visit{" "}
+          {`No active ${activeService === ServiceType.FLIGHT ? "flight" : "car rental"} providers configured. Visit `}
           <strong>Admin → Providers</strong> to set one up before previewing
-          the customer receipt.
+          the customer receipt, or preview the{" "}
+          <Link
+            className="underline"
+            href={`?service=${activeService === ServiceType.FLIGHT ? ServiceType.CAR_RENTAL : ServiceType.FLIGHT}`}
+          >
+            {activeService === ServiceType.FLIGHT ? "car rental" : "flight"} emails
+          </Link>
+          .
         </div>
       </div>
     );
@@ -117,13 +130,13 @@ export default async function AdminEmailsPage({
       primaryColor: activeProvider.primaryColor,
       onPrimaryColor: activeProvider.onPrimaryColor,
     },
-    cancellationPolicy: settings.cancellationPolicy,
-    cancellationPolicyVersion: settings.cancellationPolicyVersion,
-    termsAndConditions: settings.termsAndConditions,
-    termsVersion: settings.termsVersion,
+    cancellationPolicy: legal.cancellationPolicy,
+    cancellationPolicyVersion: legal.cancellationPolicyVersion,
+    termsAndConditions: legal.termsAndConditions,
+    termsVersion: legal.termsVersion,
     bookingType: activeBookingType,
-    // The flight sample carries its own built-in flight terms and policy.
     serviceType: activeService,
+    ...(activeService === ServiceType.FLIGHT ? { flightLegal: legal } : {}),
   };
 
   const html =

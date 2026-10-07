@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { FlightItinerary } from "@/components/common/flight-itinerary";
 import { PageHeader } from "@/components/common/page-header";
-import { flightAmountLabels } from "@/lib/charges";
+import { flightAmountLabels, showsAirlineCharge } from "@/lib/charges";
 import {
   providerLabelFor,
   ServiceItemLabel,
@@ -272,7 +272,7 @@ export function EvidenceChainView({
 /**
  * A flight's money split in place of the single "Amount" row. The payment
  * link only ever collects `pricing.amount` — on an itinerary flight, the
- * service charge; the airline fare is part of the booking value but was
+ * service charge; the airline charge is part of the booking value but was
  * never charged here — the distinction a flight chargeback turns on. A
  * flight created before itineraries is labelled neutrally: its charge lines
  * were usually the whole fare.
@@ -288,10 +288,10 @@ function FlightAmountRows({
   const labels = flightAmountLabels(flight.serviceChargeModel);
   return (
     <>
-      {amounts.airlineFare > 0 ? (
+      {showsAirlineCharge(amounts) ? (
         <Row
           label={labels.airlineFare}
-          value={`${formatCurrency(amounts.airlineFare, currency)} — not collected by the payment link`}
+          value={`${formatCurrency(amounts.airlineFare, currency)} — ${labels.airlineFareNote.toLowerCase()}`}
         />
       ) : null}
       <Row

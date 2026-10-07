@@ -127,9 +127,10 @@ export interface OrderDoc extends OrganizationScoped {
     outbound?: FlightJourneyDoc | null;
     /** ROUND_TRIP only: the return journey, independent of `outbound`. */
     return?: FlightJourneyDoc | null;
-    /** Ticket cost charged by the airline, in MAJOR units of
-     *  `pricing.currency`. Part of the customer's booking value, never
-     *  part of `pricing.amount` and never sent to the gateway. */
+    /** The AIRLINE CHARGE — the ticket cost, in MAJOR units of
+     *  `pricing.currency`. Part of the customer's booking value, never a
+     *  charge line, never part of `pricing.amount` and never sent to the
+     *  gateway. Null on a flight that never recorded one. */
     airlineFare?: number | null;
     cabinClass: string;
     passengers: { adults: number; children: number; infants: number };
@@ -972,6 +973,14 @@ orderSchema.pre("validate", function () {
         (this.charges ?? []).some((c) => c.timing !== PaymentTiming.PREPAID)
       ) {
         throw new Error("Flight charges must be prepaid");
+      }
+      // ONE charge line: the service charge, the only money the payment
+      // link collects. The airline charge is `flight.airlineFare`, never a
+      // line, so it can never be added into `pricing.amount`. Creation
+      // only, like the rule above: a flight written before this rule may
+      // carry several lines and still saves.
+      if (this.isNew && (this.charges ?? []).length !== 1) {
+        throw new Error("A flight has exactly one charge: its service charge");
       }
       return;
     }

@@ -27,7 +27,11 @@ import { toast } from "@/components/ui/sonner";
 import { useActivityFeed } from "@/hooks/use-activity-feed";
 import { orderQueryKey } from "@/hooks/use-order-query";
 import { api, ApiClientError } from "@/lib/api-client";
-import { flightMoneyWording, summarizeFlightAmounts } from "@/lib/charges";
+import {
+  flightMoneyWording,
+  showsAirlineCharge,
+  summarizeFlightAmounts,
+} from "@/lib/charges";
 import { ServiceType } from "@/lib/constants/enums";
 import { DomainEventType } from "@/lib/constants/events";
 import { providerLabelFor } from "@/lib/constants/labels";
@@ -584,9 +588,10 @@ function PaymentSummaryCard({
   onCopyLink,
 }: PaymentSummaryCardProps) {
   // An itinerary flight's payment link collects its service charge only —
-  // label it so, next to the airline fare and booking value it is part of.
-  // A flight created before itineraries usually charged its whole fare, so
-  // its amount is the neutral "Amount payable now".
+  // the same rows the customer sees: Airline Charge (not collected),
+  // Service Charge, Total Booking Value, Amount Payable Now. A flight
+  // created before itineraries usually charged its whole fare, so its
+  // labels are the neutral legacy set.
   const isFlight = serviceTypeOf(order) === ServiceType.FLIGHT;
   const flightAmounts = isFlight
     ? summarizeFlightAmounts(
@@ -595,7 +600,7 @@ function PaymentSummaryCard({
         order.pricing.amount,
       )
     : null;
-  const { labels: flightLabels, serviceChargeModel } = flightMoneyWording(
+  const { labels: flightLabels } = flightMoneyWording(
     order.flight,
     order.bookingType,
   );
@@ -614,24 +619,21 @@ function PaymentSummaryCard({
           <Meta label="Customer" value={order.customer.name} />
           {flightAmounts ? (
             <>
-              <Meta
-                label={
-                  serviceChargeModel
-                    ? `${flightLabels.serviceCharge} (payable now)`
-                    : flightLabels.payableNow
-                }
-                value={formatAmount(order)}
-              />
-              {flightAmounts.airlineFare > 0 ? (
+              {showsAirlineCharge(flightAmounts) ? (
                 <Meta
-                  label={flightLabels.airlineFare}
+                  label={`${flightLabels.airlineFare} (not collected)`}
                   value={formatAmount(order, flightAmounts.airlineFare)}
                 />
               ) : null}
               <Meta
+                label={flightLabels.serviceCharge}
+                value={formatAmount(order, flightAmounts.serviceCharge)}
+              />
+              <Meta
                 label={flightLabels.bookingTotal}
                 value={formatAmount(order, flightAmounts.bookingTotal)}
               />
+              <Meta label={flightLabels.payableNow} value={formatAmount(order)} />
             </>
           ) : (
             <Meta label="Amount" value={formatAmount(order)} />

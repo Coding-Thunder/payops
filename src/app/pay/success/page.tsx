@@ -23,7 +23,9 @@ import {
 import {
   type FlightAmountLabels,
   type FlightAmountSummary,
+  flightCollection,
   flightMoneyWording,
+  showsAirlineCharge,
   summarizeCharges,
   summarizeFlightAmounts,
 } from "@/lib/charges";
@@ -211,6 +213,35 @@ export default async function PaymentSuccessPage({
     order && isFlight ? flightMoneyWording(order.flight, order.bookingType) : null;
   const flightLabels = flightWording?.labels ?? null;
   const serviceChargeModel = flightWording?.serviceChargeModel ?? false;
+  // What has ACTUALLY happened to the money the link collects — the same
+  // helper as the operator card and the evidence: collected only once the
+  // order is PAID; on hold while a manual-capture hold still reserves the
+  // card (authorized, capturing, or a failed capture); otherwise nothing
+  // collected yet. A flight's labels follow it, so this page never says
+  // "Paid" for money that was not taken, nor "payable" for money held.
+  const flightMoney = order && flightLabels ? flightCollection(order) : null;
+  const flightSettled =
+    order && flightLabels && flightMoney && flightAmounts
+      ? flightMoney.status === "COLLECTED"
+        ? {
+            label: flightLabels.paidNow,
+            amount: flightMoney.amount ?? order.pricing.amount,
+          }
+        : flightMoney.status === "ON_HOLD"
+          ? {
+              label: flightLabels.heldNow,
+              amount: capture?.amountAuthorized ?? order.pricing.amount,
+            }
+          : { label: flightLabels.payableNow, amount: flightAmounts.payableNow }
+      : null;
+  // The hero names the same state; while nothing is collected yet, an
+  // itinerary flight's hero names WHAT the amount is — the service charge.
+  const flightHeroLabel =
+    flightLabels && flightSettled
+      ? flightMoney?.status === "NOT_COLLECTED" && serviceChargeModel
+        ? flightLabels.serviceCharge
+        : flightSettled.label
+      : null;
   const itinerary = flightAmounts ? buildFlightItinerary(order?.flight) : null;
 
   return (
@@ -317,12 +348,8 @@ export default async function PaymentSuccessPage({
             <div className="grid grid-cols-2 gap-4 border-t border-slate-100 px-8 py-6">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.10em] text-slate-500">
-                  {flightLabels
-                    ? isAuthorized
-                      ? flightLabels.heldNow
-                      : stillPending && serviceChargeModel
-                        ? flightLabels.serviceCharge
-                        : flightLabels.paidNow
+                  {flightHeroLabel
+                    ? flightHeroLabel
                     : isAuthorized
                       ? "Amount on hold"
                       : "Amount paid"}
@@ -346,11 +373,13 @@ export default async function PaymentSuccessPage({
 
             {/* ─── Charge breakdown (always for a flight; otherwise only
                 when a counter balance remains) ─── */}
-            {flightAmounts && flightLabels ? (
+            {flightAmounts && flightLabels && flightSettled ? (
               <FlightAmountBreakdown
                 amounts={flightAmounts}
                 labels={flightLabels}
                 currency={order.pricing.currency}
+                settledLabel={flightSettled.label}
+                settledAmount={flightSettled.amount}
               />
             ) : hasCounterDue && breakdown ? (
               <div className="border-t border-slate-100 px-8 py-5">
@@ -550,27 +579,36 @@ function flightHeroCopy({
 
 /**
  * A flight's money, every time: what was paid (the service charge, on an
- * itinerary flight) set against what the booking is worth. Unlike a rental's
+ * itinerary flight) set against what the booking is worth — Airline Charge,
+ * Service Charge, Total Booking Value, then the amount this payment took,
+ * the same rows as the consent page and the emails. Unlike a rental's
  * breakdown it does not wait for a counter balance — its whole job is to
- * show that the airline fare is not part of this payment. Labels come from
- * `flightMoneyWording`, shared with the consent page and the emails.
+ * show that the airline charge is not part of this payment. Labels come
+ * from `flightMoneyWording`, shared with the consent page and the emails.
  */
 function FlightAmountBreakdown({
   amounts,
   labels,
   currency,
+  settledLabel,
+  settledAmount,
 }: {
   amounts: FlightAmountSummary;
   labels: FlightAmountLabels;
   currency: string;
+  /** What happened to the amount the link collects: paid, on hold, or —
+   *  nothing collected yet — payable now. */
+  settledLabel: string;
+  settledAmount: number;
 }) {
+  const showAirline = showsAirlineCharge(amounts);
   return (
     <div className="border-t border-slate-100 px-8 py-5">
       <p className="text-[11px] font-semibold uppercase tracking-[0.10em] text-slate-500">
         {labels.breakdownTitle}
       </p>
       <dl className="mt-3 space-y-1.5 text-sm">
-        {amounts.airlineFare > 0 ? (
+        {showAirline ? (
           <div className="flex items-start justify-between gap-3">
             <dt className="text-slate-500">
               {labels.airlineFare}
@@ -604,7 +642,18 @@ function FlightAmountBreakdown({
             {formatCurrency(amounts.bookingTotal, currency)}
           </dd>
         </div>
+        <div className="flex items-center justify-between gap-3 font-semibold">
+          <dt className="text-slate-900">{settledLabel}</dt>
+          <dd className="tabular-nums text-slate-900">
+            {formatCurrency(settledAmount, currency)}
+          </dd>
+        </div>
       </dl>
+      {showAirline ? (
+        <p className="mt-3 text-xs text-slate-500">
+          {labels.airlineFareExplainer}
+        </p>
+      ) : null}
     </div>
   );
 }

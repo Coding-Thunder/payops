@@ -14,6 +14,7 @@ import {
   FLIGHT_SEGMENTS,
   flightJourneyInput,
   flightSegmentInput,
+  flightServiceCharge,
   multiCityFlightInput,
   oneWayConnectingFlightInput,
   roundTripFlightInput,
@@ -32,7 +33,8 @@ import {
  *   - Connections are positional — exactly one per gap — whatever arrives.
  *   - An impossible connection is refused with the client's exact wording,
  *     at the departure field of the flight that leaves too early.
- *   - A flight is PREPAID only; the airline fare is a figure, never a charge.
+ *   - A flight is PREPAID only, with ONE charge line — the service charge.
+ *     The airline charge is a required figure of its own, never a line.
  */
 
 type SafeParse = ReturnType<typeof flightOrderSchema.safeParse>;
@@ -197,11 +199,79 @@ describe("flightOrderSchema — accepted itineraries", () => {
     ).toBe(true);
   });
 
-  it("accepts a blank airline fare", () => {
-    expect(parsed(validFlightOrderInput({}, { airlineFare: null })).flight.airlineFare).toBeNull();
+  it("accepts an airline charge of 0 — a flight with none still states it", () => {
+    expect(parsed(validFlightOrderInput({}, { airlineFare: 0 })).flight.airlineFare).toBe(0);
+  });
+
+  it("keeps decimal amounts as entered", () => {
+    const data = parsed(
+      validFlightOrderInput(
+        { charges: flightServiceCharge(75.5) },
+        { airlineFare: 825.25 },
+      ),
+    );
+    expect(data.flight.airlineFare).toBe(825.25);
+    expect(data.charges).toEqual([
+      { name: "Service charge", amount: 75.5, timing: PaymentTiming.PREPAID },
+    ]);
+  });
+});
+
+describe("flightOrderSchema — the money: one service charge, the airline charge on its own", () => {
+  it("refuses a blank or missing airline charge — 0 when there is none", () => {
+    const blank = flightOrderSchema.safeParse(
+      validFlightOrderInput({}, { airlineFare: null as never }),
+    );
+    expect(messagesAt(blank, "flight.airlineFare")).toEqual([
+      "Enter the airline charge (0 if there is none)",
+    ]);
     const omitted = validFlightOrderInput();
     delete (omitted.flight as Record<string, unknown>).airlineFare;
-    expect(parsed(omitted).flight.airlineFare).toBeUndefined();
+    expect(messagesAt(flightOrderSchema.safeParse(omitted), "flight.airlineFare")).toEqual([
+      "Enter the airline charge (0 if there is none)",
+    ]);
+  });
+
+  it("refuses a second charge line — an airline charge can never ride along into the payment", () => {
+    const result = flightOrderSchema.safeParse(
+      validFlightOrderInput({
+        charges: [
+          { name: "Airline charge", amount: 400, timing: PaymentTiming.PREPAID },
+          { name: "Service charge", amount: 100, timing: PaymentTiming.PREPAID },
+        ],
+      }),
+    );
+    expect(messagesAt(result, "charges")).toEqual([
+      "A flight has one charge: its service charge. Enter the airline charge in its own field — it is never collected through the payment link.",
+    ]);
+  });
+
+  it("stores the one line as the service charge, whatever the request called it", () => {
+    for (const name of ["Airline fare", "  ", undefined]) {
+      const data = parsed(
+        validFlightOrderInput({
+          charges: [{ name, amount: 100, timing: PaymentTiming.PREPAID }] as never,
+        }),
+      );
+      expect(data.charges).toEqual([
+        { name: "Service charge", amount: 100, timing: PaymentTiming.PREPAID },
+      ]);
+    }
+  });
+
+  it("refuses a blank or zero service charge — the payment link must collect something", () => {
+    const blank = flightOrderSchema.safeParse(
+      validFlightOrderInput({
+        charges: [{ name: "Service charge", amount: null, timing: PaymentTiming.PREPAID }] as never,
+      }),
+    );
+    expect(messagesAt(blank, "charges.0.amount")).toEqual(["Enter the service charge"]);
+    const zero = flightOrderSchema.safeParse(
+      validFlightOrderInput({ charges: flightServiceCharge(0) }),
+    );
+    expect(messagesAt(zero, "charges.0.amount")).toEqual([
+      "The service charge must be greater than zero",
+    ]);
   });
 });
 
@@ -384,13 +454,13 @@ describe("flightOrderSchema — refused itineraries", () => {
 
   it("refuses an order with no service charge at all", () => {
     const result = flightOrderSchema.safeParse(validFlightOrderInput({ charges: [] }));
-    expect(messagesAt(result, "charges")).toEqual(["Add the service charge"]);
+    expect(messagesAt(result, "charges")).toEqual(["Enter the service charge"]);
   });
 
-  it("refuses a negative airline fare", () => {
+  it("refuses a negative airline charge", () => {
     const result = flightOrderSchema.safeParse(validFlightOrderInput({}, { airlineFare: -1 }));
     expect(messagesAt(result, "flight.airlineFare")).toEqual([
-      "The airline fare can't be negative",
+      "The airline charge can't be negative",
     ]);
   });
 

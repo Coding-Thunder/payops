@@ -16,7 +16,6 @@ export {
   type EmailChargeLine,
 } from "./charge-breakdown";
 export {
-  AIRLINE_FARE_NOT_INCLUDED,
   FlightChargeBreakdown,
   type EmailFlightAmounts,
 } from "./flight-charge-breakdown";

@@ -19,7 +19,6 @@ import type { ServiceRow } from "@/lib/service-summary";
 import { chargeWordingFor } from "../components/charge-breakdown";
 import { providerRowLabel, rentalBookingRows } from "./payment-confirmation";
 import {
-  AIRLINE_FARE_NOT_INCLUDED,
   ChargeBreakdown,
   COLOR,
   type EmailChargeBreakdown,
@@ -219,7 +218,7 @@ export function PaymentRequestEmail({
       : serviceChargeModel
         ? `Thanks for booking with ${provider.name}. Your ${BookingTypeLabel[
             bookingType
-          ].toLowerCase()} is reserved — please pay the service charge using the secure link below to confirm it. ${AIRLINE_FARE_NOT_INCLUDED}`
+          ].toLowerCase()} is reserved — please pay the service charge using the secure link below to confirm it.`
         : `Thanks for booking with ${provider.name}. Your ${BookingTypeLabel[
             bookingType
           ].toLowerCase()} is reserved — please complete payment using the secure link below to confirm it.`;

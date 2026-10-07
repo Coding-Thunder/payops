@@ -39,14 +39,16 @@ import {
 describe("FLIGHT_AMOUNT_LABELS — the itinerary-flight copy", () => {
   it("carries exactly the client-approved wording", () => {
     expect(FLIGHT_AMOUNT_LABELS).toMatchObject({
-      airlineFare: "Airline fare",
-      airlineFareNote: "Charged separately — not part of this payment",
-      serviceCharge: "Service charge",
-      bookingTotal: "Total booking value",
-      payableNow: "Amount payable now",
-      paidNow: "Service charge paid",
-      heldNow: "Service charge on hold",
-      dueLater: "Remaining balance due later",
+      airlineFare: "Airline Charge",
+      airlineFareNote: "Not collected through this payment link",
+      airlineFareExplainer:
+        "Airline Charge is shown for the total booking value and is not collected through this payment link.",
+      serviceCharge: "Service Charge",
+      bookingTotal: "Total Booking Value",
+      payableNow: "Amount Payable Now",
+      paidNow: "Service Charge Paid",
+      heldNow: "Service Charge On Hold",
+      dueLater: "Remaining Balance Due Later",
       breakdownTitle: "Price breakdown",
     });
   });
@@ -67,9 +69,9 @@ describe("LEGACY_FLIGHT_AMOUNT_LABELS — the pre-itinerary copy", () => {
   });
 
   it("words the money neutrally — what was charged, paid or held, not a 'service charge'", () => {
-    expect(LEGACY_FLIGHT_AMOUNT_LABELS.serviceCharge).toBe("Charged online");
-    expect(LEGACY_FLIGHT_AMOUNT_LABELS.paidNow).toBe("Amount paid");
-    expect(LEGACY_FLIGHT_AMOUNT_LABELS.heldNow).toBe("Amount on hold");
+    expect(LEGACY_FLIGHT_AMOUNT_LABELS.serviceCharge).toBe("Charged Online");
+    expect(LEGACY_FLIGHT_AMOUNT_LABELS.paidNow).toBe("Amount Paid");
+    expect(LEGACY_FLIGHT_AMOUNT_LABELS.heldNow).toBe("Amount On Hold");
     for (const label of Object.values(LEGACY_FLIGHT_AMOUNT_LABELS)) {
       expect(label.toLowerCase()).not.toContain("service charge");
     }
@@ -79,6 +81,7 @@ describe("LEGACY_FLIGHT_AMOUNT_LABELS — the pre-itinerary copy", () => {
     for (const key of [
       "airlineFare",
       "airlineFareNote",
+      "airlineFareExplainer",
       "bookingTotal",
       "payableNow",
       "dueLater",

@@ -5,6 +5,7 @@ import { Permission } from "@/lib/constants/permissions";
 import {
   BOOKING_TYPES,
   BookingType,
+  ServiceType,
 } from "@/lib/constants/enums";
 import {
   createEmailTemplateVersionSchema,
@@ -16,6 +17,7 @@ import { requirePermission } from "@/server/auth/session";
 import { getBranding } from "@/server/services/branding.service";
 import { ensureSettingsDocument } from "@/server/services/settings.service";
 import { listActiveProviders } from "@/server/services/provider.service";
+import { previewLegalFor } from "@/server/services/organization-legal.service";
 import { PaymentConfirmationEmail } from "@/server/email/templates/payment-confirmation";
 import { PaymentRequestEmail } from "@/server/email/templates/payment-request";
 import {
@@ -57,10 +59,13 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
     footerNote: body?.footerNote,
   });
 
-  const [branding, settings, providers] = await Promise.all([
+  const [branding, , providers, carLegal] = await Promise.all([
     getBranding(),
     ensureSettingsDocument(),
-    listActiveProviders(),
+    listActiveProviders({ serviceType: ServiceType.CAR_RENTAL }),
+    // The sample is a car rental: the selected brand's own car rental
+    // terms, as its next car rental order would freeze them.
+    previewLegalFor(ServiceType.CAR_RENTAL),
   ]);
   const providerKey =
     typeof body?.provider === "string" ? body.provider : undefined;
@@ -87,10 +92,10 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
       primaryColor: provider.primaryColor,
       onPrimaryColor: provider.onPrimaryColor,
     },
-    cancellationPolicy: settings.cancellationPolicy,
-    cancellationPolicyVersion: settings.cancellationPolicyVersion,
-    termsAndConditions: settings.termsAndConditions,
-    termsVersion: settings.termsVersion,
+    cancellationPolicy: carLegal.cancellationPolicy,
+    cancellationPolicyVersion: carLegal.cancellationPolicyVersion,
+    termsAndConditions: carLegal.termsAndConditions,
+    termsVersion: carLegal.termsVersion,
     bookingType,
   };
 

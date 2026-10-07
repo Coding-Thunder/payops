@@ -45,10 +45,11 @@ interface SettingsFormProps {
   initial: SettingsFormValues;
   canEdit: boolean;
   /**
-   * Whether the selected organization sells car rental. The car rental
-   * terms and policy below are only offered when it does; otherwise the
-   * page sends no car rental text at all, so a save never carries it, and
-   * the server refuses a change to it from that brand.
+   * Whether to offer the DEPLOYMENT DEFAULT car rental terms and policy —
+   * only with no brand selected. Inside a brand, car rental terms are that
+   * brand's own (its own section on the page); the page then sends no
+   * default text at all, so a save never carries it, and the server refuses
+   * a change to it from a brand.
    */
   showCarRentalLegal?: boolean;
 }
@@ -320,8 +321,8 @@ export function SettingsForm({
           {showCarRentalLegal ? (
             <>
               <Section
-                title="Car rental cancellation & refund policy"
-                description="The deployment-wide default for car rental orders on every brand without a policy of its own — flight and hotel orders never use it. Shown in every confirmation email. Snapshotted onto each order at creation so disputes can attach the exact terms the customer paid against. Saving a change auto-bumps the policy version; existing orders keep pointing at the older version they were created under."
+                title="Default car rental cancellation & refund policy"
+                description="The deployment-wide default for car rental orders on every brand without a policy of its own — flight and hotel orders never use it, and each brand sets its own in its settings. Shown in every confirmation email. Snapshotted onto each order at creation so disputes can attach the exact terms the customer paid against. Saving a change auto-bumps the policy version; existing orders keep pointing at the older version they were created under."
               >
                 <FormField
                   control={form.control}
@@ -347,8 +348,8 @@ export function SettingsForm({
               </Section>
 
               <Section
-                title="Car rental Terms & Conditions"
-                description="The deployment-wide default for car rental orders on every brand without terms of its own — flight and hotel orders never use it. Shown in the confirmation email with an 'I Agree' acknowledgement action, and snapshotted onto each order at creation. Saving a change auto-bumps the terms version; existing orders keep the version they were created under."
+                title="Default car rental Terms & Conditions"
+                description="The deployment-wide default for car rental orders on every brand without terms of its own — flight and hotel orders never use it, and each brand sets its own in its settings. Shown in the confirmation email with an 'I Agree' acknowledgement action, and snapshotted onto each order at creation. Saving a change auto-bumps the terms version; existing orders keep the version they were created under."
               >
                 <FormField
                   control={form.control}

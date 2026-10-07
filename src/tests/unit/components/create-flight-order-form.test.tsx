@@ -12,7 +12,8 @@ import type { ProviderDTO } from "@/types";
  * The rules pinned here are the client's, from the form's side:
  *
  *   - a new booking starts as ONE direct flight — no connection, no layover
- *     UI — priced as a prepaid "Service charge" with no timing choice and no
+ *     UI — with two fixed money fields, "Airline charge" and "Service
+ *     charge": no charge lines to add or name, no timing choice and no
  *     rental wording anywhere;
  *   - "+ Add Flight Segment" suggests the next From from the previous To,
  *     and that suggestion follows the previous To only while it is
@@ -21,7 +22,8 @@ import type { ProviderDTO } from "@/types";
  *     flights with the client's exact sentence, blocks the submit, and is
  *     shown ONCE (not again under the field);
  *   - what is posted is the normalised itinerary: one connection per gap,
- *     the layover override in minutes, the airline fare, PREPAID charges.
+ *     the layover override in minutes, the airline charge in its own field
+ *     and ONE prepaid charge line — the service charge.
  */
 
 const replace = vi.fn();
@@ -177,17 +179,22 @@ function twoFlights() {
   });
 }
 
-function fillCustomerAndCharge(serviceCharge: string, airlineFare?: string) {
+const MONEY_CARD = "Airline charge & service charge";
+
+/** The two dedicated money inputs. */
+function money() {
+  return {
+    airline: field(card(MONEY_CARD), "Airline charge"),
+    service: field(card(MONEY_CARD), "Service charge"),
+  };
+}
+
+function fillCustomerAndCharge(serviceCharge: string, airlineCharge: string | null = "0") {
   type(within(card("Customer")).getByLabelText("Full name"), "Grace Hopper");
   type(within(card("Customer")).getByLabelText("Email"), "grace@example.com");
   type(within(card("Customer")).getByLabelText("Phone"), "+15555550101");
-  // Two money inputs share the "0.00" placeholder: the airline fare first,
-  // then the service-charge amount.
-  const amounts = within(card("Fare & service charge")).getAllByPlaceholderText(
-    "0.00",
-  ) as HTMLInputElement[];
-  if (airlineFare !== undefined) type(amounts[0]!, airlineFare);
-  type(amounts[1]!, serviceCharge);
+  if (airlineCharge !== null) type(money().airline, airlineCharge);
+  type(money().service, serviceCharge);
 }
 
 async function submit() {
@@ -215,15 +222,70 @@ describe("CreateFlightOrderForm — a new booking", () => {
     expect(text).not.toMatch(/rental|vehicle|Pick-up|Drop-off|counter/i);
     expect(text).not.toContain("Payment timing");
     expect(text).not.toContain("Due at");
-    expect(
-      (within(card("Fare & service charge")).getByPlaceholderText(
-        "e.g. Service charge",
-      ) as HTMLInputElement).value,
-    ).toBe("Service charge");
-    expect(card("Fare & service charge").textContent).toContain(
+    // Two fixed money fields, both blank — nothing to add, nothing to name.
+    expect(money().airline.value).toBe("");
+    expect(money().service.value).toBe("");
+    expect(within(card(MONEY_CARD)).queryByText("+ Add charge")).toBeNull();
+    expect(within(card(MONEY_CARD)).queryByText("Charge name")).toBeNull();
+    expect(within(card(MONEY_CARD)).queryByRole("button", { name: "Remove charge" })).toBeNull();
+    expect(card(MONEY_CARD).textContent).toContain(
       "The payment link charges only the $0.00 service charge.",
     );
     expect(card("Airline / Supplier")).toBeTruthy();
+  });
+});
+
+describe("CreateFlightOrderForm — the money", () => {
+  it("shows the four rows live: airline charge + service charge = booking value, only the service charge payable now", () => {
+    renderForm();
+    type(money().airline, "400");
+    type(money().service, "100");
+    const box = card(MONEY_CARD).textContent ?? "";
+    expect(box).toContain("Airline Charge");
+    expect(box).toContain("Not collected through this payment link");
+    expect(box).toContain("Service Charge$100.00");
+    expect(box).toContain("Total Booking Value$500.00");
+    expect(box).toContain("Amount Payable Now$100.00");
+    expect(box).toContain(
+      "Airline Charge is shown for the total booking value and is not collected through this payment link.",
+    );
+    expect(box).toContain("The payment link charges only the $100.00 service charge.");
+  });
+
+  it("leaves the airline row out for an airline charge of 0", () => {
+    renderForm();
+    type(money().airline, "0");
+    type(money().service, "75");
+    const box = card(MONEY_CARD).textContent ?? "";
+    expect(box).not.toContain("Airline Charge");
+    expect(box).toContain("Total Booking Value$75.00");
+    expect(box).toContain("Amount Payable Now$75.00");
+  });
+
+  it("refuses to post without an airline charge — 0 when there is none", async () => {
+    renderForm();
+    fill(segment(flights(), 1)!, {
+      from: "Delhi",
+      to: "Mumbai",
+      dd: "2026-10-10",
+      dt: "10:30",
+      ad: "2026-10-10",
+      at: "12:30",
+    });
+    fillCustomerAndCharge("50", null);
+    await submit();
+    expect(card(MONEY_CARD).textContent).toContain(
+      "Enter the airline charge (0 if there is none)",
+    );
+    expect(posts).toHaveLength(0);
+
+    type(money().airline, "0");
+    await submit();
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect((posts[0]!.body.flight as { airlineFare: number }).airlineFare).toBe(0);
+    expect(posts[0]!.body.charges).toEqual([
+      { name: "Service charge", amount: 50, timing: "PREPAID" },
+    ]);
   });
 });
 
@@ -396,7 +458,7 @@ describe("CreateFlightOrderForm — a layover's errors go with the layover", () 
 });
 
 describe("CreateFlightOrderForm — a valid order", () => {
-  it("posts the normalised itinerary, the fare and a PREPAID service charge", async () => {
+  it("posts the normalised itinerary, the airline charge and ONE prepaid service charge", async () => {
     renderForm();
     twoFlights();
 
@@ -412,10 +474,10 @@ describe("CreateFlightOrderForm — a valid order", () => {
     type(within(row()).getByLabelText("Layover notes (optional)"), "Change terminals");
 
     fillCustomerAndCharge("50", "1200");
-    expect(card("Fare & service charge").textContent).toContain(
-      "Charged separately — not part of this payment",
+    expect(card(MONEY_CARD).textContent).toContain(
+      "Not collected through this payment link",
     );
-    expect(card("Fare & service charge").textContent).toContain("$1,250.00");
+    expect(card(MONEY_CARD).textContent).toContain("$1,250.00");
 
     await submit();
     await waitFor(() => expect(posts).toHaveLength(1));

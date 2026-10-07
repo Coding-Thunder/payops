@@ -163,7 +163,10 @@ beforeEach(async () => {
     brandName: "FlightBizz",
     isDefault: false,
     captureMode: CaptureMode.MANUAL,
-    serviceTypes: [ServiceType.FLIGHT],
+    // As the GlobeVista seed configures it: these tests create car rental
+    // orders for it, and an order is only accepted for a service its
+    // organization sells.
+    serviceTypes: [ServiceType.FLIGHT, ServiceType.HOTEL, ServiceType.CAR_RENTAL],
   });
 });
 

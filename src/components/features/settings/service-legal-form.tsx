@@ -22,24 +22,45 @@ import { Section } from "@/components/common/section";
 import { api, ApiClientError } from "@/lib/api-client";
 import { ServiceType } from "@/lib/constants/enums";
 import {
-  type ServiceWithOwnLegal,
+  type OrganizationLegalService,
   updateServiceLegalSchema,
   type UpdateServiceLegalInput,
 } from "@/lib/validation";
 
-/** How the editor names each service with a legal slot of its own. */
+/** How the editor names each service, and the default it falls back to:
+ *  the built-in text for flight and hotel, the inherited deployment default
+ *  for car rental. */
 const SERVICE_COPY: Record<
-  ServiceWithOwnLegal,
-  { label: string; noun: string; writtenFor: string }
+  OrganizationLegalService,
+  { label: string; noun: string; writtenFor: string; defaultBadge: string; defaultName: string }
 > = {
-  [ServiceType.FLIGHT]: { label: "Flight", noun: "flight", writtenFor: "flights" },
-  [ServiceType.HOTEL]: { label: "Hotel", noun: "hotel", writtenFor: "hotel stays" },
+  [ServiceType.CAR_RENTAL]: {
+    label: "Car rental",
+    noun: "car rental",
+    writtenFor: "car rentals",
+    defaultBadge: "Deployment default in use",
+    defaultName: "the deployment default shown here",
+  },
+  [ServiceType.FLIGHT]: {
+    label: "Flight",
+    noun: "flight",
+    writtenFor: "flights",
+    defaultBadge: "Built-in flight default in use",
+    defaultName: "this built-in default",
+  },
+  [ServiceType.HOTEL]: {
+    label: "Hotel",
+    noun: "hotel",
+    writtenFor: "hotel stays",
+    defaultBadge: "Built-in hotel default in use",
+    defaultName: "this built-in default",
+  },
 };
 
 interface ServiceLegalFormProps {
   /** Which service's text this edits. Only rendered for a service the
    *  selected organization sells. */
-  serviceType: ServiceWithOwnLegal;
+  serviceType: OrganizationLegalService;
   /** What new orders of that service freeze today: the organization's own
    *  text, or the built-in default where `termsIsDefault` /
    *  `policyIsDefault`. */
@@ -52,16 +73,16 @@ interface ServiceLegalFormProps {
     cancellationPolicy: string;
     cancellationPolicyVersion: string;
     policyIsDefault: boolean;
-    /** The brand has organization-wide (car rental) legal text, which
-     *  flight and hotel orders never use. */
+    /** Flight and hotel only: the brand has organization-wide (car rental)
+     *  legal text, which flight and hotel orders never use. */
     hasOrganizationWideText: boolean;
   };
   canEdit: boolean;
 }
 
 /**
- * The selected organization's terms and cancellation policy for one
- * service — flight or hotel.
+ * The selected organization's OWN terms and cancellation policy for one
+ * service — car rental, flight or hotel.
  *
  * Kept out of SettingsForm on purpose: that form saves the deployment-wide
  * settings in a single PATCH, while this text belongs to ONE brand and is
@@ -73,7 +94,8 @@ export function ServiceLegalForm({
   canEdit,
 }: ServiceLegalFormProps) {
   const router = useRouter();
-  const { label, noun, writtenFor } = SERVICE_COPY[serviceType];
+  const { label, noun, writtenFor, defaultBadge, defaultName } =
+    SERVICE_COPY[serviceType];
   const form = useForm<UpdateServiceLegalInput>({
     resolver: zodResolver(updateServiceLegalSchema),
     defaultValues: {
@@ -142,7 +164,7 @@ export function ServiceLegalForm({
                   <LegalTextStatus
                     version={initial.termsVersion}
                     isDefault={initial.termsIsDefault}
-                    noun={noun}
+                    defaultBadge={defaultBadge}
                   />
                 </div>
                 <FormControl>
@@ -155,7 +177,7 @@ export function ServiceLegalForm({
                 </FormControl>
                 {initial.termsIsDefault ? (
                   <p className="text-[11.5px] text-muted-foreground">
-                    {`${brand} has no ${noun} terms of its own yet, so new ${noun} orders freeze this built-in default. Edit it and save to replace it.`}
+                    {`${brand} has no ${noun} terms of its own yet, so new ${noun} orders freeze ${defaultName}. Edit it and save to give ${brand} its own — no other brand changes.`}
                   </p>
                 ) : null}
                 <p className="text-[11.5px] text-muted-foreground">
@@ -176,7 +198,7 @@ export function ServiceLegalForm({
                   <LegalTextStatus
                     version={initial.cancellationPolicyVersion}
                     isDefault={initial.policyIsDefault}
-                    noun={noun}
+                    defaultBadge={defaultBadge}
                   />
                 </div>
                 <FormControl>
@@ -189,7 +211,7 @@ export function ServiceLegalForm({
                 </FormControl>
                 {initial.policyIsDefault ? (
                   <p className="text-[11.5px] text-muted-foreground">
-                    {`${brand} has no ${noun} cancellation policy of its own yet, so new ${noun} orders freeze this built-in default. Edit it and save to replace it.`}
+                    {`${brand} has no ${noun} cancellation policy of its own yet, so new ${noun} orders freeze ${defaultName}. Edit it and save to give ${brand} its own — no other brand changes.`}
                   </p>
                 ) : null}
                 <p className="text-[11.5px] text-muted-foreground">
@@ -235,17 +257,15 @@ export function ServiceLegalForm({
 function LegalTextStatus({
   version,
   isDefault,
-  noun,
+  defaultBadge,
 }: {
   version: string;
   isDefault: boolean;
-  noun: string;
+  defaultBadge: string;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      {isDefault ? (
-        <Badge variant="warning">{`Built-in ${noun} default in use`}</Badge>
-      ) : null}
+      {isDefault ? <Badge variant="warning">{defaultBadge}</Badge> : null}
       <Badge variant="secondary">{`Version ${version}`}</Badge>
     </div>
   );

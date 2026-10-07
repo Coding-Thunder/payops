@@ -9,7 +9,7 @@ import {
   View,
 } from "@react-pdf/renderer";
 
-import { flightAmountLabels } from "@/lib/charges";
+import { flightAmountLabels, showsAirlineCharge } from "@/lib/charges";
 import {
   OrderEvidenceActorLabel,
   OrderEvidenceEventLabel,
@@ -607,7 +607,7 @@ function EmailBlock({
 /**
  * The money split that stands in for the single "Amount" row on a flight.
  * The payment link only ever collects `pricing.amount` — on an itinerary
- * flight, the service charge; the airline fare is part of the booking value
+ * flight, the service charge; the airline charge is part of the booking value
  * but was never charged here — the distinction a flight chargeback turns on.
  * A flight created before itineraries is labelled neutrally: its charge
  * lines were usually the whole fare.
@@ -623,10 +623,10 @@ function FlightAmountRows({
   const labels = flightAmountLabels(flight.serviceChargeModel);
   return (
     <View>
-      {amounts.airlineFare > 0 ? (
+      {showsAirlineCharge(amounts) ? (
         <Row
           label={labels.airlineFare}
-          value={`${formatCurrency(amounts.airlineFare, currency)} — not collected by the payment link`}
+          value={`${formatCurrency(amounts.airlineFare, currency)} — ${labels.airlineFareNote.toLowerCase()}`}
         />
       ) : null}
       <Row

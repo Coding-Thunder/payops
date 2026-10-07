@@ -24,7 +24,11 @@ import { OrderDetailsSkeleton } from "@/components/common/skeletons";
 import { CenteredSpinner } from "@/components/ui/spinner";
 import { useOrderQuery } from "@/hooks/use-order-query";
 import { ApiClientError } from "@/lib/api-client";
-import { flightMoneyWording, summarizeFlightAmounts } from "@/lib/charges";
+import {
+  flightMoneyWording,
+  showsAirlineCharge,
+  summarizeFlightAmounts,
+} from "@/lib/charges";
 import { ServiceType } from "@/lib/constants/enums";
 import { BookingTypeLabel, providerLabelFor } from "@/lib/constants/labels";
 import { formatCurrency } from "@/lib/format";
@@ -119,9 +123,10 @@ export function EmailComposePageContent({
 
   const orderHref = `/app/orders/${order.id}`;
   // An itinerary flight's payment link collects its service charge only —
-  // label it so, next to the airline fare and booking value it is part of.
-  // A flight created before itineraries usually charged its whole fare, so
-  // its amount is the neutral "Amount payable now".
+  // the same rows the customer sees: Airline Charge (not collected),
+  // Service Charge, Total Booking Value, Amount Payable Now. A flight
+  // created before itineraries usually charged its whole fare, so its
+  // labels are the neutral legacy set.
   const isFlight = serviceTypeOf(order) === ServiceType.FLIGHT;
   const flightAmounts = isFlight
     ? summarizeFlightAmounts(
@@ -130,7 +135,7 @@ export function EmailComposePageContent({
         order.pricing.amount,
       )
     : null;
-  const { labels: flightLabels, serviceChargeModel } = flightMoneyWording(
+  const { labels: flightLabels } = flightMoneyWording(
     order.flight,
     order.bookingType,
   );
@@ -168,20 +173,9 @@ export function EmailComposePageContent({
             />
             {flightAmounts ? (
               <>
-                <SummaryRow
-                  label={
-                    serviceChargeModel
-                      ? `${flightLabels.serviceCharge} (payable now)`
-                      : flightLabels.payableNow
-                  }
-                  value={formatCurrency(
-                    order.pricing.amount,
-                    order.pricing.currency,
-                  )}
-                />
-                {flightAmounts.airlineFare > 0 ? (
+                {showsAirlineCharge(flightAmounts) ? (
                   <SummaryRow
-                    label={flightLabels.airlineFare}
+                    label={`${flightLabels.airlineFare} (not collected)`}
                     value={formatCurrency(
                       flightAmounts.airlineFare,
                       order.pricing.currency,
@@ -189,9 +183,23 @@ export function EmailComposePageContent({
                   />
                 ) : null}
                 <SummaryRow
+                  label={flightLabels.serviceCharge}
+                  value={formatCurrency(
+                    flightAmounts.serviceCharge,
+                    order.pricing.currency,
+                  )}
+                />
+                <SummaryRow
                   label={flightLabels.bookingTotal}
                   value={formatCurrency(
                     flightAmounts.bookingTotal,
+                    order.pricing.currency,
+                  )}
+                />
+                <SummaryRow
+                  label={flightLabels.payableNow}
+                  value={formatCurrency(
+                    order.pricing.amount,
                     order.pricing.currency,
                   )}
                 />
