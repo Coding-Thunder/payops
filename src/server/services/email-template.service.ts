@@ -5,9 +5,10 @@ import { Types } from "mongoose";
 import {
   AuditAction,
   AuditEntity,
+  ServiceType,
   UserRole,
 } from "@/lib/constants/enums";
-import { NotFoundError, ValidationError } from "@/lib/errors";
+import { ForbiddenError, NotFoundError, ValidationError } from "@/lib/errors";
 import type { CreateEmailTemplateVersionInput } from "@/lib/validation";
 import {
   EmailTemplate,
@@ -16,12 +17,11 @@ import {
   type EmailTemplateKey,
 } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
+import { organizationStamp } from "@/server/db/organization-filter";
 import {
-  belongsToScope,
-  organizationStamp,
-  withOrganizationScope,
-} from "@/server/db/organization-filter";
-import { getRequestOrganizationScope } from "@/server/auth/organization";
+  getRequestOrganizationScope,
+  organizationsExist,
+} from "@/server/auth/organization";
 import type { EmailTemplateVersionDTO } from "@/types";
 
 import type { RequestContext } from "@/server/api/request-context";
@@ -40,6 +40,7 @@ function toDTO(
   return {
     id: String(doc._id),
     templateKey: doc.templateKey,
+    serviceType: doc.serviceType ?? ServiceType.CAR_RENTAL,
     version: doc.version,
     active: doc.active,
     subject: doc.subject,
@@ -60,27 +61,69 @@ function toDTO(
   };
 }
 
+// ─── Service ───────────────────────────────────────────────────────────────
+
+/**
+ * The rows that hold one service's copy: its own rows, plus — for car
+ * rental only — the rows written before copy was per service
+ * (`serviceType: null`), which were car rental copy. Never another service's.
+ */
+function serviceRows(serviceType: ServiceType): (ServiceType | null)[] {
+  return serviceType === ServiceType.CAR_RENTAL
+    ? [ServiceType.CAR_RENTAL, null]
+    : [serviceType];
+}
+
+/**
+ * Whose copy the admin screens list, save and activate: the selected brand's
+ * own — or, on a deployment with no brands at all, the deployment's own
+ * (unowned) copy, exactly as before brands existed. With brands, an unowned
+ * row is never written or switched: every brand without copy of its own
+ * would inherit it.
+ */
+async function editingOwner(): Promise<
+  { allowed: true; owner: Types.ObjectId | null } | { allowed: false }
+> {
+  const owner = organizationStamp(await getRequestOrganizationScope());
+  if (owner) return { allowed: true, owner };
+  return (await organizationsExist())
+    ? { allowed: false }
+    : { allowed: true, owner: null };
+}
+
 // ─── Reads ─────────────────────────────────────────────────────────────────
 
 export async function listTemplateVersions(
   templateKey: EmailTemplateKey,
+  /** One service's versions; every service's when omitted. */
+  serviceType?: ServiceType,
 ): Promise<EmailTemplateVersionDTO[]> {
   await connectMongo();
-  const docs = await EmailTemplate.find(
-    withOrganizationScope({ templateKey }, await getRequestOrganizationScope()),
-  )
+  // The brand's OWN versions only — the ones it can edit and activate.
+  const editing = await editingOwner();
+  if (!editing.allowed) return [];
+  const docs = await EmailTemplate.find({
+    templateKey,
+    organizationId: editing.owner,
+    ...(serviceType ? { serviceType: { $in: serviceRows(serviceType) } } : {}),
+  })
     .sort({ version: -1 })
     .lean<(EmailTemplateDoc & { _id: Types.ObjectId })[]>();
   return docs.map(toDTO);
 }
 
 /**
- * The live template for one organization.
+ * The live template for one organization and ONE service.
  *
- * Resolution is OVERRIDE-THEN-SHARED: a row stamped with this organization
- * wins; otherwise the shared row (organizationId null) applies. The null
- * bucket is a deliberate deployment-wide default here, not merely
- * pre-migration residue — see the note on the model.
+ * FLIGHT / HOTEL: only this organization's own row for that service —
+ * never another service's copy, never a shared row, never another brand's.
+ * Without one, the template's built-in copy applies.
+ *
+ * CAR RENTAL: exactly the rule car rental emails have always used —
+ * OVERRIDE-THEN-SHARED over the car rental rows (rows saved for car rental,
+ * plus those written before copy was per service, which were car rental
+ * copy): this organization's own row wins, otherwise the shared row
+ * (organizationId null) applies.
  *
  * The organization is an explicit ARGUMENT rather than ambient request scope
  * because the send paths run on the outbox drainer and on webhooks, which
@@ -90,33 +133,41 @@ export async function listTemplateVersions(
 export async function getActiveTemplate(
   templateKey: EmailTemplateKey,
   organizationId: string | null,
+  serviceType: ServiceType,
 ): Promise<EmailTemplateVersionDTO | null> {
   await connectMongo();
-  const ids: (Types.ObjectId | null)[] = [null];
+  const ids: (Types.ObjectId | null)[] =
+    serviceType === ServiceType.CAR_RENTAL ? [null] : [];
   if (organizationId && Types.ObjectId.isValid(organizationId)) {
     ids.unshift(new Types.ObjectId(organizationId));
   }
+  if (ids.length === 0) return null;
   const docs = await EmailTemplate.find({
     templateKey,
     active: true,
     organizationId: { $in: ids },
+    serviceType: { $in: serviceRows(serviceType) },
   }).lean<(EmailTemplateDoc & { _id: Types.ObjectId })[]>();
   if (!docs.length) return null;
-  // Prefer the organization's own row over the shared one. Done in JS
-  // rather than with a sort so it does not depend on how Mongo orders
-  // null against an ObjectId.
-  const own = organizationId
-    ? docs.find((d) => String(d.organizationId ?? "") === organizationId)
-    : undefined;
-  return toDTO(own ?? docs[0]);
+  // The organization's own row beats the shared one, and copy written for
+  // this service beats a car rental row from before copy was per service.
+  // Done in JS rather than with a sort so it does not depend on how Mongo
+  // orders null against an ObjectId.
+  const isOwn = (d: EmailTemplateDoc) =>
+    Boolean(organizationId) && String(d.organizationId ?? "") === organizationId;
+  const rank = (d: EmailTemplateDoc) =>
+    (isOwn(d) ? 0 : 2) + (d.serviceType === serviceType ? 0 : 1);
+  const best = [...docs].sort((a, b) => rank(a) - rank(b))[0]!;
+  return toDTO(best);
 }
 
 /** The version the ADMIN screens act on: the caller's own organization. */
 export async function getActiveTemplateForRequest(
   templateKey: EmailTemplateKey,
+  serviceType: ServiceType,
 ): Promise<EmailTemplateVersionDTO | null> {
   const scope = await getRequestOrganizationScope();
-  return getActiveTemplate(templateKey, scope.organizationId);
+  return getActiveTemplate(templateKey, scope.organizationId, serviceType);
 }
 
 /**
@@ -129,8 +180,11 @@ export async function getActiveTemplateForRequest(
 export async function getActiveTemplateContent(
   templateKey: EmailTemplateKey,
   organizationId: string | null,
+  /** The ORDER's service: its copy is that service's, and only that
+   *  service's — never another service's copy as a fallback. */
+  serviceType: ServiceType,
 ): Promise<EmailTemplateContent | null> {
-  const active = await getActiveTemplate(templateKey, organizationId);
+  const active = await getActiveTemplate(templateKey, organizationId, serviceType);
   if (!active) return null;
   return {
     subject: active.subject,
@@ -158,14 +212,21 @@ export async function createTemplateVersion(
   templateKey: EmailTemplateKey,
   input: CreateEmailTemplateVersionInput,
   ctx: ActorCtx,
+  /** The service this copy is for. */
+  serviceType: ServiceType,
 ): Promise<EmailTemplateVersionDTO> {
   await connectMongo();
   // Everything below is scoped to the AUTHORING organization. Unscoped, the
   // version counter collided across brands and — worse — the deactivation
   // below switched off the other brand's live template, silently replacing
   // its customer-facing copy.
-  const scope = await getRequestOrganizationScope();
-  const owner = organizationStamp(scope);
+  // Copy is always a brand's own: with brands but none selected there is no
+  // owner, and an unowned row would be inherited by every other brand.
+  const editing = await editingOwner();
+  if (!editing.allowed) {
+    throw new ForbiddenError("Select a brand to edit its email copy.");
+  }
+  const owner = editing.owner;
   const ownerFilter = { organizationId: owner };
 
   // Highest version number currently in use for this key, in this org.
@@ -175,15 +236,21 @@ export async function createTemplateVersion(
     .lean<{ version: number }>();
   const nextVersion = (latest?.version ?? 0) + 1;
 
-  // Deactivate this organization's currently active row so the new version
-  // takes over — theirs only.
+  // Deactivate this organization's currently active row FOR THIS SERVICE so
+  // the new version takes over — theirs only, this service only.
   await EmailTemplate.updateMany(
-    { templateKey, active: true, ...ownerFilter },
+    {
+      templateKey,
+      active: true,
+      ...ownerFilter,
+      serviceType: { $in: serviceRows(serviceType) },
+    },
     { $set: { active: false } },
   );
 
   const doc = await EmailTemplate.create({
     templateKey,
+    serviceType,
     organizationId: owner,
     version: nextVersion,
     active: true,
@@ -212,6 +279,7 @@ export async function createTemplateVersion(
     request: ctx.request ?? null,
     metadata: {
       templateKey,
+      serviceType,
       version: nextVersion,
     },
   });
@@ -233,16 +301,20 @@ export async function activateTemplateVersion(
   if (!Types.ObjectId.isValid(versionId)) {
     throw new NotFoundError("Template version not found");
   }
-  const scope = await getRequestOrganizationScope();
   const doc = await EmailTemplate.findById(versionId).lean<
     EmailTemplateDoc & { _id: Types.ObjectId }
   >();
   // Same NotFound (never Forbidden) as the order paths: a different status
   // would let one brand's admin probe which version ids exist in another's.
+  // Only the editor's OWN versions can be activated: with brands, a shared
+  // row (no organization) is read-only, since switching it would change the
+  // copy of every brand that inherits it.
+  const editing = await editingOwner();
   if (
     !doc ||
     doc.templateKey !== templateKey ||
-    !belongsToScope(doc.organizationId, scope)
+    !editing.allowed ||
+    String(doc.organizationId ?? "") !== String(editing.owner ?? "")
   ) {
     throw new NotFoundError("Template version not found");
   }
@@ -252,9 +324,17 @@ export async function activateTemplateVersion(
 
   // Roll back within the OWNING row's organization, not the caller's — a
   // default-org admin may legitimately activate a shared (null) row, and
-  // that must not switch off their own override or anyone else's.
+  // that must not switch off their own override or anyone else's — and
+  // within the row's own service, so another service's copy stays live.
   await EmailTemplate.updateMany(
-    { templateKey, active: true, organizationId: doc.organizationId ?? null },
+    {
+      templateKey,
+      active: true,
+      organizationId: doc.organizationId ?? null,
+      serviceType: {
+        $in: serviceRows(doc.serviceType ?? ServiceType.CAR_RENTAL),
+      },
+    },
     { $set: { active: false } },
   );
   const updated = await EmailTemplate.findByIdAndUpdate(

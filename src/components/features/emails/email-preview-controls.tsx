@@ -16,7 +16,8 @@ interface EmailPreviewControlsProps {
   providers: Array<{ key: string; name: string }>;
   activeProvider: string;
   activeBookingType: BookingType;
-  /** The services with sample data (a car rental and a flight). */
+  /** The services the selected organization sells — each previews its
+   *  own sample booking with its own terms. */
   services: readonly ServiceType[];
   activeService: ServiceType;
 }
@@ -38,6 +39,8 @@ export function EmailPreviewControls({
   function update(key: "provider" | "bookingType" | "service", value: string) {
     const next = new URLSearchParams(params.toString());
     next.set(key, value);
+    // Providers are per service: a new service starts from its own list.
+    if (key === "service") next.delete("provider");
     router.push(`?${next.toString()}`);
     router.refresh();
   }

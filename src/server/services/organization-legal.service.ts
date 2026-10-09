@@ -25,6 +25,7 @@ import {
   type OrganizationServiceLegal,
 } from "@/server/db/models";
 import {
+  DEFAULT_CONSENT_MESSAGE,
   DEFAULT_FLIGHT_CANCELLATION_POLICY,
   DEFAULT_FLIGHT_LEGAL_VERSION,
   DEFAULT_FLIGHT_TERMS_AND_CONDITIONS,
@@ -34,10 +35,7 @@ import {
 } from "@/server/db/models/setting.model";
 import { connectMongo } from "@/server/db/mongoose";
 import { organizationStamp } from "@/server/db/organization-filter";
-import {
-  getRequestOrganizationScope,
-  getSelectedOrganization,
-} from "@/server/auth/organization";
+import { getRequestOrganizationScope } from "@/server/auth/organization";
 
 import type { RequestContext } from "@/server/api/request-context";
 import { recordAudit } from "./audit.service";
@@ -413,31 +411,67 @@ export async function getOrganizationServiceLegal(
 }
 
 /**
- * The terms an admin email preview shows for one service: exactly what the
- * SELECTED organization's next order of that service would freeze — its own
- * text, else that service's default. With no organization selected: the
- * deployment car rental text, or the built-in flight/hotel text. Never
- * another service's text.
+ * The two things — and the ONLY two things — that decide which Terms &
+ * Conditions apply: an organization and a service type. For an order, both
+ * come from the order itself.
  */
-export async function previewLegalFor(
-  serviceType: OrganizationLegalService,
-): Promise<DeploymentCarLegal> {
-  const organization = await getSelectedOrganization();
-  const pick = (paired: PairedServiceLegal): DeploymentCarLegal => ({
-    termsAndConditions: paired.termsAndConditions,
-    termsVersion: paired.termsVersion,
-    cancellationPolicy: paired.cancellationPolicy,
-    cancellationPolicyVersion: paired.cancellationPolicyVersion,
-  });
+export interface ServiceTermsContext {
+  /** Null only for a pre-migration car rental order, which has none. */
+  organizationId: string | Types.ObjectId | null;
+  serviceType: OrganizationLegalService;
+}
+
+/**
+ * THE canonical T&C resolver: one organization's terms and cancellation
+ * policy for one service. Every reader of service terms goes through it:
+ *
+ *   - order creation (`resolveOrderLegal` in order.service.ts), which
+ *     freezes the result onto the order — the snapshot every real customer
+ *     email, the consent and acknowledge pages and the evidence chain show;
+ *   - every email preview, given the organization and the service it
+ *     previews (`renderEmailPreview`).
+ *
+ * CAR_RENTAL: the organization's own car rental text, field by field, else
+ * the deployment default — the rule car rental orders have always used.
+ * FLIGHT / HOTEL: the organization's own text for that service, else that
+ * service's built-in, brand-neutral default. With no organization: the
+ * deployment car rental default, or the built-in flight / hotel text.
+ *
+ * Nothing else is an input: not the admin's screen, not the selected
+ * service, not the most recently edited text. Never another service's text,
+ * never another organization's.
+ */
+export async function resolveServiceTerms(
+  ctx: ServiceTermsContext,
+): Promise<PairedServiceLegal> {
+  const { organizationId, serviceType } = ctx;
+  const org = organizationId
+    ? await readLegalRow(organizationId, viewFields(serviceType))
+    : null;
   if (serviceType === ServiceType.CAR_RENTAL) {
-    const deployment = await deploymentCarLegal();
-    if (!organization) return deployment;
-    const org = await readLegalRow(organization.id, viewFields(serviceType));
-    return pick(pairCarLegal(org.legal, deployment));
+    return pairCarLegal(org?.legal, await deploymentCarLegal());
   }
-  if (!organization) return pick(pairServiceLegal(serviceType, null));
-  const org = await readLegalRow(organization.id, viewFields(serviceType));
-  return pick(pairServiceLegal(serviceType, org.legal?.services?.[serviceType]));
+  return pairServiceLegal(serviceType, org?.legal?.services?.[serviceType]);
+}
+
+/**
+ * The acknowledgement statement a customer confirms ("I confirm that …")
+ * for an order of one service — per service, like its terms.
+ *
+ * Car rental: the deployment's statement (Admin → Settings, edited with no
+ * brand selected) — exactly what car rental customers have always
+ * confirmed. Flight and hotel: the built-in, service-neutral statement,
+ * never the deployment one, which was written for car rental and may name
+ * it. So a flight or hotel customer is never asked to agree to car rental
+ * wording.
+ */
+export function acknowledgementFor(
+  serviceType: ServiceType,
+  deploymentStatement: string,
+): string {
+  return serviceType === ServiceType.CAR_RENTAL
+    ? deploymentStatement
+    : DEFAULT_CONSENT_MESSAGE;
 }
 
 /**

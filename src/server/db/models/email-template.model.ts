@@ -7,6 +7,7 @@ import {
 
 import { EMAIL_TEMPLATE_KEYS } from "@/lib/constants/email-templates";
 import type { EmailTemplateKey } from "@/lib/constants/email-templates";
+import { SERVICE_TYPES, type ServiceType } from "@/lib/constants/enums";
 
 import {
   organizationScope,
@@ -34,6 +35,13 @@ export type { EmailTemplateKey };
  *   - rows are immutable except for `active` and `updatedAt` (so an
  *     admin can flip activation between versions but can't retro-edit
  *     historical content). Edits = new version.
+ *
+ * Copy is per SERVICE (`serviceType`): one active row per key, per
+ * organization, per service. A car rental's wording never reaches a flight
+ * or hotel email, and the reverse. A row written before copy was per service
+ * has `serviceType: null` and counts as CAR RENTAL copy — the only service
+ * such rows were ever written for — so car rental emails keep exactly the
+ * copy they had. Version numbers stay one sequence per key per organization.
  */
 
 export interface EmailTemplateContent {
@@ -57,6 +65,9 @@ export interface EmailTemplateDoc
   extends EmailTemplateContent,
     OrganizationScoped {
   templateKey: EmailTemplateKey;
+  /** The service this copy is for; null on a row written before copy was
+   *  per service, which is car rental copy. */
+  serviceType: ServiceType | null;
   version: number;
   active: boolean;
 
@@ -86,6 +97,11 @@ const emailTemplateSchema = new Schema<EmailTemplateDoc>(
       enum: EMAIL_TEMPLATE_KEYS,
       required: true,
       index: true,
+    },
+    serviceType: {
+      type: String,
+      enum: [...SERVICE_TYPES, null],
+      default: null,
     },
     version: { type: Number, required: true, min: 1, index: true },
     active: { type: Boolean, required: true, default: false, index: true },

@@ -318,9 +318,12 @@ describe("webhook payment → confirmation email, per organization", () => {
   });
 
   it("uses the order's organization's own email template, not another brand's", async () => {
+    // Copy is per service: this is ALPHA's FLIGHT receipt copy, and the
+    // orders below are flights.
     await EmailTemplate.create({
       organizationId: orgIds.get(ALPHA.slug),
       templateKey: "payment-confirmation",
+      serviceType: ServiceType.FLIGHT,
       version: 1,
       active: true,
       subject: "ALPHA CUSTOM RECEIPT SUBJECT",

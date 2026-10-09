@@ -1,25 +1,20 @@
 import Link from "next/link";
-import { render } from "@react-email/render";
+import { redirect } from "next/navigation";
 
 import { PageHeader } from "@/components/common/page-header";
 import { EmailPreviewControls } from "@/components/features/emails/email-preview-controls";
 import { Permission } from "@/lib/constants/permissions";
 import { BookingType, BOOKING_TYPES, ServiceType } from "@/lib/constants/enums";
-import { env } from "@/lib/env";
+import { ServiceTypeLabel } from "@/lib/constants/labels";
 import { cn } from "@/lib/utils";
+import { getSelectedOrganization } from "@/server/auth/organization";
 import { requirePermission } from "@/server/auth/session";
-import { getBranding } from "@/server/services/branding.service";
 import { ensureSettingsDocument } from "@/server/services/settings.service";
-import { listActiveProviders } from "@/server/services/provider.service";
-import { previewLegalFor } from "@/server/services/organization-legal.service";
-import { PaymentAuthorizedEmail } from "@/server/email/templates/payment-authorized";
-import { PaymentConfirmationEmail } from "@/server/email/templates/payment-confirmation";
-import { PaymentRequestEmail } from "@/server/email/templates/payment-request";
 import {
-  buildPaymentAuthorizedPreviewProps,
-  buildPaymentPreviewProps,
-  buildPaymentRequestPreviewProps,
-} from "@/server/email/preview-data";
+  parsePreviewService,
+  previewServicesFor,
+  renderEmailPreview,
+} from "@/server/email/preview";
 
 export const metadata = { title: "Email previews" };
 export const dynamic = "force-dynamic";
@@ -49,10 +44,6 @@ function isTemplateKey(value: string | undefined): value is TemplateKey {
   return TEMPLATES.some((t) => t.key === value);
 }
 
-/** The sample data sets the previews can render. */
-const PREVIEW_SERVICES = [ServiceType.CAR_RENTAL, ServiceType.FLIGHT] as const;
-type PreviewService = (typeof PREVIEW_SERVICES)[number];
-
 interface EmailsPageProps {
   searchParams: Promise<{
     template?: string;
@@ -66,35 +57,45 @@ export default async function AdminEmailsPage({
   searchParams,
 }: EmailsPageProps) {
   await requirePermission(Permission.SETTINGS_VIEW);
+  await ensureSettingsDocument();
 
   const params = await searchParams;
-  const activeService: PreviewService =
-    params.service === ServiceType.FLIGHT
-      ? ServiceType.FLIGHT
-      : ServiceType.CAR_RENTAL;
-
-  // Only providers of the previewed service — a flight sample is never shown
-  // under a car rental brand — and that service's terms as the selected
-  // organization's next order of it would freeze them.
-  const [branding, , providers, legal] = await Promise.all([
-    getBranding(),
-    ensureSettingsDocument(),
-    listActiveProviders({ serviceType: activeService }),
-    previewLegalFor(activeService),
-  ]);
+  // A preview's T&C come from exactly two inputs, both explicit: the
+  // selected organization, and the service named in the URL — one the
+  // organization sells. A missing or unsold service is never guessed into
+  // a default: the page redirects so the URL (and the selector) names it.
+  const organization = await getSelectedOrganization();
+  const services = await previewServicesFor(organization?.id ?? null);
+  const requested = parsePreviewService(params.service);
+  if (!requested || !services.includes(requested)) {
+    const next = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (typeof value === "string" && key !== "service") next.set(key, value);
+    }
+    next.set("service", services[0]!);
+    redirect(`/app/admin/emails?${next.toString()}`);
+  }
+  const activeService: ServiceType = requested;
 
   const activeTemplate: TemplateKey = isTemplateKey(params.template)
     ? params.template
     : "payment-confirmation";
-  const activeProvider =
-    providers.find((p) => p.key === params.provider) ?? providers[0] ?? null;
   const activeBookingType = (
     BOOKING_TYPES as readonly string[]
   ).includes(params.bookingType ?? "")
     ? (params.bookingType as BookingType)
     : BookingType.NEW_BOOKING;
 
+  const { html, providers, provider: activeProvider } = await renderEmailPreview({
+    organizationId: organization?.id ?? null,
+    serviceType: activeService,
+    templateKey: activeTemplate,
+    providerKey: params.provider,
+    bookingType: activeBookingType,
+  });
+
   if (!activeProvider) {
+    const other = services.find((s) => s !== activeService);
     return (
       <div className="space-y-6">
         <PageHeader
@@ -103,56 +104,22 @@ export default async function AdminEmailsPage({
           description="Preview the customer transactional emails that this workspace sends."
         />
         <div className="rounded-lg border border-dashed border-border bg-card p-6 text-sm text-muted-foreground">
-          {`No active ${activeService === ServiceType.FLIGHT ? "flight" : "car rental"} providers configured. Visit `}
+          {`No active ${ServiceTypeLabel[activeService].toLowerCase()} providers configured. Visit `}
           <strong>Admin → Providers</strong> to set one up before previewing
-          the customer receipt, or preview the{" "}
-          <Link
-            className="underline"
-            href={`?service=${activeService === ServiceType.FLIGHT ? ServiceType.CAR_RENTAL : ServiceType.FLIGHT}`}
-          >
-            {activeService === ServiceType.FLIGHT ? "car rental" : "flight"} emails
-          </Link>
+          the customer emails
+          {other ? (
+            <>
+              {", or preview the "}
+              <Link className="underline" href={`?service=${other}`}>
+                {ServiceTypeLabel[other].toLowerCase()} emails
+              </Link>
+            </>
+          ) : null}
           .
         </div>
       </div>
     );
   }
-
-  const baseArgs = {
-    brandName: branding.brandName,
-    appUrl: env.server.APP_URL,
-    supportEmail: branding.supportEmail,
-    supportPhone: branding.supportPhone,
-    provider: {
-      id: activeProvider.key,
-      name: activeProvider.name,
-      logo: activeProvider.logo,
-      primaryColor: activeProvider.primaryColor,
-      onPrimaryColor: activeProvider.onPrimaryColor,
-    },
-    cancellationPolicy: legal.cancellationPolicy,
-    cancellationPolicyVersion: legal.cancellationPolicyVersion,
-    termsAndConditions: legal.termsAndConditions,
-    termsVersion: legal.termsVersion,
-    bookingType: activeBookingType,
-    serviceType: activeService,
-    ...(activeService === ServiceType.FLIGHT ? { flightLegal: legal } : {}),
-  };
-
-  const html =
-    activeTemplate === "payment-request"
-      ? await render(
-          <PaymentRequestEmail {...buildPaymentRequestPreviewProps(baseArgs)} />,
-        )
-      : activeTemplate === "payment-authorized"
-        ? await render(
-            <PaymentAuthorizedEmail
-              {...buildPaymentAuthorizedPreviewProps(baseArgs)}
-            />,
-          )
-        : await render(
-            <PaymentConfirmationEmail {...buildPaymentPreviewProps(baseArgs)} />,
-          );
 
   const activeTemplateLabel = TEMPLATES.find((t) => t.key === activeTemplate)!
     .label;
@@ -177,7 +144,7 @@ export default async function AdminEmailsPage({
             providers={providers.map((p) => ({ key: p.key, name: p.name }))}
             activeProvider={activeProvider.key}
             activeBookingType={activeBookingType}
-            services={PREVIEW_SERVICES}
+            services={services}
             activeService={activeService}
           />
         </aside>
@@ -188,7 +155,7 @@ export default async function AdminEmailsPage({
               {activeTemplateLabel}
             </h2>
             <span className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-              {activeProvider.name} ·{" "}
+              {ServiceTypeLabel[activeService]} · {activeProvider.name} ·{" "}
               {activeBookingType.replace("_", " ").toLowerCase()}
             </span>
           </div>
@@ -215,7 +182,7 @@ function TemplateListCard({
   activeKey: TemplateKey;
   provider: string;
   bookingType: BookingType;
-  service: PreviewService;
+  service: ServiceType;
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">

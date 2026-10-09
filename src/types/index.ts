@@ -661,6 +661,9 @@ export interface EmailTemplateVersionDTO {
   // was a hand-written duplicate of the union and drifted the moment a
   // third template key was added.
   templateKey: EmailTemplateKey;
+  /** The service this copy is for — car rental for a row written before
+   *  copy was per service. */
+  serviceType: ServiceType;
   version: number;
   active: boolean;
 

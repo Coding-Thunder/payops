@@ -93,6 +93,9 @@ export default async function AdminSettingsPage() {
           successRedirectUrl: settings.successRedirectUrl,
           cancelRedirectUrl: settings.cancelRedirectUrl,
           consentMode: settings.consentMode,
+          // The acknowledgement statement is deployment-wide; car rental
+          // customers of every brand confirm it (flight and hotel customers
+          // confirm a built-in, service-neutral one — `acknowledgementFor`).
           consentMessage: settings.consentMessage,
           // The deployment default car rental text goes to the browser — and
           // comes back in a save — only with no brand selected.

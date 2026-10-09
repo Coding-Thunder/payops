@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   CheckCircle2Icon,
   Loader2Icon,
@@ -31,6 +31,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
 import { api, ApiClientError } from "@/lib/api-client";
 import type { EmailTemplateKey } from "@/lib/constants/email-templates";
+import type { ServiceType } from "@/lib/constants/enums";
+import { ServiceTypeLabel } from "@/lib/constants/labels";
 import { cn } from "@/lib/utils";
 import type { EmailTemplateVersionDTO } from "@/types";
 
@@ -49,6 +51,12 @@ interface AdminTemplateEditorProps {
   templates: readonly TemplateOption[];
   versions: EmailTemplateVersionDTO[];
   activeVersion: EmailTemplateVersionDTO | null;
+  /** The service being edited and previewed: its copy, its sample booking
+   *  and ITS Terms & Conditions. Named in the page URL; never defaulted. */
+  serviceType: ServiceType;
+  /** The services the selected organization sells. */
+  services: readonly ServiceType[];
+  /** Active providers of `serviceType`. */
   providers: readonly ProviderOption[];
   initialHtml: string;
 }
@@ -100,10 +108,13 @@ export function AdminTemplateEditor({
   templates,
   versions,
   activeVersion,
+  serviceType,
+  services,
   providers,
   initialHtml,
 }: AdminTemplateEditorProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const [draft, setDraft] = React.useState<DraftState>(() =>
     draftFromVersion(activeVersion),
   );
@@ -138,7 +149,7 @@ export function AdminTemplateEditor({
       try {
         const { html: rendered } = await api.post<{ html: string }>(
           `/api/admin/email-templates/${templateKey}/preview`,
-          { ...draftPayload(draft), provider },
+          { ...draftPayload(draft), provider, serviceType },
           { signal: controller.signal },
         );
         setHtml(rendered);
@@ -157,12 +168,15 @@ export function AdminTemplateEditor({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [draft, provider, templateKey]);
+  }, [draft, provider, serviceType, templateKey]);
 
   async function handleSave() {
     setSaving(true);
     try {
-      await api.post(`/api/admin/email-templates/${templateKey}`, draftPayload(draft));
+      await api.post(`/api/admin/email-templates/${templateKey}`, {
+        ...draftPayload(draft),
+        serviceType,
+      });
       toast.success("Saved as a new version");
       router.refresh();
     } catch (err) {
@@ -207,6 +221,7 @@ export function AdminTemplateEditor({
       <aside className="space-y-4">
         <TemplateSwitcher
           templateKey={templateKey}
+          serviceType={serviceType}
           templates={templates}
           activeVersionLabel={activeVersion?.version ?? null}
           totalVersions={versions.length}
@@ -313,10 +328,32 @@ export function AdminTemplateEditor({
         <Card>
           <CardHeader>
             <CardTitle className="text-[13px] tracking-tight">
-              Preview as provider
+              Preview as
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-medium text-muted-foreground">
+                Service — its own copy, sample booking and Terms &amp; Conditions
+              </label>
+              <Select
+                value={serviceType}
+                onValueChange={(next) => {
+                  router.push(`${pathname}?service=${next}`);
+                }}
+              >
+                <SelectTrigger aria-label="Preview service">
+                  <SelectValue placeholder="Pick a service" />
+                </SelectTrigger>
+                <SelectContent>
+                  {services.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {ServiceTypeLabel[s]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <Select value={provider} onValueChange={setProvider}>
               <SelectTrigger>
                 <SelectValue placeholder="Pick a provider" />
@@ -430,6 +467,8 @@ function Field({ label, hint, children }: FieldProps) {
 
 interface TemplateSwitcherProps {
   templateKey: EmailTemplateKey;
+  /** Kept when switching template, so the service never silently changes. */
+  serviceType: ServiceType;
   templates: readonly TemplateOption[];
   activeVersionLabel: number | null;
   totalVersions: number;
@@ -437,6 +476,7 @@ interface TemplateSwitcherProps {
 
 function TemplateSwitcher({
   templateKey,
+  serviceType,
   templates,
   activeVersionLabel,
   totalVersions,
@@ -460,7 +500,7 @@ function TemplateSwitcher({
               )}
             >
               <Link
-                href={`/app/admin/email-templates/${t.key}`}
+                href={`/app/admin/email-templates/${t.key}?service=${serviceType}`}
                 className="flex items-center justify-between gap-3 px-4 py-3"
               >
                 <span className="font-medium text-foreground">{t.label}</span>
@@ -530,7 +570,12 @@ function VersionsList({
                   ) : null}
                 </p>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  {v.createdBy.name} · {new Date(v.createdAt).toLocaleString()}
+                  {v.createdBy.name} ·{" "}
+                  {/* A locale-formatted time: the server's rendering is
+                      kept on hydration instead of failing the comparison. */}
+                  <span suppressHydrationWarning>
+                    {new Date(v.createdAt).toLocaleString()}
+                  </span>
                 </p>
               </div>
               {v.active ? null : (

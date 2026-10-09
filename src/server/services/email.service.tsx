@@ -72,6 +72,7 @@ import { recordAudit } from "./audit.service";
 import { captureEvidenceSafe } from "./evidence.service";
 import { getBranding } from "./branding.service";
 import { getActiveTemplateContent } from "./email-template.service";
+import { acknowledgementFor } from "./organization-legal.service";
 import { requestConsent } from "./consent.service";
 import {
   buildConsentUrl,
@@ -519,10 +520,10 @@ export async function sendPaymentConfirmationEmail(
   const orgId = await organizationIdForOrder(order.id);
   const [branding, tpl] = await Promise.all([
     getBranding(),
-    // Template copy is per-organization, falling back to the shared default.
-    // Passed explicitly rather than read from request scope: this runs on the
-    // webhook and outbox-drainer paths, which have no session.
-    getActiveTemplateContent("payment-confirmation", orgId),
+    // Template copy is per organization AND per service — the ORDER's, both
+    // passed explicitly rather than read from request scope: this runs on
+    // the webhook and outbox-drainer paths, which have no session.
+    getActiveTemplateContent("payment-confirmation", orgId, serviceTypeOf(order)),
   ]);
   // Brand shown to the customer comes from the ORDER's organization,
   // falling back to the deployment Branding singleton. Resolved once here
@@ -656,7 +657,7 @@ export async function sendPaymentAuthorizedEmail(
   const orgId = await organizationIdForOrder(order.id);
   const [branding, tpl] = await Promise.all([
     getBranding(),
-    getActiveTemplateContent("payment-authorized", orgId),
+    getActiveTemplateContent("payment-authorized", orgId, serviceTypeOf(order)),
   ]);
   const identity = await resolveEmailIdentity(orgId, branding);
   const brandName = identity.brandName;
@@ -817,7 +818,11 @@ export async function composePaymentRequestProps(
   const composeOrgId = await organizationIdForOrder(order.id);
   const [branding, tpl, settings] = await Promise.all([
     getBranding(),
-    getActiveTemplateContent("payment-request", composeOrgId),
+    getActiveTemplateContent(
+      "payment-request",
+      composeOrgId,
+      serviceTypeOf(order),
+    ),
     getSettings(),
   ]);
   // Organization brand, falling back to the deployment singleton.
@@ -828,8 +833,10 @@ export async function composePaymentRequestProps(
   const providerForEmail = order.provider
     ? { ...order.provider, logo: providerLogoInline ?? order.provider.logo }
     : order.provider;
+  // The statement the customer confirms is per service, like the terms.
   const effectiveConsentMessage =
-    consent?.consentMessage ?? settings.consentMessage;
+    consent?.consentMessage ??
+    acknowledgementFor(serviceTypeOf(order), settings.consentMessage);
   const consentMailto = buildConsentMailto({
     toEmail: identity.supportEmail,
     brandName: identity.brandName,
@@ -1001,6 +1008,7 @@ export async function sendPaymentRequestEmail(
     getActiveTemplateContent(
       "payment-request",
       await organizationIdForOrder(order.id),
+      serviceTypeOf(order),
     ),
     getSettings(),
   ]);
@@ -1022,7 +1030,10 @@ export async function sendPaymentRequestEmail(
           orderId: order.id,
           customerEmail: overrides.toOverride?.trim() || order.customer.email,
           customerName: order.customer.name,
-          consentMessage: settings.consentMessage,
+          consentMessage: acknowledgementFor(
+            serviceTypeOf(order),
+            settings.consentMessage,
+          ),
           consentEmailSubject: subject,
           snapshot: (() => {
             const s = summarizeCharges(order.charges, order.pricing.amount);
@@ -1068,7 +1079,10 @@ export async function sendPaymentRequestEmail(
 
   const props = await composePaymentRequestProps(order, overrides, {
     consentUrl,
-    consentMessage: settings.consentMessage,
+    consentMessage: acknowledgementFor(
+      serviceTypeOf(order),
+      settings.consentMessage,
+    ),
     consentRequired: settings.consentMode === ConsentMode.REQUIRED,
   });
   const toAddress = overrides.toOverride?.trim() || order.customer.email;

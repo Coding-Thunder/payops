@@ -1,5 +1,4 @@
-import { notFound } from "next/navigation";
-import { render } from "@react-email/render";
+import { notFound, redirect } from "next/navigation";
 
 import { PageHeader } from "@/components/common/page-header";
 import { AdminTemplateEditor } from "@/components/features/email-templates/admin-template-editor";
@@ -8,26 +7,22 @@ import {
   EMAIL_TEMPLATE_KEYS,
   type EmailTemplateKey,
 } from "@/lib/constants/email-templates";
-import { BookingType, ServiceType } from "@/lib/constants/enums";
-import { env } from "@/lib/env";
+import { getSelectedOrganization } from "@/server/auth/organization";
 import { requirePermission } from "@/server/auth/session";
-import { getBranding } from "@/server/services/branding.service";
 import { ensureSettingsDocument } from "@/server/services/settings.service";
-import { listActiveProviders } from "@/server/services/provider.service";
-import { previewLegalFor } from "@/server/services/organization-legal.service";
 import { listTemplateVersions } from "@/server/services/email-template.service";
-import { PaymentConfirmationEmail } from "@/server/email/templates/payment-confirmation";
-import { PaymentRequestEmail } from "@/server/email/templates/payment-request";
 import {
-  buildPaymentPreviewProps,
-  buildPaymentRequestPreviewProps,
-} from "@/server/email/preview-data";
+  parsePreviewService,
+  previewServicesFor,
+  renderEmailPreview,
+} from "@/server/email/preview";
 
 export const metadata = { title: "Email template" };
 export const dynamic = "force-dynamic";
 
 interface PageProps {
   params: Promise<{ key: string }>;
+  searchParams: Promise<{ service?: string }>;
 }
 
 const TEMPLATE_LABELS: Record<EmailTemplateKey, string> = {
@@ -44,7 +39,10 @@ const TEMPLATE_DESCRIPTIONS: Record<EmailTemplateKey, string> = {
     "Sent automatically when a card is authorized but NOT yet charged. Only organizations on manual capture ever send this.",
 };
 
-export default async function AdminTemplateEditorPage({ params }: PageProps) {
+export default async function AdminTemplateEditorPage({
+  params,
+  searchParams,
+}: PageProps) {
   await requirePermission(Permission.EMAIL_TEMPLATE_VIEW);
   const { key } = await params;
   if (!EMAIL_TEMPLATE_KEYS.includes(key as EmailTemplateKey)) {
@@ -52,54 +50,39 @@ export default async function AdminTemplateEditorPage({ params }: PageProps) {
   }
   const templateKey = key as EmailTemplateKey;
 
-  const [versions, branding, , providers, carLegal] = await Promise.all([
-    listTemplateVersions(templateKey),
-    getBranding(),
+  // The preview is of ONE service, named in the URL — one the selected
+  // organization sells — and shows that service's terms for that
+  // organization. Never a default service: a missing one is made explicit.
+  const organization = await getSelectedOrganization();
+  const services = await previewServicesFor(organization?.id ?? null);
+  const requested = parsePreviewService((await searchParams).service);
+  if (!requested || !services.includes(requested)) {
+    redirect(`/app/admin/email-templates/${templateKey}?service=${services[0]}`);
+  }
+  const serviceType = requested;
+
+  // Copy is per service too: this service's versions only.
+  const [versions] = await Promise.all([
+    listTemplateVersions(templateKey, serviceType),
     ensureSettingsDocument(),
-    listActiveProviders({ serviceType: ServiceType.CAR_RENTAL }),
-    // The sample is a car rental: the selected brand's own car rental
-    // terms, as its next car rental order would freeze them.
-    previewLegalFor(ServiceType.CAR_RENTAL),
   ]);
   const activeVersion = versions.find((v) => v.active) ?? null;
-  const provider = providers[0] ?? null;
 
   // Pre-render the initial preview server-side so the iframe is painted
-  // on first navigation instead of waiting for a client-side fetch.
-  let initialHtml = "";
-  if (provider) {
-    const baseArgs = {
-      brandName: branding.brandName,
-      appUrl: env.server.APP_URL,
-      supportEmail: branding.supportEmail,
-      supportPhone: branding.supportPhone,
-      provider: {
-        id: provider.key,
-        name: provider.name,
-        logo: provider.logo,
-        primaryColor: provider.primaryColor,
-        onPrimaryColor: provider.onPrimaryColor,
-      },
-      cancellationPolicy: carLegal.cancellationPolicy,
-      cancellationPolicyVersion: carLegal.cancellationPolicyVersion,
-      termsAndConditions: carLegal.termsAndConditions,
-      termsVersion: carLegal.termsVersion,
-      bookingType: BookingType.NEW_BOOKING,
-    };
-    if (templateKey === "payment-request") {
-      const props = buildPaymentRequestPreviewProps(baseArgs);
-      const merged = {
-        ...props,
-        greeting: activeVersion?.greeting ?? props.greeting,
-        intro: activeVersion?.intro ?? props.intro,
-        note: activeVersion?.note ?? props.note,
-      };
-      initialHtml = await render(<PaymentRequestEmail {...merged} />);
-    } else {
-      const props = buildPaymentPreviewProps(baseArgs);
-      initialHtml = await render(<PaymentConfirmationEmail {...props} />);
-    }
-  }
+  // on first navigation instead of waiting for a client-side fetch — with
+  // the same renderer, inputs and resolver as the live preview.
+  // Its draft is exactly the editor's starting draft (this service's live
+  // version, or nothing), so the first paint and the live preview agree.
+  const preview = await renderEmailPreview({
+    organizationId: organization?.id ?? null,
+    serviceType,
+    templateKey,
+    draft: {
+      greeting: activeVersion?.greeting ?? null,
+      intro: activeVersion?.intro ?? null,
+      note: activeVersion?.note ?? null,
+    },
+  });
 
   return (
     <div className="space-y-6">
@@ -109,7 +92,11 @@ export default async function AdminTemplateEditorPage({ params }: PageProps) {
         description={TEMPLATE_DESCRIPTIONS[templateKey]}
       />
 
+      {/* Keyed by service: each service is its own copy, so switching
+          service starts from that service's live version, never carrying
+          another service's unsaved draft across. */}
       <AdminTemplateEditor
+        key={serviceType}
         templateKey={templateKey}
         templates={EMAIL_TEMPLATE_KEYS.map((k) => ({
           key: k,
@@ -117,8 +104,10 @@ export default async function AdminTemplateEditorPage({ params }: PageProps) {
         }))}
         versions={versions}
         activeVersion={activeVersion}
-        providers={providers.map((p) => ({ key: p.key, name: p.name }))}
-        initialHtml={initialHtml}
+        serviceType={serviceType}
+        services={services}
+        providers={preview.providers.map((p) => ({ key: p.key, name: p.name }))}
+        initialHtml={preview.html}
       />
     </div>
   );

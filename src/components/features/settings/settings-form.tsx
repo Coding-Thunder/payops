@@ -310,7 +310,9 @@ export function SettingsForm({
                   </FormControl>
                   <p className="text-[11.5px] text-muted-foreground">
                     Keep it short, calm, and free of legalese. 20–1,000
-                    characters.
+                    characters. Car rental customers of every brand confirm
+                    it; flight and hotel customers confirm a built-in,
+                    service-neutral statement.
                   </p>
                   <FormMessage />
                 </FormItem>

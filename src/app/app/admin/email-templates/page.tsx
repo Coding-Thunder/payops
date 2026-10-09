@@ -16,9 +16,13 @@ import {
   EMAIL_TEMPLATE_KEYS,
   type EmailTemplateKey,
 } from "@/lib/constants/email-templates";
+import type { ServiceType } from "@/lib/constants/enums";
+import { ServiceTypeLabel } from "@/lib/constants/labels";
 import { Permission } from "@/lib/constants/permissions";
 import { formatDateTime } from "@/lib/format";
+import { getSelectedOrganization } from "@/server/auth/organization";
 import { requirePermission } from "@/server/auth/session";
+import { previewServicesFor } from "@/server/email/preview";
 import {
   getActiveTemplateForRequest,
   listTemplateVersions,
@@ -31,7 +35,9 @@ interface TemplateCardData {
   key: EmailTemplateKey;
   label: string;
   purpose: string;
-  activeVersion: number | null;
+  /** Copy is per service: the live version of each service the selected
+   *  organization sells, or null for the built-in copy. */
+  services: { serviceType: ServiceType; activeVersion: number | null }[];
   totalVersions: number;
   lastUpdatedAt: string | null;
 }
@@ -68,18 +74,27 @@ const TEMPLATE_META: Record<
  */
 export default async function AdminEmailTemplatesIndex() {
   await requirePermission(Permission.EMAIL_TEMPLATE_VIEW);
+  const organization = await getSelectedOrganization();
+  const services = await previewServicesFor(organization?.id ?? null);
 
   const cards: TemplateCardData[] = await Promise.all(
     EMAIL_TEMPLATE_KEYS.map(async (key) => {
-      const [active, versions] = await Promise.all([
-        getActiveTemplateForRequest(key),
+      const [actives, versions] = await Promise.all([
+        Promise.all(
+          services.map(async (serviceType) => ({
+            serviceType,
+            activeVersion:
+              (await getActiveTemplateForRequest(key, serviceType))?.version ??
+              null,
+          })),
+        ),
         listTemplateVersions(key),
       ]);
       return {
         key,
         label: TEMPLATE_META[key].label,
         purpose: TEMPLATE_META[key].purpose,
-        activeVersion: active?.version ?? null,
+        services: actives,
         totalVersions: versions.length,
         lastUpdatedAt: versions[0]?.updatedAt ?? null,
       };
@@ -109,19 +124,26 @@ export default async function AdminEmailTemplatesIndex() {
                   </CardTitle>
                   <CardDescription>{card.purpose}</CardDescription>
                 </div>
-                {card.activeVersion != null ? (
-                  <Badge variant="info">v{card.activeVersion}</Badge>
+                {card.services.some((s) => s.activeVersion != null) ? (
+                  <Badge variant="info">Customized</Badge>
                 ) : (
                   <Badge variant="muted">System default</Badge>
                 )}
               </div>
             </CardHeader>
             <CardContent className="flex-1 space-y-2 text-[12.5px]">
-              <Row label="Active version">
-                {card.activeVersion != null
-                  ? `v${card.activeVersion}`
-                  : "Built-in fallback (no override saved)"}
-              </Row>
+              {card.services.map((s) => (
+                <Row key={s.serviceType} label={ServiceTypeLabel[s.serviceType]}>
+                  <Link
+                    className="underline-offset-2 hover:underline"
+                    href={`/app/admin/email-templates/${card.key}?service=${s.serviceType}`}
+                  >
+                    {s.activeVersion != null
+                      ? `v${s.activeVersion}`
+                      : "Built-in copy"}
+                  </Link>
+                </Row>
+              ))}
               <Row label="Versions">
                 {card.totalVersions === 0
                   ? "—"

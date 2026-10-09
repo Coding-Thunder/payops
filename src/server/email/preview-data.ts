@@ -11,11 +11,7 @@ import { flightMoneyWording } from "@/lib/charges";
 import type { ProviderSnapshot } from "@/lib/constants/providers";
 import { buildFlightItinerary } from "@/lib/flight-itinerary";
 import { serviceDetailRows } from "@/lib/service-summary";
-import {
-  DEFAULT_FLIGHT_CANCELLATION_POLICY,
-  DEFAULT_FLIGHT_LEGAL_VERSION,
-  DEFAULT_FLIGHT_TERMS_AND_CONDITIONS,
-} from "@/server/db/models/setting.model";
+import { formatEmailDay } from "@/server/email/format";
 import type {
   EmailChargeBreakdown,
   EmailFlightAmounts,
@@ -25,29 +21,31 @@ import type { PaymentAuthorizedEmailProps } from "@/server/email/templates/payme
 import type { PaymentConfirmationEmailProps } from "@/server/email/templates/payment-confirmation";
 import type { PaymentRequestEmailProps } from "@/server/email/templates/payment-request";
 
+/**
+ * The Terms & cancellation policy a preview shows. Always the output of
+ * `resolveServiceTerms` for the previewed organization and the previewed
+ * service — there is no sample or fallback T&C here, so a preview can only
+ * ever show the terms a real order of that service would freeze.
+ */
+export interface PreviewTerms {
+  termsAndConditions: string;
+  termsVersion: string;
+  cancellationPolicy: string;
+  cancellationPolicyVersion: string;
+}
+
 interface BuildPaymentPreviewArgs {
   brandName: string;
   appUrl: string;
   supportEmail: string;
   supportPhone: string;
   provider: ProviderSnapshot;
-  cancellationPolicy?: string;
-  cancellationPolicyVersion?: string;
-  termsAndConditions?: string;
-  termsVersion?: string;
   bookingType?: BookingType;
-  /** FLIGHT swaps in the sample flight; anything else renders the sample
-   *  car rental the previews have always shown. */
-  serviceType?: ServiceType;
-  /** The flight terms and policy the flight sample shows — the selected
-   *  organization's own, or its default. Absent: the built-in flight text.
-   *  Never the car rental text above. */
-  flightLegal?: {
-    termsAndConditions: string;
-    termsVersion: string;
-    cancellationPolicy: string;
-    cancellationPolicyVersion: string;
-  };
+  /** Which service's sample booking to show. Required: a preview never
+   *  guesses its service. */
+  serviceType: ServiceType;
+  /** That service's terms, from the canonical resolver. */
+  terms: PreviewTerms;
 }
 
 /** Sample split breakdown so previews exercise the prepaid / due-at-counter
@@ -144,30 +142,81 @@ const SAMPLE_FLIGHT_AMOUNTS: EmailFlightAmounts = {
   serviceChargeModel: flightMoneyWording(SAMPLE_FLIGHT, BookingType.NEW_BOOKING).serviceChargeModel,
 };
 
+/** The hotel sample's split: a prepaid room charge, the balance settled at
+ *  the property — no rental vocabulary. */
+const SAMPLE_HOTEL_BREAKDOWN: EmailChargeBreakdown = {
+  lines: [
+    { name: "Room charge", amount: "$150.00", timing: PaymentTiming.PREPAID },
+    {
+      name: "Balance at the property",
+      amount: "$350.00",
+      timing: PaymentTiming.DUE_AT_COUNTER,
+    },
+  ],
+  prepaid: "$150.00",
+  dueAtCounter: "$350.00",
+  total: "$500.00",
+};
+
+/** Sample HOTEL stay: three nights, one room, two adults. */
+const SAMPLE_HOTEL = {
+  hotelId: null,
+  destination: "Lisbon, Portugal",
+  propertyName: "Harbour View Hotel",
+  checkInDate: "2026-10-16T00:00:00.000Z",
+  checkOutDate: "2026-10-19T00:00:00.000Z",
+  rooms: 1,
+  guests: { adults: 2, children: 0 },
+  roomPreference: null,
+  guestNotes: null,
+  confirmationCode: null,
+};
+
 /**
- * What the sample flight puts in place of the sample car. Its legal text is
- * the built-in flight terms and policy: the args carry the deployment's
- * rental text, which a flight order never receives.
+ * The sample booking for the previewed service, in the shape real emails
+ * use for that service (see email.service.tsx): the car rental the previews
+ * have always shown, the sample flight with its itinerary and money split,
+ * or the sample hotel stay.
  */
-function flightPreviewFields(args: BuildPaymentPreviewArgs) {
+function serviceSampleFields(serviceType: ServiceType) {
+  switch (serviceType) {
+    case ServiceType.FLIGHT:
+      return {
+        amount: SAMPLE_FLIGHT_AMOUNTS.serviceCharge,
+        serviceType: ServiceType.FLIGHT,
+        vehicle: null,
+        trip: null,
+        serviceRows: serviceDetailRows(
+          { serviceType: ServiceType.FLIGHT, flight: SAMPLE_FLIGHT },
+          formatEmailDay,
+        ),
+        flightItinerary: buildFlightItinerary(SAMPLE_FLIGHT),
+        flightAmounts: SAMPLE_FLIGHT_AMOUNTS,
+      };
+    case ServiceType.HOTEL:
+      return {
+        serviceType: ServiceType.HOTEL,
+        vehicle: null,
+        trip: null,
+        chargeBreakdown: SAMPLE_HOTEL_BREAKDOWN,
+        serviceRows: serviceDetailRows(
+          { serviceType: ServiceType.HOTEL, hotel: SAMPLE_HOTEL },
+          formatEmailDay,
+        ),
+      };
+    case ServiceType.CAR_RENTAL:
+    default:
+      return { serviceType: ServiceType.CAR_RENTAL };
+  }
+}
+
+/** The previewed service's own terms and policy — never a sample text. */
+function termsFields(terms: PreviewTerms) {
   return {
-    amount: SAMPLE_FLIGHT_AMOUNTS.serviceCharge,
-    serviceType: ServiceType.FLIGHT,
-    vehicle: null,
-    trip: null,
-    serviceRows: serviceDetailRows({
-      serviceType: ServiceType.FLIGHT,
-      flight: SAMPLE_FLIGHT,
-    }),
-    flightItinerary: buildFlightItinerary(SAMPLE_FLIGHT),
-    flightAmounts: SAMPLE_FLIGHT_AMOUNTS,
-    termsText:
-      args.flightLegal?.termsAndConditions ?? DEFAULT_FLIGHT_TERMS_AND_CONDITIONS,
-    termsVersion: args.flightLegal?.termsVersion ?? DEFAULT_FLIGHT_LEGAL_VERSION,
-    cancellationPolicy:
-      args.flightLegal?.cancellationPolicy ?? DEFAULT_FLIGHT_CANCELLATION_POLICY,
-    cancellationPolicyVersion:
-      args.flightLegal?.cancellationPolicyVersion ?? DEFAULT_FLIGHT_LEGAL_VERSION,
+    termsText: terms.termsAndConditions,
+    termsVersion: terms.termsVersion,
+    cancellationPolicy: terms.cancellationPolicy,
+    cancellationPolicyVersion: terms.cancellationPolicyVersion,
   };
 }
 
@@ -195,18 +244,11 @@ export function buildPaymentPreviewProps(
     trip: SAMPLE_TRIP,
     confirmationNumber: "SUPP-9F3K2218",
     chargeBreakdown: SAMPLE_BREAKDOWN,
-    termsText:
-      args.termsAndConditions ??
-      "The prepaid amount is charged today to secure your reservation. The balance shown as due at counter is collected at pick-up.\nA valid driver's licence and the payment card used must be presented at pick-up.",
-    termsVersion: args.termsVersion ?? "v1",
+    ...termsFields(args.terms),
     acknowledgeUrl: `${args.appUrl.replace(/\/$/, "")}/acknowledge/preview-token`,
     receiptUrl: "https://pay.stripe.com/receipts/preview",
-    cancellationPolicy: args.cancellationPolicy,
-    cancellationPolicyVersion: args.cancellationPolicyVersion,
   };
-  return args.serviceType === ServiceType.FLIGHT
-    ? { ...props, ...flightPreviewFields(args) }
-    : props;
+  return { ...props, ...serviceSampleFields(args.serviceType) };
 }
 
 /**
@@ -237,12 +279,7 @@ export function buildPaymentRequestPreviewProps(
     greeting: null,
     intro: null,
     note: null,
-    cancellationPolicy: args.cancellationPolicy,
-    cancellationPolicyVersion: args.cancellationPolicyVersion,
-    termsText:
-      args.termsAndConditions ??
-      "The prepaid amount is charged today to secure your reservation. The balance shown as due at counter is collected at pick-up.\nA valid driver's licence and the payment card used must be presented at pick-up.",
-    termsVersion: args.termsVersion ?? "v1",
+    ...termsFields(args.terms),
     primaryCta: {
       url: `${args.appUrl.replace(/\/$/, "")}/consent/preview-token`,
       label: "Review & Confirm Booking",
@@ -253,9 +290,7 @@ export function buildPaymentRequestPreviewProps(
     consentMailto: "mailto:support@example.com?subject=Order%20acknowledgement",
     consentRequired: false,
   };
-  return args.serviceType === ServiceType.FLIGHT
-    ? { ...props, ...flightPreviewFields(args) }
-    : props;
+  return { ...props, ...serviceSampleFields(args.serviceType) };
 }
 
 /**
@@ -282,16 +317,9 @@ export function buildPaymentAuthorizedPreviewProps(
     vehicle: { company: "Toyota", type: "Camry SE", imageUrl: null },
     trip: SAMPLE_TRIP,
     chargeBreakdown: SAMPLE_BREAKDOWN,
-    termsText:
-      args.termsAndConditions ??
-      "The prepaid amount is charged today to secure your reservation. The balance shown as due at counter is collected at pick-up.\nA valid driver's licence and the payment card used must be presented at pick-up.",
-    termsVersion: args.termsVersion ?? "v1",
+    ...termsFields(args.terms),
     acknowledgeUrl: `${args.appUrl.replace(/\/$/, "")}/acknowledge/preview-token`,
-    cancellationPolicy: args.cancellationPolicy,
-    cancellationPolicyVersion: args.cancellationPolicyVersion,
     gatewayLabel: "Stripe",
   };
-  return args.serviceType === ServiceType.FLIGHT
-    ? { ...props, ...flightPreviewFields(args) }
-    : props;
+  return { ...props, ...serviceSampleFields(args.serviceType) };
 }

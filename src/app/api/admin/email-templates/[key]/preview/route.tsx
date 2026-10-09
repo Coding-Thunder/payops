@@ -1,29 +1,24 @@
 import type { NextRequest } from "next/server";
-import { render } from "@react-email/render";
+import { z } from "zod";
 
 import { Permission } from "@/lib/constants/permissions";
 import {
   BOOKING_TYPES,
   BookingType,
+  SERVICE_TYPES,
   ServiceType,
 } from "@/lib/constants/enums";
+import { ServiceTypeLabel } from "@/lib/constants/labels";
+import { ValidationError } from "@/lib/errors";
 import {
   createEmailTemplateVersionSchema,
   templateKeyParam,
 } from "@/lib/validation";
-import { env } from "@/lib/env";
 import { jsonOk, withApi } from "@/server/api/respond";
+import { getSelectedOrganization } from "@/server/auth/organization";
 import { requirePermission } from "@/server/auth/session";
-import { getBranding } from "@/server/services/branding.service";
 import { ensureSettingsDocument } from "@/server/services/settings.service";
-import { listActiveProviders } from "@/server/services/provider.service";
-import { previewLegalFor } from "@/server/services/organization-legal.service";
-import { PaymentConfirmationEmail } from "@/server/email/templates/payment-confirmation";
-import { PaymentRequestEmail } from "@/server/email/templates/payment-request";
-import {
-  buildPaymentPreviewProps,
-  buildPaymentRequestPreviewProps,
-} from "@/server/email/preview-data";
+import { previewServicesFor, renderEmailPreview } from "@/server/email/preview";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +27,11 @@ interface Params {
   params: Promise<{ key: string }>;
 }
 
+/** The service to preview — required: a preview never guesses it. */
+const previewServiceSchema = z.enum(SERVICE_TYPES as [ServiceType, ...ServiceType[]], {
+  error: "Choose the service to preview: car rental, flight or hotel.",
+});
+
 /**
  * Render the chosen email template with the editor's current draft
  * overrides — without saving anything to Mongo. Powers the admin
@@ -39,7 +39,14 @@ interface Params {
  *
  * Body shape is the same as POST /api/admin/email-templates/[key]
  * (createEmailTemplateVersionSchema) so the same form can hit both
- * endpoints.
+ * endpoints, plus the preview context: `serviceType` (REQUIRED — the service
+ * whose sample booking and Terms & Conditions to show), and the optional
+ * `provider` and `bookingType`.
+ *
+ * The terms are the SELECTED organization's own for that service, through
+ * the same resolver a real order of that service freezes them with
+ * (`renderEmailPreview` → `resolveServiceTerms`). A service the
+ * organization does not sell is refused, like everywhere else.
  */
 export const POST = withApi(async (req: NextRequest, { params }: Params) => {
   await requirePermission(Permission.EMAIL_TEMPLATE_VIEW);
@@ -47,8 +54,8 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
   const templateKey = templateKeyParam.parse(key);
 
   const body = await req.json().catch(() => ({}));
-  // Strip the optional `provider` and `bookingType` keys out before
-  // schema parse (those control sample data, not template content).
+  // Strip the preview-context keys out before schema parse (those control
+  // sample data, not template content).
   const draft = createEmailTemplateVersionSchema.parse({
     subject: body?.subject,
     greeting: body?.greeting,
@@ -58,64 +65,34 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
     supportDescription: body?.supportDescription,
     footerNote: body?.footerNote,
   });
+  const serviceType = previewServiceSchema.parse(body?.serviceType);
 
-  const [branding, , providers, carLegal] = await Promise.all([
-    getBranding(),
-    ensureSettingsDocument(),
-    listActiveProviders({ serviceType: ServiceType.CAR_RENTAL }),
-    // The sample is a car rental: the selected brand's own car rental
-    // terms, as its next car rental order would freeze them.
-    previewLegalFor(ServiceType.CAR_RENTAL),
-  ]);
-  const providerKey =
-    typeof body?.provider === "string" ? body.provider : undefined;
-  const provider =
-    providers.find((p) => p.key === providerKey) ?? providers[0] ?? null;
-  if (!provider) {
-    return jsonOk({ html: "" });
+  const organization = await getSelectedOrganization();
+  const services = await previewServicesFor(organization?.id ?? null);
+  if (!services.includes(serviceType)) {
+    throw new ValidationError(
+      `${organization?.brandName ?? "This organization"} does not sell ${ServiceTypeLabel[serviceType].toLowerCase()}, so there is no ${ServiceTypeLabel[serviceType].toLowerCase()} email to preview.`,
+    );
   }
+  await ensureSettingsDocument();
+
   const bookingType = (
     BOOKING_TYPES as readonly string[]
   ).includes(body?.bookingType ?? "")
     ? (body.bookingType as BookingType)
     : BookingType.NEW_BOOKING;
 
-  const baseArgs = {
-    brandName: branding.brandName,
-    appUrl: env.server.APP_URL,
-    supportEmail: branding.supportEmail,
-    supportPhone: branding.supportPhone,
-    provider: {
-      id: provider.key,
-      name: provider.name,
-      logo: provider.logo,
-      primaryColor: provider.primaryColor,
-      onPrimaryColor: provider.onPrimaryColor,
-    },
-    cancellationPolicy: carLegal.cancellationPolicy,
-    cancellationPolicyVersion: carLegal.cancellationPolicyVersion,
-    termsAndConditions: carLegal.termsAndConditions,
-    termsVersion: carLegal.termsVersion,
+  const { html } = await renderEmailPreview({
+    organizationId: organization?.id ?? null,
+    serviceType,
+    templateKey,
+    providerKey: typeof body?.provider === "string" ? body.provider : null,
     bookingType,
-  };
-
-  // Overlay the draft content onto the template's sample preview props
-  // so the admin sees a fully-rendered email with their changes baked
-  // in instead of just the editable fields in isolation.
-  let html = "";
-  if (templateKey === "payment-request") {
-    const props = buildPaymentRequestPreviewProps(baseArgs);
-    const merged = {
-      ...props,
-      greeting: draft.greeting ?? props.greeting,
-      intro: draft.intro ?? props.intro,
-      note: draft.note ?? props.note,
-    };
-    html = await render(<PaymentRequestEmail {...merged} />);
-  } else {
-    // payment-confirmation
-    const props = buildPaymentPreviewProps(baseArgs);
-    html = await render(<PaymentConfirmationEmail {...props} />);
-  }
+    draft: {
+      greeting: draft.greeting,
+      intro: draft.intro,
+      note: draft.note,
+    },
+  });
   return jsonOk({ html });
 });

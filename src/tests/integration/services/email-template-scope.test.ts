@@ -4,6 +4,7 @@ import { Types } from "mongoose";
 import {
   PaymentGatewayKey,
   RecordState,
+  ServiceType,
   UserRole,
 } from "@/lib/constants/enums";
 import {
@@ -108,11 +109,13 @@ describe("one brand's template copy never renders in the other's email", () => {
       "payment-request",
       copy("RC ONLY subject"),
       ctx,
+      ServiceType.CAR_RENTAL,
     );
 
     const forTrip = await getActiveTemplateContent(
       "payment-request",
       String(trip),
+      ServiceType.CAR_RENTAL,
     );
     expect(forTrip?.subject ?? null).not.toBe("RC ONLY subject");
   });
@@ -123,11 +126,13 @@ describe("one brand's template copy never renders in the other's email", () => {
       "payment-request",
       copy("Trip subject"),
       ctx,
+      ServiceType.CAR_RENTAL,
     );
 
     const forTrip = await getActiveTemplateContent(
       "payment-request",
       String(trip),
+      ServiceType.CAR_RENTAL,
     );
     expect(forTrip?.subject).toBe("Trip subject");
   });
@@ -140,6 +145,7 @@ describe("one brand's template copy never renders in the other's email", () => {
     const forTrip = await getActiveTemplateContent(
       "payment-request",
       String(trip),
+      ServiceType.CAR_RENTAL,
     );
     expect(forTrip?.subject).toBe("Shared default subject");
   });
@@ -151,15 +157,17 @@ describe("one brand's template copy never renders in the other's email", () => {
       "payment-request",
       copy("Trip override"),
       ctx,
+      ServiceType.CAR_RENTAL,
     );
 
     const forTrip = await getActiveTemplateContent(
       "payment-request",
       String(trip),
+      ServiceType.CAR_RENTAL,
     );
     expect(forTrip?.subject).toBe("Trip override");
     // ...and the other brand still gets the shared copy.
-    const forRc = await getActiveTemplateContent("payment-request", String(rc));
+    const forRc = await getActiveTemplateContent("payment-request", String(rc), ServiceType.CAR_RENTAL);
     expect(forRc?.subject).toBe("Shared default subject");
   });
 });
@@ -167,15 +175,16 @@ describe("one brand's template copy never renders in the other's email", () => {
 describe("saving a version does not disturb the other brand", () => {
   it("leaves the other organization's active row active", async () => {
     actingAs(rc);
-    await createTemplateVersion("payment-request", copy("RC v1"), ctx);
+    await createTemplateVersion("payment-request", copy("RC v1"), ctx, ServiceType.CAR_RENTAL);
     actingAs(trip);
-    await createTemplateVersion("payment-request", copy("Trip v1"), ctx);
+    await createTemplateVersion("payment-request", copy("Trip v1"), ctx, ServiceType.CAR_RENTAL);
 
     // Before the fix, `updateMany({templateKey, active:true})` flipped off
     // every organization's live row, so RC silently lost its copy.
     const rcActive = await getActiveTemplateContent(
       "payment-request",
       String(rc),
+      ServiceType.CAR_RENTAL,
     );
     expect(rcActive?.subject).toBe("RC v1");
   });
@@ -186,12 +195,14 @@ describe("saving a version does not disturb the other brand", () => {
       "payment-request",
       copy("RC v1"),
       ctx,
+      ServiceType.CAR_RENTAL,
     );
     actingAs(trip);
     const b = await createTemplateVersion(
       "payment-request",
       copy("Trip v1"),
       ctx,
+      ServiceType.CAR_RENTAL,
     );
     expect(a.version).toBe(1);
     expect(b.version).toBe(1);
@@ -199,16 +210,18 @@ describe("saving a version does not disturb the other brand", () => {
 
   it("increments within an organization", async () => {
     actingAs(trip);
-    await createTemplateVersion("payment-request", copy("v1"), ctx);
+    await createTemplateVersion("payment-request", copy("v1"), ctx, ServiceType.CAR_RENTAL);
     const second = await createTemplateVersion(
       "payment-request",
       copy("v2"),
       ctx,
+      ServiceType.CAR_RENTAL,
     );
     expect(second.version).toBe(2);
     const active = await getActiveTemplateContent(
       "payment-request",
       String(trip),
+      ServiceType.CAR_RENTAL,
     );
     expect(active?.subject).toBe("v2");
   });
@@ -221,6 +234,7 @@ describe("the admin screens are scoped", () => {
       "payment-request",
       copy("RC v1"),
       ctx,
+      ServiceType.CAR_RENTAL,
     );
 
     actingAs(trip);
@@ -236,8 +250,9 @@ describe("the admin screens are scoped", () => {
       "payment-request",
       copy("RC v1"),
       ctx,
+      ServiceType.CAR_RENTAL,
     );
-    await createTemplateVersion("payment-request", copy("RC v2"), ctx);
+    await createTemplateVersion("payment-request", copy("RC v2"), ctx, ServiceType.CAR_RENTAL);
 
     actingAs(trip);
     await expect(
@@ -251,13 +266,15 @@ describe("the admin screens are scoped", () => {
       "payment-request",
       copy("Trip v1"),
       ctx,
+      ServiceType.CAR_RENTAL,
     );
-    await createTemplateVersion("payment-request", copy("Trip v2"), ctx);
+    await createTemplateVersion("payment-request", copy("Trip v2"), ctx, ServiceType.CAR_RENTAL);
 
     await activateTemplateVersion("payment-request", v1.id, ctx);
     const active = await getActiveTemplateContent(
       "payment-request",
       String(trip),
+      ServiceType.CAR_RENTAL,
     );
     expect(active?.subject).toBe("Trip v1");
   });
@@ -269,13 +286,14 @@ describe("sends with no organization still work", () => {
     const content = await getActiveTemplateContent(
       "payment-confirmation",
       null,
+      ServiceType.CAR_RENTAL,
     );
     expect(content?.subject).toBe("Shared confirmation");
   });
 
   it("returns null when nothing is configured at all", async () => {
     expect(
-      await getActiveTemplateContent("payment-confirmation", String(trip)),
+      await getActiveTemplateContent("payment-confirmation", String(trip), ServiceType.CAR_RENTAL),
     ).toBeNull();
   });
 });
