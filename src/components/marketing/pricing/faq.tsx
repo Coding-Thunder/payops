@@ -35,14 +35,14 @@ const FAQS: { q: string; a: ReactNode }[] = [
         manage. Check our{" "}
         <Link
           href="/privacy"
-          className="text-emerald-300 underline-offset-4 hover:underline"
+          className="text-[#047857] underline-offset-4 hover:underline"
         >
           Privacy Policy
         </Link>{" "}
         and{" "}
         <Link
           href="/security"
-          className="text-emerald-300 underline-offset-4 hover:underline"
+          className="text-[#047857] underline-offset-4 hover:underline"
         >
           Security
         </Link>{" "}
@@ -66,7 +66,7 @@ export function PricingFaq() {
   return (
     <section
       id="faq"
-      className="relative border-t border-white/8 bg-white/[0.015]"
+      className="relative border-t border-[#E9EFF6] bg-[#F8FAFC]"
     >
       <div className="mx-auto max-w-[820px] px-6 py-24 sm:py-28 lg:px-8">
         <div className="text-center">
@@ -74,13 +74,13 @@ export function PricingFaq() {
             <Eyebrow className="justify-center">Questions</Eyebrow>
           </Reveal>
           <Reveal delay={0.05}>
-            <h2 className="mt-5 font-display text-[32px] font-semibold leading-[1.1] tracking-[-0.025em] text-white sm:text-[40px]">
+            <h2 className="mt-5 font-display text-[32px] font-semibold leading-[1.1] tracking-[-0.025em] text-[#0A1128] sm:text-[40px]">
               Beta questions, answered.
             </h2>
           </Reveal>
         </div>
 
-        <div className="mt-12 divide-y divide-white/8 border-y border-white/8">
+        <div className="mt-12 divide-y divide-[#E9EFF6] border-y border-[#E9EFF6]">
           {FAQS.map((f, i) => {
             const isOpen = open === i;
             return (
@@ -93,15 +93,15 @@ export function PricingFaq() {
                   <span
                     className={cn(
                       "text-[16px] font-medium transition-colors",
-                      isOpen ? "text-white" : "text-white/75",
+                      isOpen ? "text-[#0A1128]" : "text-[#4A5568]",
                     )}
                   >
                     {f.q}
                   </span>
                   <span
                     className={cn(
-                      "grid size-7 shrink-0 place-items-center rounded-full border border-white/12 text-white/60 transition-transform duration-300",
-                      isOpen && "rotate-45 border-emerald-400/30 text-emerald-300",
+                      "grid size-7 shrink-0 place-items-center rounded-full border border-[#E2E8F0] text-[#4A5568] transition-transform duration-300",
+                      isOpen && "rotate-45 border-[var(--brand-emerald-border)] text-[#047857]",
                     )}
                   >
                     <PlusIcon className="size-4" />
@@ -116,7 +116,7 @@ export function PricingFaq() {
                       transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
                       className="overflow-hidden"
                     >
-                      <p className="pb-6 pr-10 text-[15px] leading-relaxed text-white/55">
+                      <p className="pb-6 pr-10 text-[15px] leading-relaxed text-[#4A5568]">
                         {f.a}
                       </p>
                     </motion.div>

@@ -14,7 +14,13 @@ import { Reveal } from "@/components/marketing/home/primitives";
  * deal — it's free because the product is still being built.
  */
 
-/** Everything a beta workspace gets. These are real, shipped surfaces. */
+/**
+ * Everything a beta workspace gets. These are real, shipped surfaces.
+ *
+ * "Import existing clients" was removed: there is no bulk importer — only the
+ * export routes — so it promised a migration path that does not exist and
+ * contradicted the homepage FAQ, which says so plainly.
+ */
 const INCLUDED = [
   "Client records",
   "Client timeline",
@@ -24,61 +30,60 @@ const INCLUDED = [
   "Files and documents",
   "Notes",
   "Search",
-  "Import existing clients",
   "Export your data",
 ] as const;
 
 export function PricingPlan() {
   return (
-    <section className="relative border-t border-white/8">
+    <section className="relative border-t border-[#E9EFF6]">
       <div className="mx-auto max-w-[1140px] px-6 py-20 sm:py-24 lg:px-8">
         <Reveal className="mx-auto max-w-[460px]">
-          <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-[#0b0d10] p-8 sm:p-10">
+          <div className="relative overflow-hidden rounded-3xl border border-[var(--brand-emerald-border)] bg-white p-8 shadow-[0_1px_2px_rgba(10,17,40,0.04),0_14px_34px_-20px_rgba(10,17,40,0.18)] sm:p-10">
             {/* quiet emerald wash at the top — the only accent on the card */}
             <div
               aria-hidden
               className="pointer-events-none absolute inset-x-0 top-0 h-40"
               style={{
                 background:
-                  "radial-gradient(60% 100% at 50% 0%, rgba(52,211,153,0.10), transparent 70%)",
+                  "radial-gradient(60% 100% at 50% 0%, rgba(16,185,129,0.07), transparent 70%)",
               }}
             />
 
             <div className="relative">
-              <span className="inline-flex items-center rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-[11.5px] font-semibold uppercase tracking-[0.14em] text-emerald-300">
+              <span className="inline-flex items-center rounded-full border border-[var(--brand-emerald-border)] bg-[var(--brand-emerald-soft)] px-3 py-1 text-[11.5px] font-semibold uppercase tracking-[0.14em] text-[#047857]">
                 Private Beta
               </span>
 
               <div className="mt-6 flex items-baseline gap-2">
-                <span className="font-display text-[56px] font-semibold leading-none tracking-[-0.03em] text-white">
+                <span className="font-display text-[56px] font-semibold leading-none tracking-[-0.03em] text-[#0A1128]">
                   $0
                 </span>
               </div>
-              <p className="mt-2 text-[14px] text-white/50">Free during beta</p>
+              <p className="mt-2 text-[14px] text-[#64748B]">Free during beta</p>
 
               <Link
-                href="/signup"
-                className="group mt-7 inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-white text-[14px] font-semibold text-[#08090b] transition-transform duration-150 hover:bg-white/90 active:translate-y-px"
+                href="/waitlist"
+                className="group mt-7 inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-[#0F172A] text-[14px] font-semibold text-white transition-colors duration-150 hover:bg-[#1E293B]"
               >
                 Join the beta
                 <ArrowRightIcon className="size-4 transition-transform duration-200 group-hover:translate-x-0.5" />
               </Link>
-              <p className="mt-3 text-center text-[12.5px] text-white/35">
+              <p className="mt-3 text-center text-[12.5px] text-[#64748B]">
                 No credit card required.
               </p>
 
-              <div className="mt-8 border-t border-white/8 pt-7">
-                <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-white/40">
+              <div className="mt-8 border-t border-[#E9EFF6] pt-7">
+                <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[#64748B]">
                   What&apos;s included
                 </p>
                 <ul className="mt-5 grid gap-3">
                   {INCLUDED.map((feature) => (
                     <li
                       key={feature}
-                      className="flex items-center gap-3 text-[14.5px] text-white/80"
+                      className="flex items-center gap-3 text-[14.5px] text-[#4A5568]"
                     >
-                      <span className="grid size-5 shrink-0 place-items-center rounded-full bg-emerald-400/10 ring-1 ring-inset ring-emerald-400/25">
-                        <CheckIcon className="size-3 text-emerald-300" />
+                      <span className="grid size-5 shrink-0 place-items-center rounded-full bg-[var(--brand-emerald-soft)] ring-1 ring-inset ring-[var(--brand-emerald-border)]">
+                        <CheckIcon className="size-3 text-[#047857]" />
                       </span>
                       {feature}
                     </li>
@@ -91,11 +96,11 @@ export function PricingPlan() {
 
         {/* What happens after beta? — honest, no future prices, no promises. */}
         <Reveal delay={0.06} className="mx-auto mt-6 max-w-[460px]">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-6">
-            <h2 className="font-display text-[16.5px] font-semibold text-white">
+          <div className="rounded-2xl border border-[#E2E8F0] bg-white p-6">
+            <h2 className="font-display text-[16.5px] font-semibold text-[#0A1128]">
               What happens after beta?
             </h2>
-            <p className="mt-2 text-[14px] leading-relaxed text-white/55">
+            <p className="mt-2 text-[14px] leading-relaxed text-[#4A5568]">
               We&apos;ll introduce paid plans later. If you&apos;re using
               TraceTxn during the beta, we&apos;ll let you know before anything
               changes.

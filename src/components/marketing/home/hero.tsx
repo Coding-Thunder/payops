@@ -1,121 +1,268 @@
-"use client";
-
 import Link from "next/link";
-import { motion } from "motion/react";
-import { ArrowRightIcon } from "lucide-react";
 
-import { HeroPreview } from "./hero-preview";
-
-const EASE = [0.22, 1, 0.36, 1] as const;
+import {
+  LiveDot,
+  ProductFrame,
+  StatusBadge,
+  Td,
+  Th,
+} from "@/components/marketing/home/primitives";
 
 /**
- * Hero. Story-first: the headline states the promise, the preview
- * proves it. No dashboard screenshot — the visitor watches an agency
- * search a client and get the whole relationship back.
+ * Hero.
+ *
+ * ── Why nothing here animates in ─────────────────────────────────────────
+ *
+ * No `Reveal`. Every other section fades up on scroll; the hero must be
+ * complete in the first painted frame, because that frame is what a social
+ * card, a Lighthouse screenshot and a visitor who scrolls immediately all
+ * get. A hero parked at `opacity: 0` waiting on an intersection observer is
+ * a blank page to all three.
+ *
+ * ── Why the right column is a real screen ────────────────────────────────
+ *
+ * The visitor's first question is "what is this?", and a sentence answers it
+ * far worse than the thing itself. So the right column is the client record —
+ * header, tabs, timeline, money rail — at the application's real density,
+ * built from the same primitives every section below uses. It is markup
+ * rather than a PNG so it stays sharp, stays readable at 360px, and cannot
+ * drift out of date the way a screenshot does.
+ *
+ * The figures are illustrative and labelled as such in the frame's own
+ * chrome. They are not a customer's data and they are not presented as
+ * results.
  */
+
+const TIMELINE = [
+  { when: "Today 09:14", what: "Invoice INV-0114 paid", tone: "paid" as const, badge: "PAID" },
+  { when: "Mar 3", what: "Invoice INV-0114 sent · £4,000", tone: "info" as const, badge: "SENT" },
+  { when: "Feb 28", what: "Brand pack v3 uploaded", tone: "info" as const, badge: "FILE" },
+  { when: "Feb 24", what: "Stage 2 moved to In production", tone: "pending" as const, badge: "WIP" },
+];
+
 export function Hero() {
   return (
-    <div className="relative overflow-hidden">
-      {/* faint dotted grid + top glow */}
+    <section className="relative overflow-hidden">
+      {/* A single, very low-contrast ledger grid behind the hero. It gives the
+          canvas a hint of underlying structure without becoming decoration —
+          the same device the document surfaces use. */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10"
+        className="pointer-events-none absolute inset-0 opacity-[0.55]"
         style={{
-          backgroundImage:
-            "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.05) 1px, transparent 0)",
-          backgroundSize: "38px 38px",
+          backgroundImage: "var(--doc-grid)",
+          backgroundSize: "var(--doc-grid-size)",
           maskImage:
-            "radial-gradient(80% 60% at 50% 0%, black, transparent 75%)",
-        }}
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[520px]"
-        style={{
-          background:
-            "radial-gradient(50% 60% at 50% -10%, rgba(52,211,153,0.10), transparent 70%)",
+            "radial-gradient(120% 80% at 50% 0%, black 30%, transparent 75%)",
         }}
       />
 
-      <div className="mx-auto grid max-w-[1140px] items-center gap-14 px-6 pb-20 pt-16 sm:pt-20 lg:grid-cols-[1fr_1.02fr] lg:gap-10 lg:px-8 lg:pb-28 lg:pt-24">
-        {/* left: message */}
-        <div className="max-w-xl">
-          <motion.div
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: EASE }}
-            className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/[0.04] px-3 py-1.5 text-[12px] text-white/60"
-          >
-            <span className="size-1.5 rounded-full bg-emerald-400" />
-            Private beta · built for agencies &amp; freelancers
-          </motion.div>
+      <div className="relative mx-auto grid w-full max-w-[1180px] items-center gap-12 px-6 pb-16 pt-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-14 lg:px-8 lg:pb-24 lg:pt-20">
+        {/* ── Copy ───────────────────────────────────────────────────── */}
+        <div className="min-w-0">
+          <span className="inline-flex items-center gap-2 rounded border border-[var(--brand-blue-border)] bg-[var(--brand-blue-soft)] px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-[#0052D6]">
+            Client management for service businesses
+          </span>
 
-          <motion.h1
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.06, ease: EASE }}
-            className="mt-6 font-display text-[42px] font-semibold leading-[1.04] tracking-[-0.03em] text-white sm:text-[54px] lg:text-[58px]"
+          <h1
+            className="mt-6 font-display text-[36px] font-semibold leading-[1.08] tracking-[-0.03em] text-[#0A1128] sm:text-[46px] lg:text-[52px]"
+            style={{ textWrap: "balance" }}
           >
-            Client management for
-            <br />
-            your entire client relationship.
-          </motion.h1>
+            Your client workflow shouldn&apos;t live across five different
+            tools.
+          </h1>
 
-          <motion.p
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.14, ease: EASE }}
-            className="mt-6 text-[16.5px] leading-relaxed text-white/60"
-          >
-            TraceTxn is client management software for agencies and service
-            businesses. Client communication, files, orders, invoices,
-            payments, notes and the entire relationship history live in one
-            permanent, searchable client record — not spread across a CRM
-            built for chasing leads, a project tool that never sees the money,
-            and an inbox only one person can read. So when a client resurfaces
-            six months later, you already have the answer.
-          </motion.p>
+          <p className="mt-5 max-w-[56ch] text-[16.5px] leading-[1.6] text-[#4A5568]">
+            Stop switching between email, spreadsheets, a CRM, an invoicing
+            tool, a payment dashboard and file storage. TraceTxn keeps each
+            client&apos;s records, orders, files, payments and correspondence
+            connected in one workspace.
+          </p>
 
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.22, ease: EASE }}
-            className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center"
-          >
+          <div className="mt-8 flex flex-wrap items-center gap-3">
             <Link
-              href="/signup"
-              className="group inline-flex h-11 items-center justify-center gap-1.5 rounded-xl bg-white px-5 text-[14px] font-semibold text-[#08090b] transition-transform duration-150 hover:bg-white/90 active:translate-y-px"
+              href="/waitlist"
+              className="inline-flex h-11 items-center justify-center rounded-md bg-[#0F172A] px-5 text-[14px] font-semibold text-white transition-colors hover:bg-[#1E293B] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-blue)]"
             >
               Join the beta
-              <ArrowRightIcon className="size-4 transition-transform duration-200 group-hover:translate-x-0.5" />
             </Link>
             <a
               href="#demo"
-              className="inline-flex h-11 items-center justify-center rounded-xl border border-white/14 bg-white/[0.02] px-5 text-[14px] font-medium text-white/80 transition-colors hover:border-white/25 hover:text-white"
+              className="inline-flex h-11 items-center justify-center rounded-md border border-[#E2E8F0] bg-white px-5 text-[14px] font-semibold text-[#0F172A] transition-colors hover:border-[#C9D4E2] hover:bg-[#F8FAFC]"
             >
-              See how it works
+              See the product
             </a>
-          </motion.div>
+          </div>
 
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.6, delay: 0.32 }}
-            className="mt-6 text-[13px] text-white/35"
-          >
-            No card required · Import your existing clients · Export anytime
-          </motion.p>
+          {/* The honest version of "no credit card required": there is no card
+              at all, because the beta is free and billing is not wired up. */}
+          <p className="mt-4 text-[13px] text-[#64748B]">
+            Free while TraceTxn is in private beta. No card, no commitment.
+          </p>
+
+          {/* ── Micro-proof: everything stays attached to the client ──── */}
+          <div className="mt-10 overflow-hidden rounded-lg border border-[#E2E8F0] bg-white">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-3.5 py-3">
+              <span className="rounded bg-[#0F172A] px-1.5 py-[3px] font-mono text-[9.5px] font-semibold uppercase tracking-[0.1em] text-white">
+                client
+              </span>
+              {["Timeline", "Orders", "Files", "Invoices", "Payments", "Notes"].map(
+                (node, i) => (
+                  <span key={node} className="flex items-center gap-2">
+                    {i > 0 ? (
+                      <span aria-hidden className="text-[#64748B]">
+                        →
+                      </span>
+                    ) : null}
+                    <span className="text-[12px] font-medium text-[#0F172A]">
+                      {node}
+                    </span>
+                  </span>
+                ),
+              )}
+              <span className="ml-auto hidden shrink-0 items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-[#047857] lg:inline-flex">
+                <LiveDot />
+                connected
+              </span>
+            </div>
+          </div>
         </div>
 
-        {/* right: the proof */}
-        <motion.div
-          initial={{ opacity: 0, y: 24, scale: 0.98 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.7, delay: 0.2, ease: EASE }}
-        >
-          <HeroPreview />
-        </motion.div>
+        {/* ── Product ────────────────────────────────────────────────── */}
+        <div className="min-w-0 lg:-mr-4">
+          <ProductFrame label="/app/customers/northwind-studio" live>
+            {/* Client header */}
+            <div className="flex items-start justify-between gap-4 border-b border-[#E9EFF6] px-4 py-3.5">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded bg-[var(--brand-blue-soft)] font-display text-[11px] font-semibold text-[#0052D6]">
+                    NS
+                  </span>
+                  <div className="min-w-0">
+                    <div className="truncate text-[13.5px] font-semibold text-[#0F172A]">
+                      Northwind Studio
+                    </div>
+                    <div className="truncate font-mono text-[10.5px] text-[#64748B]">
+                      ops@northwind.studio
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <StatusBadge tone="live">active</StatusBadge>
+            </div>
+
+            {/* Tabs — the real information architecture of the record */}
+            <div className="flex items-center gap-1 overflow-x-auto border-b border-[#E9EFF6] px-3 py-1.5">
+              {["Timeline", "Orders", "Invoices", "Files", "Links", "Notes"].map(
+                (t, i) => (
+                  <span
+                    key={t}
+                    className={
+                      i === 0
+                        ? "rounded bg-[#0F172A] px-2.5 py-1 text-[11.5px] font-medium text-white"
+                        : "rounded px-2.5 py-1 text-[11.5px] text-[#64748B]"
+                    }
+                  >
+                    {t}
+                  </span>
+                ),
+              )}
+            </div>
+
+            <div className="grid sm:grid-cols-[minmax(0,1fr)_168px]">
+              {/* Timeline */}
+              <div className="divide-y divide-[#F1F5F9] border-[#E9EFF6] sm:border-r">
+                {TIMELINE.map((row) => (
+                  <div
+                    key={row.what}
+                    className="flex items-start gap-3 px-4 py-2.5"
+                  >
+                    <span className="mt-[3px] w-[62px] shrink-0 font-mono text-[10px] tabular-nums text-[#64748B]">
+                      {row.when}
+                    </span>
+                    <span className="min-w-0 flex-1 text-[12px] leading-snug text-[#0F172A]">
+                      {row.what}
+                    </span>
+                    <StatusBadge tone={row.tone}>{row.badge}</StatusBadge>
+                  </div>
+                ))}
+              </div>
+
+              {/* Money rail */}
+              <div className="divide-y divide-[#F1F5F9]">
+                <div className="px-3.5 py-3">
+                  <div className="text-[9.5px] font-semibold uppercase tracking-[0.1em] text-[#64748B]">
+                    Billed
+                  </div>
+                  <div className="mt-1 font-display text-[17px] font-semibold tabular-nums text-[#0A1128]">
+                    £12,400
+                  </div>
+                </div>
+                <div className="px-3.5 py-3">
+                  <div className="text-[9.5px] font-semibold uppercase tracking-[0.1em] text-[#64748B]">
+                    Outstanding
+                  </div>
+                  <div className="mt-1 font-display text-[17px] font-semibold tabular-nums text-[#92610A]">
+                    £1,800
+                  </div>
+                </div>
+                <div className="px-3.5 py-3">
+                  <div className="text-[9.5px] font-semibold uppercase tracking-[0.1em] text-[#64748B]">
+                    Open orders
+                  </div>
+                  <div className="mt-1 font-display text-[17px] font-semibold tabular-nums text-[#0A1128]">
+                    2
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Orders table — the transaction half of the record */}
+            <div className="overflow-x-auto border-t border-[#E9EFF6]">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr>
+                    <Th>Order</Th>
+                    <Th>Service</Th>
+                    <Th>Status</Th>
+                    <Th right>Amount</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <Td mono strong>
+                      #1042
+                    </Td>
+                    <Td>Brand system · stage 2</Td>
+                    <Td>
+                      <StatusBadge tone="paid">paid</StatusBadge>
+                    </Td>
+                    <Td right mono strong>
+                      £4,000
+                    </Td>
+                  </tr>
+                  <tr>
+                    <Td mono strong>
+                      #1051
+                    </Td>
+                    <Td>Website build · deposit</Td>
+                    <Td>
+                      <StatusBadge tone="pending">pending</StatusBadge>
+                    </Td>
+                    <Td right mono strong>
+                      £1,800
+                    </Td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div className="border-t border-[#E9EFF6] bg-[#F8FAFC] px-4 py-2 text-[10.5px] text-[#64748B]">
+              Illustrative workspace — not a customer&apos;s data.
+            </div>
+          </ProductFrame>
+        </div>
       </div>
-    </div>
+    </section>
   );
 }

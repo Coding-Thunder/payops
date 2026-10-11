@@ -277,6 +277,23 @@
   /* Slate (#94A3B8), brand-spec secondary text. */
   --brand-slate: #94A3B8;
 
+  /* Electric Blue (#0066FF) — the marketing site's ACTION color.
+   *
+   * Emerald above is semantic: it means "live", "paid", "settled". Using it
+   * for buttons too would make every CTA read as a status, which is exactly
+   * the confusion a transactional product cannot afford. So the homepage
+   * takes a second accent for *intent* — links, primary actions, chart
+   * strokes, focus — and leaves emerald to mean state and nothing else.
+   *
+   * `-soft` is the badge/card tint; `-border` is the hairline that goes with
+   * it. Put `-strong` on `-soft`, not `--brand-blue`: #0052D6 on #E5F1FF is
+   * 5.78:1, but #0066FF on it is only 4.23:1 and fails AA for body text.
+   */
+  --brand-blue: #0066FF;
+  --brand-blue-strong: #0052D6;                   /* hover / pressed */
+  --brand-blue-soft: #E5F1FF;                     /* badge + panel tint */
+  --brand-blue-border: #BBD8FF;                   /* hairline on the tint */
+
   --warning: oklch(0.78 0.13 78);
   --warning-foreground: oklch(0.205 0.01 80);
   --warning-soft: oklch(0.975 0.04 78);
@@ -408,6 +425,14 @@
   --sidebar-accent-foreground: oklch(0.97 0 0);
   --sidebar-border: oklch(1 0 0 / 0.08);
   --sidebar-ring: oklch(0.55 0.015 286);
+
+  /* Electric Blue, lifted for a dark ground. The marketing homepage is
+   * light-only, but these must exist so a shared component that reads
+   * var(--brand-blue) does not fall back to nothing in the app shell. */
+  --brand-blue: #4D94FF;
+  --brand-blue-strong: #77AEFF;
+  --brand-blue-soft: oklch(0.28 0.06 259);
+  --brand-blue-border: oklch(0.40 0.08 259);
 }
 
 @theme inline {

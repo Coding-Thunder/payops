@@ -7,9 +7,9 @@ import { ArrowRightIcon } from "lucide-react";
 const EASE = [0.22, 1, 0.36, 1] as const;
 
 /**
- * Pricing hero. Same dark surface, dotted grid and emerald top-glow as the
- * homepage hero, tuned to a single centred column. Three things land in the
- * first screen: it's a private beta, it's free, and it's for agencies and
+ * Pricing hero. Light ground, matching the homepage and the rest of the
+ * site, tuned to a single centred column. Three things land in the first
+ * screen: it's a private beta, it's free, and it's for agencies and
  * freelancers.
  */
 export function PricingHero() {
@@ -41,11 +41,11 @@ export function PricingHero() {
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: EASE }}
-          className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/[0.04] px-3 py-1.5 text-[12px] font-medium uppercase tracking-[0.14em] text-white/60"
+          className="inline-flex items-center gap-2 rounded-full border border-[#E2E8F0] bg-white px-3 py-1.5 text-[12px] font-medium uppercase tracking-[0.14em] text-[#4A5568]"
         >
           <span className="relative flex size-1.5">
-            <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400/60" />
-            <span className="relative inline-flex size-1.5 rounded-full bg-emerald-400" />
+            <span className="absolute inline-flex size-full animate-ping rounded-full bg-[var(--brand-emerald)] opacity-60" />
+            <span className="relative inline-flex size-1.5 rounded-full bg-[var(--brand-emerald)]" />
           </span>
           Private beta
         </motion.div>
@@ -54,7 +54,7 @@ export function PricingHero() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.06, ease: EASE }}
-          className="mt-6 font-display text-[40px] font-semibold leading-[1.05] tracking-[-0.03em] text-white sm:text-[54px]"
+          className="mt-6 font-display text-[40px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0A1128] sm:text-[54px]"
         >
           Free while we&apos;re in beta.
         </motion.h1>
@@ -63,7 +63,7 @@ export function PricingHero() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.14, ease: EASE }}
-          className="mx-auto mt-6 max-w-xl text-[16.5px] leading-relaxed text-white/60"
+          className="mx-auto mt-6 max-w-xl text-[16.5px] leading-relaxed text-[#4A5568]"
         >
           We&apos;re working with a small group of agencies and freelancers
           while we build TraceTxn. Join the beta, use it with your real clients,
@@ -77,8 +77,8 @@ export function PricingHero() {
           className="mt-8 flex items-center justify-center"
         >
           <Link
-            href="/signup"
-            className="group inline-flex h-11 items-center justify-center gap-1.5 rounded-xl bg-white px-6 text-[14px] font-semibold text-[#08090b] transition-transform duration-150 hover:bg-white/90 active:translate-y-px"
+            href="/waitlist"
+            className="group inline-flex h-11 items-center justify-center gap-1.5 rounded-xl bg-[#0F172A] px-6 text-[14px] font-semibold text-white transition-colors duration-150 hover:bg-[#1E293B]"
           >
             Join the beta
             <ArrowRightIcon className="size-4 transition-transform duration-200 group-hover:translate-x-0.5" />
@@ -89,7 +89,7 @@ export function PricingHero() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.6, delay: 0.32 }}
-          className="mt-5 text-[13px] text-white/35"
+          className="mt-5 text-[13px] text-[#64748B]"
         >
           No credit card required.
         </motion.p>

@@ -1,109 +1,140 @@
-"use client";
-
-import { CheckIcon, XIcon } from "lucide-react";
-
-import { cn } from "@/lib/utils";
-import { Reveal, Eyebrow } from "./primitives";
-
-const BEFORE = [
-  "Open Gmail, search “invoice”, hope you used the right word",
-  "Dig through Drive for the contract — v2 or v3?",
-  "Scroll Slack for the “sounds good”",
-  "Find the WhatsApp voice note that approved the design",
-  "Cross-check Stripe for what actually got paid",
-  "Rebuild the timeline in your head, and hope it holds up",
-];
-
-const AFTER = [
-  "Search the client’s name",
-  "Their record opens",
-  "Invoices, payments, approvals and files — already there",
-  "Read the timeline, dated and in order",
-  "Send one link",
-  "Get back to work",
-];
+import {
+  Reveal,
+  Section,
+  SectionHead,
+} from "@/components/marketing/home/primitives";
 
 /**
- * Before/after. The asymmetry is the argument: six anxious steps on the
- * left, six calm ones on the right that all happen in seconds.
+ * Differentiation, stated as a factual description of where things live.
+ *
+ * ── The rule for this section ────────────────────────────────────────────
+ *
+ * No competitor is named and no competitor is criticised. The left column
+ * describes a scattered setup accurately — those tools each do their job
+ * well — and the right column says where the same thing sits in TraceTxn.
+ * Every right-hand cell is a capability a signed-in user can reach today.
+ *
+ * It deliberately does NOT claim to replace anything. A visitor's accounting
+ * software, their project tool and their payment processor all stay; the
+ * claim is only that the client's history stops being spread across them.
+ *
+ * The last row is the one that matters and is the reason the table exists:
+ * nothing above it is novel on its own, and the difference is that they are
+ * the same record rather than six exports that have to be reconciled.
  */
+
+const ROWS: { facet: string; scattered: string; traceTxn: string }[] = [
+  {
+    facet: "Client record",
+    scattered: "A CRM contact, plus a row in a spreadsheet",
+    traceTxn: "One searchable record per client",
+  },
+  {
+    facet: "Orders",
+    scattered: "A project tool, or the spreadsheet",
+    traceTxn: "Orders on the client, with a workflow you configure",
+  },
+  {
+    facet: "Invoices",
+    scattered: "Accounting software, numbered separately",
+    traceTxn: "Numbered invoices raised from the order",
+  },
+  {
+    facet: "Payments",
+    scattered: "A gateway dashboard, matched by hand",
+    traceTxn: "Confirmed payments matched to the order",
+  },
+  {
+    facet: "Files",
+    scattered: "Cloud storage, in a folder tree",
+    traceTxn: "Attached to the client and the specific order",
+  },
+  {
+    facet: "Correspondence",
+    scattered: "Individual inboxes",
+    traceTxn: "Templated client email, recorded on the record",
+  },
+  {
+    facet: "Transaction history",
+    scattered: "Reconstructed when somebody asks",
+    traceTxn: "A timeline, in the order it happened",
+  },
+  {
+    facet: "Evidence for a query",
+    scattered: "Assembled under time pressure",
+    traceTxn: "Already assembled, with an audit trail",
+  },
+];
+
 export function Comparison() {
   return (
-    <section className="relative border-t border-white/8">
-      <div className="mx-auto max-w-[1140px] px-6 py-24 sm:py-28 lg:px-8">
-        <div className="mx-auto max-w-2xl text-center">
-          <Reveal>
-            <Eyebrow className="justify-center">The difference</Eyebrow>
-          </Reveal>
-          <Reveal delay={0.05}>
-            <h2 className="mt-5 font-display text-[32px] font-semibold leading-[1.1] tracking-[-0.025em] text-white sm:text-[40px]">
-              Same question. Two very different afternoons.
-            </h2>
-          </Reveal>
-        </div>
+    <Section id="comparison">
+      <Reveal>
+        <SectionHead
+          eyebrow="Where things live"
+          title="One client workflow. Fewer disconnected systems."
+          copy="Not a replacement for your accounting software, your project tool or your payment processor. The difference is that the client's history stops living in all of them at once."
+        />
+      </Reveal>
 
-        <div className="mt-14 grid gap-4 lg:grid-cols-2">
-          {/* before */}
-          <Reveal>
-            <div className="h-full rounded-2xl border border-white/10 bg-white/[0.02] p-6 sm:p-7">
-              <div className="flex items-center justify-between">
-                <span className="text-[13px] font-semibold uppercase tracking-[0.12em] text-white/45">
-                  Today, across 8 tools
-                </span>
-                <span className="rounded-full bg-white/6 px-2.5 py-1 font-mono text-[11px] text-white/50">
-                  ~30 min / question
-                </span>
-              </div>
-              <ul className="mt-6 space-y-3">
-                {BEFORE.map((b, i) => (
-                  <li key={i} className="flex items-start gap-3">
-                    <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-white/6 text-white/40">
-                      <XIcon className="size-3" />
-                    </span>
-                    <span className="text-[14px] leading-snug text-white/55">
-                      {b}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </Reveal>
-
-          {/* after */}
-          <Reveal delay={0.08}>
-            <div className="relative h-full overflow-hidden rounded-2xl border border-emerald-400/25 bg-emerald-400/[0.04] p-6 sm:p-7">
-              <div
-                aria-hidden
-                className="pointer-events-none absolute -right-16 -top-16 size-48 rounded-full bg-emerald-400/10 blur-3xl"
-              />
-              <div className="flex items-center justify-between">
-                <span className="text-[13px] font-semibold uppercase tracking-[0.12em] text-emerald-300">
-                  With one client record
-                </span>
-                <span className="rounded-full bg-emerald-400/15 px-2.5 py-1 font-mono text-[11px] text-emerald-200">
-                  ~5 seconds
-                </span>
-              </div>
-              <ul className="mt-6 space-y-3">
-                {AFTER.map((a, i) => (
-                  <li key={i} className="flex items-start gap-3">
-                    <span
-                      className={cn(
-                        "mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-emerald-400/20 text-emerald-300",
-                      )}
-                    >
-                      <CheckIcon className="size-3" />
-                    </span>
-                    <span className="text-[14px] leading-snug text-white/80">
-                      {a}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </Reveal>
+      <Reveal delay={0.06}>
+        <div className="mt-11 overflow-x-auto rounded-lg border border-[#E2E8F0] bg-white">
+          <table className="w-full min-w-[640px] border-collapse">
+            <caption className="sr-only">
+              Where each part of a client&apos;s record lives in a scattered
+              setup, compared with TraceTxn.
+            </caption>
+            <thead>
+              <tr>
+                <th
+                  scope="col"
+                  className="w-[164px] border-b border-[#E9EFF6] bg-[#F8FAFC] px-4 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.1em] text-[#64748B]"
+                >
+                  &nbsp;
+                </th>
+                <th
+                  scope="col"
+                  className="border-b border-[#E9EFF6] bg-[#F8FAFC] px-4 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.1em] text-[#64748B]"
+                >
+                  Scattered across tools
+                </th>
+                <th
+                  scope="col"
+                  className="border-b border-[var(--brand-blue-border)] bg-[var(--brand-blue-soft)] px-4 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.1em] text-[#0052D6]"
+                >
+                  In TraceTxn
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {ROWS.map((r, i) => (
+                <tr key={r.facet}>
+                  <th
+                    scope="row"
+                    className="border-b border-[#F1F5F9] px-4 py-3 text-left align-top text-[12.5px] font-semibold text-[#0F172A]"
+                  >
+                    {r.facet}
+                  </th>
+                  <td className="border-b border-[#F1F5F9] px-4 py-3 align-top text-[12.5px] leading-snug text-[#64748B]">
+                    {r.scattered}
+                  </td>
+                  <td
+                    className={
+                      // The last row carries the argument, so it is the only
+                      // emphasised cell in the table.
+                      i === ROWS.length - 1
+                        ? "border-b border-[#F1F5F9] bg-[var(--brand-blue-soft)]/40 px-4 py-3 align-top text-[12.5px] font-medium leading-snug text-[#0A1128]"
+                        : "border-b border-[#F1F5F9] px-4 py-3 align-top text-[12.5px] leading-snug text-[#0F172A]"
+                    }
+                  >
+                    {r.traceTxn}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      </div>
-    </section>
+      </Reveal>
+    </Section>
   );
 }

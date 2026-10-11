@@ -1,69 +1,53 @@
-"use client";
-
 import Link from "next/link";
-import { ArrowRightIcon } from "lucide-react";
 
-import { Reveal } from "./primitives";
+import { Reveal } from "@/components/marketing/home/primitives";
 
 /**
- * Closing conversion panel. One promise, one primary action. The line
- * restates the whole page in seven words.
+ * Closing CTA.
+ *
+ * The one place on the page that goes dark. The whole site is light, so
+ * inverting here makes the final ask read as a distinct surface rather than
+ * one more section — and it is the only moment where that spend is worth it.
+ *
+ * Same two actions as the hero, same destinations. A closing CTA that offers
+ * something the hero did not is a closing CTA that was hiding the real offer.
  */
 export function FinalCta() {
   return (
-    <section className="relative border-t border-white/8">
-      <div className="mx-auto max-w-[1140px] px-6 py-24 sm:py-28 lg:px-8">
+    <section className="border-t border-[#E9EFF6] bg-white">
+      <div className="mx-auto max-w-[1180px] px-6 py-20 sm:py-24 lg:px-8">
         <Reveal>
-          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#0b0d10] px-6 py-16 text-center sm:px-10 sm:py-20">
-            <div
-              aria-hidden
-              className="pointer-events-none absolute inset-0"
-              style={{
-                background:
-                  "radial-gradient(60% 80% at 50% 0%, rgba(52,211,153,0.14), transparent 70%)",
-              }}
-            />
-            <div
-              aria-hidden
-              className="pointer-events-none absolute inset-0 opacity-40"
-              style={{
-                backgroundImage:
-                  "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.05) 1px, transparent 0)",
-                backgroundSize: "34px 34px",
-                maskImage:
-                  "radial-gradient(70% 60% at 50% 40%, black, transparent 80%)",
-              }}
-            />
+          <div className="overflow-hidden rounded-xl bg-[#0A1128] px-6 py-14 text-center sm:px-12">
+            <h2
+              className="mx-auto max-w-[24ch] font-display text-[28px] font-semibold leading-[1.15] tracking-[-0.025em] text-white sm:text-[36px]"
+              style={{ textWrap: "balance" }}
+            >
+              Stop rebuilding client context every time you open an account.
+            </h2>
+            <p className="mx-auto mt-5 max-w-[58ch] text-[15.5px] leading-[1.6] text-white/70">
+              Keep the client, the transaction, the correspondence, the files
+              and the payment history connected — in one record that is still
+              readable in a year.
+            </p>
 
-            <div className="relative">
-              <h2 className="mx-auto max-w-2xl font-display text-[34px] font-semibold leading-[1.08] tracking-[-0.028em] text-white sm:text-[48px]">
-                Never reconstruct a client&apos;s history again.
-              </h2>
-              <p className="mx-auto mt-5 max-w-xl text-[16.5px] leading-relaxed text-white/60">
-                Join the beta and give every client one permanent record —
-                starting with the ones you already have.
-              </p>
-
-              <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-                <Link
-                  href="/signup"
-                  className="group inline-flex h-11 items-center justify-center gap-1.5 rounded-xl bg-white px-6 text-[14px] font-semibold text-[#08090b] transition-transform duration-150 hover:bg-white/90 active:translate-y-px"
-                >
-                  Join the beta
-                  <ArrowRightIcon className="size-4 transition-transform duration-200 group-hover:translate-x-0.5" />
-                </Link>
-                <Link
-                  href="/contact"
-                  className="inline-flex h-11 items-center justify-center rounded-xl border border-white/14 bg-white/[0.02] px-6 text-[14px] font-medium text-white/80 transition-colors hover:border-white/25 hover:text-white"
-                >
-                  Talk to us
-                </Link>
-              </div>
-
-              <p className="mt-6 text-[13px] text-white/35">
-                Free during beta · Import your clients in minutes · Export anytime
-              </p>
+            <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
+              <Link
+                href="/waitlist"
+                className="inline-flex h-11 items-center justify-center rounded-md bg-white px-5 text-[14px] font-semibold text-[#0A1128] transition-colors hover:bg-white/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              >
+                Join the beta
+              </Link>
+              <a
+                href="#demo"
+                className="inline-flex h-11 items-center justify-center rounded-md border border-white/20 px-5 text-[14px] font-semibold text-white transition-colors hover:border-white/40 hover:bg-white/5"
+              >
+                See the product
+              </a>
             </div>
+
+            <p className="mt-5 text-[12.5px] text-white/50">
+              Free while TraceTxn is in private beta.
+            </p>
           </div>
         </Reveal>
       </div>

@@ -15,6 +15,22 @@ export interface FaqItem {
 
 export const FAQS: FaqItem[] = [
   {
+    q: "How do I migrate my existing client records?",
+    a: "You add clients as you go — there is no bulk importer yet, and we would rather say so than imply one exists. Most teams start by creating the handful of clients they are actively working with and letting the history build from the real work. Export works today in the other direction: your customers, orders and email history can all be exported, so nothing you put in is trapped.",
+  },
+  {
+    q: "How does Stripe connect to TraceTxn?",
+    a: "You paste your own Stripe keys into your workspace settings, in test or live mode. The money moves through your Stripe account to your bank, never through us — we only hold the credential needed to raise a payment link and read back the result. Secret keys are encrypted at rest, and you can rotate or remove them at any time.",
+  },
+  {
+    q: "Can I use TraceTxn without connecting Stripe?",
+    a: "Yes. Client records, orders, invoices, files, notes and client email all work with no gateway connected — an order simply stays in its pre-payment state instead of generating a checkout link. Connect Stripe when you want to collect payment through TraceTxn rather than outside it.",
+  },
+  {
+    q: "Can I manage partially paid or unpaid invoices?",
+    a: "Unpaid is a first-class state: an order sits in pending until a payment is actually confirmed by the gateway, so what is outstanding is always visible. Split part-payments against one invoice are not modelled today — if you take a deposit and a balance, the honest way to run it right now is two orders, or a workflow stage you name yourself.",
+  },
+  {
     q: "Is this a CRM?",
     a: "No. A CRM manages a sales pipeline and chases leads. TraceTxn remembers delivery — the record of what actually happened after a client said yes. Plenty of teams keep both, and use TraceTxn as the memory their CRM never had.",
   },

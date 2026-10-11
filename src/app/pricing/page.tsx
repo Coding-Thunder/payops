@@ -25,13 +25,13 @@ export const metadata: Metadata = pageMetadata({
  * note about what happens after beta, a short beta FAQ, and one action —
  * join the beta.
  *
- * Shares the redesigned marketing shell (dark ground, single emerald accent,
- * SiteHeader / SiteFooter) with the homepage so the two pages read as one
- * product.
+ * Shares the redesigned marketing shell (light ground, emerald for state and
+ * electric blue for intent, SiteHeader / SiteFooter) with the homepage so the
+ * two pages read as one product.
  */
 export default function PricingPage() {
   return (
-    <div className="min-h-screen bg-[#08090b] text-white antialiased">
+    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] antialiased">
       <SiteHeader />
       <main>
         <PricingHero />
