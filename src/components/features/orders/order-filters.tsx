@@ -31,7 +31,8 @@ const RENTAL_SEARCH_PLACEHOLDER =
   "Search by order, customer, phone, or vehicle";
 /** Used once the service filter is on screen, where "vehicle" is no longer
  *  the only thing an order can be about — and for an organization that
- *  sells flights alone, whose orders have no vehicle at all. */
+ *  sells one service that is not car rental (flights alone, hotel stays
+ *  alone), whose orders have no vehicle at all. */
 const MULTI_SERVICE_SEARCH_PLACEHOLDER = "Search by order, customer, or phone";
 
 interface OrderFiltersProps {
@@ -73,8 +74,8 @@ export function OrderFilters({ canSeeAll, serviceTypes }: OrderFiltersProps) {
 
   const serviceOptions = serviceTypes ?? [];
   const showServiceFilter = serviceOptions.length > 1;
-  const flightOnly =
-    serviceOptions.length === 1 && serviceOptions[0] === ServiceType.FLIGHT;
+  const sellsNoVehicles =
+    serviceOptions.length === 1 && serviceOptions[0] !== ServiceType.CAR_RENTAL;
 
 // `flex-wrap` rather than a hard md:flex-row: at ~1100px the controls wrap
   // onto a second line gracefully instead of squeezing the search field down
@@ -95,7 +96,7 @@ export function OrderFilters({ canSeeAll, serviceTypes }: OrderFiltersProps) {
             }
           }}
           placeholder={
-            showServiceFilter || flightOnly
+            showServiceFilter || sellsNoVehicles
               ? MULTI_SERVICE_SEARCH_PLACEHOLDER
               : RENTAL_SEARCH_PLACEHOLDER
           }

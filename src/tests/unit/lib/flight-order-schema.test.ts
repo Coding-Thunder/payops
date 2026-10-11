@@ -1,11 +1,26 @@
 import { describe, expect, it } from "vitest";
 
-import { FlightTripType, PaymentTiming } from "@/lib/constants/enums";
+import {
+  DEFAULT_FLIGHT_CHARGE_NAME,
+  DEFAULT_FLIGHT_CHARGE_NAMES,
+  flightChargeName,
+  namedFlightCharge,
+  normaliseFlightChargeName,
+  summarizeCharges,
+  summarizeFlightAmounts,
+} from "@/lib/charges";
+import {
+  BookingType,
+  FlightTripType,
+  PaymentTiming,
+  ServiceType,
+} from "@/lib/constants/enums";
 import {
   CONNECTION_CHRONOLOGY_MESSAGE,
   MAX_LAYOVER_OVERRIDE_MINUTES,
 } from "@/lib/flight-itinerary";
 import {
+  createOrderRequestSchema,
   flightJourneyInputSchema,
   flightOrderSchema,
   flightSegmentInputSchema,
@@ -18,6 +33,7 @@ import {
   multiCityFlightInput,
   oneWayConnectingFlightInput,
   roundTripFlightInput,
+  validCreateOrderInput,
   validFlightOrderInput,
 } from "@/tests/fixtures/order-input.fixture";
 
@@ -33,9 +49,18 @@ import {
  *   - Connections are positional — exactly one per gap — whatever arrives.
  *   - An impossible connection is refused with the client's exact wording,
  *     at the departure field of the flight that leaves too early.
- *   - A flight is PREPAID only, with ONE charge line — the service charge.
- *     The airline charge is a required figure of its own, never a line.
+ *   - A flight is PREPAID only, with ONE charge line — the amount the
+ *     payment link collects, NAMED by the operator ("Rental Cost",
+ *     "Processing Fee", …). The name is stored as typed (trimmed); blank
+ *     means "Service Charge". The airline charge is a required figure of
+ *     its own — never a line, and never the line's name.
  */
+
+/** The client's copy, pinned verbatim. */
+const ONE_CHARGE_MESSAGE =
+  "A flight has one charge: the amount this payment link collects. Enter the airline charge in its own field — it is never collected through the payment link.";
+const AIRLINE_NAME_MESSAGE =
+  "The airline charge has its own field and is never collected here. Name the charge this link collects (e.g. Service Charge, Processing Fee).";
 
 type SafeParse = ReturnType<typeof flightOrderSchema.safeParse>;
 
@@ -211,13 +236,15 @@ describe("flightOrderSchema — accepted itineraries", () => {
       ),
     );
     expect(data.flight.airlineFare).toBe(825.25);
+    // The fixture's line carries the pre-naming "Service charge", which is
+    // stored as the default name.
     expect(data.charges).toEqual([
-      { name: "Service charge", amount: 75.5, timing: PaymentTiming.PREPAID },
+      { name: "Service Charge", amount: 75.5, timing: PaymentTiming.PREPAID },
     ]);
   });
 });
 
-describe("flightOrderSchema — the money: one service charge, the airline charge on its own", () => {
+describe("flightOrderSchema — the money: one charge the operator names, the airline charge on its own", () => {
   it("refuses a blank or missing airline charge — 0 when there is none", () => {
     const blank = flightOrderSchema.safeParse(
       validFlightOrderInput({}, { airlineFare: null as never }),
@@ -241,37 +268,186 @@ describe("flightOrderSchema — the money: one service charge, the airline charg
         ],
       }),
     );
-    expect(messagesAt(result, "charges")).toEqual([
-      "A flight has one charge: its service charge. Enter the airline charge in its own field — it is never collected through the payment link.",
-    ]);
+    expect(messagesAt(result, "charges")).toEqual([ONE_CHARGE_MESSAGE]);
+    // … nor can the airline's amount be passed off as the line collected.
+    expect(messagesAt(result, "charges.0.name")).toEqual([AIRLINE_NAME_MESSAGE]);
+
+    // A second line is refused whatever the lines are called.
+    const twoNamed = flightOrderSchema.safeParse(
+      validFlightOrderInput({
+        charges: [
+          { name: "Processing Fee", amount: 100, timing: PaymentTiming.PREPAID },
+          { name: "Agency Fee", amount: 400, timing: PaymentTiming.PREPAID },
+        ],
+      }),
+    );
+    expect(issuesOf(twoNamed)).toEqual([{ path: "charges", message: ONE_CHARGE_MESSAGE }]);
   });
 
-  it("stores the one line as the service charge, whatever the request called it", () => {
-    for (const name of ["Airline fare", "  ", undefined]) {
-      const data = parsed(
-        validFlightOrderInput({
-          charges: [{ name, amount: 100, timing: PaymentTiming.PREPAID }] as never,
-        }),
-      );
-      expect(data.charges).toEqual([
-        { name: "Service charge", amount: 100, timing: PaymentTiming.PREPAID },
-      ]);
+  it.each(["Rental Cost", "Processing Fee", "Agency Fee", "Service Fee", "Booking Fee"])(
+    "stores the operator's charge name %j exactly as typed",
+    (name) => {
+      const data = parsed(validFlightOrderInput({ charges: flightServiceCharge(100, name) }));
+      expect(data.charges).toEqual([{ name, amount: 100, timing: PaymentTiming.PREPAID }]);
+      // A custom name is never swapped for the default.
+      expect(data.charges[0]!.name).not.toBe("Service Charge");
+    },
+  );
+
+  it("trims the name but otherwise keeps it as typed — its case included", () => {
+    const cases: Array<[typed: string, stored: string]> = [
+      ["  Processing Fee  ", "Processing Fee"],
+      ["processing fee", "processing fee"],
+      ["AGENCY FEE", "AGENCY FEE"],
+      // Only the exact pre-naming "Service charge" is rewritten (below).
+      ["service charge", "service charge"],
+      ["Service Charge", "Service Charge"],
+    ];
+    for (const [typed, stored] of cases) {
+      const data = parsed(validFlightOrderInput({ charges: flightServiceCharge(100, typed) }));
+      expect(data.charges[0]!.name, JSON.stringify(typed)).toBe(stored);
     }
   });
 
-  it("refuses a blank or zero service charge — the payment link must collect something", () => {
+  it("stores the default 'Service Charge' when the operator leaves the name blank", () => {
+    for (const name of ["", "   ", undefined, null]) {
+      const data = parsed(
+        roundTripFlightInput({
+          charges: [{ name, amount: 95, timing: PaymentTiming.PREPAID }] as never,
+        }),
+      );
+      // The default — never a name borrowed from elsewhere on the order
+      // (the customer, the airline, the booking reference).
+      expect(data.charges, JSON.stringify(name)).toEqual([
+        { name: "Service Charge", amount: 95, timing: PaymentTiming.PREPAID },
+      ]);
+    }
+    // No `name` key at all.
+    const noName = parsed(
+      validFlightOrderInput({
+        charges: [{ amount: 100, timing: PaymentTiming.PREPAID }] as never,
+      }),
+    );
+    expect(noName.charges[0]!.name).toBe(DEFAULT_FLIGHT_CHARGE_NAME);
+    expect(DEFAULT_FLIGHT_CHARGE_NAME).toBe("Service Charge");
+  });
+
+  it("stores the pre-naming 'Service charge' as the default 'Service Charge'", () => {
+    for (const name of ["Service charge", "  Service charge  "]) {
+      const data = parsed(validFlightOrderInput({ charges: flightServiceCharge(100, name) }));
+      expect(data.charges[0]!.name, JSON.stringify(name)).toBe("Service Charge");
+    }
+  });
+
+  it("stores exactly the name the form's live summary showed — one every surface reads as the operator's", () => {
+    for (const typed of [
+      "",
+      "   ",
+      "Service charge",
+      "Service Charge",
+      "service charge",
+      "  Processing Fee ",
+      "Rental Cost",
+      "Agency Fee",
+    ]) {
+      const data = parsed(validFlightOrderInput({ charges: flightServiceCharge(100, typed) }));
+      const stored = data.charges[0]!.name;
+      // The create form's summary labels the row `flightChargeName` of what
+      // is being typed …
+      expect(stored, JSON.stringify(typed)).toBe(flightChargeName([{ name: typed }]));
+      // … and a stored name is never one `namedFlightCharge` ignores, so
+      // every page, email and gateway line shows it.
+      expect(namedFlightCharge(data.charges), JSON.stringify(typed)).toBe(stored);
+    }
+  });
+
+  it("refuses a charge name over 120 characters", () => {
+    const result = flightOrderSchema.safeParse(
+      validFlightOrderInput({ charges: flightServiceCharge(100, "x".repeat(121)) }),
+    );
+    expect(messagesAt(result, "charges.0.name")).toEqual([
+      "Charge name must be 120 characters or fewer",
+    ]);
+    // 120 is the limit, counted after trimming.
+    const limit = "x".repeat(120);
+    for (const typed of [limit, `  ${limit}  `]) {
+      expect(
+        parsed(validFlightOrderInput({ charges: flightServiceCharge(100, typed) })).charges[0]!
+          .name,
+      ).toBe(limit);
+    }
+  });
+
+  it.each(["Airline Charge", "airline fare", "Airfare", "Flight Fare", "Ticket Price", "  Airline Charges  "])(
+    "refuses %j as the charge name — the airline charge has its own field and is never collected",
+    (name) => {
+      const result = flightOrderSchema.safeParse(
+        validFlightOrderInput({ charges: flightServiceCharge(100, name) }),
+      );
+      expect(result.success).toBe(false);
+      expect(messagesAt(result, "charges.0.name")).toEqual([AIRLINE_NAME_MESSAGE]);
+    },
+  );
+
+  it.each(["Airline Booking Fee", "Fare Protection"])(
+    "accepts %j — it mentions the airline or the fare but is not the airline's amount",
+    (name) => {
+      const data = parsed(validFlightOrderInput({ charges: flightServiceCharge(100, name) }));
+      expect(data.charges[0]!.name).toBe(name);
+    },
+  );
+
+  it("refuses a blank or zero charge amount — the payment link must collect something", () => {
     const blank = flightOrderSchema.safeParse(
       validFlightOrderInput({
         charges: [{ name: "Service charge", amount: null, timing: PaymentTiming.PREPAID }] as never,
       }),
     );
-    expect(messagesAt(blank, "charges.0.amount")).toEqual(["Enter the service charge"]);
-    const zero = flightOrderSchema.safeParse(
-      validFlightOrderInput({ charges: flightServiceCharge(0) }),
+    expect(messagesAt(blank, "charges.0.amount")).toEqual(["Enter the charge amount"]);
+    const missing = flightOrderSchema.safeParse(
+      validFlightOrderInput({
+        charges: [{ name: "Processing Fee", timing: PaymentTiming.PREPAID }] as never,
+      }),
     );
-    expect(messagesAt(zero, "charges.0.amount")).toEqual([
-      "The service charge must be greater than zero",
-    ]);
+    expect(messagesAt(missing, "charges.0.amount")).toEqual(["Enter the charge amount"]);
+    for (const amount of [0, -5]) {
+      const result = flightOrderSchema.safeParse(
+        validFlightOrderInput({ charges: flightServiceCharge(amount) }),
+      );
+      expect(messagesAt(result, "charges.0.amount"), String(amount)).toEqual([
+        "The charge amount must be greater than zero",
+      ]);
+    }
+  });
+
+  it("changes nothing but the name when the charge is renamed — the link collects the charge, never the airline charge", () => {
+    const names = ["Rental Cost", "Processing Fee", "Agency Fee", "Service Fee"];
+    const orders = names.map((name) =>
+      parsed(
+        validFlightOrderInput({ charges: flightServiceCharge(100, name) }, { airlineFare: 400 }),
+      ),
+    );
+    orders.forEach((data, i) => {
+      expect(data.charges).toEqual([
+        { name: names[i], amount: 100, timing: PaymentTiming.PREPAID },
+      ]);
+      expect(data.flight.airlineFare).toBe(400);
+      // What `createOrder` stores as `pricing.amount` — the amount the
+      // gateway is asked for: the charge alone.
+      expect(summarizeCharges(data.charges).prepaid).toBe(100);
+      expect(summarizeFlightAmounts(data.charges, data.flight.airlineFare)).toMatchObject({
+        airlineFare: 400,
+        serviceCharge: 100,
+        payableNow: 100,
+        bookingTotal: 500,
+      });
+    });
+    // Apart from the name, every order parses identically.
+    const withoutName = orders.map(({ charges, ...rest }) => ({
+      ...rest,
+      charges: charges.map((c) => ({ amount: c.amount, timing: c.timing })),
+    }));
+    for (const other of withoutName.slice(1)) expect(other).toEqual(withoutName[0]);
   });
 });
 
@@ -352,6 +528,20 @@ describe("flightOrderSchema — normalisation", () => {
       connections: null,
     });
     expect(journey.connections).toEqual([{ layover: null }]);
+  });
+
+  // The create form's PNR field. The order stores it as its one booking
+  // reference (`confirmationNumber`); the API keeps accepting it under
+  // `flight.pnr`, exactly as before.
+  it("accepts the PNR under flight.pnr — trimmed, up to 32 characters — and refuses a longer one", () => {
+    expect(parsed(validFlightOrderInput({}, { pnr: "  XYZ789 " })).flight.pnr).toBe("XYZ789");
+    expect(parsed(validFlightOrderInput({}, { pnr: "P".repeat(32) })).flight.pnr).toBe(
+      "P".repeat(32),
+    );
+    expect(parsed(validFlightOrderInput({}, { pnr: null })).flight.pnr).toBeNull();
+    const tooLong = flightOrderSchema.safeParse(validFlightOrderInput({}, { pnr: "P".repeat(33) }));
+    expect(tooLong.success).toBe(false);
+    expect(issuesOf(tooLong).map((i) => i.path)).toEqual(["flight.pnr"]);
   });
 });
 
@@ -452,9 +642,9 @@ describe("flightOrderSchema — refused itineraries", () => {
     ]);
   });
 
-  it("refuses an order with no service charge at all", () => {
+  it("refuses an order with no charge at all", () => {
     const result = flightOrderSchema.safeParse(validFlightOrderInput({ charges: [] }));
-    expect(messagesAt(result, "charges")).toEqual(["Enter the service charge"]);
+    expect(messagesAt(result, "charges")).toEqual(["Enter the charge amount"]);
   });
 
   it("refuses a negative airline charge", () => {
@@ -591,5 +781,164 @@ describe("From / To messages — exactly one message each", () => {
     expect(messagesAt(result, "flight.outbound.segments.0.origin")).toEqual([
       "From is required",
     ]);
+  });
+});
+
+describe("the flight's charge-name rules are the flight's alone — Car is unchanged", () => {
+  /** A car order through the same entry point the API uses. */
+  function parseCar(charges: unknown) {
+    return createOrderRequestSchema.safeParse({
+      ...validCreateOrderInput(),
+      serviceType: ServiceType.CAR_RENTAL,
+      charges,
+    });
+  }
+
+  it("stores a car's charge lines exactly as typed — no default name, no 'Service charge' rewrite", () => {
+    const lines = [
+      { name: "Rental cost", amount: 249.99, timing: PaymentTiming.PREPAID },
+      { name: "Service charge", amount: 20, timing: PaymentTiming.PREPAID },
+      { name: "Deposit", amount: 150, timing: PaymentTiming.DUE_AT_COUNTER },
+    ];
+    const result = parseCar(lines);
+    expect(result.success, JSON.stringify(result.error?.issues)).toBe(true);
+    expect(result.data?.charges).toEqual(lines);
+  });
+
+  it("still requires a car's charge name — a blank one is refused, not defaulted", () => {
+    const result = parseCar([{ name: "  ", amount: 249.99, timing: PaymentTiming.PREPAID }]);
+    expect(result.success).toBe(false);
+    expect(
+      result.error?.issues.map((i) => [i.path.join("."), i.message]),
+    ).toContainEqual(["charges.0.name", "Charge name is required"]);
+  });
+});
+
+describe("flightOrderSchema — a charge left unnamed takes its booking type's default", () => {
+  it.each([
+    [BookingType.NEW_BOOKING, "Service Charge"],
+    [BookingType.MODIFICATION, "Modification Fee"],
+    [BookingType.CANCELLATION_CHARGE, "Cancellation Charge"],
+  ])("a blank name on a %s is stored as %j", (bookingType, expected) => {
+    expect(DEFAULT_FLIGHT_CHARGE_NAMES[bookingType]).toBe(expected);
+    for (const name of ["", "   ", undefined, null]) {
+      const data = parsed(
+        validFlightOrderInput({
+          bookingType,
+          charges: [{ name, amount: 100, timing: PaymentTiming.PREPAID }] as never,
+        }),
+      );
+      expect(data.charges, JSON.stringify(name)).toEqual([
+        { name: expected, amount: 100, timing: PaymentTiming.PREPAID },
+      ]);
+    }
+  });
+
+  it("keeps a name the operator typed, whatever the booking type", () => {
+    for (const bookingType of Object.values(BookingType)) {
+      const data = parsed(
+        validFlightOrderInput({ bookingType, charges: flightServiceCharge(100, " Rental Cost ") }),
+      );
+      expect(data.charges[0]!.name, bookingType).toBe("Rental Cost");
+    }
+  });
+
+  it("stores the pre-naming 'Service charge' as 'Service Charge' on every booking type — the operator meant a service charge", () => {
+    for (const bookingType of Object.values(BookingType)) {
+      const data = parsed(
+        validFlightOrderInput({ bookingType, charges: flightServiceCharge(100, "Service charge") }),
+      );
+      expect(data.charges[0]!.name, bookingType).toBe("Service Charge");
+    }
+  });
+
+  it("applies the default through the service-type union the API parses", () => {
+    const result = createOrderRequestSchema.safeParse(
+      validFlightOrderInput({
+        bookingType: BookingType.MODIFICATION,
+        charges: [{ name: "  ", amount: 50, timing: PaymentTiming.PREPAID }] as never,
+      }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.serviceType).toBe(ServiceType.FLIGHT);
+    expect((result.data as { charges: { name: string }[] }).charges[0]!.name).toBe(
+      "Modification Fee",
+    );
+  });
+
+  it("stores exactly what the form's live summary previews, on every booking type", () => {
+    for (const bookingType of Object.values(BookingType)) {
+      for (const typed of ["", "  ", "Service charge", "Service Charge", " Agency Fee "]) {
+        const data = parsed(
+          validFlightOrderInput({ bookingType, charges: flightServiceCharge(100, typed) }),
+        );
+        const previewed = flightChargeName(
+          [{ name: normaliseFlightChargeName(typed) }],
+          bookingType,
+        );
+        expect(data.charges[0]!.name, `${bookingType} ${JSON.stringify(typed)}`).toBe(previewed);
+        // … and every surface reads the stored name as the operator's.
+        expect(namedFlightCharge(data.charges)).toBe(previewed);
+      }
+    }
+  });
+});
+
+describe("flightOrderSchema — every way of naming the airline's amount is refused", () => {
+  it.each([
+    "Air Ticket",
+    "Flight Ticket",
+    "Airline Tickets",
+    "Flight Cost",
+    "Flight Price",
+    "Flight Charge",
+    "Air-fare",
+    "air fare",
+    "Fare",
+    "Base Fare",
+    "Ticket",
+    "Tickets",
+    "Ticket Cost",
+  ])("refuses %j as the collected charge's name", (name) => {
+    const result = flightOrderSchema.safeParse(
+      validFlightOrderInput({ charges: flightServiceCharge(100, name) }),
+    );
+    expect(messagesAt(result, "charges.0.name")).toEqual([AIRLINE_NAME_MESSAGE]);
+  });
+
+  it.each([
+    "Air Ticket Charges",
+    "Flight Ticket Price",
+    "Airline Ticket Cost",
+    "Airline Fee",
+    "Airline Fees",
+    "Total Fare",
+    "Fare Charges",
+    "Ticket Charges",
+    "Airline Charge (USD)",
+    "Airline Charge.",
+  ])("refuses %j too — with a ticket noun, a fee, a total or a trailing qualifier", (name) => {
+    const result = flightOrderSchema.safeParse(
+      validFlightOrderInput({ charges: flightServiceCharge(100, name) }),
+    );
+    expect(messagesAt(result, "charges.0.name")).toEqual([AIRLINE_NAME_MESSAGE]);
+  });
+
+  it.each([
+    "Ticketing Fee",
+    "Airline Booking Fee",
+    "Flight Booking Fee",
+    "Fare Protection",
+    "Air Service Fee",
+    "Rental Cost",
+    "Processing Fee",
+    "Agency Fee",
+    "Service Fee",
+    "Booking Fee",
+    "Convenience Fee",
+    "Change Fee (per passenger)",
+  ])("accepts %j — the operator's own charge, not the airline's amount", (name) => {
+    expect(parsed(validFlightOrderInput({ charges: flightServiceCharge(100, name) })).charges[0]!.name).toBe(name);
   });
 });

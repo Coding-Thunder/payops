@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { FlightTripType, ServiceType } from "@/lib/constants/enums";
+import { formatDateTime } from "@/lib/format";
 import {
   describeServiceDates,
   describeServiceItem,
@@ -326,5 +327,163 @@ describe("CAR_RENTAL output is byte-identical", () => {
       "Pick-up",
       "Drop-off",
     ]);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * HOTEL
+ * ------------------------------------------------------------------ */
+
+/** Runs `fn` with the process in another time zone — an agent's browser
+ *  somewhere else, or a server that is not on UTC. */
+function inTimeZone(tz: string, fn: () => void) {
+  const previous = process.env.TZ;
+  process.env.TZ = tz;
+  try {
+    fn();
+  } finally {
+    if (previous === undefined) delete process.env.TZ;
+    else process.env.TZ = previous;
+  }
+}
+
+/** A stay as the form now stores it: each day at midnight UTC. */
+const HOTEL: ServiceSummarySource = {
+  serviceType: ServiceType.HOTEL,
+  hotel: {
+    destination: "Paris",
+    propertyName: "Hotel Lutetia",
+    checkInDate: "2026-10-17T00:00:00.000Z",
+    checkOutDate: "2026-10-20T00:00:00.000Z",
+    rooms: 1,
+    guests: { adults: 2, children: 1 },
+    roomPreference: "  King bed, high floor ",
+    guestNotes: "Anniversary — arriving after midnight.",
+  },
+};
+
+function hotelWith(
+  over: Partial<NonNullable<ServiceSummarySource["hotel"]>>,
+): ServiceSummarySource {
+  return { ...HOTEL, hotel: { ...HOTEL.hotel!, ...over } };
+}
+
+describe("serviceDetailRows — HOTEL", () => {
+  it("lists the stay, with the room preference the customer asked for", () => {
+    expect(serviceDetailRows(HOTEL)).toEqual([
+      { label: "Property", value: "Hotel Lutetia" },
+      { label: "Destination", value: "Paris" },
+      { label: "Check-in", value: "17 Oct 2026" },
+      { label: "Check-out", value: "20 Oct 2026" },
+      { label: "Rooms", value: "1 room" },
+      { label: "Guests", value: "2 adults, 1 child" },
+      { label: "Room preference", value: "King bed, high floor" },
+    ]);
+  });
+
+  it("never carries the guest notes — they are the operator's", () => {
+    const rows = serviceDetailRows(HOTEL);
+    expect(rows.map((r) => r.label)).not.toContain("Guest notes");
+    expect(JSON.stringify(rows)).not.toContain("Anniversary");
+  });
+
+  it("has no room preference row when none was given", () => {
+    for (const roomPreference of [null, undefined, "", "   "]) {
+      expect(
+        serviceDetailRows(hotelWith({ roomPreference })).map((r) => r.label),
+      ).not.toContain("Room preference");
+    }
+  });
+
+  it("can leave the room preference out for a surface that lists the requests on their own", () => {
+    expect(
+      serviceDetailRows(HOTEL, undefined, { omitRequests: true }).map((r) => r.label),
+    ).toEqual(["Property", "Destination", "Check-in", "Check-out", "Rooms", "Guests"]);
+  });
+
+  it("an agent in UTC+11 who picked 17 October sees 17 October — and so does everyone else", () => {
+    // The form posts "2026-10-17"; the server stores that day at midnight
+    // UTC, as a Date on the document and an ISO string on the DTO.
+    const picked = hotelWith({
+      checkInDate: new Date("2026-10-17"),
+      checkOutDate: "2026-10-20T00:00:00.000Z",
+    });
+    for (const tz of ["Australia/Sydney", "America/New_York", "Asia/Kolkata", "UTC"]) {
+      inTimeZone(tz, () => {
+        // Every caller's own formatter — the detail page's local date-time
+        // included — is ignored for a stay's days: no clock time, no shift.
+        for (const format of [formatDateTime, undefined]) {
+          const rows = serviceDetailRows(picked, format);
+          expect(rows.find((r) => r.label === "Check-in")?.value, tz).toBe("17 Oct 2026");
+          expect(rows.find((r) => r.label === "Check-out")?.value, tz).toBe("20 Oct 2026");
+        }
+      });
+    }
+  });
+
+  it("shows a stay stored with a clock time as its UTC day, the day its customer emails gave", () => {
+    const legacy = hotelWith({
+      checkInDate: "2026-10-16T13:00:00.000Z",
+      checkOutDate: "2026-10-19T13:00:00.000Z",
+    });
+    inTimeZone("Australia/Sydney", () => {
+      const rows = serviceDetailRows(legacy, formatDateTime);
+      expect(rows.find((r) => r.label === "Check-in")?.value).toBe("16 Oct 2026");
+      expect(rows.find((r) => r.label === "Check-out")?.value).toBe("19 Oct 2026");
+    });
+  });
+});
+
+describe("describeServiceDates — HOTEL counts nights by calendar day", () => {
+  it("keeps the line item's shape", () => {
+    expect(describeServiceDates(HOTEL)).toBe(
+      "Check-in: 2026-10-17 • Check-out: 2026-10-20 • 3 nights",
+    );
+  });
+
+  it("counts the days between the dates it prints, not the hours between two instants", () => {
+    // Stored with clock times: 17 Oct 20:00 → 19 Oct 04:00 UTC is 32
+    // hours, but two nights — 17 → 18 → 19, the days the line shows.
+    expect(
+      describeServiceDates(
+        hotelWith({
+          checkInDate: "2026-10-17T20:00:00.000Z",
+          checkOutDate: "2026-10-19T04:00:00.000Z",
+        }),
+      ),
+    ).toBe("Check-in: 2026-10-17 • Check-out: 2026-10-19 • 2 nights");
+  });
+
+  it("is never fewer than one night", () => {
+    expect(
+      describeServiceDates(
+        hotelWith({
+          checkInDate: "2026-10-17T00:00:00.000Z",
+          checkOutDate: "2026-10-17T00:00:00.000Z",
+        }),
+      ),
+    ).toBe("Check-in: 2026-10-17 • Check-out: 2026-10-17 • 1 night");
+  });
+
+  it("is the same in every time zone", () => {
+    for (const tz of ["Australia/Sydney", "America/Los_Angeles"]) {
+      inTimeZone(tz, () => {
+        expect(describeServiceDates(HOTEL), tz).toBe(
+          "Check-in: 2026-10-17 • Check-out: 2026-10-20 • 3 nights",
+        );
+      });
+    }
+  });
+});
+
+describe("CAR_RENTAL rows still use the caller's formatter", () => {
+  it("formats pick-up and drop-off through it, in any time zone", () => {
+    inTimeZone("Australia/Sydney", () => {
+      expect(serviceDetailRows(CAR, formatDateTime)).toEqual([
+        { label: "Vehicle", value: "Toyota Corolla" },
+        { label: "Pick-up", value: formatDateTime(CAR.trip!.pickupDate) },
+        { label: "Drop-off", value: formatDateTime(CAR.trip!.dropoffDate) },
+      ]);
+    });
   });
 });

@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Types } from "mongoose";
 
-import { PaymentGatewayKey, RecordState, UserRole } from "@/lib/constants/enums";
+import {
+  ConsentMode,
+  ConsentStatus,
+  EmailKind,
+  PaymentGatewayKey,
+  PaymentTiming,
+  RecordState,
+  UserRole,
+} from "@/lib/constants/enums";
 import {
   Branding,
   Order,
@@ -55,8 +63,11 @@ vi.mock("@/server/email/smtp", () => ({
   _resetOrgMailersForTests: () => {},
 }));
 
-const { sendPaymentConfirmationEmail, composePaymentRequestProps } =
-  await import("@/server/services/email.service");
+const {
+  sendPaymentConfirmationEmail,
+  sendPaymentRequestEmail,
+  composePaymentRequestProps,
+} = await import("@/server/services/email.service");
 const { resolveEmailIdentity, resolvePublicBrand } = await import(
   "@/server/email/identity"
 );
@@ -455,4 +466,142 @@ describe("Reply-To belongs to the sending brand", () => {
     const sent = sentMail.find((m) => String(m.html ?? "").length > 0);
     expect(sent!.replyTo ?? "").not.toContain("rentalconfirmation");
   });
+});
+
+/**
+ * CAR PINS — what a car customer of EITHER brand is asked to do, exactly as
+ * today: the consent button, the pay button that names the brand's own
+ * processor, the default subject, and the "What you're paying" block with
+ * its counter wording. Payment buttons are about to name a flight's charge
+ * and the charge wording is becoming per service; a car's copy must not
+ * move by a character on either brand.
+ */
+const CAR_BRANDS = [
+  {
+    brand: "Rental Confirmation",
+    gateway: PaymentGatewayKey.STRIPE,
+    gatewayLabel: "Stripe",
+    checkoutUrl: "https://checkout.stripe.com/c/pay/cs_test_car_pin",
+    make: () =>
+      makeOrg({
+        slug: "rentalconfirmation",
+        brandName: "Rental Confirmation",
+        isDefault: true,
+      }),
+  },
+  {
+    brand: "Trip Reservations",
+    gateway: PaymentGatewayKey.PAYPAL,
+    gatewayLabel: "PayPal",
+    checkoutUrl: "https://www.paypal.com/checkoutnow?token=CAR-PIN",
+    make: () => makeTripReservations(),
+  },
+];
+
+/** A car order in `b`'s organization, its link already generated through
+ *  the brand's own gateway. */
+async function linkedCarIn(
+  b: (typeof CAR_BRANDS)[number],
+  patch: Record<string, unknown> = {},
+) {
+  return orderIn(await b.make(), {
+    "payment.gateway": b.gateway,
+    "payment.checkoutUrl": b.checkoutUrl,
+    ...patch,
+  });
+}
+
+/** The last payment request that left: its subject, and its HTML as the
+ *  customer reads it — tags dropped, React's text-node separators and
+ *  escaped apostrophes undone, whitespace collapsed. */
+function lastPaymentRequest(): { subject: string; text: string } {
+  const msg = [...sentMail]
+    .reverse()
+    .find(
+      (m) =>
+        (m.headers as Record<string, string> | undefined)?.["X-Entity-Kind"] ===
+        EmailKind.PAYMENT_LINK,
+    );
+  expect(msg, "no payment request was sent").toBeTruthy();
+  return {
+    subject: String(msg!.subject),
+    text: String(msg!.html)
+      .replace(/<!-- -->/g, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&#x27;/g, "'")
+      .replace(/\s+/g, " "),
+  };
+}
+
+describe("a car rental's payment request reads exactly as before — on either brand", () => {
+  it.each(CAR_BRANDS)(
+    "$brand: asks for consent with 'Review & Confirm Booking', under the default subject",
+    async (b) => {
+      const order = await linkedCarIn(b);
+      await sendPaymentRequestEmail(order, {}, { actor });
+
+      const email = lastPaymentRequest();
+      expect(email.subject).toBe(
+        `Complete your Budget payment • ${order.orderNumber}`,
+      );
+      expect(email.text).toContain(
+        `You pay today $249.99 Order ${order.orderNumber} Review & Confirm Booking`,
+      );
+    },
+  );
+
+  it.each(CAR_BRANDS)(
+    "$brand: asks to 'Agree & Continue to Payment' where consent is required",
+    async (b) => {
+      await createSettings({ consentMode: ConsentMode.REQUIRED });
+      const order = await linkedCarIn(b);
+      await sendPaymentRequestEmail(order, {}, { actor });
+
+      expect(lastPaymentRequest().text).toContain(
+        `Order ${order.orderNumber} Agree & Continue to Payment`,
+      );
+    },
+  );
+
+  it.each(CAR_BRANDS)(
+    "$brand: once consented, the button pays the prepaid amount through $gatewayLabel",
+    async (b) => {
+      const order = await linkedCarIn(b, {
+        "consent.status": ConsentStatus.RECEIVED,
+      });
+
+      const props = await composePaymentRequestProps(order);
+      expect(props.primaryCta?.label).toBe(
+        `Pay $249.99 securely with ${b.gatewayLabel} →`,
+      );
+      expect(props.primaryCta?.helperText).toBe(
+        `You already confirmed this booking — this opens ${b.gatewayLabel} Checkout.`,
+      );
+      // …and the re-sent email carries exactly that button.
+      await sendPaymentRequestEmail(order);
+      expect(lastPaymentRequest().text).toContain(
+        `Order ${order.orderNumber} Pay $249.99 securely with ${b.gatewayLabel} →`,
+      );
+    },
+  );
+
+  it.each(CAR_BRANDS)(
+    "$brand: shows 'What you're paying' with the car's counter wording",
+    async (b) => {
+      const order = await linkedCarIn(b, {
+        charges: [
+          { name: "Rental cost", amount: 249.99, timing: PaymentTiming.PREPAID },
+          { name: "Deposit", amount: 100, timing: PaymentTiming.DUE_AT_COUNTER },
+        ],
+      });
+      await sendPaymentRequestEmail(order, {}, { actor });
+
+      expect(lastPaymentRequest().text).toContain(
+        "What you're paying Rental cost $249.99 Deposit (due at counter) $100.00 " +
+          "Amount paid online $249.99 Amount due at counter $100.00 " +
+          "Total rental cost $349.99",
+      );
+    },
+  );
 });

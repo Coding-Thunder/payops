@@ -29,6 +29,17 @@ export const PaymentTimingLabel: Record<PaymentTiming, string> = {
   DUE_AT_COUNTER: "Due at counter",
 };
 
+/**
+ * How a HOTEL's order form names each payment timing. A hotel has no
+ * counter: what is not paid online is settled at the property. The stored
+ * values are the same (`DUE_AT_COUNTER` is "due later"); only the words
+ * differ, and `PaymentTimingLabel` stays the car's.
+ */
+export const HotelPaymentTimingLabel: Record<PaymentTiming, string> = {
+  PREPAID: "Paid online now",
+  DUE_AT_COUNTER: "Due at the property",
+};
+
 export const OrderStatusLabel: Record<OrderStatus, string> = {
   NOT_INITIATED: "Draft",
   LINK_GENERATED: "Link ready",
@@ -188,16 +199,97 @@ export function cabinClassLabel(value: string | null | undefined): string {
 export const FLIGHT_PROVIDER_LABEL = "Airline / Supplier";
 
 /**
+ * What a HOTEL calls its provider: the hotel, or the supplier the stay was
+ * booked through — the hotel counterpart of `FLIGHT_PROVIDER_LABEL`. Never
+ * "Rental provider" on a hotel.
+ */
+export const HOTEL_PROVIDER_LABEL = "Hotel / Supplier";
+
+/**
  * The provider label for an order's service: `FLIGHT_PROVIDER_LABEL` on a
- * flight, otherwise the surface's own label, passed in as `fallback` because
- * surfaces have always worded it differently ("Provider" on a receipt,
- * "Rental provider" on the order page) and each keeps its exact string.
+ * flight, `HOTEL_PROVIDER_LABEL` on a hotel, otherwise the surface's own
+ * label, passed in as `fallback` because surfaces have always worded a car's
+ * differently ("Provider" on a receipt, "Rental provider" on the order page)
+ * and each keeps its exact string.
  */
 export function providerLabelFor(
   serviceType: ServiceType | null | undefined,
   fallback: string,
 ): string {
-  return serviceType === ServiceType.FLIGHT ? FLIGHT_PROVIDER_LABEL : fallback;
+  switch (serviceType) {
+    case ServiceType.FLIGHT:
+      return FLIGHT_PROVIDER_LABEL;
+    case ServiceType.HOTEL:
+      return HOTEL_PROVIDER_LABEL;
+    default:
+      return fallback;
+  }
+}
+
+/**
+ * How each service names the supplier's booking reference
+ * (`bookingReference` in `@/lib/service-summary`) — wherever an agent enters
+ * it or a customer reads it. A car keeps exactly the words it always had;
+ * a flight's is the airline's PNR; a hotel's, the hotel's own number.
+ */
+export interface BookingReferenceWording {
+  /** Field label and the confirmation email's top block. */
+  label: string;
+  /** The short row label on the receipt page. */
+  receiptLabel: string;
+  /** The reference mid-sentence: "… added or changed the PNR since". */
+  noun: string;
+  /** What the agent is asked to paste, under the card title. */
+  description: string;
+  placeholder: string;
+  notSet: string;
+  saved: string;
+  cleared: string;
+}
+
+export const BookingReferenceCopy: Record<ServiceType, BookingReferenceWording> = {
+  CAR_RENTAL: {
+    label: "Confirmation number",
+    receiptLabel: "Confirmation #",
+    noun: "confirmation number",
+    description:
+      "Paste the supplier confirmation number. It appears at the top of the customer's confirmation email.",
+    placeholder: "e.g. ABC-12345678",
+    notSet: "No confirmation number set yet.",
+    saved: "Confirmation number saved",
+    cleared: "Confirmation number cleared",
+  },
+  FLIGHT: {
+    label: "PNR",
+    receiptLabel: "PNR",
+    noun: "PNR",
+    description:
+      "Paste the airline booking reference (PNR). It appears at the top of the customer's confirmation email.",
+    placeholder: "e.g. X4T9KP",
+    notSet: "No PNR set yet.",
+    saved: "PNR saved",
+    cleared: "PNR cleared",
+  },
+  HOTEL: {
+    label: "Hotel confirmation number",
+    receiptLabel: "Hotel confirmation #",
+    noun: "hotel confirmation number",
+    description:
+      "Paste the hotel's confirmation number. It appears at the top of the customer's confirmation email.",
+    placeholder: "e.g. 83920174",
+    notSet: "No hotel confirmation number set yet.",
+    saved: "Hotel confirmation number saved",
+    cleared: "Hotel confirmation number cleared",
+  },
+};
+
+/** The booking-reference wording for an order (a car's when the service is
+ *  unknown — an order written before service types existed). */
+export function bookingReferenceCopy(
+  serviceType: ServiceType | null | undefined,
+): BookingReferenceWording {
+  return BookingReferenceCopy[serviceType ?? ServiceType.CAR_RENTAL] ??
+    BookingReferenceCopy.CAR_RENTAL;
 }
 
 /** Column header for the "what was bought" cell, per service type. */

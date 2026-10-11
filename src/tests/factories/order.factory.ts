@@ -39,8 +39,12 @@ import { Order, type OrderDoc, type OrderDocument } from "@/server/db/models";
  *     departureDate fields and a prepaid "Airfare" line — every flight
  *     written before itineraries existed.
  *   - ITINERARY (`{ serviceType: FLIGHT, flight: itineraryFlight() }`):
- *     `outbound` / `return` journeys, an airline fare and a prepaid
- *     "Service charge" — every flight `createOrder` writes today.
+ *     `outbound` / `return` journeys, an airline fare and one prepaid line
+ *     named "Service charge" — the name every itinerary flight carried
+ *     before operators named the charge (`LEGACY_FLIGHT_CHARGE_NAME`), so
+ *     it reads as never named. `createOrder` now stores the operator's name
+ *     (or the booking type's default): a seed that needs a named charge
+ *     passes its own `charges`.
  */
 
 interface CreatorSeed {
@@ -243,7 +247,8 @@ export function buildOrder(seed: OrderSeed = {}): OrderDoc & { _id: Types.Object
  * The single charge line a seed gets when it names none. A car keeps the
  * "Rental cost" line it has always had. A LEGACY flight carries what the
  * pre-itinerary form defaulted to — its whole fare as a prepaid "Airfare"
- * line — and an ITINERARY flight its operator's "Service charge".
+ * line — and an ITINERARY flight the "Service charge" every one carried
+ * before operators named the charge (it reads as never named).
  */
 function defaultChargeName(
   serviceType: ServiceType,

@@ -32,6 +32,7 @@ import {
 import { ServiceType } from "@/lib/constants/enums";
 import { BookingTypeLabel, providerLabelFor } from "@/lib/constants/labels";
 import { formatCurrency } from "@/lib/format";
+import { defaultPaymentRequestSubject } from "@/lib/payment-request-subject";
 import {
   describeServiceItem,
   serviceItemLabel,
@@ -138,6 +139,7 @@ export function EmailComposePageContent({
   const { labels: flightLabels } = flightMoneyWording(
     order.flight,
     order.bookingType,
+    order.charges,
   );
 
   return (
@@ -230,15 +232,15 @@ export function EmailComposePageContent({
         </CardContent>
       </Card>
 
-      {/* Without a provider name the subject falls back to the service's
-          noun — "rental" for a rental, exactly as before; never "rental"
-          on a flight or a hotel. */}
+      {/* The one default subject the server falls back to as well — an
+          itinerary flight's names its charge, never the airline. Without
+          a provider name the others fall back to the service's noun —
+          "rental" for a rental, exactly as before; never "rental" on a
+          flight or a hotel. */}
       <EmailComposer
         order={order}
         initialHtml=""
-        defaultSubject={`Complete your ${
-          order.provider?.name ?? serviceNoun(order)
-        } payment • ${order.orderNumber}`}
+        defaultSubject={defaultPaymentRequestSubject(order, serviceNoun(order))}
         onSent={(at) => setSentAt(at)}
       />
 

@@ -1,5 +1,13 @@
-import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, render, screen } from "@testing-library/react";
+
+// One router object for the component's lifetime, as Next's `useRouter()`
+// returns (it reads a stable context value).
+const { refresh, router } = vi.hoisted(() => {
+  const refresh = vi.fn();
+  return { refresh, router: { refresh } };
+});
+vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
 import { PaymentSuccessAutoRefresh } from "@/app/pay/success/auto-refresh";
 
@@ -37,5 +45,42 @@ describe("PaymentSuccessAutoRefresh", () => {
     expect(screen.getByRole("status")).toHaveTextContent(
       "Still confirming with PayPal. Try refreshing this page in a minute, or contact support if the charge appears on your card.",
     );
+  });
+});
+
+describe("PaymentSuccessAutoRefresh — it actually refreshes, and stops at the cap", () => {
+  beforeEach(() => {
+    refresh.mockReset();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function advance(seconds: number) {
+    for (let i = 0; i < seconds; i += 1) {
+      await act(async () => {
+        vi.advanceTimersByTime(1_000);
+      });
+    }
+  }
+
+  it("re-renders the page from the server every interval — it never sat on one timer that a ticker kept resetting", async () => {
+    render(<PaymentSuccessAutoRefresh gatewayLabel="PayPal" intervalSeconds={3} capSeconds={30} />);
+    await advance(2);
+    expect(refresh).not.toHaveBeenCalled();
+    await advance(1);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    await advance(6);
+    expect(refresh).toHaveBeenCalledTimes(3);
+  });
+
+  it("stops refreshing at the cap and asks the customer to refresh by hand", async () => {
+    render(<PaymentSuccessAutoRefresh gatewayLabel="PayPal" intervalSeconds={3} capSeconds={9} />);
+    await advance(9);
+    expect(refresh).toHaveBeenCalledTimes(3);
+    expect(screen.getByRole("status")).toHaveTextContent("Still confirming with PayPal.");
+    await advance(30);
+    expect(refresh).toHaveBeenCalledTimes(3);
   });
 });

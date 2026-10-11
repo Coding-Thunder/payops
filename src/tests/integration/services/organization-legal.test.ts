@@ -15,6 +15,7 @@ import {
   NotFoundError,
   ValidationError,
 } from "@/lib/errors";
+import { nextPolicyVersion } from "@/lib/policy-version";
 import {
   GET as getLegalRoute,
   PATCH as patchLegalRoute,
@@ -62,9 +63,10 @@ import {
  *     never from the body — so an admin can only change the brand they are
  *     working in;
  *   - a brand that does not sell flights has no flight terms to set;
- *   - versions move only when the text moves (v1 is the built-in default's,
- *     so an organization's first text of its own is v2), every change is
- *     audited against the organization, and nothing else is written;
+ *   - versions move only when the text moves (the built-in default carries
+ *     DEFAULT_FLIGHT_LEGAL_VERSION, so an organization's first text of its
+ *     own is the version after it), every change is audited against the
+ *     organization, and nothing else is written;
  *   - new flight orders freeze the new text; existing orders keep theirs;
  *   - the deployment-wide settings PATCH behaves exactly as before.
  */
@@ -74,6 +76,12 @@ const staff = actorFor(UserRole.STAFF, { name: "Staff User" });
 
 const OWN_TERMS = "ALPHA FLIGHT TERMS: tickets follow the fare rules of the operating airline.";
 const OWN_POLICY = "ALPHA FLIGHT POLICY: refunds are released once the airline refunds the fare.";
+
+/** An organization's first flight text of its own bumps from the built-in
+ *  default's version (so it never shares the built-in text's label); the
+ *  next edit bumps again. */
+const FIRST_OWN_VERSION = nextPolicyVersion(DEFAULT_FLIGHT_LEGAL_VERSION);
+const SECOND_OWN_VERSION = nextPolicyVersion(FIRST_OWN_VERSION);
 
 let sessionMock: Awaited<ReturnType<typeof mockSession>> | null = null;
 let alpha: Types.ObjectId;
@@ -314,11 +322,11 @@ describe("updateOrganizationFlightLegal", () => {
 
     const view = await updateOrganizationFlightLegal(input({ termsAndConditions: OWN_TERMS }), ctx);
 
-    // The first text of its own is v2 (v1 is the built-in default's); the
-    // untouched policy stays on the default.
+    // The first text of its own is the version after the built-in
+    // default's; the untouched policy stays on the default.
     expect(view).toMatchObject<Partial<OrganizationFlightLegal>>({
       termsAndConditions: OWN_TERMS,
-      termsVersion: "v2",
+      termsVersion: FIRST_OWN_VERSION,
       termsIsDefault: false,
       cancellationPolicy: DEFAULT_FLIGHT_CANCELLATION_POLICY,
       cancellationPolicyVersion: DEFAULT_FLIGHT_LEGAL_VERSION,
@@ -337,7 +345,7 @@ describe("updateOrganizationFlightLegal", () => {
     }
     expect(after.legal!.services!.FLIGHT).toMatchObject({
       termsAndConditions: OWN_TERMS,
-      termsVersion: "v2",
+      termsVersion: FIRST_OWN_VERSION,
       cancellationPolicy: "",
     });
     expect(String(after.updatedBy)).toBe(admin.id);
@@ -352,10 +360,13 @@ describe("updateOrganizationFlightLegal", () => {
       "termsAndConditions",
       "termsVersion",
     ]);
-    expect(audits[0]!.metadata.changes.termsVersion).toEqual({ from: "v1", to: "v2" });
+    expect(audits[0]!.metadata.changes.termsVersion).toEqual({
+      from: DEFAULT_FLIGHT_LEGAL_VERSION,
+      to: FIRST_OWN_VERSION,
+    });
   });
 
-  it("bumps v2 → v3 on the next edit and keeps the other text", async () => {
+  it(`bumps ${FIRST_OWN_VERSION} → ${SECOND_OWN_VERSION} on the next edit and keeps the other text`, async () => {
     actingAs(alpha);
     await updateOrganizationFlightLegal(input({ termsAndConditions: OWN_TERMS }), ctx);
     const second = await updateOrganizationFlightLegal(
@@ -364,17 +375,17 @@ describe("updateOrganizationFlightLegal", () => {
     );
     expect(second).toMatchObject({
       termsAndConditions: OWN_TERMS,
-      termsVersion: "v2",
+      termsVersion: FIRST_OWN_VERSION,
       cancellationPolicy: OWN_POLICY,
-      cancellationPolicyVersion: "v2",
+      cancellationPolicyVersion: FIRST_OWN_VERSION,
     });
 
     const third = await updateOrganizationFlightLegal(
       input({ termsAndConditions: `${OWN_TERMS} Revised.`, cancellationPolicy: OWN_POLICY }),
       ctx,
     );
-    expect(third.termsVersion).toBe("v3");
-    expect(third.cancellationPolicyVersion).toBe("v2");
+    expect(third.termsVersion).toBe(SECOND_OWN_VERSION);
+    expect(third.cancellationPolicyVersion).toBe(FIRST_OWN_VERSION);
     expect(third.cancellationPolicy).toBe(OWN_POLICY);
   });
 
@@ -454,18 +465,19 @@ describe("stale-tab guards — the organization still comes only from the select
       },
       ctx,
     );
-    expect(view.termsVersion).toBe("v2");
+    expect(view.termsVersion).toBe(FIRST_OWN_VERSION);
   });
 
   it("refuses with 409 a save over a newer edit of the same text", async () => {
     actingAs(alpha);
     await updateOrganizationFlightLegal(input({ termsAndConditions: OWN_TERMS }), ctx);
 
-    // A second tab still showing v1 tries to save its own wording.
+    // A second tab still showing the built-in default (and its version)
+    // tries to save its own wording.
     const err = await updateOrganizationFlightLegal(
       {
         ...input({ termsAndConditions: `${OWN_TERMS} From a stale tab.` }),
-        expectedTermsVersion: "v1",
+        expectedTermsVersion: DEFAULT_FLIGHT_LEGAL_VERSION,
       },
       ctx,
     ).catch((e) => e);
@@ -519,8 +531,8 @@ describe("what new and existing flight orders freeze after an edit", () => {
       text: DEFAULT_FLIGHT_TERMS_AND_CONDITIONS,
       version: DEFAULT_FLIGHT_LEGAL_VERSION,
     });
-    expect(byId(after.id).terms).toEqual({ text: OWN_TERMS, version: "v2" });
-    expect(byId(after.id).policy).toMatchObject({ text: OWN_POLICY, version: "v2" });
+    expect(byId(after.id).terms).toEqual({ text: OWN_TERMS, version: FIRST_OWN_VERSION });
+    expect(byId(after.id).policy).toMatchObject({ text: OWN_POLICY, version: FIRST_OWN_VERSION });
     // Alpha's car orders still freeze its car text.
     expect(byId(car.id).terms).toEqual({
       text: "ALPHA CAR TERMS: drivers must be 25 or older.",

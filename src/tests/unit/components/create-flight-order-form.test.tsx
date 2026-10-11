@@ -12,9 +12,15 @@ import type { ProviderDTO } from "@/types";
  * The rules pinned here are the client's, from the form's side:
  *
  *   - a new booking starts as ONE direct flight — no connection, no layover
- *     UI — with two fixed money fields, "Airline charge" and "Service
- *     charge": no charge lines to add or name, no timing choice and no
+ *     UI — with the "Airline charge" field and ONE charge the payment link
+ *     collects: its "Charge name" (prefilled "Service Charge") and its
+ *     "Amount". No charge lines to add or remove, no timing choice and no
  *     rental wording anywhere;
+ *   - the OPERATOR names that charge: the live summary labels the charge
+ *     row and the footer sentence with the name being typed ("Rental
+ *     Cost", "Processing Fee"…), a blank name reads "Service Charge", and
+ *     the airline charge keeps its fixed label. A name that means the
+ *     airline's amount is refused — the airline charge is never collected;
  *   - "+ Add Flight Segment" suggests the next From from the previous To,
  *     and that suggestion follows the previous To only while it is
  *     untouched — a From the operator typed is never overwritten;
@@ -23,7 +29,8 @@ import type { ProviderDTO } from "@/types";
  *     shown ONCE (not again under the field);
  *   - what is posted is the normalised itinerary: one connection per gap,
  *     the layover override in minutes, the airline charge in its own field
- *     and ONE prepaid charge line — the service charge.
+ *     (`flight.airlineFare`) and ONE prepaid charge line — the operator's
+ *     charge, under the name typed, for its amount alone.
  */
 
 const replace = vi.fn();
@@ -179,23 +186,52 @@ function twoFlights() {
   });
 }
 
-const MONEY_CARD = "Airline charge & service charge";
+const MONEY_CARD = "Airline charge & payment";
 
-/** The two dedicated money inputs. */
+/** The money inputs: the airline charge, and the NAME and AMOUNT of the
+ *  one charge the payment link collects. */
 function money() {
   return {
     airline: field(card(MONEY_CARD), "Airline charge"),
-    service: field(card(MONEY_CARD), "Service charge"),
+    name: field(card(MONEY_CARD), "Charge name"),
+    amount: field(card(MONEY_CARD), "Amount"),
   };
 }
 
-function fillCustomerAndCharge(serviceCharge: string, airlineCharge: string | null = "0") {
+/** The money card's visible text — the live summary included. */
+const moneyText = () => card(MONEY_CARD).textContent ?? "";
+
+function fillCustomerAndCharge(chargeAmount: string, airlineCharge: string | null = "0") {
   type(within(card("Customer")).getByLabelText("Full name"), "Grace Hopper");
   type(within(card("Customer")).getByLabelText("Email"), "grace@example.com");
   type(within(card("Customer")).getByLabelText("Phone"), "+15555550101");
   if (airlineCharge !== null) type(money().airline, airlineCharge);
-  type(money().service, serviceCharge);
+  type(money().amount, chargeAmount);
 }
+
+/** One direct flight, Delhi → Mumbai — a valid itinerary. */
+function oneFlight() {
+  fill(segment(flights(), 1)!, {
+    from: "Delhi",
+    to: "Mumbai",
+    dd: "2026-10-10",
+    dt: "10:30",
+    ad: "2026-10-10",
+    at: "12:30",
+  });
+}
+
+/** What the posted body's money looks like. */
+function postedMoney(i = 0) {
+  const body = posts[i]!.body as {
+    charges: { name: string; amount: number; timing: string }[];
+    flight: { airlineFare: number };
+  };
+  return { charges: body.charges, airlineFare: body.flight.airlineFare };
+}
+
+const AIRLINE_NAME_MESSAGE =
+  "The airline charge has its own field and is never collected here. Name the charge this link collects (e.g. Service Charge, Processing Fee).";
 
 async function submit() {
   await act(async () => {
@@ -222,24 +258,30 @@ describe("CreateFlightOrderForm — a new booking", () => {
     expect(text).not.toMatch(/rental|vehicle|Pick-up|Drop-off|counter/i);
     expect(text).not.toContain("Payment timing");
     expect(text).not.toContain("Due at");
-    // Two fixed money fields, both blank — nothing to add, nothing to name.
+    // The airline charge, and ONE charge the link collects: its name
+    // prefilled with the default, both amounts blank — nothing to add,
+    // no second line, nothing to remove.
     expect(money().airline.value).toBe("");
-    expect(money().service.value).toBe("");
+    expect(money().name.value).toBe("Service Charge");
+    expect(money().name.placeholder).toBe("e.g. Service Charge, Processing Fee");
+    expect(money().name.maxLength).toBe(120);
+    expect(money().amount.value).toBe("");
+    expect(within(card(MONEY_CARD)).getAllByLabelText("Charge name")).toHaveLength(1);
+    expect(within(card(MONEY_CARD)).getAllByLabelText("Amount")).toHaveLength(1);
     expect(within(card(MONEY_CARD)).queryByText("+ Add charge")).toBeNull();
-    expect(within(card(MONEY_CARD)).queryByText("Charge name")).toBeNull();
     expect(within(card(MONEY_CARD)).queryByRole("button", { name: "Remove charge" })).toBeNull();
     expect(card(MONEY_CARD).textContent).toContain(
-      "The payment link charges only the $0.00 service charge.",
+      "The payment link charges only the $0.00 Service Charge.",
     );
     expect(card("Airline / Supplier")).toBeTruthy();
   });
 });
 
 describe("CreateFlightOrderForm — the money", () => {
-  it("shows the four rows live: airline charge + service charge = booking value, only the service charge payable now", () => {
+  it("shows the four rows live: airline charge + the charge (default name) = booking value, only the charge payable now", () => {
     renderForm();
     type(money().airline, "400");
-    type(money().service, "100");
+    type(money().amount, "100");
     const box = card(MONEY_CARD).textContent ?? "";
     expect(box).toContain("Airline Charge");
     expect(box).toContain("Not collected through this payment link");
@@ -249,13 +291,13 @@ describe("CreateFlightOrderForm — the money", () => {
     expect(box).toContain(
       "Airline Charge is shown for the total booking value and is not collected through this payment link.",
     );
-    expect(box).toContain("The payment link charges only the $100.00 service charge.");
+    expect(box).toContain("The payment link charges only the $100.00 Service Charge.");
   });
 
   it("leaves the airline row out for an airline charge of 0", () => {
     renderForm();
     type(money().airline, "0");
-    type(money().service, "75");
+    type(money().amount, "75");
     const box = card(MONEY_CARD).textContent ?? "";
     expect(box).not.toContain("Airline Charge");
     expect(box).toContain("Total Booking Value$75.00");
@@ -283,9 +325,153 @@ describe("CreateFlightOrderForm — the money", () => {
     await submit();
     await waitFor(() => expect(posts).toHaveLength(1));
     expect((posts[0]!.body.flight as { airlineFare: number }).airlineFare).toBe(0);
+    // The name left as prefilled is posted as the default.
     expect(posts[0]!.body.charges).toEqual([
-      { name: "Service charge", amount: 50, timing: "PREPAID" },
+      { name: "Service Charge", amount: 50, timing: "PREPAID" },
     ]);
+  });
+});
+
+describe("CreateFlightOrderForm — the operator names the charge", () => {
+  it.each(["Rental Cost", "Processing Fee", "Agency Fee"])(
+    "a charge named %s: the live summary uses that name — row and footer — never 'Service Charge', and the submit posts it verbatim",
+    async (name) => {
+      renderForm();
+      oneFlight();
+      fillCustomerAndCharge("100", "400");
+      type(money().name, name);
+
+      const box = moneyText();
+      // Exactly what the customer will see, in order: the airline charge
+      // under its fixed label, then the operator's charge under its name.
+      expect(box).toContain(
+        "Airline ChargeNot collected through this payment link$400.00" +
+          `${name}$100.00` +
+          "Total Booking Value$500.00" +
+          "Amount Payable Now$100.00" +
+          "Airline Charge is shown for the total booking value and is not collected through this payment link." +
+          `The payment link charges only the $100.00 ${name}.`,
+      );
+      expect(box.toLowerCase()).not.toContain("service charge");
+      // The label is the charge's — never the customer's or the airline's.
+      expect(box).not.toContain("Grace Hopper");
+      expect(box).not.toContain("Sky Air");
+
+      await submit();
+      await waitFor(() => expect(posts).toHaveLength(1));
+      expect(postedMoney()).toEqual({
+        charges: [{ name, amount: 100, timing: "PREPAID" }],
+        airlineFare: 400,
+      });
+    },
+  );
+
+  it("renaming the charge relabels the summary at once — every amount, and what is posted, stays the same", async () => {
+    renderForm();
+    oneFlight();
+    fillCustomerAndCharge("100", "400");
+    type(money().name, "Rental Cost");
+    expect(moneyText()).toContain("Rental Cost$100.00");
+    expect(moneyText()).toContain("The payment link charges only the $100.00 Rental Cost.");
+
+    type(money().name, "Processing Fee");
+    const box = moneyText();
+    expect(box).toContain("Processing Fee$100.00");
+    expect(box).toContain("The payment link charges only the $100.00 Processing Fee.");
+    expect(box).not.toContain("Rental Cost");
+    expect(box).toContain("Airline ChargeNot collected through this payment link$400.00");
+    expect(box).toContain("Total Booking Value$500.00");
+    expect(box).toContain("Amount Payable Now$100.00");
+    expect(money().amount.value).toBe("100");
+    expect(money().airline.value).toBe("400");
+
+    await submit();
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(postedMoney()).toEqual({
+      charges: [{ name: "Processing Fee", amount: 100, timing: "PREPAID" }],
+      airlineFare: 400,
+    });
+  });
+
+  it.each([
+    ["cleared", ""],
+    ["only spaces", "   "],
+  ])(
+    "a charge name %s reads — and is posted as — the default 'Service Charge'",
+    async (_case, blank) => {
+      renderForm();
+      oneFlight();
+      fillCustomerAndCharge("100", "400");
+      type(money().name, "Processing Fee");
+      type(money().name, blank);
+
+      const box = moneyText();
+      expect(box).toContain("Service Charge$100.00");
+      expect(box).toContain("The payment link charges only the $100.00 Service Charge.");
+      expect(box).not.toContain("Processing Fee");
+
+      await submit();
+      await waitFor(() => expect(posts).toHaveLength(1));
+      expect(postedMoney()).toEqual({
+        charges: [{ name: "Service Charge", amount: 100, timing: "PREPAID" }],
+        airlineFare: 400,
+      });
+    },
+  );
+
+  it.each(["Airline Charge", "airline fare"])(
+    "refuses %s as the charge name — the airline charge is never collected — and posts nothing",
+    async (name) => {
+      renderForm();
+      oneFlight();
+      fillCustomerAndCharge("100", "400");
+      type(money().name, name);
+      await submit();
+
+      await waitFor(() =>
+        expect(money().name).toHaveAttribute("aria-invalid", "true"),
+      );
+      expect(posts).toHaveLength(0);
+      // Said once, on the name field itself.
+      expect(money().name).toHaveAccessibleDescription(
+        expect.stringContaining(AIRLINE_NAME_MESSAGE),
+      );
+      expect(moneyText()).toContain(AIRLINE_NAME_MESSAGE);
+      expect((document.body.textContent ?? "").split(AIRLINE_NAME_MESSAGE)).toHaveLength(2);
+
+      // Named for what the link collects, the same order posts.
+      type(money().name, "Processing Fee");
+      await waitFor(() =>
+        expect(money().name).toHaveAttribute("aria-invalid", "false"),
+      );
+      expect(document.body.textContent).not.toContain(AIRLINE_NAME_MESSAGE);
+      await submit();
+      await waitFor(() => expect(posts).toHaveLength(1));
+      expect(postedMoney()).toEqual({
+        charges: [{ name: "Processing Fee", amount: 100, timing: "PREPAID" }],
+        airlineFare: 400,
+      });
+    },
+  );
+
+  it("never puts the airline charge in the charges: it is posted on the flight, the charges carry the operator's amount alone", async () => {
+    renderForm();
+    oneFlight();
+    fillCustomerAndCharge("100", "400");
+    type(money().name, "Rental Cost");
+    // The summary adds it into the booking value, not into what is paid now.
+    expect(moneyText()).toContain("Total Booking Value$500.00");
+    expect(moneyText()).toContain("Amount Payable Now$100.00");
+
+    await submit();
+    await waitFor(() => expect(posts).toHaveLength(1));
+    const { charges, airlineFare } = postedMoney();
+    expect(airlineFare).toBe(400);
+    // ONE line — the gateway's whole amount — for the operator's 100 only.
+    expect(charges).toEqual([{ name: "Rental Cost", amount: 100, timing: "PREPAID" }]);
+    expect(charges.reduce((sum, line) => sum + line.amount, 0)).toBe(100);
+    expect(charges.some((line) => line.amount === 400 || line.amount === 500)).toBe(false);
+    expect(charges.some((line) => /airline/i.test(line.name))).toBe(false);
   });
 });
 
@@ -458,7 +644,7 @@ describe("CreateFlightOrderForm — a layover's errors go with the layover", () 
 });
 
 describe("CreateFlightOrderForm — a valid order", () => {
-  it("posts the normalised itinerary, the airline charge and ONE prepaid service charge", async () => {
+  it("posts the normalised itinerary, the airline charge and ONE prepaid charge (default name)", async () => {
     renderForm();
     twoFlights();
 
@@ -505,8 +691,112 @@ describe("CreateFlightOrderForm — a valid order", () => {
     });
     expect(flight.airlineFare).toBe(1200);
     expect(body.charges).toEqual([
-      { name: "Service charge", amount: 50, timing: "PREPAID" },
+      { name: "Service Charge", amount: 50, timing: "PREPAID" },
     ]);
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/app/orders/ord_1/email"));
+  });
+});
+
+describe("CreateFlightOrderForm — the PNR", () => {
+  it("keeps the optional field and says it can be added later, on the order page", () => {
+    renderForm();
+    const pnr = within(card("Airline / Supplier")).getByLabelText(
+      "PNR / record locator (optional)",
+    );
+    expect(pnr).toHaveAttribute("placeholder", "e.g. X4T9KP");
+    expect(card("Airline / Supplier").textContent).toContain(
+      "The airline booking reference. You can add or change it later on the order page; it appears at the top of the customer's confirmation email.",
+    );
+  });
+});
+
+describe("CreateFlightOrderForm — the charge's default name follows the booking type", () => {
+  function renderWithTypes(allowedBookingTypes: string[]) {
+    return render(
+      <CreateFlightOrderForm
+        allowedBookingTypes={allowedBookingTypes as never}
+        defaultCurrency="USD"
+        allowedCurrencies={["USD", "EUR"]}
+        providers={PROVIDERS}
+      />,
+    );
+  }
+
+  async function chooseBookingType(
+    user: ReturnType<typeof userEvent.setup>,
+    label: string,
+  ) {
+    await user.click(within(card("Trip")).getAllByRole("combobox")[0]!);
+    await user.click(await screen.findByRole("option", { name: label }));
+  }
+
+  it("prefills each booking type's default, swapping it while it is untouched", async () => {
+    const user = userEvent.setup();
+    renderWithTypes(["NEW_BOOKING", "MODIFICATION", "CANCELLATION_CHARGE"]);
+    type(money().airline, "400");
+    type(money().amount, "95");
+    expect(money().name.value).toBe("Service Charge");
+
+    await chooseBookingType(user, "Modification");
+    expect(money().name.value).toBe("Modification Fee");
+    // A fee for the change is never called the Service Charge.
+    expect(moneyText()).toContain("Modification Fee$95.00");
+    expect(moneyText()).not.toContain("Service Charge");
+
+    await chooseBookingType(user, "Cancellation charge");
+    expect(money().name.value).toBe("Cancellation Charge");
+    expect(moneyText()).toContain("Cancellation Charge$95.00");
+
+    await chooseBookingType(user, "New booking");
+    expect(money().name.value).toBe("Service Charge");
+    expect(moneyText()).toContain("The payment link charges only the $95.00 Service Charge.");
+  });
+
+  it("never overwrites a name the operator typed", async () => {
+    const user = userEvent.setup();
+    renderWithTypes(["NEW_BOOKING", "MODIFICATION"]);
+    type(money().amount, "95");
+    type(money().name, "Date Change Fee");
+
+    await chooseBookingType(user, "Modification");
+    expect(money().name.value).toBe("Date Change Fee");
+    expect(moneyText()).toContain("Date Change Fee$95.00");
+    expect(moneyText()).not.toContain("Modification Fee");
+  });
+
+  it("starts on the first allowed booking type's default", () => {
+    renderWithTypes(["MODIFICATION"]);
+    expect(money().name.value).toBe("Modification Fee");
+  });
+
+  it("posts a modification left on its default as the Modification Fee — never a Service Charge", async () => {
+    const user = userEvent.setup();
+    renderWithTypes(["NEW_BOOKING", "MODIFICATION"]);
+    await chooseBookingType(user, "Modification");
+    oneFlight();
+    fillCustomerAndCharge("95", "400");
+
+    await submit();
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0]!.body.bookingType).toBe("MODIFICATION");
+    expect(postedMoney()).toEqual({
+      charges: [{ name: "Modification Fee", amount: 95, timing: "PREPAID" }],
+      airlineFare: 400,
+    });
+  });
+
+  it("previews the default — never a refused airline name — as the collected charge", () => {
+    renderForm();
+    type(money().airline, "400");
+    type(money().amount, "100");
+    type(money().name, "Airline Charge");
+
+    // The airline row keeps its label; the collected row and the footer
+    // never call the $100.00 the airline charge, even before the refusal
+    // shows.
+    expect(moneyText()).toContain("Service Charge$100.00");
+    expect(moneyText()).toContain("The payment link charges only the $100.00 Service Charge.");
+    expect(moneyText()).not.toContain("only the $100.00 Airline Charge");
+    expect(moneyText().match(/Airline Charge/g)).toHaveLength(2); // the row + its explainer
   });
 });

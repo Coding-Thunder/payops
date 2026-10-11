@@ -21,7 +21,10 @@ import {
   SERVICE_TYPES,
   ServiceType,
 } from "@/lib/constants/enums";
-import type { PaymentConsentFlightSnapshot } from "@/types";
+import type {
+  PaymentConsentFlightSnapshot,
+  PaymentConsentHotelSnapshot,
+} from "@/types";
 
 /**
  * One PaymentConsent doc per acknowledgement attempt against an order.
@@ -98,6 +101,10 @@ export interface PaymentConsentDoc extends OrganizationScoped {
     airlineFare?: number | null;
     /** FLIGHT only: airline fare + service charge(s). */
     bookingTotal?: number | null;
+    /** HOTEL only — the stay as it stood when consent was asked for. Absent
+     *  on every other service type and on records written before it
+     *  existed, which render from the folded fields above. */
+    hotel?: PaymentConsentHotelSnapshot | null;
     paymentLinkRef?: string | null;
   };
 
@@ -227,6 +234,35 @@ const snapshotFlightSchema = new Schema(
   { _id: false },
 );
 
+/*
+ * The frozen hotel stay. Like the flight snapshot above it carries no
+ * validators — every value was copied from an order that passed them, and
+ * a validator here could only cost the customer their consent link. NO
+ * default: a record that never set it (every car and flight, and every
+ * hotel written before it existed) stores no key at all, so those records
+ * keep exactly their historic shape.
+ */
+const snapshotHotelGuestsSchema = new Schema(
+  {
+    adults: { type: Number, default: 1 },
+    children: { type: Number, default: 0 },
+  },
+  { _id: false },
+);
+
+const snapshotHotelSchema = new Schema(
+  {
+    destination: { type: String, default: "" },
+    propertyName: { type: String, default: null },
+    checkInDate: { type: String, default: null },
+    checkOutDate: { type: String, default: null },
+    rooms: { type: Number, default: null },
+    guests: { type: snapshotHotelGuestsSchema, default: null },
+    roomPreference: { type: String, default: null },
+  },
+  { _id: false },
+);
+
 const snapshotSchema = new Schema(
   {
         /**
@@ -258,6 +294,8 @@ bookingType: { type: String, enum: BOOKING_TYPES, required: true },
     flight: { type: snapshotFlightSchema, default: null },
     airlineFare: { type: Number, default: null, min: 0 },
     bookingTotal: { type: Number, default: null, min: 0 },
+    /** HOTEL only, and only on records written since it existed. */
+    hotel: { type: snapshotHotelSchema },
     paymentLinkRef: { type: String, default: null, maxlength: 2048 },
   },
   { _id: false },

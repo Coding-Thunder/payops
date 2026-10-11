@@ -11,6 +11,7 @@ import {
   UserRole,
 } from "@/lib/constants/enums";
 import { ValidationError } from "@/lib/errors";
+import { nextPolicyVersion } from "@/lib/policy-version";
 import AdminSettingsPage from "@/app/app/admin/settings/page";
 import { SettingsForm } from "@/components/features/settings/settings-form";
 import {
@@ -36,6 +37,7 @@ import {
 } from "@/server/db/models/setting.model";
 import { orgCookieName } from "@/server/auth/org-cookie";
 import { createOrder } from "@/server/services/order.service";
+import { buildProviderSnapshotFromKey } from "@/server/services/provider.service";
 import { createSettings } from "@/tests/factories/settings.factory";
 import {
   validCreateOrderInput,
@@ -84,6 +86,11 @@ const A_FLIGHT_TERMS = "ALPHA-ONLY FLIGHT TERMS: tickets follow the operating ai
 const A_FLIGHT_POLICY = "ALPHA-ONLY FLIGHT POLICY: refunds follow the airline's release of the fare.";
 const HOTEL_TERMS = "TRIO HOTEL TERMS: the lead guest checks in with photo ID.";
 const HOTEL_POLICY = "TRIO HOTEL POLICY: free cancellation until 48 hours before arrival.";
+
+/** A brand's first flight text of its own bumps from the built-in flight
+ *  default's version. Hotel's built-in version is its own, so a first hotel
+ *  text is versioned independently (asserted literally below). */
+const FIRST_OWN_FLIGHT_VERSION = nextPolicyVersion(DEFAULT_FLIGHT_LEGAL_VERSION);
 
 let sessionMock: Awaited<ReturnType<typeof mockSession>> | null = null;
 /** Car rental only. */
@@ -487,7 +494,7 @@ describe("the API enforces the same service rule as the page", () => {
     expect(saved.status).toBe(200);
     expect((await rawLegal(flightOnly))!.services!.FLIGHT).toMatchObject({
       termsAndConditions: A_FLIGHT_TERMS,
-      termsVersion: "v2",
+      termsVersion: FIRST_OWN_FLIGHT_VERSION,
     });
     const hotel = await patchLegal(legalBody("HOTEL", HOTEL_TERMS, HOTEL_POLICY));
     expect(hotel.status).toBe(422);
@@ -568,7 +575,10 @@ describe("each supported service is configured independently", () => {
       version: "v4",
     });
     const { order: flight } = await createOrder(validFlightOrderInput(), { actor: admin });
-    expect((await frozen(flight.id))!.terms).toEqual({ text: A_FLIGHT_TERMS, version: "v2" });
+    expect((await frozen(flight.id))!.terms).toEqual({
+      text: A_FLIGHT_TERMS,
+      version: FIRST_OWN_FLIGHT_VERSION,
+    });
   });
 
   it.each([
@@ -585,7 +595,10 @@ describe("each supported service is configured independently", () => {
       expect((await patchLegal(legalBody(service, terms, policy))).status).toBe(200);
     }
     const services = (await rawLegal(trio))!.services!;
-    expect(services.FLIGHT).toMatchObject({ termsAndConditions: A_FLIGHT_TERMS, termsVersion: "v2" });
+    expect(services.FLIGHT).toMatchObject({
+      termsAndConditions: A_FLIGHT_TERMS,
+      termsVersion: FIRST_OWN_FLIGHT_VERSION,
+    });
     expect(services.HOTEL).toMatchObject({ termsAndConditions: HOTEL_TERMS, termsVersion: "v2" });
   });
 
@@ -597,7 +610,10 @@ describe("each supported service is configured independently", () => {
     ]);
     expect([flight.status, hotel.status]).toEqual([200, 200]);
     const services = (await rawLegal(trio))!.services!;
-    expect(services.FLIGHT).toMatchObject({ termsAndConditions: A_FLIGHT_TERMS, termsVersion: "v2" });
+    expect(services.FLIGHT).toMatchObject({
+      termsAndConditions: A_FLIGHT_TERMS,
+      termsVersion: FIRST_OWN_FLIGHT_VERSION,
+    });
     expect(services.HOTEL).toMatchObject({ termsAndConditions: HOTEL_TERMS, termsVersion: "v2" });
   });
 
@@ -674,8 +690,14 @@ describe("one organization's terms never reach another", () => {
     actingAs(flightOnly);
     const { order: bFlight } = await createOrder(validFlightOrderInput(), { actor: admin });
 
-    expect((await frozen(aFlight.id))!.terms).toEqual({ text: A_FLIGHT_TERMS, version: "v2" });
-    expect((await frozen(aFlight.id))!.policy).toMatchObject({ text: A_FLIGHT_POLICY, version: "v2" });
+    expect((await frozen(aFlight.id))!.terms).toEqual({
+      text: A_FLIGHT_TERMS,
+      version: FIRST_OWN_FLIGHT_VERSION,
+    });
+    expect((await frozen(aFlight.id))!.policy).toMatchObject({
+      text: A_FLIGHT_POLICY,
+      version: FIRST_OWN_FLIGHT_VERSION,
+    });
     expect((await frozen(bFlight.id))!.terms).toEqual({
       text: DEFAULT_FLIGHT_TERMS_AND_CONDITIONS,
       version: DEFAULT_FLIGHT_LEGAL_VERSION,
@@ -768,6 +790,32 @@ describe("an order for a flight or hotel the organization does not sell is refus
       `${brand} does not sell ${kind === "flight" ? "flights" : "hotel stays"}, so this order cannot be created for it.`,
     );
     expect(await Order.countDocuments({})).toBe(0);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * An unknown supplier, in the service's own words
+ * ------------------------------------------------------------------ */
+
+describe("an order naming an unknown supplier is refused in its service's words", () => {
+  it("a hotel's is an unknown hotel or supplier", async () => {
+    await expect(
+      buildProviderSnapshotFromKey("NOSUCHHOTEL", ServiceType.HOTEL),
+    ).rejects.toThrow(/^Unknown hotel or supplier$/);
+    actingAs(trio);
+    await expect(
+      createOrder(validHotelOrderInput({ provider: "NOSUCHHOTEL" }), { actor: admin }),
+    ).rejects.toThrow(/^Unknown hotel or supplier$/);
+    expect(await Order.countDocuments({})).toBe(0);
+  });
+
+  it("a car's keeps 'Unknown rental provider', with or without a service type", async () => {
+    await expect(
+      buildProviderSnapshotFromKey("NOSUCHRENTAL", ServiceType.CAR_RENTAL),
+    ).rejects.toThrow(/^Unknown rental provider$/);
+    await expect(buildProviderSnapshotFromKey("NOSUCHRENTAL")).rejects.toThrow(
+      /^Unknown rental provider$/,
+    );
   });
 });
 

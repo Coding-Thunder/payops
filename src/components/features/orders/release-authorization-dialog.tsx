@@ -50,11 +50,13 @@ export function ReleaseAuthorizationDialog({
   // An itinerary flight's hold is its service charge — never the airline
   // fare. A flight created before itineraries usually held its whole fare,
   // so it keeps the generic wording.
-  const hold =
-    serviceTypeOf(order) === ServiceType.FLIGHT &&
-    flightMoneyWording(order.flight, order.bookingType).serviceChargeModel
-      ? `${held} service charge hold`
-      : `${held} hold`;
+  const wording =
+    serviceTypeOf(order) === ServiceType.FLIGHT
+      ? flightMoneyWording(order.flight, order.bookingType, order.charges)
+      : null;
+  const hold = wording?.serviceChargeModel
+    ? `${held} ${wording.chargeName} hold`
+    : `${held} hold`;
 
   function onOpenChange(next: boolean) {
     if (isPending && !next) return;

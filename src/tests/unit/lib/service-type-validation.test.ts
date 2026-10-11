@@ -223,7 +223,10 @@ describe("requirement 9: HOTEL validation", () => {
 
     const result = hotelOrderSchema.safeParse(input);
     expect(result.success).toBe(false);
-    expect(messagesOf(result)).toContain("Check-out must be after check-in");
+    // A stay is counted in calendar nights: the same day is zero nights.
+    expect(messagesOf(result)).toContain(
+      "Check-out must be at least one night after check-in",
+    );
   });
 
   it("ACCEPTS a check-out AFTER check-in", () => {

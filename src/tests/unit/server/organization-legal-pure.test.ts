@@ -47,7 +47,10 @@ describe("pairFlightLegal", () => {
         policyIsDefault: true,
       });
     }
-    expect(DEFAULT_FLIGHT_LEGAL_VERSION).toBe("v1");
+    // "v1" stays with the orders that agreed to the earlier money clause
+    // (which called the collected amount a "service charge"); the reworded
+    // built-in text must never travel under that label.
+    expect(DEFAULT_FLIGHT_LEGAL_VERSION).toBe("v2");
   });
 
   it("uses the organization's own text with its own version", () => {
@@ -107,9 +110,27 @@ describe("pairFlightLegal", () => {
     }
   });
 
-  it("never promises the service charge is 'charged today' — a manual-capture brand only holds it", () => {
+  it("never promises the amount payable now is 'charged today' — a manual-capture brand only holds it", () => {
     expect(DEFAULT_FLIGHT_TERMS_AND_CONDITIONS.toLowerCase()).not.toContain("charged today");
-    expect(DEFAULT_FLIGHT_TERMS_AND_CONDITIONS.toLowerCase()).toContain("service charge");
+  });
+
+  it("never calls the collected amount a 'service charge' — the operator names it — and keeps the airline charge out of this payment", () => {
+    // The customer sees the operator's own name for the one charge a flight's
+    // payment link collects ("Rental Cost", "Processing Fee", "Agency Fee"…).
+    // Built-in terms that said "service charge" would name a line the
+    // customer may never see — so neither built-in flight text does.
+    for (const text of [DEFAULT_FLIGHT_TERMS_AND_CONDITIONS, DEFAULT_FLIGHT_CANCELLATION_POLICY]) {
+      expect(text.toLowerCase()).not.toContain("service charge");
+    }
+    const lower = DEFAULT_FLIGHT_TERMS_AND_CONDITIONS.toLowerCase();
+    // They speak of the amount payable now — the "Amount Payable Now" row
+    // the customer sees before paying, whatever the charge is called.
+    expect(lower).toContain("payable now");
+    expect(lower).toContain(
+      "the amount shown as payable now is the only amount collected through this payment",
+    );
+    // The airline charge is part of the total booking value, never of this payment.
+    expect(lower).toMatch(/airline charge[^.]*not included in this payment/);
   });
 });
 

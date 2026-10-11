@@ -105,7 +105,7 @@ function amountLines(order: OrderDTO): string[] {
   if (serviceTypeOf(order) !== ServiceType.FLIGHT) {
     return [`Amount: ${order.pricing.amount.toFixed(2)} ${currency}`];
   }
-  const { labels } = flightMoneyWording(order.flight, order.bookingType);
+  const { labels } = flightMoneyWording(order.flight, order.bookingType, order.charges);
   const a = summarizeFlightAmounts(
     order.charges,
     order.flight?.airlineFare,

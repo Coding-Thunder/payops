@@ -287,16 +287,58 @@ export async function getProviderByKey(key: string): Promise<ProviderDoc | null>
   return Provider.findOne({ key: key.toUpperCase() });
 }
 
+/** The refusal for a supplier confined to other organizations. */
+const SUPPLIER_NOT_AVAILABLE_MESSAGE =
+  "This supplier is not available to this organization";
+
+/**
+ * The catalog's ORGANIZATION rule for one supplier — the predicate form of
+ * the `organizationId` filter in `listProviders`, so the create form's
+ * dropdown and the server can never disagree about who may book it:
+ *
+ *   - an EMPTY (or absent) `organizationIds` is available to EVERY
+ *     organization — every row stored before the field existed (`.lean()`
+ *     applies no defaults, hence `?? []`), every built-in brand the seed
+ *     inserts, and every supplier added without a restriction;
+ *   - a NON-EMPTY list confines the supplier to exactly those organizations.
+ *
+ * An order with NO organization (an unmigrated deployment, or a request with
+ * nothing selected) can only use an unrestricted supplier: a confined one
+ * belongs to organizations it is not.
+ */
+function availableToOrganization(
+  doc: Pick<ProviderDoc, "organizationIds">,
+  organizationId: Types.ObjectId | string | null | undefined,
+): boolean {
+  const allowed = doc.organizationIds ?? [];
+  if (allowed.length === 0) return true;
+  if (!organizationId) return false;
+  const id = String(organizationId);
+  return allowed.some((oid) => String(oid) === id);
+}
+
 /**
  * Resolve a snapshot to attach to a newly-created order. Throws if the
  * provider key doesn't exist or is not ACTIVE — keeps stale references off
  * new orders without locking up the catalog when an admin disables a brand.
  * `serviceType` only words the "unknown" error: a flight's provider is an
- * airline or supplier, never a "rental provider".
+ * airline or supplier, a hotel's a hotel or supplier, never a "rental
+ * provider" — which a car's keeps, exactly.
+ *
+ * `organizationId` is the organization the ORDER belongs to (null when it
+ * has none), so `createOrder` resolves it first. A supplier an admin
+ * confined to other organizations (Admin → Providers, "visible to") is
+ * refused here: the create form never offers it to this organization, but a
+ * hidden option is not a refusal, and a crafted request can name any key.
+ * Checked before the status, so another organization's supplier reads as
+ * not available rather than as disabled — whether it is switched on is that
+ * organization's business. Only the organization is checked, never the
+ * service type.
  */
 export async function buildProviderSnapshotFromKey(
   key: string,
   serviceType?: ServiceType,
+  organizationId?: Types.ObjectId | string | null,
 ): Promise<ProviderSnapshot> {
   await ensureSeedProviders();
   const normalised = key.trim().toUpperCase();
@@ -308,8 +350,13 @@ export async function buildProviderSnapshotFromKey(
     throw new ValidationError(
       serviceType === ServiceType.FLIGHT
         ? "Unknown airline or supplier"
-        : "Unknown rental provider",
+        : serviceType === ServiceType.HOTEL
+          ? "Unknown hotel or supplier"
+          : "Unknown rental provider",
     );
+  }
+  if (!availableToOrganization(doc, organizationId)) {
+    throw new ValidationError(SUPPLIER_NOT_AVAILABLE_MESSAGE);
   }
   if (doc.status !== RecordState.ACTIVE) {
     throw new ValidationError("That provider is currently disabled");

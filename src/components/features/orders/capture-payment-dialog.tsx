@@ -75,8 +75,12 @@ export function CapturePaymentDialog({ order }: CapturePaymentDialogProps) {
   // so the flights themselves render as an itinerary in place of the
   // one-line route. Every other service's dialog is unchanged.
   const isFlight = serviceTypeOf(order) === ServiceType.FLIGHT;
-  const serviceCharge =
-    isFlight && flightMoneyWording(order.flight, order.bookingType).serviceChargeModel;
+  const wording = isFlight
+    ? flightMoneyWording(order.flight, order.bookingType, order.charges)
+    : null;
+  const serviceCharge = wording?.serviceChargeModel ?? false;
+  // The operator's name for the collected charge (e.g. "Processing Fee").
+  const chargeName = wording?.chargeName ?? "";
   const itinerary = isFlight ? buildFlightItinerary(order.flight) : null;
   const money = formatCurrency(amount, currency);
 
@@ -93,7 +97,7 @@ export function CapturePaymentDialog({ order }: CapturePaymentDialogProps) {
       await run();
       toast.success(
         serviceCharge
-          ? `Captured the ${money} service charge`
+          ? `Captured the ${money} ${chargeName}`
           : `Captured ${formatCurrency(amount, currency)}`,
       );
       reset(false);
@@ -130,7 +134,7 @@ export function CapturePaymentDialog({ order }: CapturePaymentDialogProps) {
           <DialogHeader icon={<BanknoteIcon />} tone="warning">
             <DialogTitle>
               {serviceCharge ? (
-                `Charge the ${money} service charge to this customer?`
+                `Charge the ${money} ${chargeName} to this customer?`
               ) : (
                 <>Charge {formatCurrency(amount, currency)} to this customer?</>
               )}
@@ -180,7 +184,7 @@ export function CapturePaymentDialog({ order }: CapturePaymentDialogProps) {
             <div className="grid grid-cols-1 gap-3 rounded-md border border-warning-border/60 bg-warning-soft/60 p-3 text-sm sm:grid-cols-2">
               <SummaryRow
                 label={
-                  serviceCharge ? "Service charge to capture" : "Amount to charge"
+                  serviceCharge ? `${chargeName} to capture` : "Amount to charge"
                 }
                 value={
                   <span className="text-base font-semibold tabular-nums">
@@ -226,7 +230,7 @@ export function CapturePaymentDialog({ order }: CapturePaymentDialogProps) {
                 <span className="text-muted-foreground">
                   {"I have checked the details above and want to charge the "}
                   <span className="font-medium text-foreground">{money}</span>
-                  {` service charge to ${order.customer.name} now.`}
+                  {` ${chargeName} to ${order.customer.name} now.`}
                 </span>
               ) : (
                 <span className="text-muted-foreground">
@@ -259,7 +263,7 @@ export function CapturePaymentDialog({ order }: CapturePaymentDialogProps) {
               loadingText="Capturing"
             >
               {serviceCharge ? (
-                `Capture ${money} service charge`
+                `Capture ${money} ${chargeName}`
               ) : (
                 <>Capture {formatCurrency(amount, currency)}</>
               )}

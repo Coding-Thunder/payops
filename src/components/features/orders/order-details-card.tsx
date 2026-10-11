@@ -9,7 +9,7 @@ import { FlightItinerary } from "@/components/common/flight-itinerary";
 import { ProviderCard } from "@/components/features/providers";
 import {
   BookingTypeLabel,
-  FLIGHT_PROVIDER_LABEL,
+  providerLabelFor,
 } from "@/lib/constants/labels";
 import { ServiceType } from "@/lib/constants/enums";
 import { buildFlightItinerary } from "@/lib/flight-itinerary";
@@ -36,15 +36,17 @@ export function OrderDetailsCard({ order }: OrderDetailsCardProps) {
   // FLIGHT only, so for a car rental every read below resolves to
   // null/undefined and its markup is untouched. Legacy flat-field flights
   // come back from `buildFlightItinerary` in the same shape, times in UTC.
-  const isFlight = serviceTypeOf(order) === ServiceType.FLIGHT;
+  const serviceType = serviceTypeOf(order);
+  const isFlight = serviceType === ServiceType.FLIGHT;
   const itinerary = isFlight ? buildFlightItinerary(order.flight) : null;
-  const passengerNotes = isFlight ? order.flight?.passengerNotes : null;
   return (
     <div className="space-y-4">
       <ProviderCard
         provider={order.provider}
         description={itemDescription}
-        label={isFlight ? FLIGHT_PROVIDER_LABEL : undefined}
+        // "Rental provider" is the card's own default — a car reads as it
+        // always has; a flight or a hotel names its own kind of supplier.
+        label={providerLabelFor(serviceType, "Rental provider")}
         meta={
           <>
             <div className="font-mono text-[12px] text-foreground">
@@ -133,13 +135,14 @@ export function OrderDetailsCard({ order }: OrderDetailsCardProps) {
               </>
             }
           />
-          {passengerNotes ? (
+          {serviceRequests(order).map((request) => (
             <Detail
-              label="Passenger notes"
-              value={<p className="whitespace-pre-line">{passengerNotes}</p>}
+              key={request.label}
+              label={request.label}
+              value={<p className="whitespace-pre-line">{request.value}</p>}
               full
             />
-          ) : null}
+          ))}
           {order.notes ? (
             <Detail
               label="Internal notes"
@@ -154,6 +157,33 @@ export function OrderDetailsCard({ order }: OrderDetailsCardProps) {
 }
 
 /**
+ * What the customer asked for and what the team noted about the traveller,
+ * per service, each in a full-width block of its own: a flight's passenger
+ * notes; a hotel's room preference and guest notes. This page is the
+ * operator's, so it shows them all — the passenger and guest notes are
+ * OPERATOR-ONLY and appear nowhere else, while the room preference also
+ * reaches the customer through the shared service rows (left out of the
+ * grid below, so it is not listed twice). A car rental has none.
+ */
+function serviceRequests(order: OrderDTO): { label: string; value: string }[] {
+  const entries: [label: string, value: string | null | undefined][] = [];
+  switch (serviceTypeOf(order)) {
+    case ServiceType.FLIGHT:
+      entries.push(["Passenger notes", order.flight?.passengerNotes]);
+      break;
+    case ServiceType.HOTEL:
+      entries.push(
+        ["Room preference", order.hotel?.roomPreference],
+        ["Guest notes", order.hotel?.guestNotes],
+      );
+      break;
+  }
+  return entries
+    .filter((entry): entry is [string, string] => Boolean(entry[1]?.trim()))
+    .map(([label, value]) => ({ label, value }));
+}
+
+/**
  * The service-specific slice of the booking-details grid.
  *
  * CAR_RENTAL renders the original Vehicle / Pick-up / Drop-off triple
@@ -163,7 +193,9 @@ export function OrderDetailsCard({ order }: OrderDetailsCardProps) {
  * to the shared `serviceDetailRows` helper so the detail page, the emails
  * and the success page all agree on what a flight or a hotel looks like.
  * A flight's rows are trip-level only (trip type, routes, cabin,
- * passengers, PNR); its flights and layovers render in the itinerary card.
+ * passengers); its flights and layovers render in the itinerary card. The
+ * booking reference has its own card on this page and the requests their
+ * own blocks, so neither is repeated here.
  */
 function ServiceDetails({ order }: { order: OrderDTO }) {
   if (serviceTypeOf(order) === ServiceType.CAR_RENTAL) {
@@ -220,7 +252,10 @@ function ServiceDetails({ order }: { order: OrderDTO }) {
 
   return (
     <>
-      {serviceDetailRows(order, formatDateTime).map((row) => (
+      {serviceDetailRows(order, formatDateTime, {
+        omitReference: true,
+        omitRequests: true,
+      }).map((row) => (
         <Detail key={row.label} label={row.label} value={row.value} />
       ))}
     </>

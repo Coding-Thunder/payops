@@ -15,6 +15,9 @@ import {
   type UserRole,
 } from "@/lib/constants/enums";
 import {
+  bookingReference,
+  bookingReferenceWording,
+  flightPnr,
   describeServiceItem,
   serviceDetailRows,
   serviceTypeOf,
@@ -22,7 +25,9 @@ import {
 } from "@/lib/service-summary";
 import { PaymentGatewayLabel as PAYMENT_GATEWAY_LABELS } from "@/lib/constants/labels";
 import { env } from "@/lib/env";
+import { ConflictError } from "@/lib/errors";
 import { DomainEventType } from "@/lib/constants/events";
+import { defaultPaymentRequestSubject } from "@/lib/payment-request-subject";
 import {
   buildFlightItinerary,
   type FlightItineraryView,
@@ -48,6 +53,8 @@ import type {
   EmailFlightAmounts,
 } from "@/server/email/components";
 import {
+  consentCtaLabel,
+  payCtaLabel,
   PaymentRequestEmail,
   type PaymentRequestEmailProps,
 } from "@/server/email/templates/payment-request";
@@ -69,7 +76,7 @@ import {
 } from "@/lib/charges";
 
 import { recordAudit } from "./audit.service";
-import { captureEvidenceSafe } from "./evidence.service";
+import { captureEvidenceSafe, type EvidenceActorInput } from "./evidence.service";
 import { getBranding } from "./branding.service";
 import { getActiveTemplateContent } from "./email-template.service";
 import { acknowledgementFor } from "./organization-legal.service";
@@ -118,6 +125,7 @@ function buildEmailFlightAmounts(order: OrderDTO): EmailFlightAmounts | null {
     order.pricing.amount,
   );
   const currency = order.pricing.currency;
+  const wording = flightMoneyWording(order.flight, order.bookingType, order.charges);
   return {
     lines: a.charges.map((c) => ({
       name: c.name,
@@ -129,7 +137,8 @@ function buildEmailFlightAmounts(order: OrderDTO): EmailFlightAmounts | null {
     dueLater: a.dueLater > 0 ? formatMoney(a.dueLater, currency) : null,
     bookingTotal: formatMoney(a.bookingTotal, currency),
     hasItinerary: hasFlightItinerary(order.flight),
-    serviceChargeModel: flightMoneyWording(order.flight, order.bookingType).serviceChargeModel,
+    chargeName: wording.chargeName,
+    serviceChargeModel: wording.serviceChargeModel,
   };
 }
 
@@ -189,10 +198,18 @@ function rentalTripProps(
  * use so the two services read consistently inside one email. A flight's
  * rows are trip-level only (trip type, routes, cabin, passengers, PNR);
  * its flights render from `emailFlightItinerary` in their own block.
+ *
+ * `omitReference` drops the PNR row for the email that shows the booking
+ * reference in its own top block (the confirmation), so a passenger never
+ * reads it twice. The request and the authorization keep it — the
+ * canonical `bookingReference`, like every surface.
  */
-function emailServiceRows(order: OrderDTO): ServiceRow[] | undefined {
+function emailServiceRows(
+  order: OrderDTO,
+  options: { omitReference?: boolean } = {},
+): ServiceRow[] | undefined {
   if (serviceTypeOf(order) === ServiceType.CAR_RENTAL) return undefined;
-  return serviceDetailRows(order, formatEmailDay);
+  return serviceDetailRows(order, formatEmailDay, options);
 }
 
 /** The consent model's maxlength on the snapshot's `vehicle`. */
@@ -257,6 +274,10 @@ function flightConsentSlots(f: OrderFlight): {
  * item and date slots — plus the fare and booking value shown beside the
  * service charge (`amount`). Empty for every other service, so a rental's
  * snapshot keeps exactly its historic keys.
+ *
+ * Its `pnr` is the order's ONE booking reference (`bookingReference`: the
+ * pasted confirmation number, else a legacy flight's own PNR) — the value
+ * every other surface shows, in the slot the record has always had.
  */
 function consentSnapshotFlight(
   order: OrderDTO,
@@ -273,7 +294,7 @@ function consentSnapshotFlight(
       tripType: f.tripType,
       cabinClass: f.cabinClass,
       passengers: f.passengers,
-      pnr: f.pnr,
+      pnr: flightPnr(order),
       outbound: f.outbound,
       return: f.return,
       origin: f.origin,
@@ -286,6 +307,32 @@ function consentSnapshotFlight(
     },
     airlineFare: amounts.airlineFare,
     bookingTotal: amounts.bookingTotal,
+  };
+}
+
+/**
+ * HOTEL only: the stay frozen into the consent record — destination,
+ * property, the two calendar days, rooms, guests and the room preference —
+ * so the hosted page shows the customer the stay they are confirming, not
+ * just the folded item and dates. The guest notes are the operator's and
+ * are never frozen here. Empty for every other service, so a rental's or a
+ * flight's snapshot keeps exactly its historic keys.
+ */
+function consentSnapshotHotel(
+  order: OrderDTO,
+): Partial<Pick<PaymentConsentSnapshot, "hotel">> {
+  const h = order.hotel;
+  if (serviceTypeOf(order) !== ServiceType.HOTEL || !h) return {};
+  return {
+    hotel: {
+      destination: h.destination,
+      propertyName: h.propertyName ?? null,
+      checkInDate: h.checkInDate,
+      checkOutDate: h.checkOutDate,
+      rooms: h.rooms ?? null,
+      guests: h.guests ?? null,
+      roomPreference: h.roomPreference ?? null,
+    },
   };
 }
 
@@ -505,6 +552,18 @@ async function sendEmail(
   }
 }
 
+export interface PaymentConfirmationEmailOptions {
+  /**
+   * Who the CONFIRMATION_EMAIL_SENT evidence row names as having sent it.
+   * Omitted — every webhook and outbox send — it is the payment webhook,
+   * exactly as before. An agent's manual resend names the agent, so a
+   * dispute packet never reads a resend as the gateway's receipt.
+   */
+  evidenceActor?: EvidenceActorInput;
+  /** Marks the evidence row as a manual resend (`resend: true`). */
+  resend?: boolean;
+}
+
 /**
  * The ONLY transactional email this system sends to customers:
  * a confirmation after Stripe reports a successful payment. The same
@@ -513,6 +572,7 @@ async function sendEmail(
  */
 export async function sendPaymentConfirmationEmail(
   order: OrderDTO,
+  options: PaymentConfirmationEmailOptions = {},
 ): Promise<{ id: string | null }> {
   // Branding is a single Mongo read per send. We deliberately don't cache
   // it across sends so a brand-name / support-contact change propagates to
@@ -541,6 +601,11 @@ export async function sendPaymentConfirmationEmail(
   const providerForEmail = order.provider
     ? { ...order.provider, logo: providerLogoInline ?? order.provider.logo }
     : order.provider;
+  // The ONE supplier reference — a flight's PNR, the hotel's or the rental
+  // company's confirmation number — shown in the email's top block under
+  // the service's own name. A flight's PNR row is then left out of the
+  // booking details, so the passenger reads it once.
+  const reference = bookingReference(order);
   const props: PaymentConfirmationEmailProps = {
     brandName,
     appUrl: env.server.APP_URL,
@@ -560,10 +625,11 @@ export async function sendPaymentConfirmationEmail(
     serviceType: serviceTypeOf(order),
     vehicle: order.vehicle,
     trip: rentalTripProps(order),
-    serviceRows: emailServiceRows(order),
+    serviceRows: emailServiceRows(order, { omitReference: reference !== null }),
     flightItinerary: emailFlightItinerary(order),
     flightAmounts: buildEmailFlightAmounts(order),
-    confirmationNumber: order.confirmationNumber ?? null,
+    confirmationNumber: reference,
+    confirmationLabel: bookingReferenceWording(order).label,
     chargeBreakdown: buildEmailChargeBreakdown(order),
     termsText: order.terms?.text || null,
     termsVersion: order.terms?.version ?? null,
@@ -605,9 +671,15 @@ export async function sendPaymentConfirmationEmail(
     orderId: order.id,
     orderNumber: order.orderNumber,
     eventType: OrderEvidenceEventType.CONFIRMATION_EMAIL_SENT,
-    actor: { type: OrderEvidenceActorType.SYSTEM, name: "Payment webhook" },
+    actor: options.evidenceActor ?? {
+      type: OrderEvidenceActorType.SYSTEM,
+      name: "Payment webhook",
+    },
     payload: {
       kind: EmailKind.PAYMENT_CONFIRMATION,
+      // Only on a manual resend: the webhook and outbox rows keep exactly
+      // their historic keys.
+      ...(options.resend ? { resend: true } : {}),
       subject: finalSubject,
       // What was ACTUALLY sent, not what env says — for a non-default
       // organization these differ, and the evidence chain is dispute-grade.
@@ -804,7 +876,11 @@ export interface PaymentRequestOverrides {
  *
  * `consent` is OPTIONAL because the preview path needs to render
  * without persisting a record. The send path always passes one (see
- * `sendPaymentRequestEmail`).
+ * `sendPaymentRequestEmail`) — and only the preview path ever falls back
+ * to the `/consent/preview` placeholder. A send whose consent record could
+ * not be persisted (`consentUrl: null`) gets the checkout button where
+ * consent is advisory, and is REFUSED where it is required (a
+ * `ConflictError`, before anything is sent).
  */
 export async function composePaymentRequestProps(
   order: OrderDTO,
@@ -857,24 +933,33 @@ export async function composePaymentRequestProps(
     consent?.consentRequired ?? settings.consentMode === ConsentMode.REQUIRED;
 
   // Resolve the consent URL.
-  //   - Send path: caller passes `consent.consentUrl` from requestConsent.
-  //   - Preview path (no consent arg): if the order already has a consent
-  //     record (re-send case), sign its id so the preview shows the
-  //     real link the customer would receive. First-time preview falls
-  //     back to a clearly-labelled placeholder so the agent still sees
-  //     the correct CTA copy ("Review & Confirm Booking") — the actual
-  //     link is signed when they click Send.
-  let consentUrl: string | null = consent?.consentUrl ?? null;
-  if (!consentUrl && !alreadyConsented) {
-    const existingId = order.consent?.currentConsentId;
-    if (existingId) {
-      consentUrl = buildConsentUrl(
-        env.server.APP_URL,
-        generateConsentToken(existingId),
+  //   - Send path (`consent` given): exactly the link `requestConsent` just
+  //     signed — null when that record could not be persisted. Never a
+  //     placeholder, and never an older record's link: the customer's
+  //     button must open the request THIS send made, or not exist.
+  //   - Preview path (no `consent`): if the order already has a consent
+  //     record (re-send case), sign its id so the preview shows the real
+  //     link the customer would receive. A first-time preview falls back to
+  //     a clearly-labelled placeholder so the agent still sees the button's
+  //     copy — the actual link is signed when they click Send.
+  let consentUrl: string | null = null;
+  if (consent) {
+    consentUrl = consent.consentUrl;
+    // No consent record. Where consent is REQUIRED the email must not go
+    // out at all: its only button would skip the consent this workspace
+    // demands. (A customer who already consented goes straight to checkout
+    // either way.) In advisory mode the button falls through to checkout
+    // below — the one link that is real.
+    if (!consentUrl && consentRequired && !alreadyConsented) {
+      throw new ConflictError(
+        "The payment request was not sent: this workspace requires the customer's consent before payment, and the consent request could not be recorded. Nothing reached the customer — please try sending it again.",
       );
-    } else {
-      consentUrl = `${env.server.APP_URL.replace(/\/$/, "")}/consent/preview`;
     }
+  } else if (!alreadyConsented) {
+    const existingId = order.consent?.currentConsentId;
+    consentUrl = existingId
+      ? buildConsentUrl(env.server.APP_URL, generateConsentToken(existingId))
+      : `${env.server.APP_URL.replace(/\/$/, "")}/consent/preview`;
   }
 
   // Name the processor that will actually take the money. Hardcoding "Stripe"
@@ -884,15 +969,19 @@ export async function composePaymentRequestProps(
   const gatewayLabel = order.payment.gateway
     ? PAYMENT_GATEWAY_LABELS[order.payment.gateway as PaymentGatewayKey]
     : null;
-  // An itinerary flight's link collects its service charge only, and the
-  // button says so — "Pay $95.00" alone reads as paying for the whole trip.
-  // A flight created before itineraries usually charged its whole fare, so
-  // it keeps the generic label.
-  const payLabel =
-    serviceTypeOf(order) === ServiceType.FLIGHT &&
-    flightMoneyWording(order.flight, order.bookingType).serviceChargeModel
-      ? `Pay the ${formatMoney(order.pricing.amount, order.pricing.currency)} service charge securely with ${gatewayLabel ?? "our secure checkout"} →`
-      : `Pay ${formatMoney(order.pricing.amount, order.pricing.currency)} securely with ${gatewayLabel ?? "our secure checkout"} →`;
+  // An itinerary flight's link collects ONE charge, named by its operator,
+  // and both buttons name it — "Pay $95.00" alone reads as paying for the
+  // whole trip. A flight whose charge has no name (one created before
+  // itineraries, which usually charged its whole fare, or one never named)
+  // keeps the generic labels, as do cars and hotels.
+  const amount = formatMoney(order.pricing.amount, order.pricing.currency);
+  const chargeName =
+    serviceTypeOf(order) === ServiceType.FLIGHT
+      ? flightMoneyWording(order.flight, order.bookingType, order.charges)
+          .chargeName
+      : "";
+  const namedCharge = chargeName ? { amount, name: chargeName } : null;
+  const payLabel = payCtaLabel(amount, gatewayLabel, chargeName);
   const primaryCta = alreadyConsented && checkoutUrl
     ? {
         url: checkoutUrl,
@@ -904,9 +993,7 @@ export async function composePaymentRequestProps(
     : consentUrl
       ? {
           url: consentUrl,
-          label: consentRequired
-            ? "Agree & Continue to Payment"
-            : "Review & Confirm Booking",
+          label: consentCtaLabel(consentRequired, namedCharge),
           helperText: effectiveConsentMessage,
         }
       : checkoutUrl
@@ -928,7 +1015,7 @@ export async function composePaymentRequestProps(
     customerName: order.customer.name,
     orderNumber: order.orderNumber,
     bookingType: order.bookingType,
-    amount: formatMoney(order.pricing.amount, order.pricing.currency),
+    amount,
     dueBy: order.payment.expiresAt
       ? formatEmailDate(order.payment.expiresAt)
       : null,
@@ -953,14 +1040,6 @@ export async function composePaymentRequestProps(
     consentMailto,
     consentRequired,
   };
-}
-
-export function defaultPaymentRequestSubject(
-  order: OrderDTO,
-  brandName: string,
-): string {
-  const providerName = order.provider?.name ?? brandName;
-  return `Complete your ${providerName} payment • ${order.orderNumber}`;
 }
 
 export interface SendPaymentRequestContext {
@@ -1018,6 +1097,8 @@ export async function sendPaymentRequestEmail(
   // The subject was the one part of this send still sourced from the
   // deployment singleton while the body used the resolved organization brand.
   const subjectBrand = await resolvePublicBrandForOrder(order.id, branding);
+  // The composer pre-fills the same default (`defaultPaymentRequestSubject`
+  // is shared), so a subject the agent left as is reads the same here.
   const subject =
     overrides.subject?.trim() ||
     tpl?.subject?.trim() ||
@@ -1055,6 +1136,8 @@ export async function sendPaymentRequestEmail(
               // FLIGHT only: the full itinerary, the airline fare and the
               // booking value (`amount` above is the service charge alone).
               ...consentSnapshotFlight(order),
+              // HOTEL only: the stay — rooms, guests, room preference.
+              ...consentSnapshotHotel(order),
               paymentLinkRef: order.payment.paymentUrl,
             };
           })(),
@@ -1068,8 +1151,9 @@ export async function sendPaymentRequestEmail(
       consentUrl = result.consentUrl;
       consentToken = result.token;
     } catch (err) {
-      // Consent persistence should never block the email send — log and
-      // continue with no consentUrl (only the mailto fallback survives).
+      // A failed consent record never sends a dead link: with consent
+      // advisory the email's button opens checkout instead; with consent
+      // required `composePaymentRequestProps` refuses the send below.
       logger.error("email.consent_request_failed", {
         orderId: order.id,
         err: err instanceof Error ? err.message : String(err),

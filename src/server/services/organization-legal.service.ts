@@ -537,10 +537,10 @@ export async function updateOrganizationServiceLegal(
   const next: Partial<OrganizationServiceLegal> = {};
 
   // Versions bump from the STORED label — the same rule as the deployment
-  // settings — and from the version in force when there is none: "v1" for a
-  // built-in default (so a first text of its own is "v2"), the deployment
-  // default's for car rental (so the version a customer sees never goes
-  // backwards).
+  // settings — and from the version in force when there is none: the
+  // built-in default's (so a first text of its own follows it: hotel v1 →
+  // v2, flight v2 → v3), the deployment default's for car rental (so the
+  // version a customer sees never goes backwards).
   if (!isEqual(current.termsAndConditions, input.termsAndConditions)) {
     const bumped = nextPolicyVersion(
       stored?.termsVersion?.trim() || current.termsVersion,

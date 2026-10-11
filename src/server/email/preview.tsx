@@ -5,12 +5,17 @@ import { render } from "@react-email/render";
 import type { EmailTemplateKey } from "@/lib/constants/email-templates";
 import {
   BookingType,
+  ConsentMode,
+  PaymentGatewayKey,
   SERVICE_TYPES,
   ServiceType,
 } from "@/lib/constants/enums";
+import { PaymentGatewayLabel } from "@/lib/constants/labels";
 import { env } from "@/lib/env";
 import { resolvePublicBrand } from "@/server/email/identity";
+import { getDefaultGateway } from "@/server/payments/gateways";
 import { getBranding } from "@/server/services/branding.service";
+import { organizationDefaultGateway } from "@/server/services/consent.service";
 import { getSettings } from "@/server/services/settings.service";
 import { getActiveTemplateContent } from "@/server/services/email-template.service";
 import {
@@ -26,6 +31,7 @@ import {
   buildPaymentAuthorizedPreviewProps,
   buildPaymentPreviewProps,
   buildPaymentRequestPreviewProps,
+  SAMPLE_STRIPE_RECEIPT_URL,
 } from "@/server/email/preview-data";
 import type { ProviderDTO } from "@/types";
 
@@ -39,6 +45,10 @@ import type { ProviderDTO } from "@/types";
  * previewed. Its terms come from `resolveServiceTerms` — the same resolver
  * that freezes a real order's terms at creation, which is what every real
  * email renders. Same inputs, same resolver, same text.
+ *
+ * Everything else a brand's real email carries follows the brand too: its
+ * suppliers (the ones its create page lists), the processor its payment
+ * links open, and the button its consent mode puts on a payment request.
  */
 
 /** The services a preview can show for an organization: exactly the ones it
@@ -84,25 +94,57 @@ export interface EmailPreview {
   provider: ProviderDTO | null;
 }
 
+/**
+ * The processor a preview names — the one the brand's real payment links
+ * open (its configured `payments.provider`), so a PayPal brand's previews
+ * never say Stripe. With no brand selected, or none configured, the
+ * deployment default these previews have always shown: then the request
+ * and the authorization name it and the confirmation names none, exactly
+ * as before. Only a processor that hosts receipts gets a sample receipt
+ * link.
+ */
+async function previewGateway(organizationId: string | null): Promise<{
+  label: string;
+  /** What the confirmation sample names — none for the deployment default. */
+  confirmationLabel: string | null;
+  receiptUrl: string | null;
+}> {
+  const configured = await organizationDefaultGateway(organizationId);
+  const gateway = configured ?? getDefaultGateway().key;
+  return {
+    label: PaymentGatewayLabel[gateway],
+    confirmationLabel: configured ? PaymentGatewayLabel[configured] : null,
+    receiptUrl:
+      gateway === PaymentGatewayKey.STRIPE ? SAMPLE_STRIPE_RECEIPT_URL : null,
+  };
+}
+
 export async function renderEmailPreview(
   input: EmailPreviewInput,
 ): Promise<EmailPreview> {
-  const [branding, providers, terms, savedCopy, settings] = await Promise.all([
-    getBranding(),
-    listActiveProviders({ serviceType: input.serviceType }),
-    resolveServiceTerms({
-      organizationId: input.organizationId,
-      serviceType: input.serviceType,
-    }),
-    input.draft
-      ? null
-      : getActiveTemplateContent(
-          input.templateKey,
-          input.organizationId,
-          input.serviceType,
-        ),
-    getSettings(),
-  ]);
+  const [branding, providers, terms, savedCopy, settings, gateway] =
+    await Promise.all([
+      getBranding(),
+      // The suppliers this brand may use — scoped exactly like its create
+      // page, so a supplier restricted to another brand is never sampled.
+      listActiveProviders({
+        serviceType: input.serviceType,
+        organizationId: input.organizationId,
+      }),
+      resolveServiceTerms({
+        organizationId: input.organizationId,
+        serviceType: input.serviceType,
+      }),
+      input.draft
+        ? null
+        : getActiveTemplateContent(
+            input.templateKey,
+            input.organizationId,
+            input.serviceType,
+          ),
+      getSettings(),
+      previewGateway(input.organizationId),
+    ]);
   const copy = input.draft ?? savedCopy;
   // The brand the organization's real emails carry — not the deployment's.
   const brand = await resolvePublicBrand(input.organizationId, branding);
@@ -129,22 +171,22 @@ export async function renderEmailPreview(
 
   let html: string;
   if (input.templateKey === "payment-request") {
-    const props = buildPaymentRequestPreviewProps(args);
-    // The statement under the button is the one THIS service's customers
-    // confirm — exactly as a real payment request shows it.
-    const primaryCta = props.primaryCta
-      ? {
-          ...props.primaryCta,
-          helperText: acknowledgementFor(
-            input.serviceType,
-            settings.consentMessage,
-          ),
-        }
-      : props.primaryCta;
+    const props = buildPaymentRequestPreviewProps({
+      ...args,
+      gatewayLabel: gateway.label,
+      // The button and the line under it follow the consent mode exactly as
+      // a real payment request's do (`composePaymentRequestProps`).
+      consentRequired: settings.consentMode === ConsentMode.REQUIRED,
+      // The statement under the button is the one THIS service's customers
+      // confirm — exactly as a real payment request shows it.
+      consentMessage: acknowledgementFor(
+        input.serviceType,
+        settings.consentMessage,
+      ),
+    });
     html = await render(
       <PaymentRequestEmail
         {...props}
-        primaryCta={primaryCta}
         greeting={copy?.greeting ?? props.greeting}
         intro={copy?.intro ?? props.intro}
         note={copy?.note ?? props.note}
@@ -152,11 +194,22 @@ export async function renderEmailPreview(
     );
   } else if (input.templateKey === "payment-authorized") {
     html = await render(
-      <PaymentAuthorizedEmail {...buildPaymentAuthorizedPreviewProps(args)} />,
+      <PaymentAuthorizedEmail
+        {...buildPaymentAuthorizedPreviewProps({
+          ...args,
+          gatewayLabel: gateway.label,
+        })}
+      />,
     );
   } else {
     html = await render(
-      <PaymentConfirmationEmail {...buildPaymentPreviewProps(args)} />,
+      <PaymentConfirmationEmail
+        {...buildPaymentPreviewProps({
+          ...args,
+          gatewayLabel: gateway.confirmationLabel,
+          receiptUrl: gateway.receiptUrl,
+        })}
+      />,
     );
   }
   return { html, providers, provider };

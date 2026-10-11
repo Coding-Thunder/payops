@@ -257,6 +257,25 @@ describe("display helpers", () => {
     expect(truncateText("Delhi → Varanasi", 10)).toHaveLength(10);
   });
 
+  it("never cuts through an emoji — a half surrogate pair is not valid text", () => {
+    // 118 letters + 🛫 (two UTF-16 units) = 120: the cut at 119 would keep
+    // only the emoji's first half, which Stripe's encoder rejects.
+    const name = `${"A".repeat(118)}🛫 • Air India`;
+    const cut = truncateText(name, 120);
+    expect(cut.isWellFormed()).toBe(true);
+    expect(cut).toBe(`${"A".repeat(118)}…`);
+    expect(cut.length).toBeLessThanOrEqual(120);
+    // A whole emoji that fits is kept.
+    expect(truncateText(`${"A".repeat(117)}🛫 • Air India`, 120)).toBe(
+      `${"A".repeat(117)}🛫…`,
+    );
+    // Text without surrogates is cut exactly as before.
+    expect(truncateText(`${"A".repeat(130)}`, 120)).toBe(`${"A".repeat(119)}…`);
+    for (let max = 1; max <= 12; max += 1) {
+      expect(truncateText("✈🛫🎫💳 Rental Cost", max).isWellFormed(), String(max)).toBe(true);
+    }
+  });
+
   it("labels journeys by trip type", () => {
     expect(journeyLabel(FlightTripType.ROUND_TRIP, "outbound")).toBe("Outbound");
     expect(journeyLabel(FlightTripType.ROUND_TRIP, "return")).toBe("Return");

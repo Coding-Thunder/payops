@@ -14,8 +14,9 @@ interface ProviderCardProps {
   /** Right-aligned slot for booking-id, status badges, etc. */
   meta?: React.ReactNode;
   /** Eyebrow above the provider name. Defaults to the car-rental wording
-   *  every existing caller renders; a flight passes `FLIGHT_PROVIDER_LABEL`
-   *  ("Airline / Supplier"). */
+   *  every existing caller renders; the order page passes
+   *  `providerLabelFor(serviceType, …)`, so a flight reads "Airline /
+   *  Supplier" and a hotel "Hotel / Supplier". */
   label?: string;
 }
 

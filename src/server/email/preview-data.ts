@@ -7,7 +7,7 @@ import {
   PaymentTiming,
   ServiceType,
 } from "@/lib/constants/enums";
-import { flightMoneyWording } from "@/lib/charges";
+import { defaultFlightChargeName, flightMoneyWording } from "@/lib/charges";
 import type { ProviderSnapshot } from "@/lib/constants/providers";
 import { buildFlightItinerary } from "@/lib/flight-itinerary";
 import { serviceDetailRows } from "@/lib/service-summary";
@@ -19,7 +19,10 @@ import type {
 
 import type { PaymentAuthorizedEmailProps } from "@/server/email/templates/payment-authorized";
 import type { PaymentConfirmationEmailProps } from "@/server/email/templates/payment-confirmation";
-import type { PaymentRequestEmailProps } from "@/server/email/templates/payment-request";
+import {
+  consentCtaLabel,
+  type PaymentRequestEmailProps,
+} from "@/server/email/templates/payment-request";
 
 /**
  * The Terms & cancellation policy a preview shows. Always the output of
@@ -46,7 +49,26 @@ interface BuildPaymentPreviewArgs {
   serviceType: ServiceType;
   /** That service's terms, from the canonical resolver. */
   terms: PreviewTerms;
+  /**
+   * The processor the previewed brand's payment links open ("Stripe",
+   * "PayPal"), named wherever a real email names it. Neutral when omitted:
+   * a builder never assumes a processor — the caller passes the brand's.
+   */
+  gatewayLabel?: string | null;
+  /** The confirmation's sample "View receipt" link — only for a processor
+   *  that hosts receipts. None when omitted. */
+  receiptUrl?: string | null;
+  /** Payment request only: whether this deployment requires consent before
+   *  payment (`settings.consentMode`), which words the button. */
+  consentRequired?: boolean;
+  /** Payment request only: the statement under the button — the one the
+   *  previewed service's customers confirm. */
+  consentMessage?: string;
 }
+
+/** The confirmation preview's sample receipt link, for a processor that
+ *  hosts one (Stripe). PayPal hosts none, so its previews link none. */
+export const SAMPLE_STRIPE_RECEIPT_URL = "https://pay.stripe.com/receipts/preview";
 
 /** Sample split breakdown so previews exercise the prepaid / due-at-counter
  *  rows. Prepaid $150, due-at-counter $350, total $500. */
@@ -125,22 +147,42 @@ const SAMPLE_FLIGHT = {
   },
   cabinClass: CabinClass.ECONOMY,
   passengers: { adults: 2, children: 1, infants: 0 },
-  pnr: "QX7T2L",
 };
 
-/** Airline charge $1,240 (shown, never charged) + service charge $95. */
-const SAMPLE_FLIGHT_AMOUNTS: EmailFlightAmounts = {
-  lines: [
-    { name: "Service charge", amount: "$95.00", timing: PaymentTiming.PREPAID },
-  ],
-  airlineFare: "$1,240.00",
-  serviceCharge: "$95.00",
-  dueLater: null,
-  bookingTotal: "$1,335.00",
-  hasItinerary: true,
-  // An itinerary flight, so the service-charge copy (true).
-  serviceChargeModel: flightMoneyWording(SAMPLE_FLIGHT, BookingType.NEW_BOOKING).serviceChargeModel,
+/**
+ * ONE sample booking reference per service — the order's
+ * `confirmationNumber`, which every surface reads through
+ * `bookingReference`: the rental company's confirmation number the car
+ * previews have always shown, the airline's PNR, the hotel's own number.
+ * (The flight sample used to carry a second, different reference in its
+ * legacy `pnr`, so its confirmation preview showed two.)
+ */
+const SAMPLE_BOOKING_REFERENCE: Record<ServiceType, string> = {
+  [ServiceType.CAR_RENTAL]: "SUPP-9F3K2218",
+  [ServiceType.FLIGHT]: "QX7T2L",
+  [ServiceType.HOTEL]: "83920174",
 };
+
+/**
+ * Airline charge $1,240 (shown, never charged) + a $95 charge under the
+ * previewed booking type's default name ("Service Charge", "Modification
+ * Fee"…) — worded exactly as a real order of that type is when its
+ * operator keeps the default name.
+ */
+function sampleFlightAmounts(bookingType: BookingType): EmailFlightAmounts {
+  const name = defaultFlightChargeName(bookingType);
+  const wording = flightMoneyWording(SAMPLE_FLIGHT, bookingType, [{ name }]);
+  return {
+    lines: [{ name, amount: "$95.00", timing: PaymentTiming.PREPAID }],
+    airlineFare: "$1,240.00",
+    serviceCharge: "$95.00",
+    dueLater: null,
+    bookingTotal: "$1,335.00",
+    hasItinerary: true,
+    chargeName: wording.chargeName,
+    serviceChargeModel: wording.serviceChargeModel,
+  };
+}
 
 /** The hotel sample's split: a prepaid room charge, the balance settled at
  *  the property — no rental vocabulary. */
@@ -176,23 +218,36 @@ const SAMPLE_HOTEL = {
  * The sample booking for the previewed service, in the shape real emails
  * use for that service (see email.service.tsx): the car rental the previews
  * have always shown, the sample flight with its itinerary and money split,
- * or the sample hotel stay.
+ * or the sample hotel stay. Each carries its service's one sample reference;
+ * `omitReference` drops the flight's PNR row for the confirmation, which —
+ * like the real one — shows the reference in its own top block instead.
  */
-function serviceSampleFields(serviceType: ServiceType) {
+function serviceSampleFields(
+  serviceType: ServiceType,
+  bookingType: BookingType,
+  options: { omitReference?: boolean } = {},
+) {
   switch (serviceType) {
-    case ServiceType.FLIGHT:
+    case ServiceType.FLIGHT: {
+      const flightAmounts = sampleFlightAmounts(bookingType);
       return {
-        amount: SAMPLE_FLIGHT_AMOUNTS.serviceCharge,
+        amount: flightAmounts.serviceCharge,
         serviceType: ServiceType.FLIGHT,
         vehicle: null,
         trip: null,
         serviceRows: serviceDetailRows(
-          { serviceType: ServiceType.FLIGHT, flight: SAMPLE_FLIGHT },
+          {
+            serviceType: ServiceType.FLIGHT,
+            confirmationNumber: SAMPLE_BOOKING_REFERENCE[ServiceType.FLIGHT],
+            flight: SAMPLE_FLIGHT,
+          },
           formatEmailDay,
+          options,
         ),
         flightItinerary: buildFlightItinerary(SAMPLE_FLIGHT),
-        flightAmounts: SAMPLE_FLIGHT_AMOUNTS,
+        flightAmounts,
       };
+    }
     case ServiceType.HOTEL:
       return {
         serviceType: ServiceType.HOTEL,
@@ -202,6 +257,7 @@ function serviceSampleFields(serviceType: ServiceType) {
         serviceRows: serviceDetailRows(
           { serviceType: ServiceType.HOTEL, hotel: SAMPLE_HOTEL },
           formatEmailDay,
+          options,
         ),
       };
     case ServiceType.CAR_RENTAL:
@@ -242,13 +298,19 @@ export function buildPaymentPreviewProps(
     provider: args.provider,
     vehicle: { company: "Toyota", type: "Camry SE", imageUrl: null },
     trip: SAMPLE_TRIP,
-    confirmationNumber: "SUPP-9F3K2218",
+    confirmationNumber: SAMPLE_BOOKING_REFERENCE[args.serviceType],
     chargeBreakdown: SAMPLE_BREAKDOWN,
     ...termsFields(args.terms),
     acknowledgeUrl: `${args.appUrl.replace(/\/$/, "")}/acknowledge/preview-token`,
-    receiptUrl: "https://pay.stripe.com/receipts/preview",
+    receiptUrl: args.receiptUrl ?? null,
+    gatewayLabel: args.gatewayLabel ?? null,
   };
-  return { ...props, ...serviceSampleFields(args.serviceType) };
+  return {
+    ...props,
+    ...serviceSampleFields(args.serviceType, bookingType, {
+      omitReference: true,
+    }),
+  };
 }
 
 /**
@@ -260,6 +322,13 @@ export function buildPaymentRequestPreviewProps(
   args: BuildPaymentPreviewArgs,
 ): PaymentRequestEmailProps {
   const bookingType = args.bookingType ?? BookingType.NEW_BOOKING;
+  const sample = serviceSampleFields(args.serviceType, bookingType);
+  // The button a first send carries, worded exactly as a real send words it
+  // (`consentCtaLabel`): a flight names its sample charge.
+  const flightAmounts = "flightAmounts" in sample ? sample.flightAmounts : null;
+  const namedCharge = flightAmounts?.chargeName
+    ? { amount: flightAmounts.serviceCharge, name: flightAmounts.chargeName }
+    : null;
   const props: PaymentRequestEmailProps = {
     brandName: args.brandName,
     appUrl: args.appUrl,
@@ -282,15 +351,16 @@ export function buildPaymentRequestPreviewProps(
     ...termsFields(args.terms),
     primaryCta: {
       url: `${args.appUrl.replace(/\/$/, "")}/consent/preview-token`,
-      label: "Review & Confirm Booking",
+      label: consentCtaLabel(args.consentRequired ?? false, namedCharge),
       helperText:
+        args.consentMessage ??
         "You'll see a one-screen summary, confirm, then continue to secure payment.",
     },
-    gatewayLabel: "Stripe",
+    gatewayLabel: args.gatewayLabel ?? null,
     consentMailto: "mailto:support@example.com?subject=Order%20acknowledgement",
-    consentRequired: false,
+    consentRequired: args.consentRequired ?? false,
   };
-  return { ...props, ...serviceSampleFields(args.serviceType) };
+  return { ...props, ...sample };
 }
 
 /**
@@ -319,7 +389,7 @@ export function buildPaymentAuthorizedPreviewProps(
     chargeBreakdown: SAMPLE_BREAKDOWN,
     ...termsFields(args.terms),
     acknowledgeUrl: `${args.appUrl.replace(/\/$/, "")}/acknowledge/preview-token`,
-    gatewayLabel: "Stripe",
+    gatewayLabel: args.gatewayLabel ?? null,
   };
-  return { ...props, ...serviceSampleFields(args.serviceType) };
+  return { ...props, ...serviceSampleFields(args.serviceType, bookingType) };
 }

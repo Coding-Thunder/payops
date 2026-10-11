@@ -33,6 +33,9 @@ import { buildFlightItinerary } from "@/lib/flight-itinerary";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { logger } from "@/lib/logger";
 import {
+  bookingReference,
+  bookingReferenceWording,
+  hasSeparateLegacyPnr,
   serviceDetailRows,
   serviceNoun,
   serviceTypeOf,
@@ -40,6 +43,39 @@ import {
 import type { OrderDTO } from "@/types";
 
 import { PaymentSuccessAutoRefresh } from "./auto-refresh";
+
+/**
+ * Whether the order is still waiting on the gateway's word — its link out
+ * (LINK_GENERATED) or its request sent (PAYMENT_PENDING) — rather than
+ * settled one way or the other.
+ *
+ * LINK_GENERATED counts: an agent can hand the customer the link without
+ * sending the request email (Copy payment link), so a customer can pay —
+ * or put a hold on their card — and land here before the order ever moved
+ * to PAYMENT_PENDING. Reading that order as settled told them "Payment
+ * confirmed" before the gateway had confirmed anything.
+ */
+function awaitingGateway(order: Pick<OrderDTO, "status"> | null): boolean {
+  return (
+    order?.status === OrderStatus.PAYMENT_PENDING ||
+    order?.status === OrderStatus.LINK_GENERATED
+  );
+}
+
+/**
+ * A manual-capture hold: the card is authorized and the money HELD, not
+ * taken — whether the request email went out (PAYMENT_PENDING) or the
+ * customer paid from a copied link (LINK_GENERATED). The page and its tab
+ * title read this one predicate, so they can never disagree about it.
+ * `capture` is null on every automatic-capture order, so it is false for
+ * both incumbent brands.
+ */
+function isAuthorizationHold(order: OrderDTO | null): boolean {
+  return (
+    order?.payment.capture?.status === PaymentCaptureStatus.AUTHORIZED &&
+    order.status !== OrderStatus.PAID
+  );
+}
 
 /**
  * PER-BRAND TAB TITLE, and honest about whether money actually moved.
@@ -58,10 +94,9 @@ export async function generateMetadata({
     await getBranding(),
   );
   const order = orderNumber ? await getOrderByNumber(orderNumber) : null;
-  const authorized =
-    order?.payment.capture?.status === PaymentCaptureStatus.AUTHORIZED &&
-    order.status !== OrderStatus.PAID;
-  const headline = authorized ? "Card authorized" : "Payment received";
+  const headline = isAuthorizationHold(order)
+    ? "Card authorized"
+    : "Payment received";
   return { title: { absolute: `${headline} • ${brand.brandName}` } };
 }
 export const dynamic = "force-dynamic";
@@ -121,9 +156,13 @@ export default async function PaymentSuccessPage({
   // reading an authorized session as a completed one. `payment.capture` is
   // null on every automatic-capture order — i.e. every order both incumbent
   // brands have — so this guard never fires for them.
+  //
+  // A LINK_GENERATED order is reconciled exactly like a PAYMENT_PENDING one:
+  // a customer paying from a copied link arrives before any request email
+  // moved the order on (`awaitingGateway`).
   if (
     order &&
-    order.status === OrderStatus.PAYMENT_PENDING &&
+    awaitingGateway(order) &&
     order.payment.capture?.status !== PaymentCaptureStatus.AUTHORIZED &&
     order.payment.paymentSessionId &&
     returnedSessionId
@@ -147,11 +186,11 @@ export default async function PaymentSuccessPage({
   // is false for both incumbent brands and this page renders exactly as it
   // does today for them.
   const capture = order?.payment.capture ?? null;
-  const isAuthorized =
-    capture?.status === PaymentCaptureStatus.AUTHORIZED &&
-    order?.status === OrderStatus.PAYMENT_PENDING;
+  const isAuthorized = isAuthorizationHold(order);
+  // Still waiting on the gateway — never "Payment confirmed" before it has
+  // confirmed, whether the order was emailed or its link copied.
   const stillPending =
-    order?.status === OrderStatus.PAYMENT_PENDING &&
+    awaitingGateway(order) &&
     Boolean(order?.payment.paymentSessionId) &&
     !isAuthorized;
   // Brand from the ORDER's organization — resolved from the order number even
@@ -210,7 +249,9 @@ export default async function PaymentSuccessPage({
         )
       : null;
   const flightWording =
-    order && isFlight ? flightMoneyWording(order.flight, order.bookingType) : null;
+    order && isFlight
+      ? flightMoneyWording(order.flight, order.bookingType, order.charges)
+      : null;
   const flightLabels = flightWording?.labels ?? null;
   const serviceChargeModel = flightWording?.serviceChargeModel ?? false;
   // What has ACTUALLY happened to the money the link collects — the same
@@ -325,6 +366,7 @@ export default async function PaymentSuccessPage({
           <p className="mt-2 text-sm text-slate-600">
             {serviceChargeModel
               ? flightHeroCopy({
+                  chargeName: flightWording?.chargeName ?? "",
                   brand,
                   amount,
                   gatewayLabel,
@@ -463,12 +505,7 @@ export default async function PaymentSuccessPage({
                     value={formatDateTime(capture.captureExpiresAt)}
                   />
                 ) : null}
-                {order.confirmationNumber ? (
-                  <DetailRow
-                    label="Confirmation #"
-                    value={order.confirmationNumber}
-                  />
-                ) : null}
+                <BookingReferenceRow order={order} />
                 {order.payment.receiptUrl ? (
                   <DetailRow
                     label={gatewayLabel ? `${gatewayLabel} receipt` : "Receipt"}
@@ -556,12 +593,15 @@ function balanceDueLabel(order: OrderDTO): string {
  * before itineraries gets the generic copy instead.
  */
 function flightHeroCopy({
+  chargeName,
   brand,
   amount,
   gatewayLabel,
   isAuthorized,
   stillPending,
 }: {
+  /** The operator's name for the collected charge. */
+  chargeName: string;
   brand: string;
   amount: string | null;
   gatewayLabel: string | null;
@@ -569,12 +609,12 @@ function flightHeroCopy({
   stillPending: boolean;
 }): string {
   if (isAuthorized) {
-    return `${brand} has placed a hold on your card for the service charge${amount ? ` of ${amount}` : ""}. You have not been charged yet — the amount is released to us only once your flight is confirmed, and you’ll get a receipt then.`;
+    return `${brand} has placed a hold on your card for the ${chargeName}${amount ? ` of ${amount}` : ""}. You have not been charged yet — the amount is released to us only once your flight is confirmed, and you’ll get a receipt then.`;
   }
   if (stillPending) {
-    return `${brand} is waiting for ${gatewayLabel ?? "the payment provider"} to finalise your service charge payment. This page refreshes automatically.`;
+    return `${brand} is waiting for ${gatewayLabel ?? "the payment provider"} to finalise your ${chargeName} payment. This page refreshes automatically.`;
   }
-  return `Thank you. ${brand} has confirmed your service charge payment and a receipt is on its way to your inbox.`;
+  return `Thank you. ${brand} has confirmed your ${chargeName} payment and a receipt is on its way to your inbox.`;
 }
 
 /**
@@ -714,6 +754,32 @@ function ServiceDetailRows({ order }: { order: OrderDTO }) {
         <DetailRow key={row.label} label={row.label} value={row.value} />
       ))}
     </>
+  );
+}
+
+/**
+ * The booking's ONE supplier reference (`bookingReference`), once, under
+ * the service's own name for it (`bookingReferenceCopy`): "Confirmation #"
+ * on a rental — the row this receipt has always had — and "Hotel
+ * confirmation #" on a hotel. A flight's is not repeated here: its "PNR"
+ * row is already one of the shared service rows above, and a second row
+ * would print the same reference twice (or, on an older flight, two
+ * different ones).
+ */
+function BookingReferenceRow({ order }: { order: OrderDTO }) {
+  const serviceType = serviceTypeOf(order);
+  const reference = bookingReference(order);
+  if (!reference) return null;
+  // An older flight that keeps its airline PNR apart from a pasted
+  // supplier number shows that number here, as it always did.
+  if (serviceType === ServiceType.FLIGHT && !hasSeparateLegacyPnr(order)) {
+    return null;
+  }
+  return (
+    <DetailRow
+      label={bookingReferenceWording(order).receiptLabel}
+      value={reference}
+    />
   );
 }
 

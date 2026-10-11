@@ -187,6 +187,10 @@ export interface OrganizationDoc {
    * Which service types this organization may create orders for. Defaults
    * to `[CAR_RENTAL]`, which is what both incumbent brands sell — so their
    * create-order page renders exactly as it does today, with no tab strip.
+   *
+   * The ORDER is meaningful: it is the create page's tab order, and the
+   * first entry is the tab that opens (`ServiceTabs`). A brand that sells
+   * mostly car rental lists it first.
    */
   serviceTypes: ServiceType[];
   legal: OrganizationLegal;

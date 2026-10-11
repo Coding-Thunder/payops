@@ -603,6 +603,7 @@ function PaymentSummaryCard({
   const { labels: flightLabels } = flightMoneyWording(
     order.flight,
     order.bookingType,
+    order.charges,
   );
   return (
     <Card>

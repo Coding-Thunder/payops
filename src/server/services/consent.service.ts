@@ -54,6 +54,7 @@ import type {
   OrderFlightJourney,
   PaymentConsentDTO,
   PaymentConsentFlightSnapshot,
+  PaymentConsentHotelSnapshot,
   PaymentConsentSnapshot,
   PublicConsentView,
 } from "@/types";
@@ -78,8 +79,9 @@ interface ConsentActor {
   role: UserRole;
 }
 
-/** Schema limits of the rental-shaped slots a flight folds its route into
- *  (`vehicle`, `pickupLocation`, `dropoffLocation` in payment-consent.model.ts). */
+/** Schema limits of the rental-shaped slots a flight folds its route into,
+ *  and a hotel its property and destination (`vehicle`, `pickupLocation`,
+ *  `dropoffLocation` in payment-consent.model.ts). */
 const SNAPSHOT_VEHICLE_MAX_LENGTH = 160;
 const SNAPSHOT_LOCATION_MAX_LENGTH = 200;
 
@@ -176,26 +178,83 @@ function flightSnapshotFields(
   };
 }
 
+/** What a hotel snapshot is read from: the one the email service built, or
+ *  a stored record (Mongoose subdocuments included). */
+type HotelSnapshotSource = {
+  destination?: string | null;
+  propertyName?: string | null;
+  checkInDate?: Date | string | null;
+  checkOutDate?: Date | string | null;
+  rooms?: number | null;
+  guests?: { adults?: number | null; children?: number | null } | null;
+  roomPreference?: string | null;
+};
+
 /**
- * The snapshot as it is stored. Identity for every service type but FLIGHT,
- * so a rental is persisted exactly as the email service built it.
+ * A hotel snapshot as plain data, in exactly the `PaymentConsentHotelSnapshot`
+ * shape — the one mapper both ways, like `toFlightSnapshot`.
+ */
+function toHotelSnapshot(h: HotelSnapshotSource): PaymentConsentHotelSnapshot {
+  const checkInDate = isoOrNull(h.checkInDate) ?? "";
+  return {
+    destination: h.destination ?? "",
+    propertyName: h.propertyName ?? null,
+    checkInDate,
+    checkOutDate: isoOrNull(h.checkOutDate) ?? checkInDate,
+    rooms: finiteOrNull(h.rooms),
+    guests: h.guests
+      ? {
+          adults: finiteOrNull(h.guests.adults) ?? 1,
+          children: finiteOrNull(h.guests.children) ?? 0,
+        }
+      : null,
+    roomPreference: h.roomPreference ?? null,
+  };
+}
+
+/**
+ * The HOTEL-only key of a snapshot, present only when a stay was frozen —
+ * so every other record, and a hotel record written before it existed,
+ * keeps its exact historic shape (and renders from the folded slots).
+ */
+function hotelSnapshotFields(s: {
+  serviceType?: ServiceType | null;
+  hotel?: HotelSnapshotSource | null;
+}): Pick<PaymentConsentSnapshot, "hotel"> {
+  if (s.serviceType !== ServiceType.HOTEL || !s.hotel) return {};
+  return { hotel: toHotelSnapshot(s.hotel) };
+}
+
+/**
+ * The snapshot as it is stored.
  *
- * A flight folds its route into the rental-shaped `vehicle` and location
- * slots, and a long multi-city route can overrun their schema limits. A
- * rejected record is swallowed by the payment-request email, so the customer
- * would silently get no hosted consent link — the slots are clamped instead,
- * and the itinerary itself is plain data the schema cannot reject.
+ * Every service folds its "what" into the rental-shaped `vehicle` and
+ * location slots — a flight its route, a hotel its property and destination
+ * — and either can overrun the slots' schema limits: a long multi-city
+ * route, or a 160-character property name beside its destination. A
+ * rejected record is swallowed by the payment-request email, so the
+ * customer would silently get no hosted consent link — the slots are
+ * clamped instead, for every service. Clamping is a no-op on a value that
+ * fits, so every record that persisted before is stored exactly as the
+ * email service built it — every car rental's included.
+ *
+ * A flight's dates are also normalised: they come from wall-clock times
+ * that can be missing on an itinerary. The itinerary and the stay
+ * themselves are plain data the schema cannot reject.
  */
 function storableSnapshot(s: PaymentConsentSnapshot): PaymentConsentSnapshot {
-  if (s.serviceType !== ServiceType.FLIGHT) return s;
-  const pickupDate = isoOrNull(s.pickupDate) ?? new Date().toISOString();
-  return {
+  const clamped: PaymentConsentSnapshot = {
     ...s,
     vehicle: truncateText(s.vehicle, SNAPSHOT_VEHICLE_MAX_LENGTH),
-    pickupDate,
-    dropoffDate: isoOrNull(s.dropoffDate) ?? pickupDate,
     pickupLocation: clampText(s.pickupLocation, SNAPSHOT_LOCATION_MAX_LENGTH),
     dropoffLocation: clampText(s.dropoffLocation, SNAPSHOT_LOCATION_MAX_LENGTH),
+  };
+  if (s.serviceType !== ServiceType.FLIGHT) return clamped;
+  const pickupDate = isoOrNull(s.pickupDate) ?? new Date().toISOString();
+  return {
+    ...clamped,
+    pickupDate,
+    dropoffDate: isoOrNull(s.dropoffDate) ?? pickupDate,
   };
 }
 
@@ -223,8 +282,24 @@ function snapshotToDTO(s: PaymentConsentDoc["snapshot"]): PaymentConsentSnapshot
     dueAtCounter: s.dueAtCounter ?? 0,
     total: s.total ?? s.amount,
     ...flightSnapshotFields(s),
+    ...hotelSnapshotFields(s),
     paymentLinkRef: s.paymentLinkRef ?? null,
   };
+}
+
+/**
+ * The HOTEL-only part of a consent evidence row: the stay exactly as the
+ * hosted page showed it — rooms, guests and room preference included —
+ * beside the folded item and dates every row carries. Empty for every other
+ * service type, and for a hotel record frozen before stays were, so those
+ * evidence rows keep their exact historic shape.
+ */
+function hotelEvidence(s: {
+  serviceType?: ServiceType | null;
+  hotel?: HotelSnapshotSource | null;
+}): Record<string, unknown> {
+  const { hotel } = hotelSnapshotFields(s);
+  return hotel ? { stay: hotel } : {};
 }
 
 /** "1. Delhi → Varanasi · Air India • AI123 · departs 2026-10-10 10:30 · arrives 2026-10-10 12:00" */
@@ -294,14 +369,17 @@ function flightEvidence(s: FlightFieldsSource): Record<string, unknown> {
 
 /**
  * The gateway an organization's next payment link would open — its
- * configured default. Only consulted for an order not yet pinned to a
- * gateway, which an order with a consent request (always sent alongside a
- * live link) practically never is.
+ * configured default. Consulted for an order not yet pinned to a gateway,
+ * which an order with a consent request (always sent alongside a live link)
+ * practically never is, and by the email previews, which have no order at
+ * all and must name the processor the brand's real emails name. Null with
+ * no organization, or none configured.
  */
-async function organizationDefaultGateway(
+export async function organizationDefaultGateway(
   organizationId: string | null,
 ): Promise<PaymentGatewayKey | null> {
-  if (!organizationId) return null;
+  if (!organizationId || !Types.ObjectId.isValid(organizationId)) return null;
+  await connectMongo();
   const org = await Organization.findById(organizationId)
     .select("payments.provider")
     .lean<{ payments?: { provider?: PaymentGatewayKey | null } | null } | null>();
@@ -408,6 +486,7 @@ export async function requestConsent(
     dueAtCounter: snapshot.dueAtCounter ?? 0,
     total: snapshot.total ?? snapshot.amount,
     ...flightSnapshotFields(snapshot),
+    ...hotelSnapshotFields(snapshot),
     paymentLinkRef: snapshot.paymentLinkRef ?? null,
   };
 
@@ -514,6 +593,7 @@ export async function requestConsent(
         amount: snapshot.amount,
         currency: snapshot.currency,
         ...flightEvidence(snapshot),
+        ...hotelEvidence(snapshot),
         paymentLinkRef: snapshot.paymentLinkRef ?? null,
       },
     },
@@ -705,6 +785,7 @@ export async function recordConsentFromToken(
         amount: doc.snapshot.amount,
         currency: doc.snapshot.currency,
         ...flightEvidence(doc.snapshot),
+        ...hotelEvidence(doc.snapshot),
         paymentLinkRef: doc.snapshot.paymentLinkRef ?? null,
       },
       receivedAt: (doc.receivedAt ?? now).toISOString(),

@@ -1,6 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { AuditAction, AuditEntity, RecordState } from "@/lib/constants/enums";
+import {
+  AuditAction,
+  AuditEntity,
+  PaymentGatewayKey,
+  RecordState,
+} from "@/lib/constants/enums";
 import { logger } from "@/lib/logger";
 import { Organization } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
@@ -71,7 +76,16 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   let gateway;
   try {
-    gateway = await getGatewayForOrganization(String(org._id));
+    // This endpoint serves PayPal and nothing else, so it asks for the
+    // organization's PAYPAL gateway — not its default. A brand that takes
+    // Stripe by default and PayPal as a second enabled provider has PayPal
+    // deliveries too, and resolving its default here turned every one of
+    // them away. The override is honoured only for an ENABLED provider, so a
+    // single-provider brand resolves exactly what it always did.
+    gateway = await getGatewayForOrganization(
+      String(org._id),
+      PaymentGatewayKey.PAYPAL,
+    );
   } catch (err) {
     logger.error("paypal.webhook.gateway_unavailable", {
       orgSlug,
@@ -80,9 +94,9 @@ export async function POST(req: NextRequest, { params }: Params) {
     return bad(404, "NOT_FOUND", "Unknown endpoint");
   }
 
-  if (gateway.key !== "PAYPAL") {
-    // The organization is configured for a different provider; a PayPal
-    // delivery here is a misconfiguration, not a valid event.
+  if (gateway.key !== PaymentGatewayKey.PAYPAL) {
+    // The organization has no PayPal enabled; a PayPal delivery here is a
+    // misconfiguration, not a valid event.
     logger.warn("paypal.webhook.provider_mismatch", {
       orgSlug,
       configured: gateway.key,

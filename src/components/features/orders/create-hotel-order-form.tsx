@@ -15,7 +15,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { DateTimePicker } from "@/components/common/date-time-picker";
 import {
   Form,
   FormControl,
@@ -37,13 +36,19 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
 import { api, ApiClientError } from "@/lib/api-client";
-import { BookingTypeLabel } from "@/lib/constants/labels";
+import { HOTEL_CHARGE_WORDING } from "@/lib/charges";
+import {
+  BookingTypeLabel,
+  HOTEL_PROVIDER_LABEL,
+  HotelPaymentTimingLabel,
+} from "@/lib/constants/labels";
 import {
   BookingType,
   type BookingType as BookingTypeT,
   type Currency,
   PaymentTiming,
 } from "@/lib/constants/enums";
+import { isLocalDate } from "@/lib/flight-itinerary";
 import { hotelOrderSchema, type HotelOrderInput } from "@/lib/validation";
 import type { OrderDTO, ProviderDTO } from "@/types";
 import { ProviderSelector } from "@/components/features/providers";
@@ -62,6 +67,14 @@ import {
  * Bound to `hotelOrderSchema` alone — see the note in the flight form for
  * why the three service tabs never share one union-typed `useForm`.
  *
+ * Check-in and check-out are CALENDAR DAYS: date-only inputs, posted as
+ * "YYYY-MM-DD" (the flight form's dates work the same way). A date-and-time
+ * picker posted an instant in the agent's time zone, which other readers —
+ * the customer, the server — could see as another day.
+ *
+ * Its money is worded for a hotel: what is not paid online is due at the
+ * property, never "at counter".
+ *
  * Nothing here touches the car-rental path.
  */
 
@@ -71,6 +84,15 @@ type HotelOrderFormValues = z.input<typeof hotelOrderSchema>;
  *  guest counters need a narrowing on the way into a controlled input. */
 function numberFieldValue(value: unknown): string | number {
   return typeof value === "number" || typeof value === "string" ? value : "";
+}
+
+/** The calendar day after `day` ("2026-10-31" → "2026-11-01") — the
+ *  earliest check-out, a stay being at least one night. Empty until a
+ *  check-in day is picked. */
+function dayAfter(day: unknown): string {
+  if (!isLocalDate(day)) return "";
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
 }
 
 interface CreateHotelOrderFormProps {
@@ -142,6 +164,10 @@ export function CreateHotelOrderForm({
   const watchedDestination = useWatch({
     control: form.control,
     name: "hotel.destination",
+  });
+  const watchedCheckIn = useWatch({
+    control: form.control,
+    name: "hotel.checkInDate",
   });
 
   async function onSubmit(values: HotelOrderInput) {
@@ -315,18 +341,15 @@ export function CreateHotelOrderForm({
             <FormField
               control={form.control}
               name="hotel.checkInDate"
-              render={({ field, fieldState }) => (
+              render={({ field }) => (
                 <FormItem>
                   <FormLabel>Check-in</FormLabel>
                   <FormControl>
-                    <DateTimePicker
-                      id="hotel-check-in"
-                      value={field.value ?? ""}
-                      onChange={field.onChange}
+                    <Input
+                      type="date"
                       disabled={isSubmitting}
-                      placeholder="Select check-in"
-                      ariaInvalid={!!fieldState.error}
-                      minDate={new Date(new Date().setHours(0, 0, 0, 0))}
+                      {...field}
+                      value={field.value ?? ""}
                     />
                   </FormControl>
                   <FormMessage />
@@ -337,27 +360,21 @@ export function CreateHotelOrderForm({
             <FormField
               control={form.control}
               name="hotel.checkOutDate"
-              render={({ field, fieldState }) => {
-                const checkIn = form.watch("hotel.checkInDate");
-                const min = checkIn ? new Date(checkIn) : new Date();
-                return (
-                  <FormItem>
-                    <FormLabel>Check-out</FormLabel>
-                    <FormControl>
-                      <DateTimePicker
-                        id="hotel-check-out"
-                        value={field.value ?? ""}
-                        onChange={field.onChange}
-                        disabled={isSubmitting}
-                        placeholder="Select check-out"
-                        ariaInvalid={!!fieldState.error}
-                        minDate={min}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                );
-              }}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Check-out</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="date"
+                      min={dayAfter(watchedCheckIn) || undefined}
+                      disabled={isSubmitting}
+                      {...field}
+                      value={field.value ?? ""}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
           </CardContent>
         </Card>
@@ -563,7 +580,7 @@ export function CreateHotelOrderForm({
 
         <Card>
           <CardHeader>
-            <CardTitle>Hotel supplier</CardTitle>
+            <CardTitle>{HOTEL_PROVIDER_LABEL}</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
             <FormField
@@ -571,7 +588,7 @@ export function CreateHotelOrderForm({
               name="provider"
               render={({ field, fieldState }) => (
                 <FormItem className="sm:col-span-2">
-                  <FormLabel>Supplier</FormLabel>
+                  <FormLabel>{HOTEL_PROVIDER_LABEL}</FormLabel>
                   <FormControl>
                     <ProviderSelector
                       id="hotel-order-provider"
@@ -580,6 +597,7 @@ export function CreateHotelOrderForm({
                       onChange={field.onChange}
                       disabled={isSubmitting || providers.length === 0}
                       invalid={!!fieldState.error}
+                      heading="Hotels & suppliers"
                       placeholder={
                         providers.length === 0
                           ? "Configure a provider in Admin → Providers"
@@ -602,9 +620,9 @@ export function CreateHotelOrderForm({
           <CardHeader>
             <CardTitle>Charge details</CardTitle>
             <CardDescription>
-              Prepaid charges are collected online via the payment link.
-              Anything marked due later is shown to the customer for
-              transparency but is collected at the property.
+              Charges paid online now are collected via the payment link.
+              Anything due at the property is shown to the customer for
+              transparency but is collected by the hotel.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -613,8 +631,10 @@ export function CreateHotelOrderForm({
               allowedCurrencies={allowedCurrencies}
               defaultCurrency={defaultCurrency}
               disabled={isSubmitting}
-              dueLaterLabel="Amount due at the property"
-              totalLabel="Total stay cost"
+              timingLabels={HotelPaymentTimingLabel}
+              namePlaceholder="e.g. Room charge"
+              dueLaterLabel={HOTEL_CHARGE_WORDING.dueLabel}
+              totalLabel={HOTEL_CHARGE_WORDING.totalLabel}
             />
 
             <FormField

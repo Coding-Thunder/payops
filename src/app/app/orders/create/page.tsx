@@ -1,12 +1,18 @@
 import { CreateOrderForm } from "@/components/features/orders/create-order-form";
 import { CreateFlightOrderForm } from "@/components/features/orders/create-flight-order-form";
 import { CreateHotelOrderForm } from "@/components/features/orders/create-hotel-order-form";
-import { ServiceTabs } from "@/components/features/orders/service-tabs";
+import {
+  BuiltInTermsNotice,
+  ServiceTabs,
+  type ServiceLegalStatusMap,
+} from "@/components/features/orders/service-tabs";
 import { PageHeader } from "@/components/common/page-header";
 import { CURRENCIES, ServiceType } from "@/lib/constants/enums";
-import { Permission } from "@/lib/constants/permissions";
+import { Permission, roleHasPermission } from "@/lib/constants/permissions";
+import { SERVICE_LEGAL_TYPES } from "@/lib/validation";
 import { requirePermission } from "@/server/auth/session";
 import { getSelectedOrganization } from "@/server/auth/organization";
+import { resolveServiceTerms } from "@/server/services/organization-legal.service";
 import { resolveOrganizationServiceTypes } from "@/server/services/organization-service-types";
 import { listActiveProviders } from "@/server/services/provider.service";
 import { getSettings } from "@/server/services/settings.service";
@@ -29,9 +35,14 @@ export const dynamic = "force-dynamic";
  * falls through to `<CreateOrderForm>` at the same position in the same
  * tree, with no wrapper and no `serviceType`-derived filtering applied to
  * its provider list.
+ *
+ * A flight or hotel form says when its order would freeze BUILT-IN terms —
+ * the brand has written none of its own for that service — so nobody
+ * finds out from a customer's receipt. Non-blocking, and never for car
+ * rental, whose inheriting the deployment text is the established design.
  */
 export default async function CreateOrderPage() {
-  await requirePermission(Permission.ORDER_CREATE);
+  const actor = await requirePermission(Permission.ORDER_CREATE);
   const selected = await getSelectedOrganization();
   const organizationId = selected?.id ?? null;
   // Which service types this organization may sell — the same rule as
@@ -41,7 +52,7 @@ export default async function CreateOrderPage() {
   const serviceTypes = await resolveOrganizationServiceTypes(organizationId);
   const single = serviceTypes.length === 1 ? serviceTypes[0] : null;
 
-  const [settings, providers] = await Promise.all([
+  const [settings, providers, legalStatus] = await Promise.all([
     getSettings(),
     listActiveProviders({
       // Org scoping is backward-compatible: a provider row with an empty
@@ -63,7 +74,25 @@ export default async function CreateOrderPage() {
       // — i.e. their entire catalog — still matches.
       serviceType: single ?? undefined,
     }),
+    // Per sold flight / hotel service: would its next order freeze the
+    // built-in terms or policy? The same rule as `GET
+    // /api/orders/create-config`, read through `resolveServiceTerms` — the
+    // resolver order creation freezes with — so the warning can never
+    // disagree with what the order gets. One read per such service (two at
+    // most), whatever else the page shows.
+    Promise.all(
+      SERVICE_LEGAL_TYPES.filter((t) => serviceTypes.includes(t)).map(
+        async (serviceType) => {
+          const { termsIsDefault, policyIsDefault } = await resolveServiceTerms({
+            organizationId,
+            serviceType,
+          });
+          return [serviceType, { termsIsDefault, policyIsDefault }] as const;
+        },
+      ),
+    ).then((entries): ServiceLegalStatusMap => Object.fromEntries(entries)),
   ]);
+  const canEditTerms = roleHasPermission(actor.role, Permission.SETTINGS_UPDATE);
 
   const shared = {
     allowedBookingTypes: settings.allowedBookingTypes,
@@ -82,9 +111,23 @@ export default async function CreateOrderPage() {
         }
       />
       {single === ServiceType.FLIGHT ? (
-        <CreateFlightOrderForm {...shared} providers={providers} />
+        <>
+          <BuiltInTermsNotice
+            serviceType={ServiceType.FLIGHT}
+            status={legalStatus.FLIGHT}
+            canEditTerms={canEditTerms}
+          />
+          <CreateFlightOrderForm {...shared} providers={providers} />
+        </>
       ) : single === ServiceType.HOTEL ? (
-        <CreateHotelOrderForm {...shared} providers={providers} />
+        <>
+          <BuiltInTermsNotice
+            serviceType={ServiceType.HOTEL}
+            status={legalStatus.HOTEL}
+            canEditTerms={canEditTerms}
+          />
+          <CreateHotelOrderForm {...shared} providers={providers} />
+        </>
       ) : single ? (
         <CreateOrderForm {...shared} providers={providers} />
       ) : (
@@ -92,6 +135,8 @@ export default async function CreateOrderPage() {
           {...shared}
           serviceTypes={serviceTypes}
           providers={providers}
+          legalStatus={legalStatus}
+          canEditTerms={canEditTerms}
         />
       )}
     </div>

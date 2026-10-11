@@ -10,7 +10,11 @@ import {
 import * as React from "react";
 
 import { flightAmountLabels } from "@/lib/charges";
-import { BookingTypeLabel, providerLabelFor } from "@/lib/constants/labels";
+import {
+  BookingTypeLabel,
+  bookingReferenceCopy,
+  providerLabelFor,
+} from "@/lib/constants/labels";
 import { ServiceType, type BookingType } from "@/lib/constants/enums";
 import type { ProviderSnapshot } from "@/lib/constants/providers";
 import type { FlightItineraryView } from "@/lib/flight-itinerary";
@@ -97,8 +101,17 @@ export interface PaymentConfirmationEmailProps {
    * itineraries (false) gets the generic sentences.
    */
   flightAmounts?: EmailFlightAmounts | null;
-  /** Supplier confirmation number — surfaces prominently at the top. */
+  /**
+   * The booking's ONE supplier reference (`bookingReference`) — surfaces
+   * prominently at the top, under the service's own name for it: "PNR" on
+   * a flight, "Hotel confirmation number" on a hotel, "Confirmation number"
+   * on a rental (`bookingReferenceCopy`). The caller leaves a flight's PNR
+   * row out of `serviceRows` when it is set, so it is never shown twice.
+   */
   confirmationNumber?: string | null;
+  /** The top block's label — `bookingReferenceWording(order).label`.
+   *  Defaults to the service's own (`bookingReferenceCopy`). */
+  confirmationLabel?: string | null;
   /** Pre-formatted charge breakdown (prepaid / due-at-counter / total). */
   chargeBreakdown?: EmailChargeBreakdown;
   /** Terms & Conditions text + version + the signed "I Agree" link. */
@@ -142,6 +155,7 @@ export function PaymentConfirmationEmail({
   flightItinerary,
   flightAmounts,
   confirmationNumber,
+  confirmationLabel,
   chargeBreakdown,
   termsText,
   termsVersion,
@@ -159,9 +173,10 @@ export function PaymentConfirmationEmail({
   const isFlight = serviceType === ServiceType.FLIGHT;
   const serviceChargeModel =
     isFlight && flightAmounts?.serviceChargeModel === true;
-  const flightLabels = flightAmountLabels(serviceChargeModel);
+  const chargeName = flightAmounts?.chargeName ?? "";
+  const flightLabels = flightAmountLabels(isFlight ? chargeName : null);
   const preview = serviceChargeModel
-    ? `${brandName} — payment confirmed for ${orderNumber} (${amount} service charge)`
+    ? `${brandName} — payment confirmed for ${orderNumber} (${amount} ${chargeName})`
     : `${brandName} — payment confirmed for ${orderNumber} (${amount})`;
   const policyParagraphs = cancellationPolicy
     ? cancellationPolicy.split(/\n+/).filter((p) => p.trim().length > 0)
@@ -170,6 +185,9 @@ export function PaymentConfirmationEmail({
     ? serviceRows
     : rentalBookingRows(vehicle, trip);
   const wording = chargeWordingFor(serviceType);
+  // A rental's top block keeps its "Confirmation number" label.
+  const referenceLabel =
+    confirmationLabel || bookingReferenceCopy(serviceType).label;
 
   return (
     <EmailLayout preview={preview}>
@@ -181,7 +199,7 @@ export function PaymentConfirmationEmail({
         description={
           serviceChargeModel ? (
             <>
-              We&apos;ve received your service charge payment for{" "}
+              {`We've received your ${chargeName} payment for `}
               <strong style={{ color: COLOR.textPrimary }}>
                 {BookingTypeLabel[bookingType].toLowerCase()}
               </strong>
@@ -222,7 +240,7 @@ export function PaymentConfirmationEmail({
                 textTransform: "uppercase",
               }}
             >
-              Confirmation number
+              {referenceLabel}
             </Text>
             <Text
               style={{

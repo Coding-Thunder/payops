@@ -345,6 +345,9 @@ export interface EvidenceFlightDTO {
    * fare — the page and the PDF then label the money neutrally.
    */
   serviceChargeModel: boolean;
+  /** What the collected charge is called — the operator's name for it, or
+   *  empty when the money is worded neutrally (`flightMoneyWording`). */
+  chargeName: string;
   /** What the payment link has actually collected — set only once the order
    *  is paid (`flightCollection`). */
   collection: FlightCollection;
@@ -466,6 +469,7 @@ export async function getEvidenceChain(
 function flightEvidence(order: OrderDoc): EvidenceFlightDTO | null {
   const f = order.flight;
   if (serviceTypeOf(order) !== ServiceType.FLIGHT || !f) return null;
+  const wording = flightMoneyWording(f, order.bookingType, order.charges);
   return {
     itinerary: buildFlightItinerary(f),
     details: serviceDetailRows(order),
@@ -475,7 +479,8 @@ function flightEvidence(order: OrderDoc): EvidenceFlightDTO | null {
       f.airlineFare,
       order.pricing.amount,
     ),
-    serviceChargeModel: flightMoneyWording(f, order.bookingType).serviceChargeModel,
+    serviceChargeModel: wording.serviceChargeModel,
+    chargeName: wording.chargeName,
     collection: flightCollection(order),
   };
 }

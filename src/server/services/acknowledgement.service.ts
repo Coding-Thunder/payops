@@ -10,6 +10,7 @@ import {
 } from "@/lib/constants/enums";
 import { BadRequestError, NotFoundError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
+import { bookingReference } from "@/lib/service-summary";
 import { Order } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 import {
@@ -107,6 +108,10 @@ export async function recordTermsAcknowledgement(
       role: null,
     },
     request: ctx.request ?? null,
+    // The ORDER's tenant. This public page carries no organization, so the
+    // ambient scope would leave the row unattributed — visible only to the
+    // default organization, never to the brand whose customer accepted.
+    organizationId: doc.organizationId ?? null,
     metadata: {
       action: "terms_acknowledged",
       orderNumber: doc.orderNumber,
@@ -142,7 +147,8 @@ export async function recordTermsAcknowledgement(
     orderNumber: doc.orderNumber,
     customerName: doc.customer.name,
     customerEmail: doc.customer.email,
-    confirmationNumber: doc.confirmationNumber ?? null,
+    // The order's one booking reference — a legacy flight's PNR included.
+    confirmationNumber: bookingReference(doc),
     termsVersion: doc.terms?.version ?? "v1",
     acknowledgedAt: now,
     ip: ctx.request?.ip ?? null,
@@ -287,6 +293,8 @@ async function notifyOpsOfAcknowledgement(
       action: AuditAction.EMAIL_SENT,
       entityType: AuditEntity.ORDER,
       entityId: n.orderId,
+      // The order's tenant, for the same reason as the acknowledgement row.
+      organizationId: n.organizationId,
       metadata: {
         kind: "TERMS_ACKNOWLEDGED_OPS",
         to,
@@ -305,6 +313,7 @@ async function notifyOpsOfAcknowledgement(
       action: AuditAction.EMAIL_FAILED,
       entityType: AuditEntity.ORDER,
       entityId: n.orderId,
+      organizationId: n.organizationId,
       metadata: {
         kind: "TERMS_ACKNOWLEDGED_OPS",
         error: err instanceof Error ? err.message : String(err),

@@ -57,6 +57,10 @@ import type { OrderDTO } from "@/types";
  *
  * Car records keep their exact historic shape, and the page now names the
  * gateway the link really opens — PayPal included.
+ *
+ * The frozen `snapshot.flight.pnr` is the order's ONE booking reference
+ * (`bookingReference`): the pasted confirmation number, else a legacy
+ * flight's own PNR — the value every other surface shows.
  */
 
 const { sentMail } = vi.hoisted(() => ({
@@ -357,6 +361,68 @@ describe("a flight's payment request freezes its itinerary into the consent reco
       departureDate: "2026-11-01T09:15:00.000Z",
       returnDate: "2026-11-08T20:00:00.000Z",
     });
+  });
+});
+
+describe("a flight's consent record freezes the order's ONE booking reference as its PNR", () => {
+  /** Create and link a round trip, set its references straight in the
+   *  database, then send the payment request. */
+  async function consentWithReferences(refs: {
+    confirmationNumber: string | null;
+    pnr: string | null;
+  }) {
+    actingAs(skyways);
+    const { order } = await createOrder(roundTripFlightInput(), { actor });
+    await initiatePayment(order.id, { actor });
+    await Order.collection.updateOne(
+      { _id: new Types.ObjectId(order.id) },
+      { $set: { confirmationNumber: refs.confirmationNumber, "flight.pnr": refs.pnr } },
+    );
+    const dto = await getOrderById(order.id, { actor });
+    const { consentToken } = await sendPaymentRequestEmail(dto, {}, { actor });
+    expect(consentToken, "consent creation failed during the send").toBeTruthy();
+    const record = await PaymentConsent.findOne({
+      orderId: new Types.ObjectId(order.id),
+    }).lean<{ snapshot: { flight: { pnr: string | null } } } | null>();
+    return { order: dto, token: consentToken!, record: record! };
+  }
+
+  it("freezes the order's one reference as its PNR", async () => {
+    const { order, token, record } = await consentWithReferences({
+      confirmationNumber: "AXXXYY",
+      pnr: null,
+    });
+    expect(record.snapshot.flight.pnr).toBe("AXXXYY");
+    expect((await getPublicConsentView(token, BRANDING)).snapshot.flight!.pnr).toBe("AXXXYY");
+    const requested = await OrderEvidence.findOne({
+      orderId: new Types.ObjectId(order.id),
+      eventType: OrderEvidenceEventType.CONSENT_REQUESTED,
+    }).lean<{ payload: { snapshot: { itinerary: { pnr: string | null } } } } | null>();
+    expect(requested!.payload.snapshot.itinerary.pnr).toBe("AXXXYY");
+  });
+
+  it("an OLDER flight holding two different references freezes its airline PNR — never the pasted supplier number", async () => {
+    const { order, token, record } = await consentWithReferences({
+      confirmationNumber: "AXXXYY",
+      pnr: "OLDPNR1",
+    });
+    expect(record.snapshot.flight.pnr).toBe("OLDPNR1");
+    expect((await getPublicConsentView(token, BRANDING)).snapshot.flight!.pnr).toBe("OLDPNR1");
+    const requested = await OrderEvidence.findOne({
+      orderId: new Types.ObjectId(order.id),
+      eventType: OrderEvidenceEventType.CONSENT_REQUESTED,
+    }).lean<{ payload: { snapshot: { itinerary: { pnr: string | null } } } } | null>();
+    expect(requested!.payload.snapshot.itinerary.pnr).toBe("OLDPNR1");
+  });
+
+  it("freezes a legacy flight's own PNR when no reference was pasted", async () => {
+    const { record } = await consentWithReferences({ confirmationNumber: null, pnr: "LEGACY7" });
+    expect(record.snapshot.flight.pnr).toBe("LEGACY7");
+  });
+
+  it("freezes no PNR before there is one", async () => {
+    const { record } = await consentWithReferences({ confirmationNumber: null, pnr: null });
+    expect(record.snapshot.flight.pnr).toBeNull();
   });
 });
 

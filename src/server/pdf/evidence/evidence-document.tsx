@@ -620,7 +620,7 @@ function FlightAmountRows({
   currency: string;
 }) {
   const { amounts, collection } = flight;
-  const labels = flightAmountLabels(flight.serviceChargeModel);
+  const labels = flightAmountLabels(flight.chargeName);
   return (
     <View>
       {showsAirlineCharge(amounts) ? (

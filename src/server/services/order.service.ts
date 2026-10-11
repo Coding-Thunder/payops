@@ -34,7 +34,11 @@ import {
 import { roleHasPermission, Permission } from "@/lib/constants/permissions";
 import { DomainEventType } from "@/lib/constants/events";
 import { resolveProvider } from "@/lib/constants/providers";
-import { summarizeCharges, summarizeFlightAmounts } from "@/lib/charges";
+import {
+  namedFlightCharge,
+  summarizeCharges,
+  summarizeFlightAmounts,
+} from "@/lib/charges";
 import {
   hasFlightItinerary,
   normalizeTripType,
@@ -42,6 +46,8 @@ import {
   truncateText,
 } from "@/lib/flight-itinerary";
 import {
+  bookingReference,
+  hasSeparateLegacyPnr,
   describeServiceDates,
   describeServiceItem,
   serviceTypeOf,
@@ -532,7 +538,9 @@ function toJourneyDoc(journey: FlightJourneyInput): FlightJourneyDoc {
   };
 }
 
-/** The stored shape of a new flight. The legacy flat fields stay unset. */
+/** The stored shape of a new flight. The legacy flat fields stay unset, and
+ *  so does the legacy `pnr`: a new flight's PNR is the order's one booking
+ *  reference, `confirmationNumber` (see `createOrder`). */
 function toFlightDoc(flight: FlightInput): StoredFlight {
   return {
     tripType: flight.tripType,
@@ -548,7 +556,6 @@ function toFlightDoc(flight: FlightInput): StoredFlight {
     cabinClass: flight.cabinClass,
     passengers: flight.passengers,
     passengerNotes: textOrNull(flight.passengerNotes),
-    pnr: textOrNull(flight.pnr),
   };
 }
 
@@ -615,9 +622,19 @@ export async function createOrder(
   const currency = input.currency ?? settings.defaultCurrency;
   const orderId = new Types.ObjectId();
   const orderNumber = generateOrderNumber(settings.orderPrefix);
+
+  // Stamp the acting organization. Null on an unmigrated deployment, which
+  // is exactly what pre-migration rows carry, so reads and writes stay
+  // consistent in both worlds.
+  //
+  // Resolved BEFORE the supplier, because whether a supplier may be booked
+  // depends on whose order this is: one an admin confined to other
+  // organizations is refused (see `buildProviderSnapshotFromKey`).
+  const organizationId = organizationStamp(await getRequestOrganizationScope());
   const providerSnapshot = await buildProviderSnapshotFromKey(
     input.provider,
     serviceType,
+    organizationId,
   );
 
   // Charges are the source of truth. `pricing.amount` is the PREPAID total —
@@ -639,10 +656,6 @@ export async function createOrder(
   // Transactional: Order doc + audit row + genesis evidence row are
   // written together. A failure on evidence aborts the order create —
   // disputes never face a chain with a missing sequence 1.
-  // Stamp the acting organization. Null on an unmigrated deployment, which
-  // is exactly what pre-migration rows carry, so reads and writes stay
-  // consistent in both worlds.
-  const organizationId = organizationStamp(await getRequestOrganizationScope());
 
   // GUARD: a non-CAR_RENTAL order must be OWNED.
   //
@@ -670,6 +683,10 @@ export async function createOrder(
     serviceType === ServiceType.FLIGHT
       ? {
           flight: toFlightDoc((input as FlightOrderInput).flight),
+          // The PNR typed on the create form IS the booking reference — the
+          // one value the operator card, the receipt and the emails all read
+          // (`bookingReference`), never a second copy under `flight`.
+          confirmationNumber: textOrNull((input as FlightOrderInput).flight.pnr),
           vehicle: null,
           trip: null,
           hotel: null,
@@ -837,6 +854,12 @@ export async function createOrder(
                 orderDoc.toObject({ getters: false }).flight as StoredFlight,
               )
             : null,
+          // The booking reference entered at creation (a flight's PNR).
+          // Present only when one was, so a car or hotel row — which never
+          // has one at this point — keeps its exact historic shape.
+          ...(orderDoc.confirmationNumber
+            ? { confirmationNumber: orderDoc.confirmationNumber }
+            : {}),
           hotel: orderDoc.hotel
             ? {
                 destination: orderDoc.hotel.destination,
@@ -1282,18 +1305,23 @@ function describeProductName(order: OrderDoc): string {
     }
   }
 
-  // An itinerary flight's gateway collects the SERVICE CHARGE only — the
-  // airline fare is the airline's — so the line item says so. A customer
-  // must never read the service charge on the checkout page as the price of
-  // the ticket. A flight created before itineraries usually charged its
-  // whole fare, so a link regenerated for it keeps its historic name below.
+  // An itinerary flight's gateway collects its one charge only — the
+  // airline charge is the airline's — so the line item LEADS with that
+  // charge's name, as the operator named it ("Processing Fee • Air India •
+  // …"): a customer must never read it on the checkout page as the price of
+  // the ticket, and the gateway's length cut can never drop it. An order
+  // whose charge was never named (created before operators named it) keeps
+  // the name its link was first made with, as does a flight created before
+  // itineraries, which usually charged its whole fare (below).
   if (serviceType === ServiceType.FLIGHT && hasFlightItinerary(order.flight)) {
     // The snapshot NAME, not the registry lookup above: airlines are admin-
     // created providers, which `resolveProvider` only knows by their key
     // ("AIR_INDIA"). Car keeps the lookup so its line items are unchanged.
     const airline = order.provider?.name?.trim() || providerName;
-    const name =
-      order.bookingType === BookingType.MODIFICATION
+    const charge = namedFlightCharge(order.charges);
+    const name = charge
+      ? `${charge} • ${airline} • ${item}`
+      : order.bookingType === BookingType.MODIFICATION
         ? `${airline} booking modification • ${item}`
         : order.bookingType === BookingType.CANCELLATION_CHARGE
           ? `${airline} cancellation charge • ${item}`
@@ -1301,16 +1329,21 @@ function describeProductName(order: OrderDoc): string {
     return truncateText(name, FLIGHT_PRODUCT_NAME_MAX_LENGTH);
   }
 
+  // A hotel, and a flight created before itineraries. Named by the supplier's
+  // snapshot NAME for the same reason as an itinerary flight: hotel groups and
+  // airlines are admin-created providers, which the registry lookup only knows
+  // by their key — a Marriott booking must not read "MARRIOTT • …".
+  const supplier = order.provider?.name?.trim() || providerName;
   const noun = serviceType === ServiceType.FLIGHT ? "flight" : "hotel";
   switch (order.bookingType) {
     case BookingType.NEW_BOOKING:
-      return `${providerName} • ${item} ${noun}`;
+      return `${supplier} • ${item} ${noun}`;
     case BookingType.MODIFICATION:
-      return `${providerName} booking modification • ${item}`;
+      return `${supplier} booking modification • ${item}`;
     case BookingType.CANCELLATION_CHARGE:
-      return `${providerName} cancellation charge • ${item}`;
+      return `${supplier} cancellation charge • ${item}`;
     default:
-      return `${providerName} • ${item}`;
+      return `${supplier} • ${item}`;
   }
 }
 
@@ -1320,6 +1353,26 @@ function describeProductName(order: OrderDoc): string {
  * string byte-for-byte.
  */
 function describeProductDescription(order: OrderDoc): string {
+  if (serviceTypeOf(order) === ServiceType.HOTEL) {
+    // PayPal shows the description, not the line-item name, on its approval
+    // page — so a hotel's says WHERE the stay is, then when. A stay with a
+    // balance left to pay at the property LEADS with "Prepayment", so the
+    // gateway's 127-character cut can never drop it and the customer never
+    // reads the gateway amount as the cost of the whole stay (as a flight's
+    // leads with its charge's name).
+    const balanceDue =
+      summarizeCharges(order.charges, order.pricing.amount).dueAtCounter > 0;
+    return truncateText(
+      [
+        ...(balanceDue ? ["Prepayment"] : []),
+        describeServiceItem(order),
+        describeServiceDates(order),
+      ]
+        .filter(Boolean)
+        .join(" • "),
+      GATEWAY_DESCRIPTION_MAX_LENGTH,
+    );
+  }
   if (
     serviceTypeOf(order) === ServiceType.FLIGHT &&
     hasFlightItinerary(order.flight)
@@ -1327,13 +1380,14 @@ function describeProductDescription(order: OrderDoc): string {
     // PayPal shows the description, not the line-item name, on its approval
     // page — so an itinerary flight's description also says what the money
     // is, qualifier FIRST so the gateway's 127-character cut can never drop
-    // it. Car, hotel and legacy flights keep the plain dates line.
+    // it. Car and legacy flights keep the plain dates line.
     const qualifier =
-      order.bookingType === BookingType.MODIFICATION
+      namedFlightCharge(order.charges) ??
+      (order.bookingType === BookingType.MODIFICATION
         ? "Booking modification"
         : order.bookingType === BookingType.CANCELLATION_CHARGE
           ? "Cancellation charge"
-          : "Flight booking service charge";
+          : "Flight booking service charge");
     return truncateText(
       `${qualifier} • ${describeServiceDates(order)}`,
       GATEWAY_DESCRIPTION_MAX_LENGTH,
@@ -1386,6 +1440,11 @@ export async function listOrders(
       { "customer.phone": { $regex: escaped, $options: "i" } },
       { "vehicle.company": { $regex: escaped, $options: "i" } },
       { "vehicle.type": { $regex: escaped, $options: "i" } },
+      // The booking reference an operator is most often handed back by a
+      // customer or supplier: the confirmation number / PNR / hotel number
+      // (`confirmationNumber`), and a legacy flight's PNR (`flight.pnr`).
+      { confirmationNumber: { $regex: escaped, $options: "i" } },
+      { "flight.pnr": { $regex: escaped, $options: "i" } },
     ];
   }
   if (query.from || query.to) {
@@ -2141,11 +2200,26 @@ export async function updateOrderCustomer(
 }
 
 /**
- * Set / clear the supplier confirmation number on an order. Staff can edit
- * their own orders; admins can edit any (same ownership rule as the customer
- * patch). Pasting the supplier's confirmation number is the manual step
- * after the supplier confirms the booking — it surfaces at the top of the
- * confirmation email. Passing an empty string clears it.
+ * Set / clear the order's booking reference — the supplier's confirmation
+ * number, a flight's PNR, the hotel's confirmation number (one value per
+ * order: `bookingReference`). Staff can edit their own orders; admins can
+ * edit any (same ownership rule as the customer patch). Pasting it is the
+ * manual step after the supplier confirms the booking — it surfaces at the
+ * top of the confirmation email. Passing an empty string clears it. Saving
+ * never re-sends anything; the explicit resend does.
+ *
+ * Compared against the reference the order SHOWS, so re-saving a legacy
+ * flight's PNR (kept in `flight.pnr`) is the no-op it looks like. A change
+ * moves the reference into `confirmationNumber` and clears the legacy copy,
+ * so an order never carries two.
+ *
+ * Written with a targeted `updateOne`, not `doc.save()`: saving a document
+ * whose `flight` changed re-runs the itinerary rules (see the order model),
+ * which a flight placed before a rule was tightened may no longer meet — and
+ * a booking reference has nothing to do with its itinerary.
+ *
+ * Returns the order as `getOrderById` would — the operator card writes it
+ * straight into its cache.
  */
 export async function setConfirmationNumber(
   id: string,
@@ -2153,8 +2227,11 @@ export async function setConfirmationNumber(
   ctx: OrderContext,
 ): Promise<OrderDTO> {
   await connectMongo();
+  // Same logo warm-up as every DTO read: `orderToDTO` overlays the live
+  // provider logo synchronously.
+  await warmProviderLogoCache();
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
-  const doc = await Order.findById(id);
+  const doc = await Order.findById(id).lean<OrderDoc & { _id: Types.ObjectId }>();
   if (!doc) throw new NotFoundError("Order not found");
   await assertOrderInScope(doc);
 
@@ -2164,12 +2241,26 @@ export async function setConfirmationNumber(
   }
 
   const next = confirmationNumber.trim() || null;
-  const previous = doc.confirmationNumber ?? null;
-  if (next === previous) {
-    return orderToDTO(doc.toObject() as OrderDoc & { _id: Types.ObjectId });
-  }
-  doc.confirmationNumber = next;
-  await doc.save();
+  const previous = bookingReference(doc);
+  if (next === previous) return orderToDTO(doc);
+
+  // A legacy flight.pnr is the reference being replaced only when the
+  // order keeps no separate supplier number; an older flight that holds
+  // both keeps its airline PNR — it is shown, and kept, on its own.
+  const replacesLegacyPnr =
+    Boolean(doc.flight?.pnr) && !hasSeparateLegacyPnr(doc);
+  await Order.updateOne(
+    { _id: doc._id },
+    {
+      $set: {
+        confirmationNumber: next,
+        ...(replacesLegacyPnr ? { "flight.pnr": null } : {}),
+      },
+    },
+    // Field validators only (length, trim) — never the document-level
+    // itinerary rules, which an update does not run.
+    { runValidators: true },
+  );
 
   await recordAudit({
     action: AuditAction.ORDER_UPDATED,
@@ -2184,7 +2275,11 @@ export async function setConfirmationNumber(
     },
   });
 
-  return orderToDTO(doc.toObject() as OrderDoc & { _id: Types.ObjectId });
+  const refreshed = await Order.findById(doc._id).lean<
+    OrderDoc & { _id: Types.ObjectId }
+  >();
+  if (!refreshed) throw new NotFoundError("Order not found");
+  return orderToDTO(refreshed);
 }
 
 /**
@@ -2201,6 +2296,9 @@ export async function resendConfirmationEmail(
   ctx: OrderContext,
 ): Promise<{ order: OrderDTO; emailId: string | null }> {
   await connectMongo();
+  // Same logo warm-up as the automatic send (`getOrderForEmailJob`): the
+  // resent email must carry the logo the first one did, not a dead snapshot.
+  await warmProviderLogoCache();
   if (!Types.ObjectId.isValid(id)) throw new NotFoundError("Order not found");
   const doc = await Order.findById(id).lean<OrderDoc & { _id: Types.ObjectId }>();
   if (!doc) throw new NotFoundError("Order not found");
@@ -2220,9 +2318,20 @@ export async function resendConfirmationEmail(
 
   // Re-render from the current DTO so the latest confirmation number /
   // branding / customer email is reflected. This also appends a fresh
-  // CONFIRMATION_EMAIL_SENT evidence event for the audit trail.
+  // CONFIRMATION_EMAIL_SENT evidence event for the audit trail — attributed
+  // to the agent who asked for it and marked as a resend, so a dispute
+  // packet never reads a manual resend as the payment webhook's receipt.
   const dto = orderToDTO(doc);
-  const sent = await sendPaymentConfirmationEmail(dto);
+  const sent = await sendPaymentConfirmationEmail(dto, {
+    evidenceActor: {
+      type: OrderEvidenceActorType.AGENT,
+      userId: ctx.actor.id,
+      name: ctx.actor.name,
+      email: ctx.actor.email,
+      role: ctx.actor.role,
+    },
+    resend: true,
+  });
 
   await Order.updateOne(
     { _id: doc._id },
@@ -2238,7 +2347,8 @@ export async function resendConfirmationEmail(
     metadata: {
       action: "confirmation_email_resent",
       orderNumber: doc.orderNumber,
-      confirmationNumber: doc.confirmationNumber ?? null,
+      // The reference the resent email carried — a legacy flight's PNR too.
+      confirmationNumber: bookingReference(doc),
       messageId: sent.id,
     },
   });

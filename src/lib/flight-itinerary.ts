@@ -876,7 +876,13 @@ export function segmentCarrier(segment: {
   return [segment.airline, segment.flightNumber].filter(Boolean).join(" • ");
 }
 
-/** Cut a string to `max` characters with an ellipsis. */
+/** Cut a string to `max` characters with an ellipsis — never through the
+ *  middle of a surrogate pair (an emoji, say): half of one is not valid
+ *  text, which a gateway's encoder rejects and storage rewrites. */
 export function truncateText(value: string, max: number): string {
-  return value.length <= max ? value : `${value.slice(0, Math.max(0, max - 1))}…`;
+  if (value.length <= max) return value;
+  let end = Math.max(0, max - 1);
+  const last = value.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return `${value.slice(0, end)}…`;
 }

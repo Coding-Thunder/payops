@@ -13,8 +13,8 @@ import { renderWithUser, screen } from "@/tests/utils/render";
  * [CAR_RENTAL], and that must render EXACTLY the bar they had when the page
  * passed no service types at all — compared as static markup, not as "looks
  * similar". Only an organization with a genuine choice gets the service
- * filter, and an organization that sells flights alone must not be promised
- * a "vehicle" search.
+ * filter, and an organization that sells flights or hotel stays alone must
+ * not be promised a "vehicle" search.
  */
 
 vi.mock("next/navigation", () => ({
@@ -61,6 +61,14 @@ describe("OrderFilters", () => {
     expect(search).toHaveAttribute("placeholder", MULTI_SERVICE_PLACEHOLDER);
     expect(search.getAttribute("placeholder")!.toLowerCase()).not.toContain("vehicle");
     // One service only: nothing to choose between, so no service select.
+    expect(screen.getAllByRole("combobox")).toHaveLength(3);
+  });
+
+  it("never promises a 'vehicle' search to an organization that sells hotel stays alone", () => {
+    renderWithUser(<OrderFilters canSeeAll serviceTypes={[ServiceType.HOTEL]} />);
+    const search = screen.getByRole("textbox");
+    expect(search).toHaveAttribute("placeholder", MULTI_SERVICE_PLACEHOLDER);
+    expect(search.getAttribute("placeholder")!.toLowerCase()).not.toContain("vehicle");
     expect(screen.getAllByRole("combobox")).toHaveLength(3);
   });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { render } from "@testing-library/react";
+import { render, within } from "@testing-library/react";
 
 import { ConsentForm } from "@/app/consent/[token]/consent-form";
 import { FLIGHT_AMOUNT_LABELS, LEGACY_FLIGHT_AMOUNT_LABELS } from "@/lib/charges";
@@ -12,9 +12,12 @@ import {
   ServiceType,
 } from "@/lib/constants/enums";
 import { FLIGHT_PROVIDER_LABEL } from "@/lib/constants/labels";
+import { formatDateTime } from "@/lib/format";
+import { serviceDetailRows } from "@/lib/service-summary";
 import type {
   BrandingDTO,
   PaymentConsentFlightSnapshot,
+  PaymentConsentHotelSnapshot,
   PaymentConsentSnapshot,
   PublicConsentView,
 } from "@/types";
@@ -24,17 +27,31 @@ import { roundTripFlightInput } from "@/tests/fixtures/order-input.fixture";
  * The hosted consent page — the last screen a customer reads before money
  * moves.
  *
- * Three things are pinned:
+ * Four things are pinned:
  *
  *   1. A car rental reads exactly as it always has on a Stripe brand, and a
  *      PayPal brand's customer is now told PAYPAL (the page used to say
- *      "Stripe Checkout" to everyone — the classic phishing tell).
- *   2. A flight with a frozen itinerary shows what this payment covers (the
- *      service charge) against the booking value, and every flight and
- *      layover — never "Vehicle" / "Pick-up" / "Drop-off".
- *   3. A flight frozen BEFORE itineraries existed is worded neutrally: its
+ *      "Stripe Checkout" to everyone — the classic phishing tell). None of
+ *      the flight's money wording — its Airline Charge above all — reaches
+ *      a car, and its button still reads "Confirm & Continue to Payment".
+ *   2. A flight with a frozen itinerary shows what this payment covers —
+ *      its ONE charge, under the name the operator gave it (Rental Cost,
+ *      Processing Fee, Agency Fee…; "Service Charge" when left as is) —
+ *      against the booking value, and every flight and layover — never
+ *      "Vehicle" / "Pick-up" / "Drop-off".
+ *   3. A MODIFICATION's charge row carries the operator's name too, but no
+ *      sentence presents it as the booking's charge; one whose charge was
+ *      never named (stored before naming existed) stays neutral.
+ *   4. A flight frozen BEFORE itineraries existed is worded neutrally: its
  *      payment was usually the whole fare, so it is never called a service
  *      charge.
+ *
+ * And the submit button: a flight whose charge has a name says what the
+ * customer is about to pay ("Confirm & pay $100.00 Rental Cost"); every car,
+ * every hotel and a flight with no named charge keeps "Confirm & Continue
+ * to Payment". A hotel frozen with its stay shows it from the shared rows,
+ * under "Total hotel cost"; one frozen before stays were keeps its folded
+ * rows.
  */
 
 const BRANDING: BrandingDTO = {
@@ -90,7 +107,10 @@ const CAR_SNAPSHOT: PaymentConsentSnapshot = {
   paymentLinkRef: "https://checkout.example.test/pay/1",
 };
 
-/** What the email service freezes for an itinerary flight. */
+/** What the email service freezes for an itinerary flight. Its one line
+ *  still carries the name every flight line was stored under before
+ *  operators named the charge ("Service charge"), which reads as the
+ *  default, "Service Charge". */
 function itineraryFlightSnapshot(): PaymentConsentSnapshot {
   const f = roundTripFlightInput().flight;
   const flight: PaymentConsentFlightSnapshot = {
@@ -127,6 +147,31 @@ function itineraryFlightSnapshot(): PaymentConsentSnapshot {
     bookingTotal: 1335,
     paymentLinkRef: "https://checkout.example.test/pay/1",
   };
+}
+
+/** A NEW BOOKING of the itinerary flight whose one charge line is stored as
+ *  `chargeName`: airline charge 400, the charge 100 — booking value 500. */
+function flightWithCharge(chargeName: string): PaymentConsentSnapshot {
+  return {
+    ...itineraryFlightSnapshot(),
+    amount: 100,
+    charges: [{ name: chargeName, amount: 100, timing: PaymentTiming.PREPAID }],
+    total: 100,
+    airlineFare: 400,
+    bookingTotal: 500,
+  };
+}
+
+/** The breakdown box the customer reads, rows in order, for
+ *  `flightWithCharge` — the charge row labelled `label`. */
+function breakdownWithCharge(label: string): string {
+  return (
+    "Airline ChargeNot collected through this payment link$400.00" +
+    `${label}$100.00` +
+    "Total Booking Value$500.00" +
+    "Amount Payable Now$100.00" +
+    "Airline Charge is shown for the total booking value and is not collected through this payment link."
+  );
 }
 
 /** What was frozen for a flight created BEFORE itineraries: flat fields
@@ -229,6 +274,42 @@ describe("a car rental's consent page", () => {
     );
     expect(container.querySelector('a[href^="mailto:"]')).toBeNull();
   });
+
+  it("shows none of the flight's money wording — no Airline Charge — and its own rows as always", () => {
+    const text = pageText(view(CAR_SNAPSHOT));
+    for (const flightWording of [
+      FLIGHT_AMOUNT_LABELS.airlineFare,
+      FLIGHT_AMOUNT_LABELS.airlineFareNote,
+      FLIGHT_AMOUNT_LABELS.bookingTotal,
+      FLIGHT_AMOUNT_LABELS.payableNow,
+      FLIGHT_AMOUNT_LABELS.serviceCharge,
+      LEGACY_FLIGHT_AMOUNT_LABELS.serviceCharge,
+    ]) {
+      expect(text).not.toContain(flightWording);
+    }
+    expect(text).toContain("You are paying today$249.99");
+    expect(text).toContain("Paid online today$249.99");
+    expect(text).toContain("Remaining balance due at rental counter$100.00");
+    expect(text).toContain("Total rental cost$349.99");
+  });
+
+  it.each(["Stripe", "PayPal", null])(
+    "submits with 'Confirm & Continue to Payment' whatever the processor (%s)",
+    (gatewayLabel) => {
+      const { container } = render(
+        <ConsentForm
+          token="test-token"
+          initialView={view(CAR_SNAPSHOT, { gatewayLabel })}
+          branding={BRANDING}
+        />,
+      );
+      const submit = within(container).getByRole("button", {
+        name: "Confirm & Continue to Payment",
+      });
+      expect(submit).toHaveAttribute("type", "submit");
+      expect(submit.textContent).toBe("Confirm & Continue to Payment");
+    },
+  );
 });
 
 describe("a flight's consent page, frozen with its itinerary", () => {
@@ -313,8 +394,36 @@ describe("a flight's consent page, frozen with its itinerary", () => {
   });
 });
 
+describe("a flight's consent page names the charge as the operator did", () => {
+  it.each(["Rental Cost", "Processing Fee", "Agency Fee"])(
+    "a charge named %s is what the customer sees — never 'Service Charge'",
+    (name) => {
+      const text = pageText(view(flightWithCharge(name)));
+      // Under the amount payable now…
+      expect(text).toContain(`Amount Payable Now$100.00${name}New booking`);
+      // …and as its own row: the airline charge under its fixed label, then
+      // the operator's charge under its name, then the totals.
+      expect(text).toContain(breakdownWithCharge(name));
+      expect(text.toLowerCase()).not.toContain("service charge");
+      expect(text).not.toContain(LEGACY_FLIGHT_AMOUNT_LABELS.serviceCharge);
+    },
+  );
+
+  it.each([
+    ["stored under the default name", "Service Charge"],
+    ["stored before operators named it", "Service charge"],
+  ])("a charge %s reads 'Service Charge'", (_case, stored) => {
+    const text = pageText(view(flightWithCharge(stored)));
+    expect(text).toContain("Amount Payable Now$100.00Service ChargeNew booking");
+    expect(text).toContain(breakdownWithCharge("Service Charge"));
+    expect(text).not.toContain(LEGACY_FLIGHT_AMOUNT_LABELS.serviceCharge);
+    // The pre-naming spelling itself never reaches the customer.
+    expect(text).not.toContain("Service charge");
+  });
+});
+
 describe("a MODIFICATION of an itinerary flight", () => {
-  it("is worded neutrally — the payment is not a service charge", () => {
+  it("labels its charge with the operator's name — never 'Service Charge' — and keeps the sentences neutral", () => {
     const snapshot: PaymentConsentSnapshot = {
       ...itineraryFlightSnapshot(),
       bookingType: BookingType.MODIFICATION,
@@ -322,9 +431,35 @@ describe("a MODIFICATION of an itinerary flight", () => {
     };
     const text = pageText(view(snapshot));
     expect(text).toContain(LEGACY_FLIGHT_AMOUNT_LABELS.payableNow);
-    expect(text).toContain(LEGACY_FLIGHT_AMOUNT_LABELS.serviceCharge); // "Charged online"
+    // The operator named the charge, so that name labels its row.
+    expect(text).toContain(`${FLIGHT_AMOUNT_LABELS.airlineFareNote}$1,240.00Change fee$95.00`);
+    expect(text).not.toContain(LEGACY_FLIGHT_AMOUNT_LABELS.serviceCharge); // "Charged Online"
     expect(text.toLowerCase()).not.toContain("service charge");
+    // No sentence presents it as the booking's charge: nothing under the
+    // amount payable now, so the name is shown on its row — and on the
+    // button that pays it, like every named flight charge.
+    expect(text).toContain(`${FLIGHT_AMOUNT_LABELS.payableNow}$95.00Modification`);
+    expect(text.split("Change fee")).toHaveLength(3);
+    expect(text).toContain("Confirm & pay $95.00 Change fee");
     // The itinerary is still shown in full.
+    expect(text).toContain("Layover: 2h 30m — Varanasi");
+  });
+
+  it("stays neutral — 'Charged Online' — when its charge was never named", () => {
+    // Stored before operators named the charge, when every flight line was
+    // called exactly "Service charge" whatever its booking type.
+    const snapshot: PaymentConsentSnapshot = {
+      ...itineraryFlightSnapshot(),
+      bookingType: BookingType.MODIFICATION,
+      charges: [{ name: "Service charge", amount: 95, timing: PaymentTiming.PREPAID }],
+    };
+    const text = pageText(view(snapshot));
+    expect(text).toContain(LEGACY_FLIGHT_AMOUNT_LABELS.payableNow);
+    expect(text).toContain(
+      `${FLIGHT_AMOUNT_LABELS.airlineFareNote}$1,240.00${LEGACY_FLIGHT_AMOUNT_LABELS.serviceCharge}$95.00`,
+    );
+    expect(text).toContain(`${FLIGHT_AMOUNT_LABELS.payableNow}$95.00Modification`);
+    expect(text.toLowerCase()).not.toContain("service charge");
     expect(text).toContain("Layover: 2h 30m — Varanasi");
   });
 });
@@ -363,5 +498,125 @@ describe("a flight frozen BEFORE itineraries existed", () => {
     for (const word of CAR_WORDS) {
       expect(text).not.toContain(word);
     }
+  });
+});
+
+/** The submit button, by its accessible name. */
+function submitButton(v: PublicConsentView, name: string): HTMLElement {
+  const { container } = render(
+    <ConsentForm token="test-token" initialView={v} branding={BRANDING} />,
+  );
+  const button = within(container).getByRole("button", { name });
+  expect(button).toHaveAttribute("type", "submit");
+  return button;
+}
+
+describe("the submit button names a flight's charge — and only a flight's", () => {
+  it.each(["Rental Cost", "Processing Fee"])(
+    "a flight whose charge is named %s: 'Confirm & pay $100.00 %s'",
+    (name) => {
+      const button = submitButton(view(flightWithCharge(name)), `Confirm & pay $100.00 ${name}`);
+      expect(button.textContent).toBe(`Confirm & pay $100.00 ${name}`);
+    },
+  );
+
+  it("a new booking still under the pre-naming 'Service charge' pays its default name", () => {
+    submitButton(view(itineraryFlightSnapshot()), "Confirm & pay $95.00 Service Charge");
+  });
+
+  it.each([
+    [
+      "a modification whose charge was never named",
+      {
+        ...itineraryFlightSnapshot(),
+        bookingType: BookingType.MODIFICATION,
+        charges: [{ name: "Service charge", amount: 95, timing: PaymentTiming.PREPAID }],
+      } as PaymentConsentSnapshot,
+    ],
+    ["a flight frozen before itineraries", legacyFlightSnapshot()],
+  ])("%s keeps 'Confirm & Continue to Payment'", (_case, snapshot) => {
+    submitButton(view(snapshot), "Confirm & Continue to Payment");
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * A hotel
+ * ------------------------------------------------------------------ */
+
+/** What was frozen for a hotel REQUEST before stays were: the folded item
+ *  and dates only. Prepaid room, balance at the property. */
+function hotelSnapshot(): PaymentConsentSnapshot {
+  return {
+    bookingType: BookingType.NEW_BOOKING,
+    provider: "Harbour Stays",
+    serviceType: ServiceType.HOTEL,
+    vehicle: "Harbour View Hotel • Lisbon, Portugal",
+    pickupDate: "2026-11-16T00:00:00.000Z",
+    dropoffDate: "2026-11-19T00:00:00.000Z",
+    pickupLocation: "Lisbon, Portugal",
+    dropoffLocation: "Lisbon, Portugal",
+    amount: 300,
+    currency: Currency.USD,
+    charges: [
+      { name: "Room charge", amount: 300, timing: PaymentTiming.PREPAID },
+      { name: "Resort fee", amount: 50, timing: PaymentTiming.DUE_AT_COUNTER },
+    ],
+    dueAtCounter: 50,
+    total: 350,
+    paymentLinkRef: "https://checkout.example.test/pay/1",
+  };
+}
+
+const STAY: PaymentConsentHotelSnapshot = {
+  destination: "Lisbon, Portugal",
+  propertyName: "Harbour View Hotel",
+  checkInDate: "2026-11-16T00:00:00.000Z",
+  checkOutDate: "2026-11-19T00:00:00.000Z",
+  rooms: 1,
+  guests: { adults: 2, children: 1 },
+  roomPreference: "King bed, high floor",
+};
+
+describe("a hotel's consent page", () => {
+  it("totals the stay as 'Total hotel cost' — the one hotel total label — beside its balance at the property", () => {
+    const text = pageText(view(hotelSnapshot()));
+    expect(text).toContain(
+      "Paid online today$300.00Remaining balance due at the property$50.00Total hotel cost$350.00",
+    );
+    expect(text).not.toContain("Total stay cost");
+    expect(text).not.toContain("counter");
+  });
+
+  it("shows a frozen stay from the shared rows — property, destination, calendar days, rooms, guests, room preference", () => {
+    const text = pageText(view({ ...hotelSnapshot(), hotel: STAY }));
+    const rows = serviceDetailRows({ serviceType: ServiceType.HOTEL, hotel: STAY });
+    expect(rows.map((r) => r.label)).toEqual([
+      "Property",
+      "Destination",
+      "Check-in",
+      "Check-out",
+      "Rooms",
+      "Guests",
+      "Room preference",
+    ]);
+    expect(text).toContain(
+      `Hotel / SupplierHarbour Stays${rows.map((r) => `${r.label}${r.value}`).join("")}`,
+    );
+    expect(text).toContain("Room preferenceKing bed, high floor");
+    expect(text).toContain("Guests2 adults, 1 child");
+    // Calendar days: no clock time, and not the folded item.
+    expect(text).not.toMatch(/\d{1,2}:\d{2}\s?(AM|PM)/);
+    expect(text).not.toContain("Harbour View Hotel • Lisbon, Portugal");
+    submitButton(view({ ...hotelSnapshot(), hotel: STAY }), "Confirm & Continue to Payment");
+  });
+
+  it("keeps the folded rows for a record frozen before stays were", () => {
+    const snapshot = hotelSnapshot();
+    const text = pageText(view(snapshot));
+    expect(text).toContain(
+      `Hotel / SupplierHarbour StaysPropertyHarbour View Hotel • Lisbon, PortugalCheck-in${formatDateTime(snapshot.pickupDate)} · Lisbon, PortugalCheck-out${formatDateTime(snapshot.dropoffDate)} · Lisbon, Portugal`,
+    );
+    expect(text).not.toContain("Destination");
+    expect(text).not.toContain("Room preference");
   });
 });

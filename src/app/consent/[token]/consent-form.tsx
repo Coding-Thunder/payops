@@ -8,6 +8,7 @@ import { FlightItinerary } from "@/components/common/flight-itinerary";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   flightMoneyWording,
+  HOTEL_CHARGE_WORDING,
   LEGACY_FLIGHT_AMOUNT_LABELS,
   showsAirlineCharge,
 } from "@/lib/charges";
@@ -15,6 +16,7 @@ import { ServiceType } from "@/lib/constants/enums";
 import {
   BookingTypeLabel,
   FLIGHT_PROVIDER_LABEL,
+  HOTEL_PROVIDER_LABEL,
 } from "@/lib/constants/labels";
 import {
   buildFlightItinerary,
@@ -22,7 +24,11 @@ import {
 } from "@/lib/flight-itinerary";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { serviceDetailRows } from "@/lib/service-summary";
-import type { BrandingDTO, PublicConsentView } from "@/types";
+import type {
+  BrandingDTO,
+  PaymentConsentSnapshot,
+  PublicConsentView,
+} from "@/types";
 
 interface ConsentFormProps {
   token: string;
@@ -241,7 +247,7 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
               Confirming…
             </>
           ) : (
-            "Confirm & Continue to Payment"
+            submitLabel(view.snapshot)
           )}
         </button>
 
@@ -333,32 +339,47 @@ function SummaryBlock({ view }: { view: PublicConsentView }) {
           label={wording.providerLabel}
           value={snapshot.provider || "—"}
         />
-        <DetailRow label={wording.itemLabel} value={snapshot.vehicle} />
-        <DetailRow
-          label={wording.startLabel}
-          value={
-            snapshot.pickupLocation
-              ? `${formatDateTime(snapshot.pickupDate)} · ${snapshot.pickupLocation}`
-              : formatDateTime(snapshot.pickupDate)
-          }
-        />
-        {/* A one-way flight stores the departure date in BOTH slots (the
-            consent chain is one shape); showing "Return" with the outbound
-            date would be a lie, so it is omitted. */}
-        {wording.endLabel &&
-        !(
-          serviceType === ServiceType.FLIGHT &&
-          snapshot.dropoffDate === snapshot.pickupDate
-        ) ? (
-          <DetailRow
-            label={wording.endLabel}
-            value={
-              snapshot.dropoffLocation
-                ? `${formatDateTime(snapshot.dropoffDate)} · ${snapshot.dropoffLocation}`
-                : formatDateTime(snapshot.dropoffDate)
-            }
-          />
-        ) : null}
+        {/* A hotel request frozen with its stay shows it as every other
+            surface does — property, destination, the two calendar days,
+            rooms, guests, room preference — from the shared rows. A record
+            without one (every car and older hotel) keeps the folded rows. */}
+        {serviceType === ServiceType.HOTEL && snapshot.hotel ? (
+          serviceDetailRows({
+            serviceType: ServiceType.HOTEL,
+            hotel: snapshot.hotel,
+          }).map((row) => (
+            <DetailRow key={row.label} label={row.label} value={row.value} />
+          ))
+        ) : (
+          <>
+            <DetailRow label={wording.itemLabel} value={snapshot.vehicle} />
+            <DetailRow
+              label={wording.startLabel}
+              value={
+                snapshot.pickupLocation
+                  ? `${formatDateTime(snapshot.pickupDate)} · ${snapshot.pickupLocation}`
+                  : formatDateTime(snapshot.pickupDate)
+              }
+            />
+            {/* A one-way flight stores the departure date in BOTH slots (the
+                consent chain is one shape); showing "Return" with the
+                outbound date would be a lie, so it is omitted. */}
+            {wording.endLabel &&
+            !(
+              serviceType === ServiceType.FLIGHT &&
+              snapshot.dropoffDate === snapshot.pickupDate
+            ) ? (
+              <DetailRow
+                label={wording.endLabel}
+                value={
+                  snapshot.dropoffLocation
+                    ? `${formatDateTime(snapshot.dropoffDate)} · ${snapshot.dropoffLocation}`
+                    : formatDateTime(snapshot.dropoffDate)
+                }
+              />
+            ) : null}
+          </>
+        )}
       </dl>
     </div>
   );
@@ -386,7 +407,11 @@ function FlightSummaryBlock({
   itinerary: FlightItineraryView;
 }) {
   const { snapshot } = view;
-  const { labels, serviceChargeModel } = flightMoneyWording(snapshot.flight, snapshot.bookingType);
+  const { labels, serviceChargeModel } = flightMoneyWording(
+    snapshot.flight,
+    snapshot.bookingType,
+    snapshot.charges,
+  );
   const currency = snapshot.currency;
   const airlineFare = snapshot.airlineFare ?? 0;
   const showAirline = showsAirlineCharge({ airlineFare });
@@ -491,6 +516,28 @@ function FlightSummaryBlock({
 }
 
 /**
+ * The submit button. A flight whose collected charge has a name says what
+ * the customer is about to pay — "Confirm & pay $100.00 Rental Cost": the
+ * same charge, by the same name, as the money block above it and the
+ * email's button. Every car and every hotel, and a flight whose charge was
+ * never named (or that was frozen before itineraries), keeps "Confirm &
+ * Continue to Payment".
+ */
+function submitLabel(snapshot: PaymentConsentSnapshot): string {
+  if (snapshot.serviceType === ServiceType.FLIGHT) {
+    const { chargeName } = flightMoneyWording(
+      snapshot.flight,
+      snapshot.bookingType,
+      snapshot.charges,
+    );
+    if (chargeName) {
+      return `Confirm & pay ${formatCurrency(snapshot.amount, snapshot.currency)} ${chargeName}`;
+    }
+  }
+  return "Confirm & Continue to Payment";
+}
+
+/**
  * Name of the hosted checkout the customer is sent to. Neutral when the
  * record names no gateway: telling a PayPal brand's customer they are off
  * to "Stripe Checkout" is the phishing tell this replaced.
@@ -574,7 +621,8 @@ function Spinner({ large = false }: { large?: boolean }) {
  * passenger and a page asking them to confirm a "Vehicle" and a "Drop-off"
  * before they pay. Such a record is a flight frozen before itineraries, so
  * its money labels are the neutral `LEGACY_FLIGHT_AMOUNT_LABELS` — the copy
- * source the receipt page and the emails share.
+ * source the receipt page and the emails share. A hotel's total is the
+ * stay's one label everywhere (`HOTEL_CHARGE_WORDING`: "Total hotel cost").
  *
  * CAR_RENTAL reproduces the exact strings this page has always rendered.
  */
@@ -606,12 +654,12 @@ const CONSENT_WORDING: Record<
     totalLabel: LEGACY_FLIGHT_AMOUNT_LABELS.bookingTotal,
   },
   HOTEL: {
-    providerLabel: "Provider",
+    providerLabel: HOTEL_PROVIDER_LABEL,
     itemLabel: "Property",
     startLabel: "Check-in",
     endLabel: "Check-out",
     dueLabel: "Remaining balance due at the property",
-    totalLabel: "Total stay cost",
+    totalLabel: HOTEL_CHARGE_WORDING.totalLabel,
   },
 };
 

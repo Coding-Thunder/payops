@@ -56,12 +56,15 @@ export const DEFAULT_TERMS_AND_CONDITIONS = [
  * entered its own (Admin → Settings → Flight terms). Deliberately
  * brand-neutral and NOT stored on the Settings singleton: a deployment-wide
  * flight text would let one brand's legal wording reach another brand's
- * flights. Written for the flight money model — the service charge is the
- * only amount collected online; the airline fare is the airline's.
+ * flights. Written for the flight money model — the one charge the operator
+ * names is the only amount collected online; the airline charge is the
+ * airline's. It names neither by a label an operator can change: the
+ * customer sees the operator's own name for the charge ("Processing Fee"),
+ * so the terms speak of the amount payable now.
  */
 export const DEFAULT_FLIGHT_TERMS_AND_CONDITIONS = [
   "This booking is arranged on your behalf with the airline(s) shown in your itinerary. Each flight is operated under the operating airline's conditions of carriage and the fare rules of your ticket.",
-  "The service charge shown is the only amount collected through this payment. If your card is authorized (held) rather than charged, the service charge is collected only once your booking is confirmed. Where an airline fare is shown, it forms part of your total booking value but is not included in this payment.",
+  "The amount shown as payable now is the only amount collected through this payment. If your card is authorized (held) rather than charged, it is collected only once your booking is confirmed. Where an airline charge is shown, it forms part of your total booking value but is not included in this payment.",
   "Please make sure every passenger's name matches their passport or government-issued photo ID exactly. Name corrections may be restricted or charged by the airline.",
   "Each passenger is responsible for holding valid travel documents — passport, visas, transit visas and any health documentation — for every country on the itinerary, including connection points.",
   "Check-in, boarding, baggage allowances, seat assignments and optional extras are governed by the operating airline. Please allow enough time at the airport for check-in and security.",
@@ -77,8 +80,10 @@ export const DEFAULT_FLIGHT_CANCELLATION_POLICY = [
   "To request a change or cancellation, reply to this email or contact our support team using the details below.",
 ].join("\n");
 
-/** Version label frozen onto an order that used a built-in flight text. */
-export const DEFAULT_FLIGHT_LEGAL_VERSION = "v1";
+/** Version label frozen onto an order that used a built-in flight text.
+ *  v2: the money clause speaks of the amount payable now, not a "service
+ *  charge" — the operator names the charge. Orders frozen with v1 keep it. */
+export const DEFAULT_FLIGHT_LEGAL_VERSION = "v2";
 
 /**
  * Built-in HOTEL terms — the fallback for an organization that sells hotel

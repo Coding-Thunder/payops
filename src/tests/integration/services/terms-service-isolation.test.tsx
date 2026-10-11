@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { Types } from "mongoose";
 
 import {
+  ConsentMode,
   EmailKind,
   OrderEvidenceEventType,
   OrderStatus,
@@ -28,6 +29,7 @@ import {
   DEFAULT_HOTEL_TERMS_AND_CONDITIONS,
 } from "@/server/db/models/setting.model";
 import { orgCookieName } from "@/server/auth/org-cookie";
+import { renderEmailPreview } from "@/server/email/preview";
 import { createOrder, initiatePayment } from "@/server/services/order.service";
 import { createProvider } from "@/server/services/provider.service";
 import { getEvidenceChain } from "@/server/services/evidence.service";
@@ -82,7 +84,9 @@ import type { OrderDTO } from "@/types";
  * Every email preview — Admin → Email previews, the template editor and its
  * live-preview API — is checked per service and per brand, at the rendered
  * HTML: a preview names its service explicitly and goes through the same
- * resolver (`resolveServiceTerms`) that freezes a real order's terms.
+ * resolver (`resolveServiceTerms`) that freezes a real order's terms. And,
+ * like a real email, it names the brand's own payment processor, samples
+ * only the brand's own suppliers, and words its button by the consent mode.
  *
  * Every organization's terms here are set through the real per-brand
  * editors (`updateOrganizationServiceLegal`), as an admin working in that
@@ -154,7 +158,7 @@ const DEFAULT_MARKERS = {
   },
   /** The built-in, brand-neutral flight text. */
   flight: {
-    terms: ["The service charge shown is the only amount collected through this payment."],
+    terms: ["The amount shown as payable now is the only amount collected through this payment."],
     policy: [
       "Changes and cancellations to airline tickets are governed by the fare rules of the ticket issued.",
     ],
@@ -167,6 +171,15 @@ const DEFAULT_MARKERS = {
     ],
   },
 };
+
+/**
+ * The built-in flight text's money clause as v1 worded it. The operator now
+ * names the charge a flight's payment link collects ("Processing Fee"…), so
+ * the built-in text no longer calls it a service charge: orders frozen with
+ * v1 keep that wording, but a new order and a preview never show it.
+ */
+const RETIRED_FLIGHT_MONEY_CLAUSE =
+  "The service charge shown is the only amount collected through this payment.";
 
 interface Markers {
   terms: string[];
@@ -562,6 +575,7 @@ describe("a service with no text of its own falls back to ITS OWN default — ne
       ...both(HOTEL_TEST),
       ...both(DEFAULT_MARKERS.car),
       ...both(DEFAULT_MARKERS.hotel),
+      RETIRED_FLIGHT_MONEY_CLAUSE,
     ]);
   });
 
@@ -802,8 +816,185 @@ describe("email previews: an EXPLICIT service, the SELECTED brand's text for it 
         for (const k of KINDS.filter((k) => k !== kind)) {
           for (const marker of both(DEFAULT_MARKERS[k])) expect(html).not.toContain(marker);
         }
+        expect(html, `${kind} ${template}`).not.toContain(RETIRED_FLIGHT_MONEY_CLAUSE);
       }
     }
+  });
+});
+
+describe("email previews match delivery: the brand's processor, its suppliers, its consent mode", () => {
+  const TEMPLATES = ["payment-confirmation", "payment-request", "payment-authorized"] as const;
+
+  /** The selected brand's preview of one template for one service. */
+  async function preview(
+    orgId: Types.ObjectId | null,
+    serviceType: ServiceType,
+    templateKey: (typeof TEMPLATES)[number],
+    providerKey?: string,
+  ) {
+    return renderEmailPreview({
+      organizationId: orgId ? String(orgId) : null,
+      serviceType,
+      templateKey,
+      providerKey,
+    });
+  }
+
+  /** Reader text: tags dropped, entities undone, whitespace collapsed. */
+  function readable(html: string): string {
+    return html
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&#x27;/g, "'")
+      .replace(/&amp;/g, "&")
+      .replace(/\s+/g, " ");
+  }
+
+  beforeEach(async () => {
+    for (const [key, name, serviceType] of [
+      ["MATCHCARS", "Match Cars", ServiceType.CAR_RENTAL],
+      ["MATCHHOTELS", "Match Hotels", ServiceType.HOTEL],
+    ] as const) {
+      await createProvider(
+        {
+          key,
+          name,
+          logo: "/providers/preview.png",
+          primaryColor: "#123456",
+          onPrimaryColor: "#FFFFFF",
+          tagline: "",
+          sortOrder: 0,
+          serviceTypes: [serviceType],
+        } as Parameters<typeof createProvider>[0],
+        { actor: admin },
+      );
+    }
+  });
+
+  it("a PayPal brand's previews — every template, every service — say PayPal and never Stripe, with the brand's own terms", async () => {
+    const org = await orgWithAllThree("previewpaypal", SERVICE_TEST);
+    await Organization.updateOne(
+      { _id: org },
+      { $set: { "payments.provider": PaymentGatewayKey.PAYPAL } },
+    );
+    for (const kind of KINDS) {
+      for (const template of TEMPLATES) {
+        const { html } = await preview(org, SERVICE_OF[kind], template);
+        const where = `${kind} ${template}`;
+        expect(html, where).toContain("PayPal");
+        expect(html, where).not.toMatch(/stripe/i);
+        for (const marker of both(SERVICE_TEST[kind])) {
+          expect(html, `${where}: "${marker}"`).toContain(marker);
+        }
+      }
+    }
+    // The receipt names its processor — and links no Stripe receipt.
+    const confirmation = readable(
+      (await preview(org, ServiceType.CAR_RENTAL, "payment-confirmation")).html,
+    );
+    expect(confirmation).toContain(
+      "Payment processed securely by PayPal — PCI-DSS Level 1 certified.",
+    );
+    expect(confirmation).not.toContain("View receipt");
+  });
+
+  it("a Stripe brand's confirmation preview names Stripe and links a sample receipt, as its real receipts do", async () => {
+    const org = await orgWithAllThree("previewstripe", SERVICE_TEST);
+    const { html } = await preview(org, ServiceType.CAR_RENTAL, "payment-confirmation");
+    expect(readable(html)).toContain("Stripe receipt View receipt");
+    expect(readable(html)).toContain(
+      "Payment processed securely by Stripe — PCI-DSS Level 1 certified.",
+    );
+    expect(html).toContain('href="https://pay.stripe.com/receipts/preview"');
+  });
+
+  it("samples only the brand's own suppliers — one restricted to another brand is never listed", async () => {
+    const a = await orgWithAllThree("previewsuppa", SERVICE_TEST);
+    const b = await orgWithAllThree("previewsuppb", SERVICE_TEST);
+    await createProvider(
+      {
+        key: "ONLYBCARS",
+        name: "Only B Cars",
+        logo: "/providers/preview.png",
+        primaryColor: "#123456",
+        onPrimaryColor: "#FFFFFF",
+        tagline: "",
+        sortOrder: -1,
+        serviceTypes: [ServiceType.CAR_RENTAL],
+        organizationIds: [String(b)],
+      } as Parameters<typeof createProvider>[0],
+      { actor: admin },
+    );
+
+    const forA = await preview(a, ServiceType.CAR_RENTAL, "payment-request", "ONLYBCARS");
+    expect(forA.providers.map((p) => p.key)).not.toContain("ONLYBCARS");
+    expect(forA.provider?.key).not.toBe("ONLYBCARS");
+    expect(forA.html).not.toContain("Only B Cars");
+
+    const forB = await preview(b, ServiceType.CAR_RENTAL, "payment-request", "ONLYBCARS");
+    expect(forB.providers.map((p) => p.key)).toContain("ONLYBCARS");
+    expect(forB.html).toContain("Only B Cars");
+  });
+
+  it("with no brand selected, names the deployment default exactly as before", async () => {
+    actingAs(null);
+    const request = readable((await preview(null, ServiceType.CAR_RENTAL, "payment-request")).html);
+    expect(request).toContain("Review & Confirm Booking");
+    expect(request).toContain(
+      "Payment processed securely via Stripe. Your card details are encrypted end-to-end and never stored on our servers.",
+    );
+    const authorized = readable(
+      (await preview(null, ServiceType.CAR_RENTAL, "payment-authorized")).html,
+    );
+    expect(authorized).toContain("Authorization held securely by Stripe — PCI-DSS Level 1 certified.");
+    const confirmationHtml = (await preview(null, ServiceType.CAR_RENTAL, "payment-confirmation"))
+      .html;
+    const confirmation = readable(confirmationHtml);
+    // The receipt the previews have always shown: a sample Stripe receipt
+    // link under a plain "Receipt", and no processor named.
+    expect(confirmationHtml).toContain('href="https://pay.stripe.com/receipts/preview"');
+    expect(confirmation).toContain("Receipt View receipt");
+    expect(confirmation).not.toContain("Stripe receipt");
+    expect(confirmation).toContain(
+      "Payment processed securely. Your card details are encrypted end-to-end",
+    );
+    expect(confirmation).toContain("Confirmation number SUPP-9F3K2218");
+  });
+
+  it("words the payment request's button by the consent mode — and names a flight's sample charge — as a real send does", async () => {
+    const org = await orgWithAllThree("previewconsent", SERVICE_TEST);
+    const button = async (serviceType: ServiceType) =>
+      readable((await preview(org, serviceType, "payment-request")).html);
+
+    expect(await button(ServiceType.CAR_RENTAL)).toContain("Review & Confirm Booking");
+    expect(await button(ServiceType.HOTEL)).toContain("Review & Confirm Booking");
+    expect(await button(ServiceType.FLIGHT)).toContain("Review & pay $95.00 Service Charge");
+
+    await createSettings({ consentMode: ConsentMode.REQUIRED });
+    for (const [serviceType, label] of [
+      [ServiceType.CAR_RENTAL, "Agree & Continue to Payment"],
+      [ServiceType.HOTEL, "Agree & Continue to Payment"],
+      [ServiceType.FLIGHT, "Agree & pay $95.00 Service Charge"],
+    ] as const) {
+      const text = await button(serviceType);
+      expect(text, serviceType).toContain(label);
+      expect(text, serviceType).toContain(
+        "Confirmation is required before payment can be completed.",
+      );
+    }
+  });
+
+  it("previews ONE booking reference per service — a flight's PNR once, in the confirmation's top block", async () => {
+    const org = await orgWithAllThree("previewref", SERVICE_TEST);
+    const confirmation = readable((await preview(org, ServiceType.FLIGHT, "payment-confirmation")).html);
+    expect(confirmation).toContain("PNR QX7T2L");
+    expect(confirmation.split("QX7T2L")).toHaveLength(2);
+    expect(confirmation).not.toContain("SUPP-9F3K2218");
+    const request = readable((await preview(org, ServiceType.FLIGHT, "payment-request")).html);
+    expect(request).toContain("PNR QX7T2L");
+    const hotel = readable((await preview(org, ServiceType.HOTEL, "payment-confirmation")).html);
+    expect(hotel).toContain("Hotel confirmation number 83920174");
+    expect(hotel).not.toContain("SUPP-9F3K2218");
   });
 });
 

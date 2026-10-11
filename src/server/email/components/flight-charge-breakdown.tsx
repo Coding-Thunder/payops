@@ -33,13 +33,17 @@ export interface EmailFlightAmounts {
   serviceCharge: string;
   /** Legacy flights only: the balance due later, else null. */
   dueLater: string | null;
-  /** Airline charge + service charge (+ any legacy balance). */
+  /** Airline charge + the collected charge (+ any legacy balance). */
   bookingTotal: string;
+  /** What the collected charge is called — the operator's name for it
+   *  (`flightMoneyWording`): its row label, and what the paid / on-hold
+   *  labels and the sentences call it. Empty when worded neutrally. */
+  chargeName: string;
   /**
    * True for an itinerary flight: its money is the fixed rows — Airline
-   * Charge, Service Charge, Total Booking Value and the amount settled —
-   * whatever its charge line was called. A flight created before
-   * itineraries (false) lists its lines as entered instead.
+   * Charge, its one named charge, Total Booking Value and the amount
+   * settled. A flight created before itineraries (false) lists its lines
+   * as entered instead.
    */
   hasItinerary: boolean;
   /**
@@ -79,8 +83,9 @@ interface FlightChargeBreakdownProps {
  * Takes the place of `ChargeBreakdown` for a flight, whose prepaid / due /
  * total rows have no way to show an airline charge the payment link never
  * collects. Built from the same row primitives so the two blocks read as
- * one design. The Service Charge row is the order's prepaid total — exactly
- * what the gateway is sent — never a line name an operator typed.
+ * one design. The charge row's amount is the order's prepaid total —
+ * exactly what the gateway is sent — and its label is the name the
+ * operator gave that charge ("Service Charge", "Processing Fee"…).
  */
 export function FlightChargeBreakdown({
   amounts,
@@ -89,7 +94,7 @@ export function FlightChargeBreakdown({
   topPadding = SPACE.md,
   bottomPadding = SPACE.xs,
 }: FlightChargeBreakdownProps) {
-  const labels = flightAmountLabels(amounts.serviceChargeModel);
+  const labels = flightAmountLabels(amounts.chargeName);
   return (
     <SummaryCard
       title={title ?? labels.breakdownTitle}

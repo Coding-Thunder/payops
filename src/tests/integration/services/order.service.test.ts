@@ -1,9 +1,11 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { Types } from "mongoose";
 
 import {
   AuditAction,
   OrderStatus,
   RecordState,
+  ServiceType,
   UserRole,
 } from "@/lib/constants/enums";
 import {
@@ -12,7 +14,14 @@ import {
   NotFoundError,
   ValidationError,
 } from "@/lib/errors";
-import { AuditLog, Order } from "@/server/db/models";
+import { HOTEL_MIN_ONE_NIGHT } from "@/lib/validation/order";
+import {
+  AuditLog,
+  Order,
+  Organization,
+  OrganizationMember,
+} from "@/server/db/models";
+import { orgCookieName } from "@/server/auth/org-cookie";
 import {
   archiveOrder,
   createOrder,
@@ -20,11 +29,18 @@ import {
   listOrders,
   regeneratePaymentLink,
 } from "@/server/services/order.service";
-import { actorFor } from "@/tests/utils/auth";
+import { actorFor, mockSession } from "@/tests/utils/auth";
 import { ensureMongo } from "@/tests/utils/db";
-import { createOrder as factoryCreateOrder } from "@/tests/factories/order.factory";
+import { setNextHeaders } from "@/tests/utils/next-headers";
+import {
+  buildOrder,
+  createOrder as factoryCreateOrder,
+} from "@/tests/factories/order.factory";
 import { createSettings } from "@/tests/factories/settings.factory";
-import { validCreateOrderInput } from "@/tests/fixtures/order-input.fixture";
+import {
+  validCreateOrderInput,
+  validHotelOrderInput,
+} from "@/tests/fixtures/order-input.fixture";
 import { getCurrentTestStripe } from "@/tests/setup/integration.setup";
 
 /**
@@ -262,5 +278,120 @@ describe("regeneratePaymentLink", () => {
     await expect(
       regeneratePaymentLink(String(order._id), { actor: admin }),
     ).rejects.toBeInstanceOf(ConflictError);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Hotel dates are CALENDAR DAYS — the order model's half
+ *
+ * A stay is at least one night by the calendar. The model enforces it on a
+ * NEW order (the last line behind the schema); a stay stored before dates
+ * were days — two clock times on one UTC day — must still save when a
+ * webhook or the customer's acknowledgement touches it later.
+ * ------------------------------------------------------------------ */
+
+describe("hotel dates are calendar days", () => {
+  const sameDay = {
+    checkInDate: new Date("2026-10-17T09:00:00.000Z"),
+    checkOutDate: new Date("2026-10-17T21:00:00.000Z"),
+  };
+
+  it("refuses a NEW zero-night stay even at a later clock time, written straight to the model", async () => {
+    await expect(
+      factoryCreateOrder({
+        serviceType: ServiceType.HOTEL,
+        hotel: { destination: "Paris", ...sameDay } as never,
+      }),
+    ).rejects.toThrow(HOTEL_MIN_ONE_NIGHT);
+    expect(await Order.countDocuments({ serviceType: ServiceType.HOTEL })).toBe(0);
+  });
+
+  it("accepts a NEW one-night stay stored as two UTC midnights", async () => {
+    const order = await factoryCreateOrder({
+      serviceType: ServiceType.HOTEL,
+      hotel: {
+        destination: "Paris",
+        checkInDate: new Date("2026-10-17"),
+        checkOutDate: new Date("2026-10-18"),
+      } as never,
+    });
+    expect(order.hotel!.checkInDate.toISOString()).toBe("2026-10-17T00:00:00.000Z");
+  });
+
+  it("still saves a zero-night stay stored before dates were days, when a later write touches it", async () => {
+    const legacy = buildOrder({
+      serviceType: ServiceType.HOTEL,
+      hotel: { destination: "Paris", ...sameDay } as never,
+    });
+    await Order.collection.insertOne(legacy as never);
+
+    const doc = await Order.findById(legacy._id);
+    doc!.status = OrderStatus.PAID;
+    doc!.payment.status = OrderStatus.PAID;
+    await expect(doc!.save()).resolves.toBeTruthy();
+  });
+
+  it("keeps refusing a check-out before check-in on every save, as it always did", async () => {
+    const order = await factoryCreateOrder({ serviceType: ServiceType.HOTEL });
+    const doc = await Order.findById(order._id);
+    doc!.hotel!.checkOutDate = new Date(doc!.hotel!.checkInDate.getTime() - 86_400_000);
+    await expect(doc!.save()).rejects.toThrow("Check-out date must be after check-in date");
+  });
+
+  describe("through createOrder", () => {
+    const actor = actorFor(UserRole.ADMIN);
+    let sessionMock: Awaited<ReturnType<typeof mockSession>> | null = null;
+
+    beforeEach(async () => {
+      sessionMock = await mockSession(actor);
+      const org = await Organization.create({
+        slug: "staybrand",
+        name: "staybrand",
+        brandName: "Stay Brand",
+        isDefault: false,
+        serviceTypes: [ServiceType.HOTEL],
+      });
+      await OrganizationMember.create({
+        organizationId: org._id,
+        userId: new Types.ObjectId(actor.id),
+        role: UserRole.ADMIN,
+        status: RecordState.ACTIVE,
+      });
+      setNextHeaders({ cookies: { [orgCookieName()]: String(org._id) } });
+    });
+
+    afterEach(() => {
+      sessionMock?.restore();
+      sessionMock = null;
+      setNextHeaders({});
+    });
+
+    it("stores the create form's date-only days as their UTC midnights", async () => {
+      const base = validHotelOrderInput();
+      const { order } = await createOrder(
+        { ...base, hotel: { ...base.hotel, checkInDate: "2026-10-17", checkOutDate: "2026-10-20" } },
+        { actor },
+      );
+      expect(order.hotel!.checkInDate).toBe("2026-10-17T00:00:00.000Z");
+      expect(order.hotel!.checkOutDate).toBe("2026-10-20T00:00:00.000Z");
+    });
+
+    it("refuses — and stores nothing for — a zero-night stay that bypassed the schema", async () => {
+      const base = validHotelOrderInput();
+      await expect(
+        createOrder(
+          {
+            ...base,
+            hotel: {
+              ...base.hotel,
+              checkInDate: sameDay.checkInDate.toISOString(),
+              checkOutDate: sameDay.checkOutDate.toISOString(),
+            },
+          },
+          { actor },
+        ),
+      ).rejects.toThrow(HOTEL_MIN_ONE_NIGHT);
+      expect(await Order.countDocuments({})).toBe(0);
+    });
   });
 });

@@ -51,7 +51,10 @@ import {
   FlightTripType,
   PaymentTiming,
 } from "@/lib/constants/enums";
-import { FLIGHT_SERVICE_CHARGE_LINE_NAME } from "@/lib/charges";
+import {
+  defaultFlightChargeName,
+  isDefaultFlightChargeName,
+} from "@/lib/charges";
 import { normalizeTripType } from "@/lib/flight-itinerary";
 import { flightOrderSchema, type FlightOrderInput } from "@/lib/validation";
 import type { OrderDTO, ProviderDTO } from "@/types";
@@ -78,8 +81,8 @@ import {
  * one resolver, one form state per tab.
  *
  * The itinerary itself — journeys, numbered flights, connections, layovers
- * and their live validation — lives in `./flight/`. The money is two fixed
- * fields (`./flight/flight-money-fields`): the service charge — the order's
+ * and their live validation — lives in `./flight/`. The money is
+ * `./flight/flight-money-fields`: the operator's NAMED charge — the order's
  * one charge line, prepaid, the only amount the payment link collects — and
  * the airline charge, its own field on the flight, shown to the customer as
  * part of the booking value and never sent to the gateway.
@@ -141,12 +144,13 @@ export function CreateFlightOrderForm({
   /** The return journey while the trip is NOT a round trip, so switching
    *  back restores what the operator had entered instead of a blank one. */
   const stashedReturn = useRef<FlightJourneyFormValue | null>(null);
+  const initialBookingType = allowedBookingTypes[0] ?? BookingType.NEW_BOOKING;
 
   const form = useForm<FlightOrderFormValues, unknown, FlightOrderInput>({
     resolver: flightOrderResolver,
     defaultValues: {
       serviceType: "FLIGHT",
-      bookingType: allowedBookingTypes[0] ?? BookingType.NEW_BOOKING,
+      bookingType: initialBookingType,
       provider: providers[0]?.key ?? "",
       customer: { name: "", email: "", phone: "" },
       flight: {
@@ -160,11 +164,13 @@ export function CreateFlightOrderForm({
         airlineFare: null,
       },
       currency: defaultCurrency,
-      // The service charge: the one charge line a flight has. Blank until
-      // the operator enters it, like the airline charge above.
+      // The collected charge: the one charge line a flight has, named by
+      // the operator — prefilled with its booking type's default ("Service
+      // Charge" for a new booking). Its amount is blank until entered, like
+      // the airline charge above.
       charges: [
         {
-          name: FLIGHT_SERVICE_CHARGE_LINE_NAME,
+          name: defaultFlightChargeName(initialBookingType),
           amount: null,
           timing: PaymentTiming.PREPAID,
         },
@@ -175,6 +181,20 @@ export function CreateFlightOrderForm({
   });
 
   const isSubmitting = form.formState.isSubmitting;
+
+  /**
+   * Each booking type has its own default charge name — "Service Charge"
+   * for a new booking, "Modification Fee" or "Cancellation Charge" for a
+   * change — so switching the type renames a charge still on a default. A
+   * name the operator typed is theirs and stays.
+   */
+  function changeBookingType(next: BookingTypeT) {
+    if (isDefaultFlightChargeName(form.getValues("charges.0.name"))) {
+      form.setValue("charges.0.name", defaultFlightChargeName(next), {
+        shouldDirty: true,
+      });
+    }
+  }
 
   /**
    * The trip type decides which journeys exist. Becoming a round trip
@@ -251,7 +271,10 @@ export function CreateFlightOrderForm({
                   <FormLabel>Booking type</FormLabel>
                   <Select
                     value={field.value}
-                    onValueChange={field.onChange}
+                    onValueChange={(value) => {
+                      changeBookingType(value as BookingTypeT);
+                      field.onChange(value);
+                    }}
                     disabled={isSubmitting}
                   >
                     <FormControl>
@@ -573,7 +596,9 @@ export function CreateFlightOrderForm({
                     />
                   </FormControl>
                   <FormDescription>
-                    The airline booking reference, added once ticketed.
+                    The airline booking reference. You can add or change it
+                    later on the order page; it appears at the top of the
+                    customer&apos;s confirmation email.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -584,11 +609,11 @@ export function CreateFlightOrderForm({
 
         <Card>
           <CardHeader>
-            <CardTitle>Airline charge & service charge</CardTitle>
+            <CardTitle>Airline charge & payment</CardTitle>
             <CardDescription>
-              The payment link collects only the service charge. The airline
-              charge is shown to the customer for the total booking value, but
-              is never collected through the payment link.
+              The payment link collects only the charge you name below. The
+              airline charge is shown to the customer for the total booking
+              value, but is never collected through the payment link.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

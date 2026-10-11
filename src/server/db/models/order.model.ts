@@ -42,6 +42,10 @@ import {
   MAX_LAYOVER_OVERRIDE_MINUTES,
   MAX_SEGMENTS_PER_JOURNEY,
 } from "@/lib/flight-itinerary";
+import {
+  calendarDaysBetween,
+  HOTEL_MIN_ONE_NIGHT,
+} from "@/lib/validation/order";
 
 /** One flight. Times are airport-local wall-clock strings. */
 export interface FlightSegmentDoc {
@@ -974,13 +978,15 @@ orderSchema.pre("validate", function () {
       ) {
         throw new Error("Flight charges must be prepaid");
       }
-      // ONE charge line: the service charge, the only money the payment
-      // link collects. The airline charge is `flight.airlineFare`, never a
+      // ONE charge line: the operator's named charge, the only money the
+      // payment link collects. The airline charge is `flight.airlineFare`, never a
       // line, so it can never be added into `pricing.amount`. Creation
       // only, like the rule above: a flight written before this rule may
       // carry several lines and still saves.
       if (this.isNew && (this.charges ?? []).length !== 1) {
-        throw new Error("A flight has exactly one charge: its service charge");
+        throw new Error(
+          "A flight has exactly one charge: the amount its payment link collects",
+        );
       }
       return;
     }
@@ -1010,6 +1016,17 @@ orderSchema.pre("validate", function () {
     if (this.hotel?.checkInDate && this.hotel?.checkOutDate) {
       if (this.hotel.checkInDate >= this.hotel.checkOutDate) {
         throw new Error("Check-out date must be after check-in date");
+      }
+      // Hotel dates are CALENDAR DAYS, so a stay is at least one night by the
+      // calendar — not merely a later clock time on the same day. Enforced on
+      // creation only, like a flight's itinerary rules: a stay stored before
+      // dates were days must still save when a webhook or the customer's
+      // acknowledgement touches it.
+      if (
+        this.isNew &&
+        calendarDaysBetween(this.hotel.checkInDate, this.hotel.checkOutDate) < 1
+      ) {
+        throw new Error(HOTEL_MIN_ONE_NIGHT);
       }
     }
     return;

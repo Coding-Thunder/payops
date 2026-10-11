@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import { FLIGHT_SERVICE_CHARGE_LINE_NAME } from "@/lib/charges";
+import {
+  defaultFlightChargeName,
+  isAirlineChargeName,
+  normaliseFlightChargeName,
+} from "@/lib/charges";
 import {
   BOOKING_TYPES,
   CABIN_CLASSES,
@@ -279,18 +283,34 @@ function requiredAmount(amount: z.ZodNumber, message: string) {
   });
 }
 
-const SERVICE_CHARGE_REQUIRED = "Enter the service charge";
+const SERVICE_CHARGE_REQUIRED = "Enter the charge amount";
 const AIRLINE_CHARGE_REQUIRED = "Enter the airline charge (0 if there is none)";
 
 /** A flight charge is always collected online, now. There is no
  *  due-at-counter for a flight — nothing is paid at an airport desk. Its
- *  name is not the caller's to choose (see below). */
+ *  name is the operator's (Service Charge, Processing Fee, Rental Cost…),
+ *  stored as typed and shown to the customer wherever the charge appears.
+ *  Blank is left "" here: the order fills in its booking type's default
+ *  (`flightOrderSchema`). The pre-naming marker is stored as the default it
+ *  stood for, so a stored name is always one an operator gave (see
+ *  `namedFlightCharge`). It can never be the airline's amount, which is
+ *  not collected. */
 const flightChargeInputSchema = chargeInputSchema.extend({
-  name: z.string().trim().max(120).optional(),
+  name: z
+    .string()
+    .trim()
+    .max(120, "Charge name must be 120 characters or fewer")
+    .optional()
+    .nullable()
+    .transform(normaliseFlightChargeName)
+    .refine((name) => !isAirlineChargeName(name), {
+      message:
+        "The airline charge has its own field and is never collected here. Name the charge this link collects (e.g. Service Charge, Processing Fee).",
+    }),
   amount: requiredAmount(
     z
       .number({ error: SERVICE_CHARGE_REQUIRED })
-      .positive("The service charge must be greater than zero")
+      .positive("The charge amount must be greater than zero")
       .max(1_000_000, "Amount looks unrealistic"),
     SERVICE_CHARGE_REQUIRED,
   ),
@@ -300,22 +320,18 @@ const flightChargeInputSchema = chargeInputSchema.extend({
 });
 
 /**
- * A flight's charges: EXACTLY ONE line — the service charge, the only amount
- * the payment link collects. The airline charge has its own field
- * (`flight.airlineFare`) and is never a line, so a second line — the way an
- * airline charge could otherwise ride along into the gateway amount — is
- * refused rather than charged. Whatever the line was called, it is stored
- * as the service charge.
+ * A flight's charges: EXACTLY ONE line — the operator's named charge, the
+ * only amount the payment link collects. The airline charge has its own
+ * field (`flight.airlineFare`) and is never a line, so a second line — the
+ * way an airline charge could otherwise ride along into the gateway amount
+ * — is refused rather than charged.
  */
 const flightChargesInputSchema = z
   .array(flightChargeInputSchema)
   .min(1, SERVICE_CHARGE_REQUIRED)
   .max(
     1,
-    "A flight has one charge: its service charge. Enter the airline charge in its own field — it is never collected through the payment link.",
-  )
-  .transform((lines) =>
-    lines.map((line) => ({ ...line, name: FLIGHT_SERVICE_CHARGE_LINE_NAME })),
+    "A flight has one charge: the amount this payment link collects. Enter the airline charge in its own field — it is never collected through the payment link.",
   );
 
 /**
@@ -381,13 +397,55 @@ export const flightOrderSchema = z
           : { ...flight, return: null },
       ),
     currency: z.enum(CURRENCIES),
-    /** The operator's service charge — the ONLY amount the payment link
+    /** The operator's named charge — the ONLY amount the payment link
      *  collects. Prepaid by definition, and the only line. */
     charges: flightChargesInputSchema,
     notes: z.string().trim().max(2000).optional(),
-  });
+  })
+  // A charge left unnamed takes its booking type's default ("Service
+  // Charge", "Modification Fee"…) — the name the create form prefills.
+  // `overwrite`, not `transform`: the schema stays an object, as the
+  // service-type union needs.
+  .overwrite((order) => ({
+    ...order,
+    charges: order.charges.map((line) => ({
+      ...line,
+      name: line.name || defaultFlightChargeName(order.bookingType),
+    })),
+  }));
 
 export type FlightOrderInput = z.infer<typeof flightOrderSchema>;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Midnight UTC of the calendar day `value` falls on. */
+function utcDay(value: Date | string): number {
+  const d = new Date(value);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+/**
+ * Calendar days from `from` to `to`, each read as its UTC day — for a hotel
+ * stay, its nights. Signed and unclamped, for the rules that refuse a stay:
+ * negative when `to` falls on an earlier day, NaN for an unparseable date.
+ * (Displays count a stay's nights with `hotelNights` from
+ * `@/lib/service-summary`: the same day rule, never fewer than one.)
+ *
+ * A hotel date is a day, not an instant. The create form sends
+ * "YYYY-MM-DD", stored as that day's UTC midnight, and every surface shows
+ * the UTC day with no clock time — so a time of day carried by an older
+ * order (or an API caller) never adds or loses a night.
+ */
+export function calendarDaysBetween(
+  from: Date | string,
+  to: Date | string,
+): number {
+  return (utcDay(to) - utcDay(from)) / DAY_MS;
+}
+
+export const HOTEL_CHECK_OUT_BEFORE_CHECK_IN = "Check-out must be after check-in";
+export const HOTEL_MIN_ONE_NIGHT =
+  "Check-out must be at least one night after check-in";
 
 /** Hotel booking REQUEST. No hotel inventory API is implied. */
 export const hotelOrderSchema = z
@@ -415,6 +473,9 @@ export const hotelOrderSchema = z
           .min(2, "Destination is required")
           .max(120),
         propertyName: z.string().trim().max(160).optional().nullable(),
+        /** CALENDAR DAYS: "YYYY-MM-DD" from the create form (stored as that
+         *  day's UTC midnight). A full ISO timestamp is still accepted and
+         *  read as its UTC day — see `calendarDaysBetween`. */
         checkInDate: isoDateString,
         checkOutDate: isoDateString,
         rooms: z.coerce
@@ -433,14 +494,22 @@ export const hotelOrderSchema = z
         roomPreference: z.string().trim().max(200).optional().nullable(),
         guestNotes: z.string().trim().max(2000).optional().nullable(),
       })
-      // The hotel equivalent of the rental "drop-off after pick-up" rule.
-      .refine(
-        (h) => new Date(h.checkOutDate) > new Date(h.checkInDate),
-        {
+      // The hotel equivalent of the rental "drop-off after pick-up" rule,
+      // counted in calendar days: a stay is at least one night. A check-out
+      // on an earlier day is told so; one on the same day is a zero-night
+      // stay, refused even at a later clock time (which comparing instants
+      // let through).
+      .superRefine((h, ctx) => {
+        const nights = calendarDaysBetween(h.checkInDate, h.checkOutDate);
+        // An unparseable date is the date field's own error, reported there.
+        if (Number.isNaN(nights) || nights >= 1) return;
+        ctx.addIssue({
+          code: "custom",
           path: ["checkOutDate"],
-          message: "Check-out must be after check-in",
-        },
-      ),
+          message:
+            nights < 0 ? HOTEL_CHECK_OUT_BEFORE_CHECK_IN : HOTEL_MIN_ONE_NIGHT,
+        });
+      }),
     currency: z.enum(CURRENCIES),
     charges: chargesInputSchema,
     notes: z.string().trim().max(2000).optional(),

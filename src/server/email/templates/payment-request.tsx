@@ -129,10 +129,12 @@ export interface PaymentRequestEmailProps {
    *  - primaryCta.url       — where the button lands. Hosted consent page
    *    when consent is still needed; Stripe checkout when consent has
    *    already been received (re-send case) or skipped by policy.
-   *  - primaryCta.label     — button copy. "Review & Confirm Booking"
-   *    for the consent variant; "Pay {amount} securely with Stripe →"
-   *    for the post-consent variant ("Pay the {amount} service charge
-   *    securely with Stripe →" on a flight).
+   *  - primaryCta.label     — button copy, from `consentCtaLabel` /
+   *    `payCtaLabel` below. "Review & Confirm Booking" for the consent
+   *    variant; "Pay {amount} securely with Stripe →" for the post-consent
+   *    variant. A flight whose charge has a name names it in both ("Review
+   *    & pay {amount} {charge}", "Pay the {amount} {charge} securely with
+   *    Stripe →").
    *  - primaryCta.helperText— tiny line under the button (e.g. the
    *    acknowledgement statement, or "Pays via Stripe").
    *
@@ -147,6 +149,61 @@ export interface PaymentRequestEmailProps {
   consentMailto?: string | null;
   consentRequired?: boolean;
 }
+
+/** A flight's collected charge — formatted amount and the operator's name
+ *  for it — for the buttons that ask the customer to pay it. */
+export interface PaymentRequestNamedCharge {
+  amount: string;
+  name: string;
+}
+
+/**
+ * The consent-first button: "Review & Confirm Booking", or "Agree &
+ * Continue to Payment" where consent is required — every car's and every
+ * hotel's, exactly as always. A flight whose collected charge has a name
+ * (`charge`) says what the customer is about to pay: "Review & pay $100.00
+ * Rental Cost" ("Agree & pay …" where consent is required).
+ *
+ * The one definition for a real send (`composePaymentRequestProps`) and the
+ * template previews, so a preview can never word the button differently
+ * from the email it previews.
+ */
+export function consentCtaLabel(
+  consentRequired: boolean,
+  charge?: PaymentRequestNamedCharge | null,
+): string {
+  if (charge?.name) {
+    return `${consentRequired ? "Agree" : "Review"} & pay ${charge.amount} ${charge.name}`;
+  }
+  return consentRequired
+    ? "Agree & Continue to Payment"
+    : "Review & Confirm Booking";
+}
+
+/**
+ * The button that pays straight away (the customer already consented, or
+ * consent could not be recorded): "Pay $249.99 securely with Stripe →",
+ * naming the processor that really takes the money. A flight whose
+ * collected charge has a name — any booking type — names it: "Pay the
+ * $100.00 Modification Fee securely with PayPal →".
+ */
+export function payCtaLabel(
+  amount: string,
+  gatewayLabel: string | null | undefined,
+  chargeName?: string | null,
+): string {
+  const via = gatewayLabel ?? "our secure checkout";
+  return chargeName
+    ? `Pay the ${amount} ${chargeName} securely with ${via} →`
+    : `Pay ${amount} securely with ${via} →`;
+}
+
+/**
+ * The prepaid row of a HOTEL request's charge block. Nothing has been paid
+ * when the request goes out, so the stay's "Amount paid online" (what the
+ * confirmation says, once it is) reads as what is payable now.
+ */
+const HOTEL_REQUEST_PREPAID_LABEL = "Amount payable now";
 
 /**
  * Pre-payment "please complete your payment" email. Sister template to
@@ -196,9 +253,12 @@ export function PaymentRequestEmail({
   const isFlight = serviceType === ServiceType.FLIGHT;
   const serviceChargeModel =
     isFlight && flightAmounts?.serviceChargeModel === true;
-  const flightLabels = flightAmountLabels(serviceChargeModel);
+  // The operator's name for the collected charge, in every label and
+  // sentence that names it.
+  const chargeName = flightAmounts?.chargeName ?? "";
+  const flightLabels = flightAmountLabels(isFlight ? chargeName : null);
   const preview = serviceChargeModel
-    ? `Complete payment for ${orderNumber} — ${amount} service charge`
+    ? `Complete payment for ${orderNumber} — ${amount} ${chargeName}`
     : `Complete payment for ${orderNumber} — ${amount}`;
   const policyParagraphs = cancellationPolicy
     ? cancellationPolicy.split(/\n+/).filter((p) => p.trim().length > 0)
@@ -218,7 +278,7 @@ export function PaymentRequestEmail({
       : serviceChargeModel
         ? `Thanks for booking with ${provider.name}. Your ${BookingTypeLabel[
             bookingType
-          ].toLowerCase()} is reserved — please pay the service charge using the secure link below to confirm it.`
+          ].toLowerCase()} is reserved — please pay the ${chargeName} using the secure link below to confirm it.`
         : `Thanks for booking with ${provider.name}. Your ${BookingTypeLabel[
             bookingType
           ].toLowerCase()} is reserved — please complete payment using the secure link below to confirm it.`;
@@ -491,6 +551,9 @@ export function PaymentRequestEmail({
           title="What you're paying"
           topPadding={SPACE.md}
           {...(serviceType === ServiceType.CAR_RENTAL ? {} : wording)}
+          {...(serviceType === ServiceType.HOTEL
+            ? { prepaidLabel: HOTEL_REQUEST_PREPAID_LABEL }
+            : {})}
         />
       ) : null}
 

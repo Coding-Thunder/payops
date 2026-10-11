@@ -1,8 +1,8 @@
 import { Column, Row, Text } from "@react-email/components";
 import * as React from "react";
 
-import { LEGACY_FLIGHT_AMOUNT_LABELS } from "@/lib/charges";
-import { PaymentTiming, ServiceType } from "@/lib/constants/enums";
+import { type ChargeWording, RENTAL_CHARGE_WORDING } from "@/lib/charges";
+import { PaymentTiming } from "@/lib/constants/enums";
 
 import { MetadataRow } from "./metadata-row";
 import { SummaryCard } from "./summary-card";
@@ -27,77 +27,16 @@ export interface EmailChargeBreakdown {
   total: string;
 }
 
-/**
- * The four wording slots that used to be hardcoded rental copy.
- *
- * Every one of them DEFAULTS to the exact string this component emitted
- * before service types existed, so a caller that passes none renders
- * byte-identically — which is what both incumbent brands do.
- */
-export interface ChargeWording {
-  /** Label on the prepaid total row. */
-  prepaidLabel?: string;
-  /** Label on the due-later total row. */
-  dueLabel?: string;
-  /** Label on the grand-total row. */
-  totalLabel?: string;
-  /** Parenthetical appended to a DUE_AT_COUNTER line item. */
-  dueSuffix?: string;
-}
-
-/** The literals this component shipped with. Named so the defaults are
- *  visible at a glance and can never drift apart from the prop defaults. */
-export const RENTAL_CHARGE_WORDING: Required<ChargeWording> = {
-  prepaidLabel: "Amount paid online",
-  dueLabel: "Amount due at counter",
-  totalLabel: "Total rental cost",
-  dueSuffix: "(due at counter)",
-};
-
-/**
- * FLIGHT wording. A flight is prepaid-only and its airline fare is never a
- * charge line, so nothing is ever "due at the airport". Real flight sends
- * render `FlightChargeBreakdown` (fare / service charge / booking value)
- * instead of this block; this covers a flight rendered without that split,
- * and the "due later" line a flight created before prepaid-only can carry.
- *
- * Neutral on purpose: without the split there is no telling an itinerary
- * flight's service charge from a legacy flight's whole fare, so the prepaid
- * row uses the legacy label ("Charged online"), true of both.
- */
-export const FLIGHT_CHARGE_WORDING: Required<ChargeWording> = {
-  prepaidLabel: LEGACY_FLIGHT_AMOUNT_LABELS.serviceCharge,
-  dueLabel: LEGACY_FLIGHT_AMOUNT_LABELS.dueLater,
-  totalLabel: "Total charges",
-  dueSuffix: "(due later)",
-};
-
-/**
- * Service-appropriate wording for the charge block.
- *
- * CAR_RENTAL returns `RENTAL_CHARGE_WORDING` — the incumbents' strings,
- * unchanged. A flight has no counter and a hotel has no counter either;
- * saying "due at counter" to a FlightBizz customer is the kind of copy bug
- * that gets read as a different company's email.
- */
-export function chargeWordingFor(
-  serviceType: ServiceType,
-): Required<ChargeWording> {
-  switch (serviceType) {
-    case ServiceType.FLIGHT:
-      return FLIGHT_CHARGE_WORDING;
-    case ServiceType.HOTEL:
-      return {
-        prepaidLabel: "Amount paid online",
-        dueLabel: "Amount due at the property",
-        totalLabel: "Total hotel cost",
-        dueSuffix: "(due at the property)",
-      };
-    case ServiceType.CAR_RENTAL:
-    default:
-      return RENTAL_CHARGE_WORDING;
-  }
-}
+// The wording maps live in `@/lib/charges`, so operator screens (client
+// components) read the same words the emails print. Re-exported here for
+// the templates that import them from this component.
+export {
+  chargeWordingFor,
+  FLIGHT_CHARGE_WORDING,
+  HOTEL_CHARGE_WORDING,
+  RENTAL_CHARGE_WORDING,
+  type ChargeWording,
+} from "@/lib/charges";
 
 interface ChargeBreakdownProps extends ChargeWording {
   breakdown: EmailChargeBreakdown;

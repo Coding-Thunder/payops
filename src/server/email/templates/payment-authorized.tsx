@@ -161,12 +161,13 @@ export function PaymentAuthorizedEmail({
   const isFlight = serviceType === ServiceType.FLIGHT;
   const serviceChargeModel =
     isFlight && flightAmounts?.serviceChargeModel === true;
-  const flightLabels = flightAmountLabels(serviceChargeModel);
+  const chargeName = flightAmounts?.chargeName ?? "";
+  const flightLabels = flightAmountLabels(isFlight ? chargeName : null);
   // The breakdown below shows an Airline Charge row only when there is one;
   // the next-step line names it only then, too.
   const showsAirlineCharge = isFlight && Boolean(flightAmounts?.airlineFare);
   const preview = serviceChargeModel
-    ? `${brandName} — ${amount} service charge held on your card for ${orderNumber}, not yet charged`
+    ? `${brandName} — ${amount} ${chargeName} held on your card for ${orderNumber}, not yet charged`
     : `${brandName} — ${amount} held on your card for ${orderNumber}, not yet charged`;
   const noun = serviceNoun({ serviceType });
   const policyParagraphs = cancellationPolicy
@@ -189,7 +190,7 @@ export function PaymentAuthorizedEmail({
             <>
               Your card has been authorized for the{" "}
               <strong style={{ color: COLOR.textPrimary }}>{amount}</strong>
-              {" service charge — this is a hold, and "}
+              {` ${chargeName} — this is a hold, and `}
               <strong style={{ color: COLOR.textPrimary }}>
                 no money has been taken yet
               </strong>
@@ -284,7 +285,7 @@ export function PaymentAuthorizedEmail({
           </NextStep>
           {serviceChargeModel ? (
             <NextStep>
-              {`Once it's confirmed we charge exactly the ${amount} service charge — not a penny more — and email you the confirmation.${
+              {`Once it's confirmed we charge exactly the ${amount} ${chargeName} — not a penny more — and email you the confirmation.${
                 showsAirlineCharge ? " The Airline Charge is not part of it." : ""
               }`}
             </NextStep>
@@ -316,7 +317,7 @@ export function PaymentAuthorizedEmail({
             }}
           >
             {serviceChargeModel ? (
-              `Your bank may show the ${amount} service charge as pending until then. That is the hold, not a charge.`
+              `Your bank may show the ${amount} ${chargeName} as pending until then. That is the hold, not a charge.`
             ) : (
               <>
                 Your bank may show {amount} as pending until then. That is the

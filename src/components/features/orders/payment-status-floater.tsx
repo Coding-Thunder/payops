@@ -79,13 +79,10 @@ function describeOrder(order: OrderDTO): FloaterDescriptor {
       return (
         describeCapture(
           order.payment.capture,
-          // An itinerary flight's authorization is its service charge,
+          // An itinerary flight's authorization is its one named charge,
           // never the airline fare. A flight created before itineraries
           // usually authorized its whole fare: the generic "amount".
-          serviceTypeOf(order) === ServiceType.FLIGHT &&
-            flightMoneyWording(order.flight, order.bookingType).serviceChargeModel
-            ? "service charge"
-            : "amount",
+          heldNoun(order),
         ) ?? {
           tone: "pending",
           label: "Awaiting payment",
@@ -95,12 +92,20 @@ function describeOrder(order: OrderDTO): FloaterDescriptor {
   }
 }
 
+/** What a flight's hold covers, by the operator's name for its charge
+ *  ("Processing Fee"); the generic "amount" for anything else. */
+function heldNoun(order: OrderDTO): string {
+  if (serviceTypeOf(order) !== ServiceType.FLIGHT) return "amount";
+  const wording = flightMoneyWording(order.flight, order.bookingType, order.charges);
+  return wording.serviceChargeModel ? wording.chargeName : "amount";
+}
+
 /**
  * Banner copy for the authorization lifecycle of a manual-capture order.
  * Returns null when there is nothing capture-specific to say, which
  * includes every automatic-capture order (`capture === null`).
- * `heldNoun` names what the hold covers: "amount", or a flight's
- * "service charge".
+ * `heldNoun` names what the hold covers: "amount", or the name a flight's
+ * operator gave its charge.
  */
 function describeCapture(
   capture: OrderPaymentCapture | null,

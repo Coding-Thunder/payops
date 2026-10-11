@@ -3,7 +3,9 @@
 import { useFormContext, useWatch } from "react-hook-form";
 
 import {
-  flightAmountLabels,
+  flightChargeName,
+  flightLabelsWithCharge,
+  normaliseFlightChargeName,
   showsAirlineCharge,
   summarizeFlightAmounts,
 } from "@/lib/charges";
@@ -14,13 +16,11 @@ import type { FlightOrderInput } from "@/lib/validation";
 import type { FlightOrderFormValues } from "./itinerary-form";
 
 /**
- * The flight form's live breakdown: airline charge + service charge = total
- * booking value, of which the payment link charges only the service charge
- * — the amount payable now. Same helper, same rows and the same copy the
- * customer pages and emails use, so the operator sees exactly what the
- * customer will — including the neutral wording a modification or
- * cancellation charge gets, which is a fee for the change rather than the
- * service charge for the booking.
+ * The flight form's live breakdown: airline charge + the operator's named
+ * charge = total booking value, of which the payment link charges only the
+ * named charge — the amount payable now. Same helper, same rows and the same
+ * labels (the operator's charge name included) the customer pages and emails
+ * use, so the operator sees exactly what the customer will.
  */
 export function FlightAmountsSummary({
   defaultCurrency,
@@ -34,6 +34,7 @@ export function FlightAmountsSummary({
   >();
   const airlineFare = useWatch({ control, name: "flight.airlineFare" });
   const serviceCharge = useWatch({ control, name: "charges.0.amount" });
+  const chargeNameInput = useWatch({ control, name: "charges.0.name" });
   const bookingType = useWatch({ control, name: "bookingType" });
   const currency = useWatch({ control, name: "currency" }) ?? defaultCurrency;
   const amounts = summarizeFlightAmounts(
@@ -46,10 +47,22 @@ export function FlightAmountsSummary({
     ],
     typeof airlineFare === "number" ? airlineFare : null,
   );
-  // This form only creates itinerary flights, so the service-charge model
-  // comes down to the booking type (see `flightMoneyWording`).
+  // This form only creates itinerary flights: the labels carry the charge
+  // name as it will be stored — a blank one as its booking type's default,
+  // a refused (airline) one never — and the sentence below names it on a
+  // new booking (see `flightMoneyWording`).
   const serviceChargeModel = bookingType === BookingType.NEW_BOOKING;
-  const labels = flightAmountLabels(serviceChargeModel);
+  const chargeName = flightChargeName(
+    [
+      {
+        name: normaliseFlightChargeName(
+          typeof chargeNameInput === "string" ? chargeNameInput : "",
+        ),
+      },
+    ],
+    bookingType,
+  );
+  const labels = flightLabelsWithCharge(chargeName);
   const showAirline = showsAirlineCharge(amounts);
 
   return (
@@ -93,7 +106,7 @@ export function FlightAmountsSummary({
           ? "The payment link charges only the "
           : "The payment link charges only "}
         <strong>{formatCurrency(amounts.payableNow, currency)}</strong>
-        {serviceChargeModel ? " service charge." : "."}
+        {serviceChargeModel ? ` ${chargeName}.` : "."}
       </p>
     </div>
   );

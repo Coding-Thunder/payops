@@ -37,6 +37,7 @@ import {
 } from "@/lib/constants/enums";
 import { PaymentGatewayLabel } from "@/lib/constants/labels";
 import {
+  chargeWordingFor,
   flightCollection,
   flightMoneyWording,
   showsAirlineCharge,
@@ -87,9 +88,13 @@ export function OrderPaymentCard({
   const currency = order.pricing.currency;
   const hasCounterDue = breakdown.dueAtCounter > 0;
   // A flight has no counter: its breakdown is airline fare + service charge,
-  // rendered by `FlightChargeBreakdown`. Every other service keeps the
-  // rental breakdown below exactly as it was.
-  const isFlight = serviceTypeOf(order) === ServiceType.FLIGHT;
+  // rendered by `FlightChargeBreakdown`. Every other service renders the
+  // breakdown below in its own charge wording — a car's is the rental
+  // wording this card has always shown; a hotel's balance is due at the
+  // property, never "at counter".
+  const serviceType = serviceTypeOf(order);
+  const isFlight = serviceType === ServiceType.FLIGHT;
+  const wording = chargeWordingFor(serviceType);
 
   // MANUAL-CAPTURE ONLY. `payment.capture` is null on every automatic-capture
   // order — i.e. every order the two incumbent brands have ever created — so
@@ -314,7 +319,7 @@ export function OrderPaymentCard({
                       <span className="ml-1.5 text-[11px] uppercase tracking-wide">
                         {c.timing === PaymentTiming.PREPAID
                           ? "· prepaid"
-                          : "· at counter"}
+                          : dueLineTag(serviceType)}
                       </span>
                     </span>
                     <span className="tabular-nums">
@@ -325,21 +330,21 @@ export function OrderPaymentCard({
               </div>
             ) : null}
             <div className="flex items-center justify-between border-t pt-1.5">
-              <span className="text-muted-foreground">Amount paid online</span>
+              <span className="text-muted-foreground">{wording.prepaidLabel}</span>
               <span className="font-medium tabular-nums">
                 {formatCurrency(breakdown.prepaid, currency)}
               </span>
             </div>
             {hasCounterDue ? (
               <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Amount due at counter</span>
+                <span className="text-muted-foreground">{wording.dueLabel}</span>
                 <span className="font-medium tabular-nums">
                   {formatCurrency(breakdown.dueAtCounter, currency)}
                 </span>
               </div>
             ) : null}
             <div className="flex items-center justify-between">
-              <span className="font-medium">Total rental cost</span>
+              <span className="font-medium">{wording.totalLabel}</span>
               <span className="font-semibold tabular-nums">
                 {formatCurrency(breakdown.total, currency)}
               </span>
@@ -464,7 +469,7 @@ export function OrderPaymentCard({
  */
 function FlightChargeBreakdown({ order }: { order: OrderDTO }) {
   const currency = order.pricing.currency;
-  const { labels } = flightMoneyWording(order.flight, order.bookingType);
+  const { labels } = flightMoneyWording(order.flight, order.bookingType, order.charges);
   const amounts = summarizeFlightAmounts(
     order.charges,
     order.flight?.airlineFare,
@@ -557,6 +562,18 @@ function FlightChargeBreakdown({ order }: { order: OrderDTO }) {
       </div>
     </div>
   );
+}
+
+/**
+ * The tag after a due-later line of the breakdown. A car keeps the words
+ * this card has always shown ("· at counter" — its emails say "(due at
+ * counter)"); any other service uses its charge wording's suffix, the one
+ * its emails print: a hotel's "(due at the property)".
+ */
+function dueLineTag(serviceType: ServiceType): string {
+  return serviceType === ServiceType.CAR_RENTAL
+    ? "· at counter"
+    : chargeWordingFor(serviceType).dueSuffix;
 }
 
 /**

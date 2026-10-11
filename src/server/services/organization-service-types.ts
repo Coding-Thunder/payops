@@ -1,23 +1,16 @@
 import "server-only";
 
 import { ServiceType } from "@/lib/constants/enums";
+import { serviceTypesOrDefault } from "@/lib/organization-service-types";
 import { Organization } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 
 /**
- * Which service types an organization sells — ONE rule for every surface
- * that asks (the create-order page and its config endpoint, the orders
- * list's filters, the organization switcher's payload).
- *
- * The stored list when it has entries; otherwise [CAR_RENTAL], which is
- * what a document stored before the field existed reads as — i.e. both
- * incumbent brands — so their surfaces render exactly as they always have.
+ * The pure rule lives in `@/lib/organization-service-types`, importable
+ * without a server context (the operations scripts use it). Re-exported
+ * here so every existing import keeps working.
  */
-export function serviceTypesOrDefault(
-  stored: ServiceType[] | null | undefined,
-): ServiceType[] {
-  return stored && stored.length > 0 ? stored : [ServiceType.CAR_RENTAL];
-}
+export { serviceTypesOrDefault };
 
 /**
  * The service types of the given organization (normally the request's

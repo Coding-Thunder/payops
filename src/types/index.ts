@@ -404,7 +404,31 @@ export interface PaymentConsentSnapshot {
   airlineFare?: number | null;
   /** FLIGHT only: airline fare + service charge(s). */
   bookingTotal?: number | null;
+  /**
+   * HOTEL only — the stay as it stood when consent was asked for, so the
+   * hosted page can show its rooms, guests and room preference instead of
+   * the folded `vehicle` / `pickupDate` / `dropoffDate` summary above.
+   * Absent on every other service and on records written before it
+   * existed, which render from the folded fields exactly as before.
+   */
+  hotel?: PaymentConsentHotelSnapshot | null;
   paymentLinkRef: string | null;
+}
+
+/**
+ * The stay frozen into a hotel consent record — exactly what the customer
+ * is shown. Deliberately no `guestNotes`: those are the operator's, and
+ * never reach a customer surface.
+ */
+export interface PaymentConsentHotelSnapshot {
+  destination: string;
+  propertyName: string | null;
+  /** CALENDAR DAYS: ISO stamps at midnight UTC, as the order stores them. */
+  checkInDate: string;
+  checkOutDate: string;
+  rooms: number | null;
+  guests: { adults: number; children: number } | null;
+  roomPreference: string | null;
 }
 
 /** The itinerary frozen into a consent record. Same shape `OrderFlight`

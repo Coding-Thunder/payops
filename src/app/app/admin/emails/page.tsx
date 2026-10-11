@@ -23,12 +23,12 @@ const TEMPLATES = [
   {
     key: "payment-confirmation",
     label: "Payment confirmation",
-    description: "Sent automatically once Stripe confirms payment.",
+    description: "Sent automatically once the payment provider confirms payment.",
   },
   {
     key: "payment-request",
     label: "Payment request",
-    description: "Sent by an agent right after order creation with the Stripe link.",
+    description: "Sent by an agent right after order creation with the payment link.",
   },
   {
     key: "payment-authorized",

@@ -1,10 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ServiceType } from "@/lib/constants/enums";
+import { SERVICE_TYPES, ServiceType } from "@/lib/constants/enums";
 import { ServiceTypeLabel } from "@/lib/constants/labels";
+import { serviceNoun } from "@/lib/service-summary";
 import { cn } from "@/lib/utils";
 import type { BookingType, Currency } from "@/lib/constants/enums";
 import type { ProviderDTO } from "@/types";
@@ -18,9 +21,14 @@ import { CreateHotelOrderForm } from "./create-hotel-order-form";
  * organization sells, one independently-bound form behind each.
  *
  * THIS COMPONENT IS NEVER RENDERED FOR A SINGLE-SERVICE ORGANIZATION. The
- * page branches before it, so RentalConfirmation and TripReservations reach
+ * page branches before it, so a car-only organization reaches
  * `CreateOrderForm` directly with no tab strip, no wrapper element and no
- * extra spacing — exactly the tree they render today.
+ * extra spacing — exactly the tree it has always rendered.
+ *
+ * The tabs come in the order the organization STORES its service types —
+ * that array order is the tab order (`OrganizationDoc.serviceTypes`) — and
+ * the first is the tab that opens. Each panel keeps its fixed place in the
+ * tree whatever that order is, so a form's markup never depends on it.
  *
  * Two decisions worth stating outright:
  *
@@ -45,13 +53,89 @@ import { CreateHotelOrderForm } from "./create-hotel-order-form";
  * another's.
  */
 
-/** Tab order, matching the design: flights first, rental last. Filtered to
- *  what the organization actually sells. */
-const TAB_ORDER: readonly ServiceType[] = [
-  ServiceType.FLIGHT,
-  ServiceType.HOTEL,
-  ServiceType.CAR_RENTAL,
-];
+/**
+ * The tabs: the organization's service types in the order it stores them.
+ * A type stored twice is listed once, and anything that is not a service
+ * type is dropped.
+ */
+function tabsInStoredOrder(serviceTypes: readonly ServiceType[]): ServiceType[] {
+  return serviceTypes.filter(
+    (t, i) => SERVICE_TYPES.includes(t) && serviceTypes.indexOf(t) === i,
+  );
+}
+
+/**
+ * Whether a service's next order would freeze the BUILT-IN text — the
+ * brand has written no terms (or no cancellation policy) of its own for it.
+ * The flags `resolveServiceTerms` returns, as the create page and
+ * `GET /api/orders/create-config` pass them on.
+ */
+export interface ServiceLegalStatus {
+  termsIsDefault: boolean;
+  policyIsDefault: boolean;
+}
+
+/** One entry per sold FLIGHT / HOTEL service. Never car rental: inheriting
+ *  the deployment's car text is the established design. */
+export type ServiceLegalStatusMap = Partial<Record<ServiceType, ServiceLegalStatus>>;
+
+/** Where a brand writes its own terms. */
+const LEGAL_SETTINGS_HREF = "/app/admin/settings";
+
+/**
+ * Says, before an order is created, that it would freeze BUILT-IN terms:
+ * the brand has no flight (or hotel) terms or cancellation policy of its
+ * own, so each new order of that service freezes the built-in,
+ * brand-neutral text until it writes its own. Non-blocking: the form works
+ * either way. Points an agent who can edit settings there; anyone else is
+ * told to ask an admin rather than handed a link they cannot open.
+ * Renders nothing once the brand has its own text.
+ */
+export function BuiltInTermsNotice({
+  serviceType,
+  status,
+  canEditTerms = false,
+  className,
+}: {
+  serviceType: ServiceType;
+  status: ServiceLegalStatus | null | undefined;
+  canEditTerms?: boolean;
+  className?: string;
+}) {
+  if (!status || (!status.termsIsDefault && !status.policyIsDefault)) {
+    return null;
+  }
+  const noun = serviceNoun({ serviceType });
+  const both = status.termsIsDefault && status.policyIsDefault;
+  const missing = both
+    ? "terms or cancellation policy"
+    : status.termsIsDefault
+      ? "terms"
+      : "cancellation policy";
+  const frozen = both ? "terms and cancellation policy" : missing;
+  return (
+    <Alert variant="warning" className={className}>
+      <AlertTitle>{`Built-in ${noun} ${frozen} in use`}</AlertTitle>
+      <AlertDescription>
+        {`This brand has no ${noun} ${missing} of its own yet. New ${noun} orders will freeze the built-in ${noun} ${frozen}. `}
+        {canEditTerms ? (
+          <>
+            {"Add the brand's own in "}
+            <Link
+              href={LEGAL_SETTINGS_HREF}
+              className="font-medium underline underline-offset-2"
+            >
+              Admin → Settings
+            </Link>
+            .
+          </>
+        ) : (
+          "Ask an admin to add the brand's own in Admin → Settings."
+        )}
+      </AlertDescription>
+    </Alert>
+  );
+}
 
 /**
  * Narrow the org-scoped provider catalog to one service type.
@@ -92,13 +176,19 @@ function panelProps(serviceType: ServiceType, active: ServiceType) {
 }
 
 interface ServiceTabsProps {
-  /** The organization's allowed service types. Rendered in TAB_ORDER. */
+  /** The organization's allowed service types, in its stored order — the
+   *  tab order; the first one opens. */
   serviceTypes: readonly ServiceType[];
   allowedBookingTypes: readonly BookingType[];
   defaultCurrency: Currency;
   allowedCurrencies: readonly string[];
   /** Org-scoped active provider catalog, narrowed per tab below. */
   providers: ProviderDTO[];
+  /** Per sold flight / hotel service: would its next order freeze built-in
+   *  terms? Each such tab says so. Omitted: no notices. */
+  legalStatus?: ServiceLegalStatusMap;
+  /** Whether the viewer may edit the brand's terms (Admin → Settings). */
+  canEditTerms?: boolean;
 }
 
 export function ServiceTabs({
@@ -107,8 +197,10 @@ export function ServiceTabs({
   defaultCurrency,
   allowedCurrencies,
   providers,
+  legalStatus,
+  canEditTerms = false,
 }: ServiceTabsProps) {
-  const tabs = TAB_ORDER.filter((t) => serviceTypes.includes(t));
+  const tabs = tabsInStoredOrder(serviceTypes);
   const [active, setActive] = useState<ServiceType>(
     tabs[0] ?? ServiceType.CAR_RENTAL,
   );
@@ -133,8 +225,17 @@ export function ServiceTabs({
         ))}
       </TabsList>
 
+      {/* Fixed panel slots — flight, hotel, car — whatever the tab order:
+          a panel's place in the tree never moves, so neither do the ids its
+          form generates. Car rental never carries a terms notice. */}
       {tabs.includes(ServiceType.FLIGHT) ? (
         <TabsContent {...panelProps(ServiceType.FLIGHT, active)}>
+          <BuiltInTermsNotice
+            serviceType={ServiceType.FLIGHT}
+            status={legalStatus?.FLIGHT}
+            canEditTerms={canEditTerms}
+            className="mb-6"
+          />
           <CreateFlightOrderForm
             {...shared}
             providers={providersForService(providers, ServiceType.FLIGHT)}
@@ -145,6 +246,12 @@ export function ServiceTabs({
 
       {tabs.includes(ServiceType.HOTEL) ? (
         <TabsContent {...panelProps(ServiceType.HOTEL, active)}>
+          <BuiltInTermsNotice
+            serviceType={ServiceType.HOTEL}
+            status={legalStatus?.HOTEL}
+            canEditTerms={canEditTerms}
+            className="mb-6"
+          />
           <CreateHotelOrderForm
             {...shared}
             providers={providersForService(providers, ServiceType.HOTEL)}

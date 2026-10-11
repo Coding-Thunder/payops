@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Types } from "mongoose";
 
 import {
@@ -13,6 +13,8 @@ import {
   Organization,
 } from "@/server/db/models";
 import { POST as orgWebhook } from "@/app/api/webhooks/stripe/[orgSlug]/route";
+import { POST as paypalOrgWebhook } from "@/app/api/webhooks/paypal/[orgSlug]/route";
+import { _setPayPalFetchForTesting } from "@/server/payments/gateways/paypal";
 import { putSecret } from "@/server/services/organization-credential.service";
 import { createOrder as factoryCreateOrder } from "@/tests/factories/order.factory";
 import { jsonBody } from "@/tests/utils/api";
@@ -285,5 +287,318 @@ describe("a brand's gateway can never settle another brand's order", () => {
     expect((await jsonBody(res)).status).toBe(200);
     const after = await Order.findById(order._id);
     expect(after?.status).toBe(OrderStatus.PAID);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Each endpoint resolves the provider IT serves
+ *
+ * A brand may enable two providers — TripReservations takes PayPal and is
+ * adding its own Stripe account. Its PayPal deliveries arrive on the PayPal
+ * endpoint and its Stripe deliveries on the Stripe one, whichever provider
+ * is its default. Each endpoint therefore asks for its own provider's
+ * gateway; resolving the brand's DEFAULT turned away every delivery for the
+ * other one. The request is honoured only for an ENABLED provider, so a
+ * single-provider brand resolves exactly what it always did.
+ * ------------------------------------------------------------------ */
+
+/** Every PayPal API call the stub answered, in order. */
+let paypalCalls: { url: string; body: unknown }[] = [];
+/** What PayPal's verify-webhook-signature answers. */
+let paypalVerdict = "SUCCESS";
+const paypalEnvKeys: string[] = [];
+
+function stubPayPal() {
+  paypalCalls = [];
+  paypalVerdict = "SUCCESS";
+  _setPayPalFetchForTesting((async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const raw = init?.body ? String(init.body) : "";
+    paypalCalls.push({ url, body: raw.startsWith("{") ? JSON.parse(raw) : raw });
+    const reply = url.includes("/v1/oauth2/token")
+      ? { access_token: "tok", expires_in: 3600 }
+      : url.includes("/v1/notifications/verify-webhook-signature")
+        ? { verification_status: paypalVerdict }
+        : url.includes("/capture")
+          ? { id: "PP-ORDER-1", status: "COMPLETED" }
+          : {};
+    return new Response(JSON.stringify(reply), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as unknown as typeof fetch);
+}
+
+/** PayPal credentials for `slug`, from the environment — how this
+ *  deployment configures a brand's PayPal account. */
+function paypalEnv(slug: string) {
+  const prefix = `ORG_${slug.toUpperCase()}_PAYPAL_`;
+  const values = {
+    [`${prefix}CLIENT_ID`]: `client-${slug}`,
+    [`${prefix}CLIENT_SECRET`]: `secret-${slug}`,
+    [`${prefix}WEBHOOK_ID`]: `WEBHOOK-${slug}`,
+    [`${prefix}SANDBOX`]: "true",
+  };
+  Object.assign(process.env, values);
+  paypalEnvKeys.push(...Object.keys(values));
+}
+
+async function stripeVault(orgId: string, slug: string) {
+  await putSecret({
+    organizationId: orgId,
+    provider: CredentialProvider.STRIPE,
+    field: CredentialField.SECRET_KEY,
+    value: `sk_live_${slug}`,
+  });
+  await putSecret({
+    organizationId: orgId,
+    provider: CredentialProvider.STRIPE,
+    field: CredentialField.WEBHOOK_SECRET,
+    value: `whsec_${slug}`,
+  });
+}
+
+/** An organization on `provider` by default, with `enabled` providers, and
+ *  credentials for each one it enables. */
+async function makeBrand(
+  slug: string,
+  provider: PaymentGatewayKey,
+  enabled: PaymentGatewayKey[] = [],
+): Promise<string> {
+  const doc = await Organization.create({
+    slug,
+    name: slug,
+    brandName: `${slug} brand`,
+    isDefault: false,
+    payments: { provider, enabledProviders: enabled },
+  });
+  const id = String(doc._id as Types.ObjectId);
+  const uses = enabled.length > 0 ? enabled : [provider];
+  if (uses.includes(PaymentGatewayKey.PAYPAL)) paypalEnv(slug);
+  if (uses.includes(PaymentGatewayKey.STRIPE)) await stripeVault(id, slug);
+  return id;
+}
+
+/** A PayPal delivery as PayPal sends it: the five transmission headers. */
+function paypalReq(slug: string, event: Record<string, unknown>) {
+  return new Request(`http://localhost/api/webhooks/paypal/${slug}`, {
+    method: "POST",
+    headers: new Headers({
+      "content-type": "application/json",
+      "paypal-transmission-id": "tx-1",
+      "paypal-transmission-time": "2026-10-10T00:00:00Z",
+      "paypal-cert-url": "https://api-m.sandbox.paypal.com/v1/notifications/certs/CERT",
+      "paypal-auth-algo": "SHA256withRSA",
+      "paypal-transmission-sig": "sig",
+    }),
+    body: JSON.stringify(event),
+  }) as never;
+}
+
+function paypalApproved(orderId: string) {
+  return {
+    id: `WH-APPROVED-${orderId}`,
+    event_type: "CHECKOUT.ORDER.APPROVED",
+    create_time: "2026-10-10T00:00:00Z",
+    resource: { id: "PP-ORDER-1", status: "APPROVED", purchase_units: [{ custom_id: orderId }] },
+  };
+}
+
+function paypalCaptureCompleted(orderId: string, value = "199.50") {
+  return {
+    id: `WH-COMPLETED-${orderId}`,
+    event_type: "PAYMENT.CAPTURE.COMPLETED",
+    create_time: "2026-10-10T00:00:00Z",
+    resource: {
+      id: "CAP-1",
+      status: "COMPLETED",
+      custom_id: orderId,
+      amount: { currency_code: "USD", value },
+      supplementary_data: { related_ids: { order_id: "PP-ORDER-1" } },
+    },
+  };
+}
+
+async function orderOf(orgId: string) {
+  return factoryCreateOrder({ organizationId: new Types.ObjectId(orgId) });
+}
+
+function signedCheckout(order: Awaited<ReturnType<typeof orderOf>>, slug: string) {
+  const payload = JSON.stringify(
+    buildCheckoutCompleted({
+      orderId: String(order._id),
+      orderNumber: order.orderNumber,
+      amountTotal: Math.round(order.pricing.amount * 100),
+    }),
+  );
+  return { payload, signature: signWebhook(payload, `whsec_${slug}`) };
+}
+
+describe("the PayPal endpoint uses the brand's PayPal gateway, whatever its default", () => {
+  beforeEach(() => stubPayPal());
+  afterEach(() => {
+    _setPayPalFetchForTesting(null);
+    for (const key of paypalEnvKeys.splice(0)) delete process.env[key];
+  });
+
+  it("captures an APPROVED order for a brand on Stripe by default with PayPal also enabled", async () => {
+    const orgId = await makeBrand("stripefirst", PaymentGatewayKey.STRIPE, [
+      PaymentGatewayKey.STRIPE,
+      PaymentGatewayKey.PAYPAL,
+    ]);
+    const order = await orderOf(orgId);
+
+    const res = await paypalOrgWebhook(
+      paypalReq("stripefirst", paypalApproved(String(order._id))),
+      params("stripefirst"),
+    );
+    const { status, body } = await jsonBody<{ data: { captured?: boolean } }>(res);
+    expect(status, JSON.stringify(body)).toBe(200);
+    expect(body.data.captured).toBe(true);
+    // Verified with THIS brand's PayPal webhook id, then captured on PayPal.
+    const verify = paypalCalls.find((c) => c.url.includes("verify-webhook-signature"));
+    expect((verify!.body as { webhook_id: string }).webhook_id).toBe("WEBHOOK-stripefirst");
+    expect(paypalCalls.some((c) => c.url.endsWith("/v2/checkout/orders/PP-ORDER-1/capture"))).toBe(
+      true,
+    );
+    // Approval is not payment: the order is not PAID until the capture lands.
+    expect((await Order.findById(order._id))?.status).not.toBe(OrderStatus.PAID);
+  });
+
+  it("settles that brand's order on PAYMENT.CAPTURE.COMPLETED", async () => {
+    const orgId = await makeBrand("stripefirst", PaymentGatewayKey.STRIPE, [
+      PaymentGatewayKey.STRIPE,
+      PaymentGatewayKey.PAYPAL,
+    ]);
+    const order = await orderOf(orgId);
+
+    const res = await paypalOrgWebhook(
+      paypalReq("stripefirst", paypalCaptureCompleted(String(order._id))),
+      params("stripefirst"),
+    );
+    expect((await jsonBody(res)).status).toBe(200);
+    const paid = await Order.findById(order._id);
+    expect(paid?.status).toBe(OrderStatus.PAID);
+    expect(paid?.payment.amountReceived).toBe(199.5);
+  });
+
+  it("keeps a PayPal-only brand exactly as it was — captured, then settled", async () => {
+    const orgId = await makeBrand("paypalonly", PaymentGatewayKey.PAYPAL);
+    const order = await orderOf(orgId);
+
+    const approved = await paypalOrgWebhook(
+      paypalReq("paypalonly", paypalApproved(String(order._id))),
+      params("paypalonly"),
+    );
+    expect((await jsonBody<{ data: { captured?: boolean } }>(approved)).body.data.captured).toBe(true);
+
+    const completed = await paypalOrgWebhook(
+      paypalReq("paypalonly", paypalCaptureCompleted(String(order._id))),
+      params("paypalonly"),
+    );
+    expect((await jsonBody(completed)).status).toBe(200);
+    expect((await Order.findById(order._id))?.status).toBe(OrderStatus.PAID);
+  });
+
+  it("answers a Stripe-only brand's PayPal endpoint with the same flat 404 as an unknown one", async () => {
+    await makeConfiguredOrg("tripreservations");
+    const res = await paypalOrgWebhook(
+      paypalReq("tripreservations", paypalCaptureCompleted(new Types.ObjectId().toString())),
+      params("tripreservations"),
+    );
+    const { status, body } = await jsonBody(res);
+    expect(status).toBe(404);
+    expect(JSON.stringify(body)).toMatch(/unknown endpoint/i);
+    expect(paypalCalls).toHaveLength(0);
+  });
+
+  it("refuses a delivery PayPal does not verify, and settles nothing", async () => {
+    const orgId = await makeBrand("paypalonly", PaymentGatewayKey.PAYPAL);
+    const order = await orderOf(orgId);
+    paypalVerdict = "FAILURE";
+
+    const res = await paypalOrgWebhook(
+      paypalReq("paypalonly", paypalCaptureCompleted(String(order._id))),
+      params("paypalonly"),
+    );
+    expect((await jsonBody(res)).status).toBe(400);
+    expect((await Order.findById(order._id))?.status).not.toBe(OrderStatus.PAID);
+  });
+
+  it("never settles another brand's order, however correctly signed", async () => {
+    await makeBrand("paypalonly", PaymentGatewayKey.PAYPAL);
+    const otherOrgId = await makeBrand("otherbrand", PaymentGatewayKey.PAYPAL);
+    const victim = await orderOf(otherOrgId);
+
+    const res = await paypalOrgWebhook(
+      paypalReq("paypalonly", paypalCaptureCompleted(String(victim._id))),
+      params("paypalonly"),
+    );
+    const { status, body } = await jsonBody(res);
+    expect(status).toBe(200);
+    expect(JSON.stringify(body)).toMatch(/order_not_found/);
+    expect((await Order.findById(victim._id))?.status).not.toBe(OrderStatus.PAID);
+  });
+});
+
+describe("the Stripe endpoint uses the brand's Stripe gateway, whatever its default", () => {
+  beforeEach(() => stubPayPal());
+  afterEach(() => {
+    _setPayPalFetchForTesting(null);
+    for (const key of paypalEnvKeys.splice(0)) delete process.env[key];
+  });
+
+  it("verifies a signed Stripe event for a brand on PayPal by default with Stripe also enabled", async () => {
+    const orgId = await makeBrand("paypalfirst", PaymentGatewayKey.PAYPAL, [
+      PaymentGatewayKey.PAYPAL,
+      PaymentGatewayKey.STRIPE,
+    ]);
+    const order = await orderOf(orgId);
+    const { payload, signature } = signedCheckout(order, "paypalfirst");
+
+    const res = await orgWebhook(req("paypalfirst", payload, signature), params("paypalfirst"));
+    const { status, body } = await jsonBody(res);
+    expect(status, JSON.stringify(body)).toBe(200);
+    expect((await Order.findById(order._id))?.status).toBe(OrderStatus.PAID);
+    // Verified locally against the brand's Stripe secret — PayPal never asked.
+    expect(paypalCalls).toHaveLength(0);
+  });
+
+  it("still rejects that brand's event when it is signed with any other secret", async () => {
+    const orgId = await makeBrand("paypalfirst", PaymentGatewayKey.PAYPAL, [
+      PaymentGatewayKey.PAYPAL,
+      PaymentGatewayKey.STRIPE,
+    ]);
+    const order = await orderOf(orgId);
+    const { payload } = signedCheckout(order, "paypalfirst");
+
+    const res = await orgWebhook(
+      req("paypalfirst", payload, signWebhook(payload, process.env.STRIPE_WEBHOOK_SECRET!)),
+      params("paypalfirst"),
+    );
+    expect((await jsonBody(res)).status).toBe(400);
+    expect((await Order.findById(order._id))?.status).not.toBe(OrderStatus.PAID);
+  });
+
+  it("answers a PayPal-only brand's Stripe endpoint with the same flat 404 as an unknown one", async () => {
+    const orgId = await makeBrand("paypalonly", PaymentGatewayKey.PAYPAL);
+    const order = await orderOf(orgId);
+    const { payload, signature } = signedCheckout(order, "paypalonly");
+
+    const res = await orgWebhook(req("paypalonly", payload, signature), params("paypalonly"));
+    const { status, body } = await jsonBody(res);
+    expect(status).toBe(404);
+    expect(JSON.stringify(body)).toMatch(/unknown endpoint/i);
+    expect((await Order.findById(order._id))?.status).not.toBe(OrderStatus.PAID);
+  });
+
+  it("keeps a Stripe-only brand exactly as it was", async () => {
+    const orgId = await makeConfiguredOrg("tripreservations");
+    const order = await orderOf(orgId);
+    const { payload, signature } = signedCheckout(order, "tripreservations");
+
+    const res = await orgWebhook(req("tripreservations", payload, signature), params("tripreservations"));
+    expect((await jsonBody(res)).status).toBe(200);
+    expect((await Order.findById(order._id))?.status).toBe(OrderStatus.PAID);
   });
 });

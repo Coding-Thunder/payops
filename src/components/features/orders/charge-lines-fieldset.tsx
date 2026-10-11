@@ -44,7 +44,8 @@ import type { OrderCharge } from "@/types";
  * `namePlaceholder`, `afterCurrency` and `renderSummary` all default to
  * "exactly what the rental form renders", and only a caller that passes
  * them gets anything different (no timing column, no counter wording, its
- * own breakdown).
+ * own breakdown). So does the hotel form's `timingLabels`: the timing
+ * options keep the rental words unless a caller names them its own way.
  *
  * The component deliberately renders a fragment, not a wrapper element:
  * it sits directly inside `<CardContent className="space-y-4">` in all
@@ -79,6 +80,10 @@ interface ChargeLinesFieldsetProps {
    *  at all, so there is nothing to get wrong. Must include PREPAID — new
    *  lines are added as prepaid. */
   timings?: readonly PaymentTiming[];
+  /** What each timing option is called. Defaults to `PaymentTimingLabel`,
+   *  the rental words ("Prepaid" / "Due at counter"); a hotel passes its
+   *  own ("Paid online now" / "Due at the property"). */
+  timingLabels?: Readonly<Record<PaymentTiming, string>>;
   namePlaceholder?: string;
   /** Rendered between the currency and the charge lines. */
   afterCurrency?: ReactNode;
@@ -98,6 +103,7 @@ export function ChargeLinesFieldset({
   dueLaterLabel = "Amount due at counter",
   totalLabel = "Total rental cost",
   timings = PAYMENT_TIMINGS,
+  timingLabels = PaymentTimingLabel,
   namePlaceholder = "e.g. Rental cost",
   afterCurrency,
   renderSummary,
@@ -241,7 +247,7 @@ export function ChargeLinesFieldset({
                       <SelectContent>
                         {timings.map((t) => (
                           <SelectItem key={t} value={t}>
-                            {PaymentTimingLabel[t]}
+                            {timingLabels[t]}
                           </SelectItem>
                         ))}
                       </SelectContent>
