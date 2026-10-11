@@ -15,8 +15,10 @@ import type { ProviderDTO } from "@/types";
  * tab), but only the open one can submit: a hidden form — even a valid,
  * fully filled one — posts nothing until its tab is opened.
  *
- * A flight or hotel tab whose next order would freeze BUILT-IN terms says
- * so; the car tab never does.
+ * No tab carries a terms notice. Terms need nothing from an admin: every
+ * order freezes its own service's pre-written terms (the brand's own only
+ * where it chose to customise them), so there is nothing to warn about and
+ * no "Admin → Settings" errand for an agent.
  */
 
 const replace = vi.fn();
@@ -217,27 +219,55 @@ describe("only the open tab can submit", () => {
   });
 });
 
-describe("the built-in terms notice", () => {
-  it("sits in the flight and hotel tabs whose next order would freeze built-in text", () => {
-    renderTabs([ServiceType.CAR_RENTAL, ServiceType.FLIGHT, ServiceType.HOTEL], {
-      legalStatus: {
-        FLIGHT: { termsIsDefault: true, policyIsDefault: false },
-        HOTEL: { termsIsDefault: false, policyIsDefault: false },
-      },
-      canEditTerms: true,
-    });
-    expect(panel("Flights").textContent).toContain(
-      "This brand has no flight terms of its own yet. New flight orders will freeze the built-in flight terms. Add the brand's own in Admin → Settings.",
-    );
-    expect(
-      within(panel("Flights")).getByRole("link", { name: "Admin → Settings", hidden: true }),
-    ).toHaveAttribute("href", "/app/admin/settings");
-    expect(panel("Stay").textContent).not.toContain("built-in");
-    expect(screen.getAllByText(/built-in/, { exact: false })).toHaveLength(1);
+describe("no terms notice: every tab's orders get their service's pre-written terms", () => {
+  /** Everything the removed "built-in terms" notice said or pointed to. */
+  const NOTICE_WORDING = [
+    /of its own yet/i,
+    /built-in/i,
+    /terms in use/i,
+    /will freeze/i,
+    /Admin → Settings/,
+    /ask an admin/i,
+  ];
+
+  /** Every panel, open or hidden — all of them are force-mounted. */
+  const allPanels = () => screen.getAllByRole("tabpanel", { hidden: true });
+
+  function expectNoNotice(container: HTMLElement) {
+    for (const p of allPanels()) {
+      for (const wording of NOTICE_WORDING) {
+        expect(p.textContent ?? "").not.toMatch(wording);
+      }
+    }
+    expect(container.textContent ?? "").not.toMatch(/of its own yet|built-in|Admin → Settings/i);
+    // The notice linked to the settings page and rendered as an alert.
+    expect(container.querySelector('a[href="/app/admin/settings"]')).toBeNull();
+    expect(screen.queryAllByRole("alert", { hidden: true })).toHaveLength(0);
+  }
+
+  it.each([
+    { label: "car rental · flight · hotel", serviceTypes: [ServiceType.CAR_RENTAL, ServiceType.FLIGHT, ServiceType.HOTEL] },
+    { label: "flight · hotel (no car tab at all)", serviceTypes: [ServiceType.FLIGHT, ServiceType.HOTEL] },
+    { label: "hotel · flight · car rental", serviceTypes: [ServiceType.HOTEL, ServiceType.FLIGHT, ServiceType.CAR_RENTAL] },
+  ])("$label: no panel — open or hidden — carries a terms notice, a settings link or an alert", ({ serviceTypes }) => {
+    const { container } = renderTabs(serviceTypes);
+    expect(allPanels()).toHaveLength(serviceTypes.length);
+    expectNoNotice(container);
   });
 
-  it("never appears without a legal status", () => {
-    const { container } = renderTabs([ServiceType.FLIGHT, ServiceType.HOTEL]);
-    expect(container.textContent).not.toContain("built-in");
+  it("opening each tab in turn shows its form and still no notice", async () => {
+    const { container } = renderTabs([ServiceType.CAR_RENTAL, ServiceType.FLIGHT, ServiceType.HOTEL]);
+    for (const [tab, title] of [
+      ["Flight", "Flights"],
+      ["Hotel", "Stay"],
+      ["Car rental", "Rental provider & vehicle"],
+    ] as const) {
+      fireEvent.mouseDown(screen.getByRole("tab", { name: tab }));
+      await waitFor(() => expect(selectedTab()).toBe(tab));
+      expect(panel(title)).not.toHaveAttribute("hidden");
+      // The open form is ready to submit — nothing to set up first.
+      expect(within(panel(title)).getByRole("button", { name: SUBMIT })).toBeInTheDocument();
+      expectNoNotice(container);
+    }
   });
 });

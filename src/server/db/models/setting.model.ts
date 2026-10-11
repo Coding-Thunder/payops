@@ -63,9 +63,10 @@ export const DEFAULT_TERMS_AND_CONDITIONS = [
  * so the terms speak of the amount payable now.
  */
 export const DEFAULT_FLIGHT_TERMS_AND_CONDITIONS = [
-  "This booking is arranged on your behalf with the airline(s) shown in your itinerary. Each flight is operated under the operating airline's conditions of carriage and the fare rules of your ticket.",
+  "This booking is arranged on your behalf with the airline(s) and any travel supplier shown in your itinerary. Each flight is operated under the operating airline's conditions of carriage and the fare rules of your ticket.",
   "The amount shown as payable now is the only amount collected through this payment. If your card is authorized (held) rather than charged, it is collected only once your booking is confirmed. Where an airline charge is shown, it forms part of your total booking value but is not included in this payment.",
   "Please make sure every passenger's name matches their passport or government-issued photo ID exactly. Name corrections may be restricted or charged by the airline.",
+  "Once your booking is ticketed, your airline booking reference (PNR) appears on your confirmation. Use it with the airline to check in and manage your booking.",
   "Each passenger is responsible for holding valid travel documents — passport, visas, transit visas and any health documentation — for every country on the itinerary, including connection points.",
   "Check-in, boarding, baggage allowances, seat assignments and optional extras are governed by the operating airline. Please allow enough time at the airport for check-in and security.",
   "Flight schedules can change. If an airline changes or cancels a flight, we will help you with the options the airline offers.",
@@ -82,8 +83,9 @@ export const DEFAULT_FLIGHT_CANCELLATION_POLICY = [
 
 /** Version label frozen onto an order that used a built-in flight text.
  *  v2: the money clause speaks of the amount payable now, not a "service
- *  charge" — the operator names the charge. Orders frozen with v1 keep it. */
-export const DEFAULT_FLIGHT_LEGAL_VERSION = "v2";
+ *  charge" — the operator names the charge. v3: names the travel supplier
+ *  and the PNR. Orders frozen with an earlier version keep it. */
+export const DEFAULT_FLIGHT_LEGAL_VERSION = "v3";
 
 /**
  * Built-in HOTEL terms — the fallback for an organization that sells hotel

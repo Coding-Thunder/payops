@@ -341,17 +341,17 @@ describe("an organization that sells flights but has no flight text of its own",
     });
   });
 
-  it("logs that the built-in default was used, naming the organization", async () => {
+  it("logs no warning when the built-in default is used — it is the normal path, not a gap to configure", async () => {
     const warn = vi.spyOn(logger, "warn");
-    await frozenLegal(charlie, ServiceType.FLIGHT);
-    expect(warn).toHaveBeenCalledWith(
-      "legal.flight.default_used",
-      expect.objectContaining({
-        organizationId: String(charlie),
-        terms: "default",
-        policy: "default",
-      }),
-    );
+    const legal = await frozenLegal(charlie, ServiceType.FLIGHT);
+    // The order still froze the built-in flight text…
+    expectBuiltInDefault(legal);
+    // …and nothing told an operator to go and write terms: no
+    // `legal.*.default_used` (or any other legal.*) warning, for this
+    // organization or any other.
+    const legalWarnings = warn.mock.calls.filter(([message]) => /^legal\./.test(String(message)));
+    expect(legalWarnings).toEqual([]);
+    expect(warn).not.toHaveBeenCalledWith("legal.flight.default_used", expect.anything());
   });
 });
 

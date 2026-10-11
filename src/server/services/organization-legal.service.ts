@@ -25,6 +25,7 @@ import {
   type OrganizationServiceLegal,
 } from "@/server/db/models";
 import {
+  DEFAULT_CANCELLATION_POLICY,
   DEFAULT_CONSENT_MESSAGE,
   DEFAULT_FLIGHT_CANCELLATION_POLICY,
   DEFAULT_FLIGHT_LEGAL_VERSION,
@@ -32,6 +33,7 @@ import {
   DEFAULT_HOTEL_CANCELLATION_POLICY,
   DEFAULT_HOTEL_LEGAL_VERSION,
   DEFAULT_HOTEL_TERMS_AND_CONDITIONS,
+  DEFAULT_TERMS_AND_CONDITIONS,
 } from "@/server/db/models/setting.model";
 import { connectMongo } from "@/server/db/mongoose";
 import { organizationStamp } from "@/server/db/organization-filter";
@@ -185,11 +187,21 @@ function viewFields(serviceType: OrganizationLegalService): string {
 
 async function deploymentCarLegal(): Promise<DeploymentCarLegal> {
   const settings = await getSettings();
+  // The deployment's car text is pre-written (seeded from the built-in car
+  // defaults). Should it ever be blank, car orders still get the built-in
+  // car text — never an empty one, and nothing for an admin to fill in.
+  const hasTerms = Boolean(settings.termsAndConditions?.trim());
+  const hasPolicy = Boolean(settings.cancellationPolicy?.trim());
   return {
-    termsAndConditions: settings.termsAndConditions,
-    termsVersion: settings.termsVersion,
-    cancellationPolicy: settings.cancellationPolicy,
-    cancellationPolicyVersion: settings.cancellationPolicyVersion,
+    termsAndConditions: hasTerms
+      ? settings.termsAndConditions
+      : DEFAULT_TERMS_AND_CONDITIONS,
+    termsVersion: (hasTerms && settings.termsVersion) || "v1",
+    cancellationPolicy: hasPolicy
+      ? settings.cancellationPolicy
+      : DEFAULT_CANCELLATION_POLICY,
+    cancellationPolicyVersion:
+      (hasPolicy && settings.cancellationPolicyVersion) || "v1",
   };
 }
 

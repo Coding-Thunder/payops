@@ -1,13 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SERVICE_TYPES, ServiceType } from "@/lib/constants/enums";
 import { ServiceTypeLabel } from "@/lib/constants/labels";
-import { serviceNoun } from "@/lib/service-summary";
 import { cn } from "@/lib/utils";
 import type { BookingType, Currency } from "@/lib/constants/enums";
 import type { ProviderDTO } from "@/types";
@@ -65,79 +62,6 @@ function tabsInStoredOrder(serviceTypes: readonly ServiceType[]): ServiceType[] 
 }
 
 /**
- * Whether a service's next order would freeze the BUILT-IN text — the
- * brand has written no terms (or no cancellation policy) of its own for it.
- * The flags `resolveServiceTerms` returns, as the create page and
- * `GET /api/orders/create-config` pass them on.
- */
-export interface ServiceLegalStatus {
-  termsIsDefault: boolean;
-  policyIsDefault: boolean;
-}
-
-/** One entry per sold FLIGHT / HOTEL service. Never car rental: inheriting
- *  the deployment's car text is the established design. */
-export type ServiceLegalStatusMap = Partial<Record<ServiceType, ServiceLegalStatus>>;
-
-/** Where a brand writes its own terms. */
-const LEGAL_SETTINGS_HREF = "/app/admin/settings";
-
-/**
- * Says, before an order is created, that it would freeze BUILT-IN terms:
- * the brand has no flight (or hotel) terms or cancellation policy of its
- * own, so each new order of that service freezes the built-in,
- * brand-neutral text until it writes its own. Non-blocking: the form works
- * either way. Points an agent who can edit settings there; anyone else is
- * told to ask an admin rather than handed a link they cannot open.
- * Renders nothing once the brand has its own text.
- */
-export function BuiltInTermsNotice({
-  serviceType,
-  status,
-  canEditTerms = false,
-  className,
-}: {
-  serviceType: ServiceType;
-  status: ServiceLegalStatus | null | undefined;
-  canEditTerms?: boolean;
-  className?: string;
-}) {
-  if (!status || (!status.termsIsDefault && !status.policyIsDefault)) {
-    return null;
-  }
-  const noun = serviceNoun({ serviceType });
-  const both = status.termsIsDefault && status.policyIsDefault;
-  const missing = both
-    ? "terms or cancellation policy"
-    : status.termsIsDefault
-      ? "terms"
-      : "cancellation policy";
-  const frozen = both ? "terms and cancellation policy" : missing;
-  return (
-    <Alert variant="warning" className={className}>
-      <AlertTitle>{`Built-in ${noun} ${frozen} in use`}</AlertTitle>
-      <AlertDescription>
-        {`This brand has no ${noun} ${missing} of its own yet. New ${noun} orders will freeze the built-in ${noun} ${frozen}. `}
-        {canEditTerms ? (
-          <>
-            {"Add the brand's own in "}
-            <Link
-              href={LEGAL_SETTINGS_HREF}
-              className="font-medium underline underline-offset-2"
-            >
-              Admin → Settings
-            </Link>
-            .
-          </>
-        ) : (
-          "Ask an admin to add the brand's own in Admin → Settings."
-        )}
-      </AlertDescription>
-    </Alert>
-  );
-}
-
-/**
  * Narrow the org-scoped provider catalog to one service type.
  *
  * A row with no `serviceTypes` predates the field and is a car-rental
@@ -184,11 +108,6 @@ interface ServiceTabsProps {
   allowedCurrencies: readonly string[];
   /** Org-scoped active provider catalog, narrowed per tab below. */
   providers: ProviderDTO[];
-  /** Per sold flight / hotel service: would its next order freeze built-in
-   *  terms? Each such tab says so. Omitted: no notices. */
-  legalStatus?: ServiceLegalStatusMap;
-  /** Whether the viewer may edit the brand's terms (Admin → Settings). */
-  canEditTerms?: boolean;
 }
 
 export function ServiceTabs({
@@ -197,8 +116,6 @@ export function ServiceTabs({
   defaultCurrency,
   allowedCurrencies,
   providers,
-  legalStatus,
-  canEditTerms = false,
 }: ServiceTabsProps) {
   const tabs = tabsInStoredOrder(serviceTypes);
   const [active, setActive] = useState<ServiceType>(
@@ -227,15 +144,9 @@ export function ServiceTabs({
 
       {/* Fixed panel slots — flight, hotel, car — whatever the tab order:
           a panel's place in the tree never moves, so neither do the ids its
-          form generates. Car rental never carries a terms notice. */}
+          form generates. */}
       {tabs.includes(ServiceType.FLIGHT) ? (
         <TabsContent {...panelProps(ServiceType.FLIGHT, active)}>
-          <BuiltInTermsNotice
-            serviceType={ServiceType.FLIGHT}
-            status={legalStatus?.FLIGHT}
-            canEditTerms={canEditTerms}
-            className="mb-6"
-          />
           <CreateFlightOrderForm
             {...shared}
             providers={providersForService(providers, ServiceType.FLIGHT)}
@@ -246,12 +157,6 @@ export function ServiceTabs({
 
       {tabs.includes(ServiceType.HOTEL) ? (
         <TabsContent {...panelProps(ServiceType.HOTEL, active)}>
-          <BuiltInTermsNotice
-            serviceType={ServiceType.HOTEL}
-            status={legalStatus?.HOTEL}
-            canEditTerms={canEditTerms}
-            className="mb-6"
-          />
           <CreateHotelOrderForm
             {...shared}
             providers={providersForService(providers, ServiceType.HOTEL)}

@@ -477,18 +477,9 @@ async function resolveOrderLegal(
     );
   }
 
-  const legal = await resolveServiceTerms({ organizationId, serviceType });
-  if (
-    serviceType !== ServiceType.CAR_RENTAL &&
-    (legal.termsIsDefault || legal.policyIsDefault)
-  ) {
-    logger.warn(`legal.${serviceType.toLowerCase()}.default_used`, {
-      organizationId: String(organizationId),
-      terms: legal.termsIsDefault ? "default" : "organization",
-      policy: legal.policyIsDefault ? "default" : "organization",
-    });
-  }
-  return pickLegal(legal);
+  // Every service has pre-written terms, so a brand that never customised
+  // them gets its service's built-in text — the normal path, not a gap.
+  return pickLegal(await resolveServiceTerms({ organizationId, serviceType }));
 }
 
 function pickLegal(legal: ResolvedLegal): ResolvedLegal {

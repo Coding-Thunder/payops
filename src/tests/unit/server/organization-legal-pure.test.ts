@@ -47,10 +47,26 @@ describe("pairFlightLegal", () => {
         policyIsDefault: true,
       });
     }
-    // "v1" stays with the orders that agreed to the earlier money clause
-    // (which called the collected amount a "service charge"); the reworded
-    // built-in text must never travel under that label.
-    expect(DEFAULT_FLIGHT_LEGAL_VERSION).toBe("v2");
+    // Each rewording of the built-in flight text gets a new label, and the
+    // retired labels stay with the orders that agreed to them: "v1" (the
+    // money clause that called the collected amount a "service charge") and
+    // "v2" (no travel supplier, no PNR). The current text must never travel
+    // under either.
+    for (const retired of ["v1", "v2"]) {
+      expect(DEFAULT_FLIGHT_LEGAL_VERSION).not.toBe(retired);
+    }
+    expect(DEFAULT_FLIGHT_LEGAL_VERSION).toBe("v3");
+    // …and an organization's first flight text of its own is the label after it.
+    expect(nextPolicyVersion(DEFAULT_FLIGHT_LEGAL_VERSION)).toBe("v4");
+  });
+
+  it("v3 names the travel supplier and the PNR — the wording the version moved for", () => {
+    expect(DEFAULT_FLIGHT_TERMS_AND_CONDITIONS).toContain(
+      "with the airline(s) and any travel supplier shown in your itinerary",
+    );
+    expect(DEFAULT_FLIGHT_TERMS_AND_CONDITIONS).toContain(
+      "your airline booking reference (PNR) appears on your confirmation",
+    );
   });
 
   it("uses the organization's own text with its own version", () => {

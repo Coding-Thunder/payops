@@ -177,7 +177,7 @@ export function ServiceLegalForm({
                 </FormControl>
                 {initial.termsIsDefault ? (
                   <p className="text-[11.5px] text-muted-foreground">
-                    {`${brand} has no ${noun} terms of its own yet, so new ${noun} orders freeze ${defaultName}. Edit it and save to give ${brand} its own — no other brand changes.`}
+                    {`New ${noun} orders for ${brand} use ${defaultName} — ready to use, nothing to set up. Optional: edit it and save to give ${brand} its own wording; no other brand changes.`}
                   </p>
                 ) : null}
                 <p className="text-[11.5px] text-muted-foreground">
@@ -211,7 +211,7 @@ export function ServiceLegalForm({
                 </FormControl>
                 {initial.policyIsDefault ? (
                   <p className="text-[11.5px] text-muted-foreground">
-                    {`${brand} has no ${noun} cancellation policy of its own yet, so new ${noun} orders freeze ${defaultName}. Edit it and save to give ${brand} its own — no other brand changes.`}
+                    {`New ${noun} orders for ${brand} use ${defaultName} — ready to use, nothing to set up. Optional: edit it and save to give ${brand} its own wording; no other brand changes.`}
                   </p>
                 ) : null}
                 <p className="text-[11.5px] text-muted-foreground">
@@ -265,7 +265,7 @@ function LegalTextStatus({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      {isDefault ? <Badge variant="warning">{defaultBadge}</Badge> : null}
+      {isDefault ? <Badge variant="outline">{defaultBadge}</Badge> : null}
       <Badge variant="secondary">{`Version ${version}`}</Badge>
     </div>
   );
