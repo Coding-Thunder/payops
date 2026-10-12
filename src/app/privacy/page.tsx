@@ -91,10 +91,12 @@ export const metadata: Metadata = pageMetadata({
  *     up"); 15-day free evaluation, no card required. The per-tenant
  *     Stripe gateway (BYOS) IS live. §02 describes TraceTxn as a "free
  *     private beta" — the sanctioned positioning used on the home/hero
- *     and footers. KNOWN INCONSISTENCY (flag for reconciliation, not a
- *     policy error): /pricing and /waitlist still advertise paid tiers
- *     ($39/$99/$249) even though billing is not wired up. Do not assert
- *     live paid plans anywhere until that is reconciled.
+ *     and footers. RECONCILED 2026-10-12: /pricing now shows one $0 "free
+ *     during beta" card with no tiers, and /waitlist is an invite-only
+ *     notice — the old $39/$99/$249 tiers and the "Growth free for three
+ *     months" offer are both gone from the live site. The standing rule
+ *     survives the fix: do not assert live paid plans anywhere until
+ *     billing is actually wired up.
  * 12. AI / ANALYTICS — NO AI/LLM integration. Third-party analytics is
  *     now DISCLOSED (§ "Website analytics"): Microsoft Clarity, scoped to
  *     the public marketing routes in `@/lib/analytics/clarity`, never on

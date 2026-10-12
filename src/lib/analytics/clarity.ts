@@ -79,8 +79,16 @@
  * Public marketing routes that may load the Clarity tag.
  *
  * Exact paths only — no prefixes and no patterns, so nothing can be admitted
- * by accident. `/waitlist` is the one entry that collects PII; its form is
- * masked at `src/components/marketing/waitlist-form.tsx`.
+ * by accident. None of them collects form input: `/waitlist` lost its
+ * application form when the public beta signup was removed, so there is no
+ * PII on a tracked route for a recording to capture.
+ *
+ * That is not what the safety rests on, though. Masking is a primitive, not
+ * a per-form decision: every `Input` and `Textarea` carries
+ * `data-clarity-mask="true"` unconditionally (`@/components/ui/input`,
+ * `@/components/ui/textarea`), applied AFTER the props spread so a call site
+ * cannot override it. A field added to one of these pages later is masked
+ * without anyone remembering to do it.
  */
 export const CLARITY_TRACKED_PATHS = [
   "/",
