@@ -2,7 +2,7 @@ import { Types } from "mongoose";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { RecordState, UserRole } from "@/lib/constants/enums";
-import { UnauthorizedError } from "@/lib/errors";
+import { ForbiddenError, UnauthorizedError } from "@/lib/errors";
 import { User } from "@/server/db/models";
 import { firebaseExchange } from "@/server/services/auth.service";
 import { ensureMongo, resetDatabase } from "@/tests/utils/db";
@@ -84,6 +84,31 @@ describe("firebaseExchange — email-verification gate (takeover prevention)", (
     expect(result.user.id).toBe(String(victim._id));
     const after = await User.findById(victim._id).select("+externalAuth");
     expect(after?.externalAuth?.firebaseUid).toBe("google-uid-abc");
+  });
+
+  it("REFUSES a net-new account when signup is closed, in invite-only wording", async () => {
+    // Unknown email + allowSignup:false is the only branch that would have
+    // provisioned a workspace. It must refuse, and the message must not
+    // point at the removed public beta application.
+    const attempt = firebaseExchange(
+      {
+        email: "stranger@example.com",
+        emailVerified: true,
+        firebaseUid: "stranger-uid",
+        displayName: null,
+      },
+      null,
+      { allowSignup: false },
+    );
+
+    await expect(attempt).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(attempt).rejects.toThrow(/invite-only/i);
+    await expect(attempt).rejects.toThrow(/use an invitation/i);
+    await expect(attempt).rejects.not.toThrow(/join the beta/i);
+
+    expect(await User.countDocuments({ email: "stranger@example.com" })).toBe(
+      0,
+    );
   });
 
   it("lets a RETURNING user in by matched UID even if email_verified is false", async () => {

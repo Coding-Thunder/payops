@@ -47,12 +47,12 @@ export default async function ActivatePage({
               invitations are single-use and expire after 7 days.
             </p>
             <p className="text-[13px] text-muted-foreground">
-              Haven&apos;t applied yet?{" "}
+              Already have a workspace?{" "}
               <Link
-                href="/waitlist"
+                href="/login"
                 className="text-foreground underline-offset-4 hover:underline"
               >
-                Apply for the beta
+                Sign in
               </Link>
               .
             </p>

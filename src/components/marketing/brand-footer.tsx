@@ -69,11 +69,8 @@ export function BrandFooter() {
             ]}
           />
           <FooterColumn
-            title="Get started"
-            links={[
-              { label: "Join the beta", href: "/waitlist" },
-              { label: "Sign in", href: "/login" },
-            ]}
+            title="Account"
+            links={[{ label: "Sign in", href: "/login" }]}
           />
           <FooterColumn
             title="Company"

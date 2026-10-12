@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 import { Reveal } from "@/components/marketing/home/primitives";
 
 /**
@@ -9,8 +7,9 @@ import { Reveal } from "@/components/marketing/home/primitives";
  * inverting here makes the final ask read as a distinct surface rather than
  * one more section — and it is the only moment where that spend is worth it.
  *
- * Same two actions as the hero, same destinations. A closing CTA that offers
- * something the hero did not is a closing CTA that was hiding the real offer.
+ * Same action as the hero, same destination. A closing section that offers
+ * something the hero did not is one that was hiding the real offer — and
+ * since access is invite-only there is nothing to sign up for here.
  */
 export function FinalCta() {
   return (
@@ -31,22 +30,16 @@ export function FinalCta() {
             </p>
 
             <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
-              <Link
-                href="/waitlist"
-                className="inline-flex h-11 items-center justify-center rounded-md bg-white px-5 text-[14px] font-semibold text-[#0A1128] transition-colors hover:bg-white/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-              >
-                Join the beta
-              </Link>
               <a
                 href="#demo"
-                className="inline-flex h-11 items-center justify-center rounded-md border border-white/20 px-5 text-[14px] font-semibold text-white transition-colors hover:border-white/40 hover:bg-white/5"
+                className="inline-flex h-11 items-center justify-center rounded-md bg-white px-5 text-[14px] font-semibold text-[#0A1128] transition-colors hover:bg-white/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               >
                 See the product
               </a>
             </div>
 
             <p className="mt-5 text-[12.5px] text-white/50">
-              Free while TraceTxn is in private beta.
+              TraceTxn is in private beta and currently invite-only.
             </p>
           </div>
         </Reveal>

@@ -154,6 +154,29 @@ describe("POST /api/auth/signup", () => {
     expect(orgCount).toBe(0);
   });
 
+  it("403s without an accepted invite, in invite-only wording", async () => {
+    // The public "Join the Beta" application was removed, so this message
+    // must not send the caller off to apply for one.
+    const noInvite = { ...validPayload, invite: undefined };
+    const res = await signupRoute(
+      buildRequest("/api/auth/signup", {
+        method: "POST",
+        body: noInvite,
+      }),
+    );
+    const { status, body } = await jsonBody(res);
+    expect(status).toBe(403);
+
+    const err = (body as { error: { code: string; message: string } }).error;
+    expect(err.code).toBe("FORBIDDEN");
+    expect(err.message).toMatch(/invite-only/i);
+    expect(err.message).toMatch(/use an invitation/i);
+    expect(err.message).not.toMatch(/join the beta/i);
+
+    // Refusal, not a half-created tenant.
+    expect(await User.countDocuments({ email: validPayload.email })).toBe(0);
+  });
+
   it("422 on a short password", async () => {
     const res = await signupRoute(
       buildRequest("/api/auth/signup", {

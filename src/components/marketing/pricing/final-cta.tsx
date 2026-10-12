@@ -1,15 +1,14 @@
 "use client";
 
-import Link from "next/link";
-import { ArrowRightIcon } from "lucide-react";
 
 import { Reveal } from "@/components/marketing/home/primitives";
 
 /**
- * Closing panel for the pricing page. Restates the whole product in one line
- * and points at the single action — join the beta. Same dark card, radial
- * glow and dotted mask as the homepage final CTA so the two pages read as one
- * surface.
+ * Closing panel for the pricing page. Restates the whole product in one line.
+ * There is no action on it: the beta is invite-only, so the panel closes the
+ * page rather than asking for a sign-up that cannot happen. Same dark card,
+ * radial glow and dotted mask as the homepage final CTA so the two pages read
+ * as one surface.
  */
 export function PricingFinalCta() {
   return (
@@ -42,22 +41,12 @@ export function PricingFinalCta() {
                 Give every client one searchable record.
               </h2>
               <p className="mx-auto mt-5 max-w-xl text-[16.5px] leading-relaxed text-white/70">
-                Join the private beta and start with the clients you already
-                have.
+                Every order, invoice, payment, file and sent email, kept
+                against the client it belongs to.
               </p>
 
-              <div className="mt-9 flex items-center justify-center">
-                <Link
-                  href="/waitlist"
-                  className="group inline-flex h-11 items-center justify-center gap-1.5 rounded-xl bg-white px-6 text-[14px] font-semibold text-[#0A1128] transition-colors duration-150 hover:bg-white/90"
-                >
-                  Join the beta
-                  <ArrowRightIcon className="size-4 transition-transform duration-200 group-hover:translate-x-0.5" />
-                </Link>
-              </div>
-
-              <p className="mt-6 text-[13px] text-white/50">
-                Free during beta. No credit card required.
+              <p className="mt-8 text-[13px] text-white/50">
+                TraceTxn is in private beta and currently invite-only.
               </p>
             </div>
           </div>

@@ -251,7 +251,7 @@ export async function firebaseExchange(
     // invite. Existing users never reach here, so sign-in is unaffected.
     if (opts?.allowSignup === false) {
       throw new ForbiddenError(
-        "TraceTxn is in private beta — signups are invite-only. Join the beta to request access.",
+        "TraceTxn is in private beta — signups are invite-only. Please use an invitation to create an account.",
       );
     }
     // First-time Firebase sign-in for this email → provision a User +

@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { ArrowRightIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
@@ -48,22 +47,13 @@ export function BrandCtaStrip() {
               <Button
                 asChild
                 size="lg"
-                className="gap-1.5 bg-white text-foreground hover:bg-white/90"
+                className="bg-white text-foreground hover:bg-white/90"
               >
-                <Link href="/waitlist">
-                  Join the beta
-                  <ArrowRightIcon className="size-4" />
-                </Link>
+                <Link href="/login">Sign in</Link>
               </Button>
               <p className="text-[12.5px] text-white/60">
-                Free during beta. No credit card required.
+                In private beta and currently invite-only.
               </p>
-              <Link
-                href="/login"
-                className="text-[12px] text-white/55 underline-offset-4 hover:text-white/85 hover:underline"
-              >
-                Already have an account? Sign in →
-              </Link>
             </div>
           </div>
         </div>

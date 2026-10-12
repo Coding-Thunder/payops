@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowRightIcon } from "lucide-react";
 
 import { LogoLockup } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
@@ -62,19 +61,8 @@ export function BrandNav() {
         </nav>
 
         <div className="flex items-center gap-2">
-          <Button
-            asChild
-            variant="ghost"
-            size="sm"
-            className="hidden sm:inline-flex text-[12.5px]"
-          >
+          <Button asChild size="sm" className="text-[12.5px]">
             <Link href="/login">Sign in</Link>
-          </Button>
-          <Button asChild size="sm" className="gap-1.5 text-[12.5px]">
-            <Link href="/waitlist">
-              Join the beta
-              <ArrowRightIcon className="size-3.5" />
-            </Link>
           </Button>
         </div>
       </div>

@@ -22,8 +22,8 @@ export const metadata: Metadata = pageMetadata({
  * TraceTxn is in private beta and the beta is free, so this page is not a
  * tier table. It says three things immediately: it's a private beta, it's
  * free, and it's built for agencies and freelancers. One plan card, an honest
- * note about what happens after beta, a short beta FAQ, and one action —
- * join the beta.
+ * note about what happens after beta, and a short beta FAQ. No action: the
+ * beta is invite-only, so the page informs rather than asks.
  *
  * Shares the redesigned marketing shell (light ground, emerald for state and
  * electric blue for intent, SiteHeader / SiteFooter) with the homepage so the

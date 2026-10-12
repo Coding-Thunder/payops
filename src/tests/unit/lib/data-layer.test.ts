@@ -178,7 +178,8 @@ describe("events fire only after a successful server response", () => {
    */
   const SRC = path.resolve(process.cwd(), "src");
   const CALLERS = [
-    "components/marketing/waitlist-form.tsx",
+    // waitlist-form.tsx was removed along with the public beta application,
+    // so these three are every component that still pushes a dataLayer event.
     "components/marketing/reviews/review-form.tsx",
     "components/marketing/quotation-form-body.tsx",
     "components/auth/firebase-auth-form.tsx",

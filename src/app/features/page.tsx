@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRightIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { BrandCtaStrip } from "@/components/marketing/brand-cta-strip";
@@ -151,13 +150,7 @@ export default function FeaturesPage() {
             client history connected to one searchable record.
           </p>
           <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
-            <Button asChild size="lg" className="gap-1.5">
-              <Link href="/waitlist">
-                Join the beta
-                <ArrowRightIcon className="size-4" />
-              </Link>
-            </Button>
-            <Button asChild size="lg" variant="outline">
+            <Button asChild size="lg">
               <Link href="#how-it-works">See how it works</Link>
             </Button>
           </div>

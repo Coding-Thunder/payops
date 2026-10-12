@@ -46,7 +46,7 @@ export const POST = withApi(
       body && typeof body.invite === "string" ? body.invite : undefined;
     if (!signupInviteAccepted(invite)) {
       throw new ForbiddenError(
-        "TraceTxn is in private beta — signups are invite-only. Join the beta to request access.",
+        "TraceTxn is in private beta — signups are invite-only. Please use an invitation to create an account.",
       );
     }
     const input = signupSchema.parse(body);

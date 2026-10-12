@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 
-import { BetaOffer } from "@/components/marketing/home/beta-offer";
 import { Comparison } from "@/components/marketing/home/comparison";
 import { Faq } from "@/components/marketing/home/faq";
 import { FinalCta } from "@/components/marketing/home/final-cta";
@@ -41,9 +40,8 @@ export const metadata: Metadata = pageMetadata({
  *   UnifiedWorkspace → all of it at once, on one screen
  *   UseCases         → who this fits, and who it does not
  *   Comparison       → where each part of the record lives
- *   BetaOffer        → the real offer: free, by invitation
  *   Faq              → the objections, answered from the code
- *   FinalCta         → join the beta
+ *   FinalCta         → the closing statement
  *
  * ── Why this page is light ───────────────────────────────────────────────
  *
@@ -60,8 +58,9 @@ export const metadata: Metadata = pageMetadata({
  * figures inside the product frames are labelled illustrative in the frames
  * themselves. Two things the brief asked for are deliberately absent, because
  * the code cannot back them: priced subscription tiers (there is no
- * subscription billing — see `beta-offer.tsx`) and a "multi-gateway
- * framework" (`PaymentProcessor` has exactly one member, Stripe).
+ * subscription billing) and a "multi-gateway framework" (`PaymentProcessor`
+ * has exactly one member, Stripe). There is also no sign-up or beta
+ * application CTA anywhere on this page: access is invite-only.
  * `seo-claims.test.ts` fails the build if the surfaces drift.
  */
 export default function LandingPage() {
@@ -77,7 +76,6 @@ export default function LandingPage() {
         <UnifiedWorkspace />
         <UseCases />
         <Comparison />
-        <BetaOffer />
         <Faq />
         <FinalCta />
       </main>

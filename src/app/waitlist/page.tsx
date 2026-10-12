@@ -1,29 +1,36 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { BrandFooter } from "@/components/marketing/brand-footer";
 import { BrandNav } from "@/components/marketing/brand-nav";
-import { WaitlistForm } from "@/components/marketing/waitlist-form";
-import { env } from "@/lib/env";
 
 import { pageMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = pageMetadata({
-  title: "Waitlist",
-  description: "Join the TraceTxn waitlist. The product is invite-only during private beta; early invites include direct access to the team during onboarding.",
+  title: "Invite-only access",
+  description:
+    "TraceTxn is in private beta and access is invite-only. There is no public application; if you already have an invitation, activate it from the link in your email.",
   path: "/waitlist",
-  socialTitle: "Get an early invite \u2022 TraceTxn",
+  socialTitle: "Invite-only access • TraceTxn",
 });
 
 /**
- * Public waitlist. Single screen, brand-v1 chrome, minimal form
- * (name + email + what-you-build). Submission lands in the same
- * `quotations` collection as the landing-page form, tagged
- * `source: "waitlist"` so sales can triage separately.
+ * Invite-only notice.
  *
- * No incentives copy beyond what we can actually deliver, three
- * months of Growth-tier credit + a 15-minute call. If we change
- * that offer, update the copy in BOTH places (hero + the trust
- * strip below).
+ * This route used to host the public "Join the Beta" application. The form is
+ * gone: there is no longer a public way to apply, so the page states the
+ * access model and stops.
+ *
+ * ── Why the route still exists ───────────────────────────────────────────
+ *
+ * `src/app/signup/page.tsx` redirects here when a visitor has no accepted
+ * invite (`signupInviteAccepted()`), and `src/proxy.ts` lists `/waitlist` in
+ * its public allow-list. Deleting the route would turn that redirect into a
+ * 404, so it stays and answers the question the redirect implies: you need an
+ * invitation, and here is what to do if you have one.
+ *
+ * Nothing here posts anywhere. `/api/beta/apply` is untouched and still
+ * serves the admin-side application records; it simply has no public caller.
  */
 export default function WaitlistPage() {
   return (
@@ -35,65 +42,59 @@ export default function WaitlistPage() {
           aria-hidden
           className="pointer-events-none absolute inset-0 -z-10"
           style={{
-            background:
-              "linear-gradient(180deg, #F8FAFC 0%, #FFFFFF 100%)",
+            background: "linear-gradient(180deg, #F8FAFC 0%, #FFFFFF 100%)",
           }}
         />
 
-        <div className="mx-auto grid max-w-[1280px] grid-cols-1 gap-y-12 px-6 pt-20 pb-24 sm:px-10 sm:pt-24 lg:grid-cols-[1.1fr_1fr] lg:items-center lg:gap-x-16">
-          {/* Left, copy */}
-          <div className="max-w-xl">
-            <p className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-3 py-1 font-display text-[10.5px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-              <span
-                aria-hidden
-                className="size-1.5 rounded-full"
-                style={{ background: "var(--brand-emerald)" }}
-              />
-              Waitlist
-            </p>
-
-            <h1 className="mt-7 font-display text-[clamp(2rem,5vw,3.6rem)] font-medium leading-[1.05] tracking-[-0.025em]">
-              Get an early invite.{" "}
-              <span className="block font-semibold text-[color:var(--brand-emerald)]">
-                Three months on us.
-              </span>
-            </h1>
-
-            <p className="mt-6 max-w-lg text-[15px] leading-relaxed text-muted-foreground">
-              We&apos;re rolling out access in small batches so we can
-              hand-hold every early tenant through onboarding. Drop your
-              email, when your batch opens, you&apos;ll get an invite
-              link, three months of Growth-tier credit, and a 15-minute
-              call with the founders if you want one.
-            </p>
-
-            <ul className="mt-9 grid grid-cols-1 gap-y-3 text-[13px] text-muted-foreground sm:grid-cols-2">
-              {[
-                "First-batch invites unlock Growth ($99/mo) free for 3 months",
-                "Optional 15-min founder call during your onboarding",
-                "Direct line to bug fixes + feature requests",
-                "No card required to start the trial",
-              ].map((line) => (
-                <li key={line} className="flex items-start gap-2">
-                  <span
-                    aria-hidden
-                    className="mt-1.5 size-1.5 shrink-0 rounded-full"
-                    style={{ background: "var(--brand-emerald)" }}
-                  />
-                  <span>{line}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Right, form card */}
-          <div>
-            <WaitlistForm
-              turnstileSiteKey={
-                env.public.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null
-              }
+        <div className="mx-auto max-w-[680px] px-6 pt-20 pb-24 text-center sm:px-10 sm:pt-24">
+          <p className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-3 py-1 font-display text-[10.5px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+            <span
+              aria-hidden
+              className="size-1.5 rounded-full"
+              style={{ background: "var(--brand-emerald)" }}
             />
+            Private beta
+          </p>
+
+          <h1 className="mt-7 font-display text-[clamp(2rem,5vw,3.2rem)] font-medium leading-[1.08] tracking-[-0.025em]">
+            TraceTxn is{" "}
+            <span className="font-semibold text-[color:var(--brand-emerald)]">
+              invite-only.
+            </span>
+          </h1>
+
+          <p className="mx-auto mt-6 max-w-lg text-[15px] leading-relaxed text-muted-foreground">
+            We&apos;re working with a small group of agencies and freelancers
+            while we build the product. There is no public application at the
+            moment.
+          </p>
+
+          <div className="mx-auto mt-10 max-w-md rounded-xl border border-border bg-white p-6 text-left">
+            <p className="font-display text-[14px] font-semibold text-foreground">
+              Already have an invitation?
+            </p>
+            <p className="mt-2 text-[13.5px] leading-relaxed text-muted-foreground">
+              Activate it from the link in your invitation email. Once your
+              workspace exists you can sign in here any time.
+            </p>
+            <Link
+              href="/login"
+              className="mt-5 inline-flex h-10 items-center justify-center rounded-lg bg-foreground px-4 text-[13px] font-semibold text-background transition-opacity hover:opacity-90"
+            >
+              Sign in
+            </Link>
           </div>
+
+          <p className="mx-auto mt-10 max-w-md text-[13px] leading-relaxed text-muted-foreground">
+            Want to know when access opens up more widely?{" "}
+            <Link
+              href="/contact"
+              className="font-medium text-foreground underline-offset-4 hover:underline"
+            >
+              Get in touch
+            </Link>
+            .
+          </p>
         </div>
       </section>
 

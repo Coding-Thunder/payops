@@ -1,4 +1,3 @@
-import Link from "next/link";
 
 import {
   LiveDot,
@@ -80,24 +79,19 @@ export function Hero() {
           </p>
 
           <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Link
-              href="/waitlist"
-              className="inline-flex h-11 items-center justify-center rounded-md bg-[#0F172A] px-5 text-[14px] font-semibold text-white transition-colors hover:bg-[#1E293B] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-blue)]"
-            >
-              Join the beta
-            </Link>
             <a
               href="#demo"
-              className="inline-flex h-11 items-center justify-center rounded-md border border-[#E2E8F0] bg-white px-5 text-[14px] font-semibold text-[#0F172A] transition-colors hover:border-[#C9D4E2] hover:bg-[#F8FAFC]"
+              className="inline-flex h-11 items-center justify-center rounded-md bg-[#0F172A] px-5 text-[14px] font-semibold text-white transition-colors hover:bg-[#1E293B] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-blue)]"
             >
               See the product
             </a>
           </div>
 
-          {/* The honest version of "no credit card required": there is no card
-              at all, because the beta is free and billing is not wired up. */}
+          {/* No "no credit card required" claim: there is no card at all,
+              because the beta is free and billing is not wired up. And no
+              invitation to sign up, because access is invite-only. */}
           <p className="mt-4 text-[13px] text-[#64748B]">
-            Free while TraceTxn is in private beta. No card, no commitment.
+            TraceTxn is in private beta and currently invite-only.
           </p>
 
           {/* ── Micro-proof: everything stays attached to the client ──── */}

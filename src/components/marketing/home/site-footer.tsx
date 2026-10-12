@@ -56,9 +56,6 @@ const COLUMNS: { title: string; links: { href: string; label: string }[] }[] = [
       // Official company page. Same URL as Organization.sameAs in
       // `seo/structured-data`; kept in one place there.
       { href: LINKEDIN_URL, label: "LinkedIn" },
-      // /signup redirects to /waitlist without an invite, so link the
-      // destination directly rather than bouncing the visitor.
-      { href: "/waitlist", label: "Join the beta" },
       { href: "/login", label: "Sign in" },
     ],
   },

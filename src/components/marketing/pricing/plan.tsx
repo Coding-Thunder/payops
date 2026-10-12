@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { ArrowRightIcon, CheckIcon } from "lucide-react";
+import { CheckIcon } from "lucide-react";
 
 import { Reveal } from "@/components/marketing/home/primitives";
 
@@ -61,15 +60,12 @@ export function PricingPlan() {
               </div>
               <p className="mt-2 text-[14px] text-[#64748B]">Free during beta</p>
 
-              <Link
-                href="/waitlist"
-                className="group mt-7 inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-[#0F172A] text-[14px] font-semibold text-white transition-colors duration-150 hover:bg-[#1E293B]"
-              >
-                Join the beta
-                <ArrowRightIcon className="size-4 transition-transform duration-200 group-hover:translate-x-0.5" />
-              </Link>
-              <p className="mt-3 text-center text-[12.5px] text-[#64748B]">
-                No credit card required.
+              {/* No action here: the beta is invite-only, so a button would
+                  promise something a visitor cannot complete. The card states
+                  the terms and stops. */}
+              <p className="mt-7 rounded-xl border border-[#E9EFF6] bg-[#F8FAFC] px-4 py-3 text-center text-[12.5px] leading-relaxed text-[#64748B]">
+                Invite-only while TraceTxn is in private beta. No card, no
+                charge.
               </p>
 
               <div className="mt-8 border-t border-[#E9EFF6] pt-7">
