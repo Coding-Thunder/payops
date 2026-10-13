@@ -71,13 +71,34 @@ export function FirebaseAuthForm({
   const requiresToken = Boolean(turnstileSiteKey);
   const captchaReady = !requiresToken || Boolean(cfToken);
 
+  // Sign-in is unavailable here. This used to say "use the email + password
+  // form below", and there is no such form — `login/page.tsx` renders this
+  // component and nothing else, so the sentence sent people looking for a
+  // control that does not exist. It now states the situation and gives the
+  // one action that actually works: contacting us.
+  //
+  // It deliberately says nothing about WHY. Naming the provider or the
+  // missing configuration tells a visitor nothing useful and tells anyone
+  // probing the deployment something about its internals.
   if (!configured) {
     return (
       <Alert>
-        <AlertTitle>Firebase sign-in unavailable</AlertTitle>
+        <AlertTitle>Sign-in is temporarily unavailable</AlertTitle>
         <AlertDescription>
-          Firebase Auth isn&apos;t configured for this environment. Use
-          the email + password form below.
+          <span className="block">
+            We can&apos;t sign you in right now. Your account and your data
+            are unaffected — please try again shortly.
+          </span>
+          <span className="mt-2 block">
+            If this keeps happening,{" "}
+            <Link
+              href="/contact"
+              className="font-medium text-foreground underline underline-offset-4"
+            >
+              get in touch
+            </Link>{" "}
+            and we&apos;ll help.
+          </span>
         </AlertDescription>
       </Alert>
     );
