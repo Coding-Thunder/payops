@@ -13,18 +13,10 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 export function PricingHero() {
   return (
     <section className="relative overflow-hidden">
-      {/* faint dotted grid — same vocabulary as the homepage hero */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10"
-        style={{
-          backgroundImage:
-            "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.05) 1px, transparent 0)",
-          backgroundSize: "38px 38px",
-          maskImage:
-            "radial-gradient(80% 60% at 50% 0%, black, transparent 75%)",
-        }}
-      />
+      {/* Left over from the dark design: a white dotted grid at 0.05 alpha
+          over #F8FAFC composites to the identical pixel — it rendered
+          nothing. Removed rather than re-tinted; the glow below is the one
+          decorative layer this section needs. */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[520px]"

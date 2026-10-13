@@ -24,6 +24,16 @@ import {
  * the interface. So there are four, they sit outside the frame on wide
  * viewports, and they disappear entirely below `lg` rather than reflowing on
  * top of the screen they are supposed to be describing.
+ *
+ * ── On sharing a route label with the hero ──────────────────────────────
+ *
+ * Both frames read `/app/customers/northwind-studio`, which is correct —
+ * it is the same route. They are not duplicates: the hero shows it as the
+ * product actually renders it (a tab strip with Timeline selected, matching
+ * `Tabs defaultValue="timeline"` in `app/customers/[id]`), while this one
+ * flattens several tabs into one view to make the "one record" point. That
+ * flattening is a composite, so the caption says so instead of implying the
+ * product shows all of it at once.
  */
 
 const CALLOUTS = [
@@ -201,7 +211,9 @@ export function UnifiedWorkspace() {
             </div>
 
             <div className="border-t border-[#E9EFF6] bg-[#F8FAFC] px-4 py-2 text-[10.5px] text-[#64748B]">
-              Illustrative workspace — not a customer&apos;s data.
+              Illustrative, and a composite: the record&apos;s timeline, orders
+              and files are tabs in the product, shown together here to make
+              the point. Not a customer&apos;s data.
             </div>
           </ProductFrame>
         </Reveal>

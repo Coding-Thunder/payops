@@ -31,6 +31,13 @@ export function BrandFooter() {
               One permanent, searchable record for every client. Built for
               agencies and freelancers.
             </p>
+            {/* This read "All systems operational" beside a green dot,
+                hardcoded — so it stayed green through an outage, which is
+                worse than saying nothing. There is no status page and no
+                uptime monitoring behind it. Replaced with a fact that needs
+                no runtime check, matching what `home/site-footer` already
+                does; real status belongs behind /api/health, not a footer
+                string. */}
             <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-border bg-white px-3 py-1 text-[11px] text-muted-foreground">
               <span
                 aria-hidden
@@ -38,7 +45,7 @@ export function BrandFooter() {
                 style={{ background: "var(--brand-emerald)" }}
               />
               <span className="font-mono uppercase tracking-[0.12em]">
-                All systems operational
+                Private beta
               </span>
             </div>
           </div>
