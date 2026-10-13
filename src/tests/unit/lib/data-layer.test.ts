@@ -177,11 +177,16 @@ describe("events fire only after a successful server response", () => {
    * conversions.
    */
   const SRC = path.resolve(process.cwd(), "src");
+  // Every component that pushes a dataLayer event. Keep this in step with
+  // the module: an unlisted caller is an unguarded one, and the whole point
+  // of the assertion below is that NO caller can push before the await.
+  //
+  // History: waitlist-form.tsx went with the public beta application, and
+  // quotation-form-body.tsx went with the orphaned ClosingRegion — the
+  // /contact enquiry form replaced it and is listed in its place.
   const CALLERS = [
-    // waitlist-form.tsx was removed along with the public beta application,
-    // so these three are every component that still pushes a dataLayer event.
+    "components/marketing/contact-enquiry-form.tsx",
     "components/marketing/reviews/review-form.tsx",
-    "components/marketing/quotation-form-body.tsx",
     "components/auth/firebase-auth-form.tsx",
   ];
 
