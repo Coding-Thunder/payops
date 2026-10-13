@@ -97,6 +97,27 @@ export const metadata: Metadata = pageMetadata({
  *     months" offer are both gone from the live site. The standing rule
  *     survives the fix: do not assert live paid plans anywhere until
  *     billing is actually wired up.
+ * 11b. CONTACT-FORM ENQUIRIES — NEW, NEEDS-LEGAL-REVIEW on one point.
+ *     /contact now has a general-enquiry form posting to /api/quotations.
+ *     Disclosed under § "Information we collect" → "Enquiries you send us":
+ *     name, business email, company, message, plus IP + user-agent (which
+ *     `quotation.service` does store), purpose limited to answering, and the
+ *     internal notification email with reply-to set to the sender. Resend is
+ *     already listed as a sub-processor, so no new processor was claimed.
+ *
+ *     RETENTION RESOLVED: 180 days, approved 2026-10-12, and the mechanism
+ *     exists — `purgeOldEnquiries()` in `server/services/retention.service`
+ *     (constant `ENQUIRY_RETENTION_DAYS`), invoked by
+ *     `scripts/run-retention.ts` alongside the 90-day email-log purge. The
+ *     delete filters on `source: "contact_sales"` by EQUALITY, so waitlist
+ *     entries and legacy gateway leads are untouched, and beta applications
+ *     live in another collection entirely. Deliberately NO TTL index:
+ *     production runs `autoIndex: false`, so one would need a manual
+ *     database operation nobody scheduled.
+ *
+ *     If the period changes, change `ENQUIRY_RETENTION_DAYS` and the
+ *     sentence in § "How long we keep information" together — they are one
+ *     promise expressed twice.
  * 12. AI / ANALYTICS — NO AI/LLM integration. Third-party analytics is
  *     now DISCLOSED (§ "Website analytics"): Microsoft Clarity, scoped to
  *     the public marketing routes in `@/lib/analytics/clarity`, never on
@@ -278,6 +299,26 @@ const SECTIONS: LegalSection[] = [
           evaluation with no credit card required. If we begin charging
           subscription fees in the future, we will update this Policy
           first.
+        </P>
+
+        <H3>Enquiries you send us</H3>
+        <P>
+          Our public contact page has an enquiry form. If you use it, we
+          collect the name, business email address, company name and the
+          message you write. We also record the IP address and browser
+          user-agent of the submission, for the same abuse-prevention reason
+          described under Technical data below.
+        </P>
+        <P>
+          We use it only to read and answer your enquiry. It is not added to
+          a marketing list, and we do not sell it. When an enquiry is
+          submitted we also send an internal notification to our own team
+          address containing what you wrote, with the reply-to set to your
+          address so we can respond; that email is delivered by our email
+          provider, listed under{" "}
+          <PageLink href="#sub-processors">Sub-processors</PageLink>. You can
+          email us directly instead of using the form, and the contact page
+          shows the addresses.
         </P>
 
         <H3>Technical data</H3>
@@ -638,6 +679,11 @@ const SECTIONS: LegalSection[] = [
           <li>
             <strong>Email delivery metadata:</strong> kept up to 90 days
             for deliverability diagnostics, then deleted.
+          </li>
+          <li>
+            <strong>Contact-form enquiries:</strong> kept for up to 180 days
+            from the date you send them, then deleted automatically. You can
+            ask us to delete an enquiry sooner, and we will.
           </li>
           <li>
             <strong>Security &amp; abuse-prevention signals:</strong> most

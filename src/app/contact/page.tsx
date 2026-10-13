@@ -9,9 +9,11 @@ import {
 } from "lucide-react";
 
 import { BrandCtaStrip } from "@/components/marketing/brand-cta-strip";
+import { ContactEnquiryForm } from "@/components/marketing/contact-enquiry-form";
 import { BrandFooter } from "@/components/marketing/brand-footer";
 import { BrandNav } from "@/components/marketing/brand-nav";
 
+import { env } from "@/lib/env";
 import { pageMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = pageMetadata({
@@ -21,26 +23,33 @@ export const metadata: Metadata = pageMetadata({
 });
 
 /**
- * Contact lanes, each a direct mailto. No contact form — intentional, and
- * now also structural: there is no admin surface that lists general
- * enquiries, so a form would write records nobody reads. An email reaches a
- * person. See the enquiry card below for what to include, which is the part
- * a form would otherwise have asked for.
+ * Two ways to reach us, side by side: a general-enquiry form and the direct
+ * mailto lanes.
+ *
+ * The form posts to the existing `/api/quotations` endpoint and is reviewable
+ * at /admin/quotations — the admin surface that had to exist before a form
+ * was defensible, since a form writing rows nobody reads is worse than no
+ * form. The mailto lanes stay because plenty of people would rather just
+ * send an email, and because support and security need their own addresses.
  *
  * ── Shape ───────────────────────────────────────────────────────────────
  *
- * One prominent general-enquiry card (hello@) above three specific lanes
- * (support@, security@, hello@ for press). General enquiry used to be a
- * fourth equal card, which buried the route most visitors want.
+ * Prominent enquiry card (copy + form, hello@ beside it) above three
+ * specific lanes: support@, security@, and hello@ for press.
  *
- * ── Three things to keep right ──────────────────────────────────────────
+ * ── Four things to keep right ───────────────────────────────────────────
  *
  *  1. Rows are keyed by `id`, not `email`. Press and general enquiry share
  *     hello@, so keying by address gave React a duplicate key.
  *  2. Only these three addresses exist. Do not add a fourth without a
- *     mailbox behind it.
- *  3. Nothing here claims a submission was received — a mailto hands off to
+ *     mailbox behind it. Security stays on security@.
+ *  3. The mailto copy claims nothing about receipt — a mailto hands off to
  *     the visitor's mail client and we cannot know whether they sent it.
+ *     The form's success state says "recorded", which is true of the row it
+ *     just wrote, and does not claim an email was delivered.
+ *  4. No operational claim this page cannot stand behind: there is no status
+ *     page, no uptime monitoring and no response-time SLA. The strip below
+ *     states what we actually aim for and marks it as a target.
  */
 
 /** Prefills the subject so the recipient can triage without opening a thread. */
@@ -186,27 +195,24 @@ export default function ContactPage() {
               </ul>
             </div>
 
-            <div className="min-w-0 rounded-xl border border-border bg-[color:var(--background)] p-6">
-              <p className="font-display text-[10.5px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Email us
-              </p>
-              <a
-                href={mailto("hello@tracetxn.com", "TraceTxn enquiry")}
-                aria-label="Email hello@tracetxn.com with a general enquiry"
-                className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 font-display text-[14px] font-medium text-white transition-opacity hover:opacity-90"
-                style={{ background: "var(--ink-navy)" }}
-              >
-                hello@tracetxn.com
-                <ArrowRightIcon className="size-4" />
-              </a>
-              <p className="mt-3 text-[12.5px] leading-relaxed text-muted-foreground">
-                Opens your mail app with the subject filled in. Prefer to
-                copy it? The address above is the whole thing.
-              </p>
-              <p className="mt-4 border-t border-border pt-4 text-[12.5px] leading-relaxed text-muted-foreground">
-                Replies land within one business day, Mon&ndash;Fri. TraceTxn
-                is in private beta and currently invite-only, so there is
-                nothing to sign up for here.
+            <div className="min-w-0 space-y-3">
+              <ContactEnquiryForm
+                turnstileSiteKey={
+                  env.public.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null
+                }
+              />
+              {/* The form is the easier path for most people; the address is
+                  kept visible for anyone who would rather use their own mail
+                  client, and as the fallback the form's error state points at. */}
+              <p className="text-center text-[12.5px] leading-relaxed text-muted-foreground">
+                Rather just email?{" "}
+                <a
+                  href={mailto("hello@tracetxn.com", "TraceTxn enquiry")}
+                  aria-label="Email hello@tracetxn.com with a general enquiry"
+                  className="font-medium text-foreground underline-offset-4 hover:underline"
+                >
+                  hello@tracetxn.com
+                </a>
               </p>
             </div>
           </div>
@@ -240,27 +246,32 @@ export default function ContactPage() {
             </div>
             <div>
               <div className="font-display text-[10.5px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Response time
+                What we aim for
               </div>
+              {/* Two different numbers, because the lanes genuinely differ —
+                  the old single "≤ 1 business day on sales + support"
+                  contradicted the support card's own two-day expectation.
+                  Framed as a target, not a guarantee: there is no SLA. */}
               <p className="mt-3 text-[14px] text-foreground">
-                ≤ 1 business day{" "}
+                1 business day{" "}
                 <span className="text-muted-foreground">
-                  on sales + support emails (Mon–Fri).
+                  on enquiries, 2 on support (Mon–Fri). A target, not a
+                  guaranteed SLA.
                 </span>
               </p>
             </div>
             <div>
               <div className="font-display text-[10.5px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Status
+                Product stage
               </div>
+              {/* This said "All systems operational" with a green dot, which
+                  reads as a live status feed. There is no status page and no
+                  uptime monitoring wired up, so it was an unsupported claim.
+                  Replaced with a fact about the product, not its uptime. */}
               <p className="mt-3 text-[14px] text-foreground">
-                <span className="inline-flex items-center gap-1.5">
-                  <span
-                    aria-hidden
-                    className="size-1.5 rounded-full"
-                    style={{ background: "var(--brand-emerald)" }}
-                  />
-                  All systems operational
+                Private beta{" "}
+                <span className="text-muted-foreground">
+                  — invite-only, and free while it lasts.
                 </span>
               </p>
             </div>
