@@ -110,6 +110,22 @@ const serverSchema = z.object({
    */
   SUPPORT_EMAIL: z.string().default(""),
   SUPPORT_PHONE: z.string().default(""),
+  /**
+   * Where /contact enquiry notifications go. Declared here rather than read
+   * as a raw `process.env` lookup, so a typo surfaces as an env validation
+   * error instead of an empty recipient discovered at send time. Falls back
+   * to SUPPORT_EMAIL; when BOTH are empty `quotation.service` records the
+   * notification as SKIPPED with a `no_recipient_configured` reason rather
+   * than claiming a send. Shape-checked only when set, because "" is a
+   * legitimate "not configured" state that must not break boot.
+   */
+  SALES_EMAIL: z
+    .string()
+    .trim()
+    .default("")
+    .refine((v) => v === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), {
+      message: "SALES_EMAIL must be an email address when set",
+    }),
 
   // Seed defaults for the per-org Setting document. Per-tenant edits
   // in /admin/settings override these; they only matter at the moment

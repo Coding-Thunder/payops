@@ -61,11 +61,21 @@ const quotationSchema = new Schema<QuotationDoc>(
       maxlength: 254,
       index: true,
     },
-    phone: { type: String, required: true, trim: true, maxlength: 32 },
-    country: { type: String, required: true, trim: true, maxlength: 80 },
+    // Not `required` at the storage layer, because a general enquiry from
+    // /contact legitimately has none of them — a visitor asking whether the
+    // product fits has no payment volume to declare. `required: true` here
+    // rejected the empty string outright, so the zod relaxation alone was not
+    // enough and every enquiry would have failed to save.
+    //
+    // This does NOT make them optional for the flows that need them: the
+    // `superRefine` in `lib/validation/quotation.ts` still requires country
+    // and expectedVolume for every source except `contact_sales`, which is
+    // where request validation belongs. The length caps stay.
+    phone: { type: String, default: "", trim: true, maxlength: 32 },
+    country: { type: String, default: "", trim: true, maxlength: 80 },
     expectedVolume: {
       type: String,
-      required: true,
+      default: "",
       trim: true,
       maxlength: 64,
     },
