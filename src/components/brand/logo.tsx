@@ -12,9 +12,16 @@ import { cn } from "@/lib/utils";
  * one that's emerald, the "trace head" where evidence is captured.
  *
  * Wordmark: "Trace" in body weight + Deep Navy, "Txn" in semibold +
- * Emerald (default) or Deep Navy (monochrome). DM Sans throughout
- * with tight tracking. These pairings come straight from the brand-v1
- * system; do not drift from them without re-spec'ing the identity.
+ * Emerald (default) or white (inverted). DM Sans throughout with tight
+ * tracking. These pairings come straight from the brand-v1 system; do not
+ * drift from them without re-spec'ing the identity.
+ *
+ * One deliberate deviation: the "Txn" TEXT renders in
+ * `--brand-emerald-text`, not `--brand-emerald`. The brand accent is
+ * 2.42:1 on the site's #F8FAFC ground, which fails WCAG AA for normal
+ * text — and this is text, read aloud as part of the accessible name. The
+ * mark below keeps the accent, because a logo graphic carries no contrast
+ * requirement and changing it would alter the identity itself.
  */
 
 const BRAND_NAVY = "#0F172A";
@@ -131,7 +138,10 @@ export function LogoLockup({
                 "font-semibold",
                 tone === "inverted"
                   ? "text-white"
-                  : "text-[color:var(--brand-emerald)]",
+                  // Type, not a mark: --brand-emerald is 2.42:1 on #F8FAFC
+                  // and fails AA. --brand-emerald-text is 5.24:1 there and
+                  // 9.29:1 on the dark console ground. See globals.css.
+                  : "text-[color:var(--brand-emerald-text)]",
               )}
             >
               {tail}

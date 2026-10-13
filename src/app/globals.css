@@ -264,6 +264,13 @@
    * alias is what the logo + accent surfaces read; the --success
    * family stays for semantic state use. */
   --brand-emerald: #10B981;
+  /* Emerald for TEXT. #10B981 is the brand accent and reads correctly as
+   * a graphic — a dot, a rule, an icon — but as type on a light ground it
+   * is 2.54:1 on white and 2.42:1 on #F8FAFC, which fails WCAG AA for
+   * normal text. The wordmark's "Txn" is type, so it uses this instead:
+   * 5.48:1 on white, 5.24:1 on #F8FAFC. Use --brand-emerald for marks and
+   * --brand-emerald-text for anything a screen reader would read out. */
+  --brand-emerald-text: #047857;
   --brand-emerald-strong: oklch(0.62 0.16 162);  /* slightly darker for hover */
   --brand-emerald-soft: oklch(0.95 0.05 162);    /* tinted backgrounds */
   --brand-emerald-border: oklch(0.82 0.09 162);
@@ -429,6 +436,9 @@
   /* Electric Blue, lifted for a dark ground. The marketing homepage is
    * light-only, but these must exist so a shared component that reads
    * var(--brand-blue) does not fall back to nothing in the app shell. */
+  /* Lifted for a dark ground: #047857 is only 3.49:1 on near-black, while
+   * this is 9.29:1 on #0F172A. */
+  --brand-emerald-text: #34D399;
   --brand-blue: #4D94FF;
   --brand-blue-strong: #77AEFF;
   --brand-blue-soft: oklch(0.28 0.06 259);
