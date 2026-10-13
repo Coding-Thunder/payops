@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { SiteWordmark } from "@/components/brand/site-wordmark";
+import { MobileNav } from "@/components/marketing/mobile-nav";
 import { cn } from "@/lib/utils";
 
 /**
@@ -12,7 +13,18 @@ import { cn } from "@/lib/utils";
  * Deliberately under-designed. The product frame below it is the thing that
  * has to hold attention, and a nav with its own gradient, its own blur
  * personality and a mega-menu competes with that. One hairline, one wordmark,
- * four links, two buttons.
+ * four links, two actions.
+ *
+ * ── Sign in is not optional ──────────────────────────────────────────────
+ *
+ * A returning customer's first move on this page is to log in. The redesign
+ * in 947ea26 replaced the old Sign in / signup pair with "See the product" +
+ * "Join the beta", and when the beta CTA was removed the header was left
+ * with no way into the product at all — the only /login link on the page sat
+ * in the footer, 16,268px down on a phone. Sign in now lives in the action
+ * area beside the CTA, OUTSIDE the `md:flex` nav, so it survives at every
+ * width and does not depend on opening the mobile menu. `/login` honours
+ * `?next=`, so nothing here needs to construct one.
  *
  * Transparent at rest and solid once scrolled, so the hero reads as one
  * surface on load but the nav stays legible over the product screenshots
@@ -55,6 +67,8 @@ export function SiteHeader() {
     <header
       className={cn(
         "sticky top-0 z-50 w-full transition-colors duration-200",
+        // `relative` anchors the mobile panel (top-full) to the bar.
+        "relative",
         scrolled
           ? "border-b border-[#E2E8F0] bg-white/90 backdrop-blur-md"
           : "border-b border-transparent bg-transparent",
@@ -82,12 +96,31 @@ export function SiteHeader() {
         </ul>
 
         <div className="ml-auto flex items-center gap-2">
+          {/* Always visible, every breakpoint. Not inside the nav above and
+              not inside the mobile panel only — see the note at the top. */}
+          <Link
+            href="/login"
+            className="inline-flex h-9 items-center rounded-md border border-[#E2E8F0] bg-white px-3.5 text-[13px] font-semibold text-[#0F172A] transition-colors hover:border-[#C9D4E2] hover:bg-[#F8FAFC] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0F172A]"
+          >
+            Sign in
+          </Link>
           <Link
             href="/#demo"
-            className="inline-flex h-9 items-center rounded-md bg-[#0F172A] px-3.5 text-[13px] font-semibold text-white transition-colors hover:bg-[#1E293B]"
+            className="hidden h-9 items-center rounded-md bg-[#0F172A] px-3.5 text-[13px] font-semibold text-white transition-colors hover:bg-[#1E293B] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0F172A] sm:inline-flex"
           >
             See the product
           </Link>
+          <MobileNav
+            links={LINKS}
+            actions={
+              <Link
+                href="/#demo"
+                className="inline-flex h-10 items-center justify-center rounded-md bg-[#0F172A] px-4 text-[13.5px] font-semibold text-white transition-colors hover:bg-[#1E293B]"
+              >
+                See the product
+              </Link>
+            }
+          />
         </div>
       </nav>
     </header>

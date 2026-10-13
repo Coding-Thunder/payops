@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { LogoLockup } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
+import { MobileNav } from "@/components/marketing/mobile-nav";
 import { cn } from "@/lib/utils";
 
 /**
@@ -15,6 +16,15 @@ import { cn } from "@/lib/utils";
  * Inspired by Stripe / Linear / Ramp: thin, calm, generous left
  * indent for the wordmark, a small nav, a primary CTA on the right.
  * No mega-menus, no animated underlines, restraint is the point.
+ *
+ * Below `md` the nav is hidden, so the four links move into the shared
+ * `MobileNav` disclosure. Sign in stays in the bar at every width rather
+ * than moving into the panel — it is the one action that must never need a
+ * menu to be opened first.
+ *
+ * This header stays visually distinct from `home/site-header` on purpose
+ * (shorter bar, LogoLockup, muted links, no product CTA). Only the mobile
+ * affordance is shared, so both get the same keyboard and ARIA behaviour.
  */
 
 const NAV_LINKS = [
@@ -38,6 +48,8 @@ export function BrandNav() {
     <header
       className={cn(
         "sticky top-0 z-40 w-full transition-[background,border-color,backdrop-filter] duration-200",
+        // Anchors the mobile panel, which positions against this bar.
+        "relative",
         scrolled
           ? "bg-white/85 backdrop-blur-md border-b border-border"
           : "bg-transparent border-b border-transparent",
@@ -64,6 +76,7 @@ export function BrandNav() {
           <Button asChild size="sm" className="text-[12.5px]">
             <Link href="/login">Sign in</Link>
           </Button>
+          <MobileNav links={NAV_LINKS} />
         </div>
       </div>
     </header>
