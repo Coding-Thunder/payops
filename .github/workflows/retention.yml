@@ -1,0 +1,118 @@
+# Data-retention enforcement, on a daily schedule.
+#
+# ── Why GitHub Actions and not the app platform ─────────────────────────
+#
+# TraceTxn deploys to DigitalOcean App Platform (see .do/app.example.yaml).
+# App Platform's `jobs` component only supports deploy-lifecycle kinds
+# (PRE_DEPLOY / POST_DEPLOY / FAILED_DEPLOY) — it has no cron scheduler, so
+# the platform the app runs on cannot run this daily. DO Functions do support
+# scheduled triggers, but that means a second deployable component with its
+# own copy of the database credentials. Actions is the simplest supported
+# option that runs the real runner on a real schedule.
+#
+# ── What this runs ──────────────────────────────────────────────────────
+#
+#   npm run retention:prod
+#     → tsx --require ./scripts/shim-server-only.cjs scripts/run-retention.ts
+#       → purgeOldEmailLogs()   EMAIL_SENT/EMAIL_FAILED audit rows  > 90 days
+#       → purgeOldEnquiries()   quotations source:"contact_sales"   > 180 days
+#       → purgeOldSecurityLogs() no-op until that surface exists
+#
+# The enquiry purge is scoped by EQUALITY on `source: "contact_sales"`, so
+# waitlist entries and legacy gateway leads are never touched. See
+# `src/server/services/retention.service.ts`.
+#
+# ── Required repository secrets ──────────────────────────────────────────
+#
+# Settings → Secrets and variables → Actions → New repository secret:
+#
+#   MONGODB_URI            the production connection string
+#   MONGODB_DB             the production database name
+#   JWT_SECRET             ─┐ not used by the purge, but `lib/env` validates
+#   STRIPE_SECRET_KEY       │ the whole server schema eagerly the moment
+#   STRIPE_WEBHOOK_SECRET  ─┘ `connectMongo()` reads `env.server`
+#
+# The three unused ones can be any non-empty placeholder in this workflow —
+# they exist only to satisfy schema validation, and nothing in the retention
+# path reads them. Using placeholders keeps real payment secrets out of CI.
+#
+# NETWORK: the database must accept connections from the runner. GitHub-hosted
+# runners have dynamic egress IPs, so a Mongo Atlas IP allowlist will reject
+# them. Options, in order of preference:
+#   1. a self-hosted runner, or a runner with static egress, allowlisted; or
+#   2. Atlas Private Endpoint / peering; or
+#   3. (last resort) widen the allowlist — weakens the database perimeter.
+# Decide this before enabling the schedule.
+
+name: retention
+
+on:
+  schedule:
+    # 03:17 UTC daily. Off the hour because GitHub's scheduler is congested
+    # on :00 and may delay or drop those runs.
+    - cron: "17 3 * * *"
+  # Lets you run it by hand from the Actions tab to verify configuration
+  # without waiting a day.
+  workflow_dispatch:
+
+# One retention run at a time. `cancel-in-progress: false` because a purge
+# in flight should finish rather than be killed half-way; a later run is
+# idempotent and will catch anything missed.
+concurrency:
+  group: retention
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches `engines.node` in package.json. There is no .nvmrc to
+          # read, so this is pinned here; keep the two in step.
+          node-version: 22.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Fail loudly rather than connecting to nothing. Without this, an
+      # unconfigured schedule would "succeed" every night having deleted
+      # nothing, and the 180-day promise in the privacy policy would be
+      # quietly false. Only presence is tested — no value is printed.
+      - name: Verify configuration is present
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGODB_DB: ${{ secrets.MONGODB_DB }}
+        run: |
+          missing=0
+          for v in MONGODB_URI MONGODB_DB; do
+            if [ -z "${!v}" ]; then
+              echo "::error::$v is not configured. See the header of .github/workflows/retention.yml."
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          echo "Required configuration is present."
+
+      - name: Run retention purges
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGODB_DB: ${{ secrets.MONGODB_DB }}
+          # Placeholders: `lib/env` validates the whole server schema when
+          # `connectMongo()` reads it. The retention path never reads these.
+          JWT_SECRET: ${{ secrets.JWT_SECRET || 'ci-placeholder-not-used-by-retention' }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY || 'ci-placeholder-not-used-by-retention' }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET || 'ci-placeholder-not-used-by-retention' }}
+          NODE_ENV: production
+        # The runner exits non-zero on any thrown error, so a failed purge
+        # fails the job and shows up in the Actions UI and notifications.
+        # It logs only `{host, name}` and row counts — never the URI.
+        run: npm run retention:prod

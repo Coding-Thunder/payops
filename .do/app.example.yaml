@@ -141,6 +141,28 @@ services:
         scope: RUN_AND_BUILD_TIME
         value: support@yourdomain.com
 
+      # ──── OPTIONAL — /contact enquiry notifications ─────────────────
+      # Where a general-enquiry notification is sent. Resolution order is
+      # SALES_EMAIL, then SUPPORT_EMAIL. Neither is required: the app boots
+      # without them, and `quotation.service` then records the notification
+      # as SKIPPED / "no_recipient_configured" rather than claiming a send.
+      # The enquiry itself is still persisted and answerable at
+      # /admin/quotations, so nothing is lost — but nobody is told about it,
+      # so set one of these before /contact matters.
+      - key: SALES_EMAIL
+        scope: RUN_AND_BUILD_TIME
+        value: sales@yourdomain.com
+
+      # ──── DATA RETENTION (scheduled OUTSIDE this app) ───────────────
+      # App Platform has no cron scheduler — its `jobs` component only
+      # supports PRE_DEPLOY / POST_DEPLOY / FAILED_DEPLOY — so the 180-day
+      # enquiry purge and the 90-day email-log purge run from
+      # .github/workflows/retention.yml (daily, 03:17 UTC) via
+      # `npm run retention:prod`. That workflow needs its own copy of
+      # MONGODB_URI + MONGODB_DB as GitHub repository secrets, and the
+      # database must accept connections from the runner. See the header of
+      # that file before enabling it.
+
       # ──── PLATFORM SUPER-ADMIN CONSOLE (/admin) ─────────────────────
       # The console used to be a SECOND DO app built from source_dir
       # /admin with its own env block. It is now part of this component
