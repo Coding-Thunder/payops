@@ -343,7 +343,22 @@ export function DynamicOrderForm({
         order: { id: string };
       }>("/api/orders", payload);
       toast.success("Order created");
-      router.push(`/app/orders/${result.order.id}/email`);
+      // Land on the order, not the email composer.
+      //
+      // This used to push straight to `/orders/[id]/email`, which is step 2
+      // of the payment-request flow — the operator had just created an order
+      // and was dropped inside a message editor, with no confirmation that
+      // the order existed and no obvious way out. A journey audit flagged it:
+      // there was nothing to verify the creation against.
+      //
+      // The detail page IS that confirmation — the order, its customer and
+      // the lifecycle timeline (Created → Email Sent → Consent Received → …).
+      // The email step is not lost: that page carries "Compose payment
+      // request" and "Edit payment email" CTAs to the same route, and states
+      // in place that the Stripe payment link is generated when the request
+      // email is sent. The flow still leads there, it just no longer traps
+      // anyone on the way.
+      router.push(`/app/orders/${result.order.id}`);
       router.refresh();
     } catch (err) {
       // 422s name the exact fields (see describeApiError); anything else keeps

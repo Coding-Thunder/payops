@@ -67,6 +67,13 @@ if (typeof window !== "undefined") {
   if (!("scrollTo" in window)) {
     (window as unknown as { scrollTo: () => void }).scrollTo = () => {};
   }
+
+  // jsdom ships no scrollIntoView, and components that scroll a freshly
+  // rendered error into view call it from an effect — where a throw escapes
+  // React and surfaces as an unhandled error rather than a test failure.
+  if (!Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = function scrollIntoView(): void {};
+  }
 }
 
 /**
