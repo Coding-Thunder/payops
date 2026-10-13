@@ -4,6 +4,7 @@ import { UsersRoundIcon } from "lucide-react";
 import { PageHeader } from "@/components/common/page-header";
 import { EmptyState } from "@/components/common/empty-state";
 import { ClientFilters } from "@/components/features/clients/client-filters";
+import { NewClientDialog } from "@/components/features/clients/new-client-dialog";
 import { Pagination } from "@/components/features/orders/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -47,9 +48,24 @@ export default async function ClientsPage({ searchParams }: ClientsPageProps) {
 
   return (
     <div className="space-y-6">
+      {/* The create flow lived only on the dashboard, so a user who came here
+          to add a client had to navigate away to do it. Same dialog, not a
+          second implementation: it posts to /api/customers, which
+          de-duplicates on email and opens the existing record rather than
+          creating a twin.
+
+          Gated on CUSTOMER_MANAGE because that is what the POST requires
+          (api/customers/route.ts). This page only needs CUSTOMER_VIEW, so
+          rendering it unconditionally would show view-only staff a button
+          that 403s. */}
       <PageHeader
         title="Clients"
         description="Every customer you've transacted with — a permanent record that outlives any single order."
+        actions={
+          user.permissions.has(Permission.CUSTOMER_MANAGE) ? (
+            <NewClientDialog />
+          ) : null
+        }
       />
 
       <ClientFilters />
