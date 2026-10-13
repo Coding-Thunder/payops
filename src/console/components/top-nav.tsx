@@ -67,6 +67,10 @@ export function TopNav({
         { href: `${ADMIN_BASE}/users`, label: "Users" },
         { href: `${ADMIN_BASE}/customers`, label: "Customers" },
         { href: `${ADMIN_BASE}/waitlist`, label: "Waitlist" },
+        // General enquiries from /contact. Deliberately a sibling of
+        // Waitlist, not merged into it: the two read different sources
+        // and only the waitlist feeds beta provisioning.
+        { href: `${ADMIN_BASE}/quotations`, label: "Enquiries" },
       ],
     },
     {
