@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { CheckIcon } from "lucide-react";
 
 import { FirebaseAuthForm } from "@/components/auth/firebase-auth-form";
+import { isFirebaseConfigured } from "@/lib/firebase/client";
 import { SiteWordmark } from "@/components/brand/site-wordmark";
 import { getCurrentUser } from "@/server/auth/session";
 import { turnstileSiteKey } from "@/server/auth/turnstile";
@@ -26,6 +27,9 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const user = await getCurrentUser();
   if (user) redirect("/app/dashboard");
   const { next } = await searchParams;
+  // Read on the server from the same NEXT_PUBLIC_* values the client helper
+  // reads, so the page's own copy and the form's rendered state agree.
+  const signInAvailable = isFirebaseConfigured();
 
   return (
     <div className="grid min-h-screen w-full grid-cols-1 lg:grid-cols-[1.05fr_1fr]">
@@ -111,9 +115,18 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               <h1 className="text-[20px] font-semibold tracking-tight">
                 Sign in to your account
               </h1>
-              <p className="text-[13px] leading-relaxed text-muted-foreground">
-                Use Google or your work email + password.
-              </p>
+              {/* Only when there is something to use. Unconfigured, this line
+                  used to sit directly above a "sign-in is unavailable" alert
+                  and tell the visitor to use a Google button and a password
+                  field that FirebaseAuthForm does not render in that state —
+                  the same dead end the alert's own copy was rewritten to stop
+                  creating. Same helper the form switches on, so the two can
+                  never disagree. */}
+              {signInAvailable ? (
+                <p className="text-[13px] leading-relaxed text-muted-foreground">
+                  Use Google or your work email + password.
+                </p>
+              ) : null}
             </div>
           </div>
           <FirebaseAuthForm
