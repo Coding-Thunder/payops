@@ -147,13 +147,22 @@ export default async function QuotationsPage({
           <tbody>
             {result.items.length === 0 ? (
               <tr>
-                <Td>
+                {/* Raw <td colSpan>, not <Td>: the console's Td takes only
+                    {children, numeric} and renders a bare cell, so an empty
+                    state built from it occupies column 1 alone. In an
+                    8-column auto-layout table that left the message in a
+                    330px box at the far left and stretched the "Received"
+                    header to match it, so the empty table's columns did not
+                    line up with the populated one's. Every sibling page here
+                    (orders, emails, audit, customers) already spans the row
+                    this way. */}
+                <td colSpan={8} className="px-3 py-8 text-center">
                   <span className="text-[var(--muted)]">
                     {q || status
                       ? "No enquiries match that filter."
                       : "No enquiries yet."}
                   </span>
-                </Td>
+                </td>
               </tr>
             ) : (
               result.items.map((e) => (
