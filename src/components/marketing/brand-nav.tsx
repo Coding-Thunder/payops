@@ -47,9 +47,10 @@ export function BrandNav() {
   return (
     <header
       className={cn(
+        // No `relative` here — see the note in home/site-header. `cn` is
+        // twMerge and would drop `sticky` in favour of it, un-sticking the
+        // header. `sticky` already anchors the mobile panel's `absolute`.
         "sticky top-0 z-40 w-full transition-[background,border-color,backdrop-filter] duration-200",
-        // Anchors the mobile panel, which positions against this bar.
-        "relative",
         scrolled
           ? "bg-white/85 backdrop-blur-md border-b border-border"
           : "bg-transparent border-b border-transparent",

@@ -66,9 +66,13 @@ export function SiteHeader() {
   return (
     <header
       className={cn(
+        // Do NOT add `relative` here to anchor the mobile panel. `cn` is
+        // twMerge, which treats `relative` and `sticky` as the same position
+        // group and keeps the last one — so adding it silently DELETES
+        // `sticky`, and the header scrolls away on a 16,000px page, taking
+        // Sign in with it. `sticky` is already a containing block for the
+        // panel's `absolute`, so nothing extra is needed.
         "sticky top-0 z-50 w-full transition-colors duration-200",
-        // `relative` anchors the mobile panel (top-full) to the bar.
-        "relative",
         scrolled
           ? "border-b border-[#E2E8F0] bg-white/90 backdrop-blur-md"
           : "border-b border-transparent bg-transparent",

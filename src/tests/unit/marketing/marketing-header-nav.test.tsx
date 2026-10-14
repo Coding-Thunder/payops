@@ -235,6 +235,21 @@ describe.each([
     ).toHaveAttribute("aria-expanded", "false");
   });
 
+  it("stays sticky — no position utility may displace it", () => {
+    renderWithUser(<Header />);
+    const classes = (screen.getByRole("banner").className || "").split(/\s+/);
+
+    // `cn` is twMerge: `relative`, `absolute` and `fixed` share the position
+    // group with `sticky`, so adding one to anchor the mobile panel deletes
+    // `sticky` from the rendered output. The header then scrolls out of view
+    // and takes Sign in with it. `sticky` already anchors the panel.
+    expect(classes).toContain("sticky");
+    expect(classes).toContain("top-0");
+    for (const conflicting of ["relative", "absolute", "fixed", "static"]) {
+      expect(classes).not.toContain(conflicting);
+    }
+  });
+
   it("keeps the desktop nav untouched while the panel is closed", () => {
     renderWithUser(<Header />);
     // Exactly one "Pricing" when closed (the desktop nav's), two when open.
