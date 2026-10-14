@@ -22,6 +22,35 @@
 # waitlist entries and legacy gateway leads are never touched. See
 # `src/server/services/retention.service.ts`.
 #
+# ── PREREQUISITE THAT IS NOT SATISFIED YET: THE DEFAULT BRANCH ──────────
+#
+# GitHub evaluates `on: schedule` ONLY from the repository's DEFAULT branch,
+# and `workflow_dispatch` is only offered for workflows present there. This
+# repository's default branch is `main`; this file lives on `feat/general`.
+#
+# So as committed, this workflow NEVER RUNS. Not "runs and deletes nothing" —
+# no run is queued at all, which means no red X, no job summary and no
+# notification. The "Verify configuration is present" guard below cannot help,
+# because the problem is upstream of the job. The privacy policy's sentence
+# ("Contact-form enquiries: kept for up to 180 days … then deleted
+# automatically") is therefore a promise nothing currently keeps.
+#
+# This cannot be fixed from this branch alone. Pick one:
+#
+#   1. Put a copy of THIS FILE on `main`, pinning the checkout to the branch
+#      that actually holds the retention code, which does not exist on main:
+#          - uses: actions/checkout@v4
+#            with:
+#              ref: feat/general
+#      Cheapest, but it puts this product's scheduler on the other product's
+#      branch — decide whether that coupling is acceptable.
+#   2. Make `feat/general` the repository default branch.
+#   3. Drive `npm run retention:prod` from a scheduler outside GitHub.
+#
+# Until one is done, run it manually inside every 180-day window, and treat
+# the policy sentence as unenforced. First deadline: 180 days after the first
+# /contact submission on the deployed site.
+#
 # ── Required repository secrets ──────────────────────────────────────────
 #
 # Settings → Secrets and variables → Actions → New repository secret:
