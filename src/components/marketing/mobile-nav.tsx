@@ -38,11 +38,18 @@ import { cn } from "@/lib/utils";
  *     desktop nav is untouched and no link is duplicated to assistive tech
  *     at desktop widths.
  *
- * `actions` is the slot at the foot of the panel, for a CTA the bar drops at
- * narrow widths — the landing header's "See the product" is `sm:inline-flex`,
- * so the panel carries the copy that a phone sees. Sign in is NOT routed
- * through here: it stays in the bar at every width, because the audit's
- * finding was precisely that reaching it must not require opening a menu.
+ * `actions` is the slot at the foot of the panel, for a CTA the bar drops
+ * below `md` — the landing header's "See the product" is `md:inline-flex`, so
+ * the panel carries the copy that everything under 768px sees.
+ *
+ * A caller's `actions` CTA MUST use the same breakpoint as this wrapper's
+ * `md:hidden`. When it was `sm:inline-flex` the thresholds disagreed, and
+ * between 640 and 767px both copies rendered — visible twice, and twice in
+ * the tab order — for anyone on a landscape phone or a narrowed window.
+ *
+ * Sign in is NOT routed through here: it stays in the bar at every width,
+ * because the audit's finding was precisely that reaching it must not require
+ * opening a menu.
  */
 
 export interface MobileNavLink {

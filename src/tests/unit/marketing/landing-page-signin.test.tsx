@@ -97,6 +97,12 @@ describe("/ (the landing page route) — Sign in", () => {
     const trigger = within(header).getByRole("button", { name: /open menu/i });
     const panelId = trigger.getAttribute("aria-controls");
 
+    // Assert the association exists FIRST. Without this, a trigger that lost
+    // its aria-controls would give panelId === null, getElementById coerces
+    // that to the string "null", finds nothing, and the next line would pass
+    // while the disclosure was in fact broken.
+    expect(panelId).toBeTruthy();
+
     // The panel is absent while closed, so the link cannot be inside it; this
     // asserts the link is reachable in exactly the state a visitor lands in.
     expect(document.getElementById(panelId as string)).toBeNull();
@@ -154,10 +160,15 @@ describe("/ (the landing page route) — Sign in", () => {
       classes,
       "the header must stay sticky; a position utility added later (relative/absolute/fixed) silently replaces `sticky` via twMerge",
     ).toContain("sticky");
-    for (const conflicting of ["relative", "absolute", "fixed", "static"]) {
-      expect(classes).not.toContain(conflicting);
-    }
     expect(classes).toContain("top-0");
+
+    // Variant-aware: `md:relative` leaves the unprefixed `sticky` in place
+    // (twMerge resolves per-variant) yet still un-sticks the header from
+    // 768px up, so comparing bare words alone would miss it.
+    const positions = new Set(["static", "relative", "absolute", "fixed"]);
+    expect(
+      classes.filter((c) => positions.has(c.split(":").pop() as string)),
+    ).toEqual([]);
   });
 
   it("is reachable without scrolling: Sign in precedes the footer link", async () => {

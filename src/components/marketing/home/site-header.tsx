@@ -108,9 +108,16 @@ export function SiteHeader() {
           >
             Sign in
           </Link>
+          {/* `md:inline-flex`, not `sm:`, and that must stay in step with
+              MobileNav's `md:hidden` wrapper. The two carry the same CTA, so
+              if the bar's threshold is lower than the panel's, both are on
+              screen — and both in the tab order — in the gap between them.
+              At `sm` that gap was 640-767px: landscape phones and any
+              narrowed window saw "See the product" twice. One breakpoint,
+              one copy. */}
           <Link
             href="/#demo"
-            className="hidden h-9 items-center rounded-md bg-[#0F172A] px-3.5 text-[13px] font-semibold text-white transition-colors hover:bg-[#1E293B] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0F172A] sm:inline-flex"
+            className="hidden h-9 items-center rounded-md bg-[#0F172A] px-3.5 text-[13px] font-semibold text-white transition-colors hover:bg-[#1E293B] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0F172A] md:inline-flex"
           >
             See the product
           </Link>

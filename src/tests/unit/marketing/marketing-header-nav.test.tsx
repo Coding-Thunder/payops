@@ -245,9 +245,18 @@ describe.each([
     // and takes Sign in with it. `sticky` already anchors the panel.
     expect(classes).toContain("sticky");
     expect(classes).toContain("top-0");
-    for (const conflicting of ["relative", "absolute", "fixed", "static"]) {
-      expect(classes).not.toContain(conflicting);
-    }
+
+    // Strip any variant prefix before comparing. A bare `relative` is what
+    // actually shipped, but `md:relative` would un-stick the header from 768px
+    // up while leaving the unprefixed `sticky` in place — twMerge resolves
+    // per-variant, so it would not be removed and a check for the bare word
+    // would never see it.
+    const positions = new Set(["static", "relative", "absolute", "fixed"]);
+    const offenders = classes.filter((c) => positions.has(c.split(":").pop() as string));
+    expect(
+      offenders,
+      "a position utility (at any breakpoint) overrides `sticky` for that breakpoint",
+    ).toEqual([]);
   });
 
   it("keeps the desktop nav untouched while the panel is closed", () => {
@@ -265,12 +274,11 @@ describe("SiteHeader actions", () => {
   it("keeps the product CTA reachable on a phone, via the panel", async () => {
     const { user } = renderWithUser(<SiteHeader />);
 
-    // The bar CTA is `sm:inline-flex`, so it is absent below 640px; the panel
+    // The bar CTA is hidden by default and revealed at a breakpoint; the panel
     // carries a copy so the primary CTA never disappears entirely.
     const barCta = screen.getByRole("link", { name: /see the product/i });
     expect(barCta).toHaveAttribute("href", "/#demo");
     expect(barCta.className).toMatch(/(^|\s)hidden(\s|$)/);
-    expect(barCta.className).toMatch(/sm:inline-flex/);
 
     await user.click(screen.getByRole("button", { name: /open menu/i }));
 
@@ -278,6 +286,39 @@ describe("SiteHeader actions", () => {
       .getAllByRole("link", { name: /see the product/i })
       .filter((a) => a.getAttribute("href") === "/#demo");
     expect(ctas).toHaveLength(2);
+  });
+
+  it("reveals the bar CTA exactly where the panel stops carrying it", async () => {
+    const { user } = renderWithUser(<SiteHeader />);
+
+    // The two copies of "See the product" must never be on screen together.
+    // That is not a fact about one class, it is a relationship: the bar copy's
+    // reveal breakpoint has to equal the breakpoint at which MobileNav's
+    // wrapper disappears. When the bar said `sm:inline-flex` and the wrapper
+    // said `md:hidden`, both rendered — and both took a tab stop — from 640 to
+    // 767px, i.e. on a landscape phone. Asserting the literal `sm:`/`md:` would
+    // just re-pin today's value; this asserts the invariant.
+    const barCta = screen.getByRole("link", { name: /see the product/i });
+    const revealedAt = (barCta.className.match(/(\w+):inline-flex/) ?? [])[1];
+    expect(revealedAt, "the bar CTA must be revealed at a breakpoint").toBeTruthy();
+
+    const trigger = screen.getByRole("button", { name: /open menu/i });
+    const wrapper = trigger.parentElement as HTMLElement;
+    const hiddenAt = (wrapper.className.match(/(\w+):hidden/) ?? [])[1];
+    expect(hiddenAt, "the mobile wrapper must be hidden at a breakpoint").toBeTruthy();
+
+    expect(
+      revealedAt,
+      `bar CTA appears at ${revealedAt}: but the panel copy only disappears at ${hiddenAt}: — both are visible in between`,
+    ).toBe(hiddenAt);
+
+    // And the panel copy is the same destination, not a second CTA.
+    await user.click(trigger);
+    const panel = document.getElementById(
+      trigger.getAttribute("aria-controls") as string,
+    ) as HTMLElement;
+    const panelCta = within(panel).getByRole("link", { name: /see the product/i });
+    expect(panelCta).toHaveAttribute("href", "/#demo");
   });
 
   it("uses root-relative nav hrefs, because /pricing renders this header too", async () => {
