@@ -27,7 +27,7 @@ const captureBodySchema = z.object({
  *
  * Gated on ORDER_CAPTURE_PAYMENT, which is ADMIN and above — deliberately
  * not STAFF. The service layer additionally refuses any order that is not
- * manual-capture, so this route is inert for the automatic-capture brands.
+ * manual-capture, so this route is inert for an automatic-capture order.
  */
 export const POST = withApi(
   async (req: NextRequest, { params }: Params) => {

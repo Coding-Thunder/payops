@@ -154,8 +154,8 @@ export default async function PaymentSuccessPage({
   // excluded: the hold is already the gateway's truth, there is nothing
   // half-finished to self-heal, and re-reconciling it would only risk
   // reading an authorized session as a completed one. `payment.capture` is
-  // null on every automatic-capture order — i.e. every order both incumbent
-  // brands have — so this guard never fires for them.
+  // null on every automatic-capture order, so this guard never fires for
+  // one.
   //
   // A LINK_GENERATED order is reconciled exactly like a PAYMENT_PENDING one:
   // a customer paying from a copied link arrives before any request email

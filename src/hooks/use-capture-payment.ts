@@ -44,8 +44,7 @@ export interface OrderPaymentMutationHandle<TVars> {
  *
  * Neither hook is reachable for an automatic-capture order: the API refuses
  * it server-side, and the UI only mounts the controls when
- * `order.payment.capture` is non-null, which it never is for the two
- * incumbent brands.
+ * `order.payment.capture` is non-null, which it never is for one.
  */
 export function useCapturePayment(
   orderId: string,

@@ -94,9 +94,10 @@ export const BOOKING_STATUSES = Object.values(BookingStatus) as BookingStatus[];
 /**
  * Whether the gateway takes the money at checkout or merely places a hold.
  *
- * AUTOMATIC is the default everywhere and is what both incumbent brands run
- * on; it is also what an organization document with no stored value reads
- * back as. MANUAL is opt-in per organization.
+ * AUTOMATIC is the default everywhere — what an organization runs on until it
+ * opts in, and what an organization document with no stored value reads
+ * back as. MANUAL is opt-in per organization
+ * (`scripts/set-organization-capture-mode.ts`).
  */
 export const CaptureMode = {
   AUTOMATIC: "AUTOMATIC",

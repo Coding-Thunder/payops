@@ -124,8 +124,8 @@ export interface PaymentAuthorizedEmailProps {
  * per-organization brand name / support contacts / gateway attribution
  * resolve through exactly the same components.
  *
- * Only manual-capture organizations reach this template. Both incumbent
- * brands run automatic capture, so neither can render it.
+ * Only orders on manual capture reach this template; an automatic-capture
+ * order never renders it.
  */
 export function PaymentAuthorizedEmail({
   brandName,

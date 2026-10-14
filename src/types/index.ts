@@ -162,9 +162,8 @@ export interface OrderHotel {
 
 /**
  * Manual-capture authorization state. NULL on every automatic-capture
- * order, which is every order both incumbent brands have. The UI keys the
- * Capture / Release affordances off this being non-null, so those controls
- * are structurally unreachable for them.
+ * order. The UI keys the Capture / Release affordances off this being
+ * non-null, so those controls are structurally unreachable for one.
  */
 export interface OrderPaymentCapture {
   method: CaptureMode;

@@ -46,8 +46,8 @@ export function useOrderQuery(orderId: string): UseQueryResult<OrderDTO> {
       // and the Capture / Release controls appear without a reload.
       //
       // Guarded on `payment.capture`, which is NULL on every
-      // automatic-capture order — so both incumbent brands never reach this
-      // branch and their polling cadence is exactly what it is today.
+      // automatic-capture order — so those never reach this branch and
+      // their polling cadence is exactly what it is today.
       const captureStatus = order.payment.capture?.status;
       if (
         captureStatus === PaymentCaptureStatus.PENDING_AUTHORIZATION ||

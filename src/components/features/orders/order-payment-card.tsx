@@ -97,9 +97,8 @@ export function OrderPaymentCard({
   const wording = chargeWordingFor(serviceType);
 
   // MANUAL-CAPTURE ONLY. `payment.capture` is null on every automatic-capture
-  // order — i.e. every order the two incumbent brands have ever created — so
-  // everything keyed off `capture` below renders nothing for them and this
-  // card stays byte-identical to what it has always been.
+  // order, so everything keyed off `capture` below renders nothing for it
+  // and this card stays byte-identical to what it has always been.
   //
   // Note this is keyed off the ORDER, never off the selected organization:
   // an operator with memberships in a manual-capture org and an automatic
@@ -198,8 +197,8 @@ export function OrderPaymentCard({
           />
         </div>
 
-        {/* AUTHORIZATION — manual capture only. Absent (null) for both
-            incumbent brands, so this whole subtree is unreachable there.
+        {/* AUTHORIZATION — manual capture only. Absent (null) on every
+            automatic-capture order, so this whole subtree is unreachable there.
             Three DIFFERENT lifecycles are on this card and none of them is
             allowed to stand in for another: `OrderStatusBadge` above is the
             PAYMENT state, this badge is the AUTHORIZATION state, and

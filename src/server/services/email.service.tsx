@@ -720,8 +720,9 @@ export async function sendPaymentConfirmationEmail(
  * differs is the moment it describes, and that difference is the whole
  * point of the email — see the doc comment on the template.
  *
- * Only an organization running `captureMode: MANUAL` ever enqueues this
- * kind, so neither incumbent brand can produce a send through this path.
+ * Only an order on manual capture (its organization ran `captureMode:
+ * MANUAL` when its link was generated) ever enqueues this kind; no
+ * automatic-capture order can produce a send through this path.
  */
 export async function sendPaymentAuthorizedEmail(
   order: OrderDTO,

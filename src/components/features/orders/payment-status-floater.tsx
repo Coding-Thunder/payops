@@ -74,8 +74,8 @@ function describeOrder(order: OrderDTO): FloaterDescriptor {
       // A manual-capture order sitting on an AUTHORIZED hold is NOT
       // "awaiting payment" — the money is committed but not taken, and the
       // operator has to capture it. `capture` is null on every
-      // automatic-capture order, so this returns null for both incumbent
-      // brands and the original banner below is reached unchanged.
+      // automatic-capture order, so this returns null for one and the
+      // original banner below is reached unchanged.
       return (
         describeCapture(
           order.payment.capture,

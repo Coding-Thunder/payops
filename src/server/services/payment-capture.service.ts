@@ -50,9 +50,10 @@ import { applyCheckoutPaid } from "./webhook.service";
  *
  *  1. IT IS UNREACHABLE FOR AN AUTOMATIC-CAPTURE ORDER. Every entry point
  *     checks `payment.capture.method === MANUAL` before doing anything, and
- *     `payment.capture` is null on every order RentalConfirmation and
- *     TripReservations have ever created. There is no code path by which
- *     either incumbent brand's order can be captured or voided here.
+ *     `payment.capture` is null on every order whose link was generated
+ *     while its organization charged at checkout — whichever organization
+ *     it is, and whatever that organization runs today. There is no code
+ *     path by which such an order can be captured or voided here.
  *
  *  2. IT CANNOT DOUBLE-CHARGE. The AUTHORIZED → CAPTURE_PENDING transition
  *     is a conditional update that exactly one caller can win, and the

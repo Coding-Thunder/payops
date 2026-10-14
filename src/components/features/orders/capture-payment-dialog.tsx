@@ -66,7 +66,6 @@ export function CapturePaymentDialog({ order }: CapturePaymentDialogProps) {
   // actually holding; pricing.amount is the pre-authorization fallback for
   // an order whose webhook has not filled the figure in yet.
   const amount = capture?.amountAuthorized ?? order.pricing.amount;
-  const rows = serviceDetailRows(order, (value) => formatDate(value));
   const retry = capture?.status === PaymentCaptureStatus.CAPTURE_FAILED;
   // An itinerary flight's hold is the SERVICE CHARGE only — the airline
   // fare is never collected here — so every amount below says so. A flight
@@ -83,6 +82,15 @@ export function CapturePaymentDialog({ order }: CapturePaymentDialogProps) {
   const chargeName = wording?.chargeName ?? "";
   const itinerary = isFlight ? buildFlightItinerary(order.flight) : null;
   const money = formatCurrency(amount, currency);
+  // The full-width item row below already names what was bought ("Vehicle
+  // Toyota Camry", "Property …"); the service's detail rows open with that
+  // same row, so it is dropped there rather than printed twice on the one
+  // screen an operator reads before charging. An itinerary flight renders
+  // no item row, so its rows are kept whole.
+  const itemLabel = serviceItemLabel(order);
+  const rows = serviceDetailRows(order, (value) => formatDate(value)).filter(
+    (row) => itinerary !== null || row.label !== itemLabel,
+  );
 
   function reset(next: boolean) {
     setOpen(next);
@@ -163,7 +171,7 @@ export function CapturePaymentDialog({ order }: CapturePaymentDialogProps) {
               <SummaryRow label="Email" value={order.customer.email} />
               {itinerary ? null : (
                 <SummaryRow
-                  label={serviceItemLabel(order)}
+                  label={itemLabel}
                   value={describeServiceItem(order)}
                   className="sm:col-span-2"
                 />

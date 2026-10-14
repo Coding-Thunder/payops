@@ -106,8 +106,11 @@ export interface OrganizationPayments {
    * Whether checkout takes the money or merely places a hold.
    *
    * AUTOMATIC is the default and is what a stored document with no such key
-   * reads back as — so both incumbent brands keep charging at checkout with
-   * no migration. MANUAL is opt-in and is what GlobeVista runs on.
+   * reads back as — so an organization stored before the field existed
+   * keeps charging at checkout with no migration. MANUAL is opt-in per
+   * organization: GlobeVista is seeded with it, and
+   * `scripts/set-organization-capture-mode.ts` switches any other (the
+   * default organization included).
    *
    * Every consumer must read this as `payments?.captureMode ?? AUTOMATIC`:
    * the resolvers use `.lean()`, which does NOT apply Mongoose defaults to

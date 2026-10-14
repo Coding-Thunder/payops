@@ -237,8 +237,8 @@ async function handleCheckoutCompleted(
   //
   // An order that has genuinely been captured has already left
   // PENDING_AUTHORIZATION/AUTHORIZED, so a real post-capture completion
-  // event still passes. `payment.capture` is null on every order both
-  // incumbent brands have, so this branch is unreachable for them.
+  // event still passes. `payment.capture` is null on every automatic-capture
+  // order, so this branch is unreachable for one.
   const capture = order.payment?.capture;
   if (
     capture?.method === CaptureMode.MANUAL &&
@@ -543,8 +543,8 @@ async function handleCheckoutExpired(
   // perfectly live and capturable. Driving the order to EXPIRED there
   // would tell the operator the money is gone while Stripe is still
   // holding it. Written as its own early return, not as a condition in the
-  // update filter below: `payment.capture` is null on every order both
-  // incumbent brands have, so this branch is provably never taken for them.
+  // update filter below: `payment.capture` is null on every automatic-capture
+  // order, so this branch is provably never taken for one.
   if (
     order.payment?.capture?.status === PaymentCaptureStatus.AUTHORIZED ||
     order.payment?.capture?.status === PaymentCaptureStatus.CAPTURE_PENDING
@@ -776,7 +776,7 @@ async function handlePaymentFailed(
   // alone.
   //
   // `payment.capture` is null for every automatic-capture order, so
-  // `failOrder` runs byte-for-byte as it does today for both incumbents.
+  // `failOrder` runs byte-for-byte as it always has for those orders.
   const captureStatus = order.payment?.capture?.status;
   if (
     captureStatus === PaymentCaptureStatus.AUTHORIZED ||
@@ -1102,7 +1102,7 @@ export async function applyPaymentAuthorized(
     // Tell the customer their card was AUTHORIZED — explicitly not
     // charged. Enqueued in-transaction so it cannot land if the order
     // update aborts. Only manual-capture orders ever reach this line, so
-    // neither incumbent brand can produce such a row.
+    // no automatic-capture order can produce such a row.
     await enqueueEmail(
       {
         orderId: String(updated._id),
@@ -1209,7 +1209,7 @@ async function handlePaymentAuthorized(
  * The adapter maps this event to `payment.captured` ONLY when the intent
  * reports `capture_method: "manual"`, so an automatic-capture order's
  * `payment_intent.succeeded` stays "unhandled" exactly as it is today and
- * the moment RentalConfirmation's orders are marked paid does not move.
+ * the moment an automatic-capture order is marked paid does not move.
  *
  * The PAID transition itself reuses `applyCheckoutPaid` UNCHANGED, so the
  * audit row, the evidence entry, the ORDER_PAID domain event and the

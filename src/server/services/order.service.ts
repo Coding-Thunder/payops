@@ -261,9 +261,8 @@ function orderToDTO(doc: OrderDoc & { _id: Types.ObjectId | string }): OrderDTO 
       initiatedAt: doc.payment.initiatedAt
         ? doc.payment.initiatedAt.toISOString()
         : null,
-      // Null for every automatic-capture order, i.e. every order both
-      // incumbent brands have. The UI keys its Capture / Release controls
-      // off this, so those controls are unreachable for them.
+      // Null for every automatic-capture order. The UI keys its Capture /
+      // Release controls off this, so those controls are unreachable for one.
       capture: doc.payment.capture
         ? {
             method: doc.payment.capture.method,
@@ -393,13 +392,26 @@ interface CreateOrderResult {
  * before `captureMode` existed — i.e. both incumbent brands' rows — arrives
  * with no such key and must read as AUTOMATIC.
  *
- * A null organizationId also means AUTOMATIC. Manual capture is only ever
- * enabled by an explicit, stored, per-organization decision.
+ * Manual capture is only ever enabled by an explicit, stored,
+ * per-organization decision (`scripts/set-organization-capture-mode.ts`).
+ * A null organizationId — an order stored before organizations existed —
+ * takes the DEFAULT organization's decision: such an order belongs to the
+ * default organization everywhere else too (it pays through the deployment
+ * gateway, only the default organization's scope sees it, and the
+ * deployment webhook endpoint accepts it), so a default organization on
+ * MANUAL runs ONE lifecycle for all of its orders. With no default
+ * organization, or none stored, it is AUTOMATIC.
  */
 export async function getOrganizationCaptureMode(
   organizationId: string | null,
 ): Promise<CaptureMode> {
-  if (!organizationId || !Types.ObjectId.isValid(organizationId)) {
+  if (!organizationId) {
+    const def = await Organization.findOne({ isDefault: true })
+      .select("payments.captureMode")
+      .lean<{ payments?: { captureMode?: CaptureMode } } | null>();
+    return def?.payments?.captureMode ?? CaptureMode.AUTOMATIC;
+  }
+  if (!Types.ObjectId.isValid(organizationId)) {
     return CaptureMode.AUTOMATIC;
   }
   const org = await Organization.findById(organizationId)
@@ -1703,8 +1715,7 @@ export async function regeneratePaymentLink(
   // later, and a second successful payment would charge them twice.
   //
   // Release the authorization first, then regenerate. `payment.capture` is
-  // null on every automatic-capture order, so neither incumbent brand can
-  // reach this branch.
+  // null on every automatic-capture order, so none can reach this branch.
   const liveCapture = doc.payment?.capture?.status;
   if (
     liveCapture === PaymentCaptureStatus.AUTHORIZED ||
@@ -2528,8 +2539,8 @@ export async function reconcileOrderPayment(
   //
   // For an automatic-capture order `manual` is false and this expression
   // reduces to the ORIGINAL `paymentStatus === "paid" || status === "complete"`
-  // exactly — `payment.capture` is null on every order both incumbent brands
-  // have, so their reconcile behaviour is untouched.
+  // exactly — `payment.capture` is null on every automatic-capture order, so
+  // their reconcile behaviour is untouched.
   //
   // For a manual-capture order `status === "complete"` is true the instant
   // the customer authorizes, while no money has moved. Accepting it would

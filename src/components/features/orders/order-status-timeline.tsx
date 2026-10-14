@@ -43,8 +43,8 @@ interface Step {
  *   Consent received:  consent.receivedAt (skipped when status is
  *                      NOT_REQUESTED — applies to admin-skipped flows)
  *   Authorized:        payment.capture.authorizedAt — ONLY present when
- *                      payment.capture is non-null, i.e. never for the
- *                      automatic-capture orders both incumbent brands run
+ *                      payment.capture is non-null, i.e. never for an
+ *                      automatic-capture order
  *   Paid:              payment.paidAt (failed / expired surfaces a
  *                      destructive marker instead of a pending one)
  *   Confirmation sent: payment.confirmationEmailSentAt
@@ -199,8 +199,7 @@ function buildSteps(order: OrderDTO): Step[] {
   }
 
   // Manual capture only. Null — and therefore absent from the timeline —
-  // for every automatic-capture order, which is every order both incumbent
-  // brands have ever created.
+  // for every automatic-capture order.
   const capture = order.payment.capture;
   const authorized: Step | null = capture
     ? buildAuthorizedStep(capture, emailSent, consentReceived)

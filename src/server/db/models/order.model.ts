@@ -83,8 +83,7 @@ export interface OrderDoc extends OrganizationScoped {
   status: OrderStatus;
   state: RecordState;
   /** BOOKING lifecycle, distinct from the payment lifecycle in `status`.
-   *  NULL on every automatic-capture order — i.e. on every order both
-   *  incumbent brands have ever created. */
+   *  NULL on every automatic-capture order. */
   bookingStatus?: BookingStatus | null;
 
   customer: {
@@ -231,9 +230,9 @@ export interface OrderDoc extends OrganizationScoped {
     processedWebhookEventIds: string[];
     /**
      * Manual-capture state. NULL means "automatic capture, not
-     * applicable" — which is the state of every order both incumbent
-     * brands have ever created, and needs no backfill. Populated only
-     * when the owning organization runs `captureMode: MANUAL`.
+     * applicable" — the state of every automatic-capture order, which
+     * needs no backfill. Populated only when the owning organization runs
+     * `captureMode: MANUAL` as the link is generated.
      */
     capture?: {
       method: CaptureMode;
@@ -591,8 +590,8 @@ const hotelSchema = new Schema(
  *
  * Attached at the root of `payment` with `default: null`, exactly the way
  * `dispute` hangs off the order — so an automatic-capture order carries no
- * such sub-document and every query, projection and DTO for the two
- * incumbent brands is byte-identical to what it was.
+ * such sub-document and every query, projection and DTO for it is
+ * byte-identical to what it was.
  */
 const paymentCaptureSchema = new Schema(
   {
@@ -927,7 +926,7 @@ orderSchema.index({ "dispute.status": 1, "dispute.openedAt": -1 });
 orderSchema.index({ organizationId: 1, serviceType: 1, createdAt: -1 });
 // Powers "which authorizations are about to lapse". Sparse because
 // `payment.capture` is null on every automatic-capture order, so this index
-// costs nothing for the two incumbent brands.
+// costs nothing for those orders.
 orderSchema.index(
   { "payment.capture.status": 1, "payment.capture.captureExpiresAt": 1 },
   { sparse: true },
