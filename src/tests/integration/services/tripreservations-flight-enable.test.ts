@@ -2372,7 +2372,10 @@ describe("4. STRIPE — FlightBizz (globevista), the other Flight organization, 
       [FLIGHTBIZZ_FLIGHT_TERMS, FLIGHTBIZZ_FLIGHT_POLICY],
       [TRIP_FLIGHT_TERMS, TRIP_FLIGHT_POLICY, DEPLOYMENT_CAR_TERMS, DEPLOYMENT_CAR_POLICY, ...BUILT_IN_FLIGHT, ...BUILT_IN_CAR, ...BUILT_IN_HOTEL],
     );
-    expect(moneyBlock(preview)).toBe(`Price breakdown ${emailMoney(FLIGHT_CHARGE, "Amount Payable Now")}`);
+    // …so its request names the HOLD: the charge "On Hold", never "Amount
+    // Payable Now" for money the checkout only authorizes.
+    expect(moneyBlock(preview)).toBe(`Price breakdown ${emailMoney(FLIGHT_CHARGE, `${FLIGHT_CHARGE} On Hold`)}`);
+    expect(visibleText(preview)).not.toContain("Amount Payable Now");
     expect(visibleText(preview)).toContain(GV.brandName);
     expect(preview).not.toMatch(/paypal/i);
     expectAbsent(

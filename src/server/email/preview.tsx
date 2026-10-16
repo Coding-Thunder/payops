@@ -5,6 +5,7 @@ import { render } from "@react-email/render";
 import type { EmailTemplateKey } from "@/lib/constants/email-templates";
 import {
   BookingType,
+  CaptureMode,
   ConsentMode,
   PaymentGatewayKey,
   SERVICE_TYPES,
@@ -17,6 +18,7 @@ import { getDefaultGateway } from "@/server/payments/gateways";
 import { getBranding } from "@/server/services/branding.service";
 import { organizationDefaultGateway } from "@/server/services/consent.service";
 import { getSettings } from "@/server/services/settings.service";
+import { getOrganizationCaptureMode } from "@/server/services/capture-mode.service";
 import { getActiveTemplateContent } from "@/server/services/email-template.service";
 import {
   acknowledgementFor,
@@ -104,6 +106,8 @@ export interface EmailPreview {
  * link.
  */
 async function previewGateway(organizationId: string | null): Promise<{
+  /** The processor the brand's links open. */
+  key: PaymentGatewayKey;
   label: string;
   /** What the confirmation sample names — none for the deployment default. */
   confirmationLabel: string | null;
@@ -112,6 +116,7 @@ async function previewGateway(organizationId: string | null): Promise<{
   const configured = await organizationDefaultGateway(organizationId);
   const gateway = configured ?? getDefaultGateway().key;
   return {
+    key: gateway,
     label: PaymentGatewayLabel[gateway],
     confirmationLabel: configured ? PaymentGatewayLabel[configured] : null,
     receiptUrl:
@@ -122,7 +127,7 @@ async function previewGateway(organizationId: string | null): Promise<{
 export async function renderEmailPreview(
   input: EmailPreviewInput,
 ): Promise<EmailPreview> {
-  const [branding, providers, terms, savedCopy, settings, gateway] =
+  const [branding, providers, terms, savedCopy, settings, gateway, captureMode] =
     await Promise.all([
       getBranding(),
       // The suppliers this brand may use — scoped exactly like its create
@@ -144,7 +149,15 @@ export async function renderEmailPreview(
           ),
       getSettings(),
       previewGateway(input.organizationId),
+      // The previewed brand's own mode. With no brand selected the preview
+      // stays the deployment sample it has always been.
+      input.organizationId
+        ? getOrganizationCaptureMode(input.organizationId)
+        : Promise.resolve(CaptureMode.AUTOMATIC),
     ]);
+  // Exactly the test link generation applies: manual capture, on Stripe.
+  const authorizationHold =
+    captureMode === CaptureMode.MANUAL && gateway.key === PaymentGatewayKey.STRIPE;
   const copy = input.draft ?? savedCopy;
   // The brand the organization's real emails carry — not the deployment's.
   const brand = await resolvePublicBrand(input.organizationId, branding);
@@ -183,6 +196,7 @@ export async function renderEmailPreview(
         input.serviceType,
         settings.consentMessage,
       ),
+      authorizationHold,
     });
     html = await render(
       <PaymentRequestEmail

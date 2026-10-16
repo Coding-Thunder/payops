@@ -757,7 +757,10 @@ const LIFECYCLE: LifecycleRow[] = [
       ["Amount captured", "—"],
       ["Booking (not payment)", "Awaiting confirmation"],
     ],
-    controls: ["Release hold"],
+    // Nothing to release yet: Stripe creates the PaymentIntent only at
+    // checkout (the fixture, like production, has none), and the server
+    // refuses a release without one — so the card offers nothing.
+    controls: [],
   },
   {
     status: PaymentCaptureStatus.AUTHORIZED,
@@ -867,6 +870,22 @@ describe("U3 — every authorization state of a rental car, for every role", () 
       expect(panelControls(panel!)).toEqual(offered);
       expect(captureControls()).toEqual(offered);
       expect(breakdownRows()).toEqual(CAR_BREAKDOWN);
+    },
+  );
+
+  it.each(ROLES)(
+    "PENDING_AUTHORIZATION whose PaymentIntent already exists, as %s: 'Release hold' is offered (ADMIN and SUPER_ADMIN only) — a hold can exist, so it can be released",
+    (role) => {
+      const pending = heldCarOrder(PaymentCaptureStatus.PENDING_AUTHORIZATION);
+      renderCard(
+        { ...pending, payment: { ...pending.payment, paymentIntentId: INTENT_ID } },
+        role,
+      );
+      const panel = authorizationPanel();
+      expect(panel).not.toBeNull();
+      const offered = role === UserRole.STAFF ? [] : ["Release hold"];
+      expect(panelControls(panel!)).toEqual(offered);
+      expect(captureControls()).toEqual(offered);
     },
   );
 });

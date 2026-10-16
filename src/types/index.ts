@@ -495,6 +495,10 @@ export interface PublicConsentView {
    *  when neither exists. */
   gatewayLabel: string | null;
   alreadyConfirmedAt: string | null;
+  /** Present (true) only when the order's checkout AUTHORIZES the card —
+   *  manual capture: a hold an operator captures later — so the page speaks
+   *  of a hold, never of paying now. Absent for every automatic order. */
+  authorizationHold?: true;
 }
 
 export interface ConsentSettings {

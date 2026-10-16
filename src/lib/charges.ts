@@ -416,6 +416,39 @@ export interface ChargeWording {
   dueSuffix?: string;
 }
 
+/**
+ * What a MANUAL-capture payment calls its amount before Capture, wherever a
+ * charge would otherwise be claimed ("You pay today", "Paid online today"):
+ * a hold placed on the card today — not a charge. One string for the
+ * payment request, the consent page and the success page.
+ */
+export const HOLD_TODAY_LABEL = "Card hold today";
+
+/**
+ * WHEN a manual-capture hold is collected — the one condition every hold
+ * sentence states ("…charged only once <this>", "…won't be charged until
+ * <this>"), so no surface promises something the capture would contradict.
+ * A new booking is collected once it is confirmed (with its supplier, when
+ * named); a change once the change is confirmed; a cancellation charge has
+ * no booking left to confirm, so it is collected once the cancellation is
+ * processed.
+ */
+export function holdCondition(
+  bookingType: string | null | undefined,
+  noun: string,
+  providerName?: string | null,
+): string {
+  const withProvider = providerName ? ` with ${providerName}` : "";
+  switch (bookingType) {
+    case BookingType.MODIFICATION:
+      return `the change to your ${noun} is confirmed${withProvider}`;
+    case BookingType.CANCELLATION_CHARGE:
+      return "your cancellation is processed";
+    default:
+      return `your ${noun} is confirmed${withProvider}`;
+  }
+}
+
 /** The literals this component shipped with. Named so the defaults are
  *  visible at a glance and can never drift apart from the prop defaults. */
 export const RENTAL_CHARGE_WORDING: Required<ChargeWording> = {

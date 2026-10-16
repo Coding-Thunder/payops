@@ -109,10 +109,23 @@ export function OrderPaymentCard({
     captureStatus === PaymentCaptureStatus.AUTHORIZED ||
     captureStatus === PaymentCaptureStatus.CAPTURE_FAILED;
   const showCapture = canCapture && awaitingCapture;
+  // Before the customer authorizes there is nothing to release: Stripe only
+  // creates the PaymentIntent at checkout, and the server refuses a release
+  // without one. Offer it once a hold can exist.
   const showRelease =
     canRelease &&
     (awaitingCapture ||
-      captureStatus === PaymentCaptureStatus.PENDING_AUTHORIZATION);
+      (captureStatus === PaymentCaptureStatus.PENDING_AUTHORIZATION &&
+        Boolean(order.payment.paymentIntentId)));
+  // A manual-capture link is spent once its checkout is complete: while the
+  // hold stands the operator captures or releases it (sharing or regenerating
+  // the link would only invite a second hold), and once it is released or
+  // lapsed only a NEW link can collect.
+  const liveHold =
+    awaitingCapture || captureStatus === PaymentCaptureStatus.CAPTURE_PENDING;
+  const spentHold =
+    captureStatus === PaymentCaptureStatus.CANCELLED ||
+    captureStatus === PaymentCaptureStatus.AUTHORIZATION_EXPIRED;
 
   const refunded = order.refundedAmount ?? 0;
   const disputeStatus = order.dispute?.status ?? null;
@@ -400,7 +413,7 @@ export function OrderPaymentCard({
           </Alert>
         ) : null}
 
-        {isPending && order.payment.paymentUrl ? (
+        {isPending && order.payment.paymentUrl && !liveHold && !spentHold ? (
           <div className="space-y-3">
             <div className="rounded-md border border-border bg-muted/40 p-3">
               <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -438,7 +451,7 @@ export function OrderPaymentCard({
           </div>
         ) : null}
 
-        {isFailedOrExpired && canRegenerate ? (
+        {(isFailedOrExpired || spentHold) && canRegenerate ? (
           <LoadingButton
             variant="outline"
             size="sm"

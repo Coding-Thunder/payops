@@ -200,6 +200,7 @@ interface PaymentIntentSeed {
     | "abandoned"
     | "automatic"
     | "duplicate"
+    | "expired"
     | "failed_invoice"
     | "fraudulent"
     | "requested_by_customer"

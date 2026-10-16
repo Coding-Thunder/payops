@@ -1198,8 +1198,14 @@ const TITLES: Record<Kind, (key: OrgKey) => Record<1 | 2 | 3 | 4 | 5 | 6, string
     return {
       1: `car · 1. POST /api/orders stores the existing car payload (Rental cost $249.99 prepaid + Deposit $100.00 at the counter) and freezes ${o.brandName}'s car terms`,
       2: `car · 2. ${o.gatewayLabel} is asked for exactly the prepaid $249.99 — never the $100.00 deposit or the $349.99 total — under the car's own line item`,
-      3: `car · 3. composer preview + sent payment request: ${o.brandName}'s car terms only, its name and support contact, ${o.gatewayLabel} named — byte-identical to the brand-leak car pins`,
-      4: `car · 4. consent page: no other terms, ${o.brandName}'s ${o.gatewayLabel} checkout, the rental summary and 'Confirm & Continue to Payment'`,
+      3:
+        o.captureMode === CaptureMode.MANUAL
+          ? `car · 3. composer preview + sent payment request: ${o.brandName}'s car terms only, its name and support contact, ${o.gatewayLabel} named — the brand-leak car pins worded for a HOLD ('Card hold today $249.99', 'Authorize $249.99'), never 'You pay today' / 'Amount paid online'`
+          : `car · 3. composer preview + sent payment request: ${o.brandName}'s car terms only, its name and support contact, ${o.gatewayLabel} named — byte-identical to the brand-leak car pins`,
+      4:
+        o.captureMode === CaptureMode.MANUAL
+          ? `car · 4. consent page: no other terms, ${o.brandName}'s ${o.gatewayLabel} checkout, the rental summary as a HOLD and 'Confirm & Authorize Card'`
+          : `car · 4. consent page: no other terms, ${o.brandName}'s ${o.gatewayLabel} checkout, the rental summary and 'Confirm & Continue to Payment'`,
       5: `car · 5. ${key === "trip" ? "PayPal approve → capture webhooks" : "Stripe authorization (AUTHORIZED email) → capture"} → confirmation with car terms only; CR-7781 saved and resent under 'Confirmation number', shown once`,
       6: `car · 6. order page cards from GET /api/orders/[id]: 'Rental provider', Vehicle / Pick-up / Drop-off, the rental breakdown, 'Confirmation number' CR-7781`,
     };
@@ -1209,8 +1215,14 @@ const TITLES: Record<Kind, (key: OrgKey) => Record<1 | 2 | 3 | 4 | 5 | 6, string
     return {
       1: `flight · 1. POST /api/orders stores Airline Charge $400.00 apart and ONE charge 'Rental Cost' $100.00 (pricing $100.00, no PNR yet) and freezes ${o.brandName}'s flight terms`,
       2: `flight · 2. ${o.gatewayLabel} is asked for exactly ${key === "trip" ? "'100.00'" : "unit_amount 10000"} — never 400 / 500 anywhere in the request — and its text leads with 'Rental Cost'`,
-      3: `flight · 3. composer preview + sent payment request: ${o.brandName}'s flight terms only, Airline Charge $400.00 / Rental Cost $100.00 / Total Booking Value $500.00 / Amount Payable Now $100.00, 'Review & pay $100.00 Rental Cost', ${o.gatewayLabel} named`,
-      4: `flight · 4. consent page: no other terms, the four rows, 'Confirm & pay $100.00 Rental Cost', ${o.gatewayLabel} checkout`,
+      3:
+        o.captureMode === CaptureMode.MANUAL
+          ? `flight · 3. composer preview + sent payment request: ${o.brandName}'s flight terms only, Airline Charge $400.00 / Rental Cost $100.00 / Total Booking Value $500.00 / Rental Cost On Hold $100.00, 'Review & authorize $100.00 Rental Cost', ${o.gatewayLabel} named — never 'Amount Payable Now'`
+          : `flight · 3. composer preview + sent payment request: ${o.brandName}'s flight terms only, Airline Charge $400.00 / Rental Cost $100.00 / Total Booking Value $500.00 / Amount Payable Now $100.00, 'Review & pay $100.00 Rental Cost', ${o.gatewayLabel} named`,
+      4:
+        o.captureMode === CaptureMode.MANUAL
+          ? `flight · 4. consent page: no other terms, the four rows ending 'Rental Cost On Hold', 'Confirm & authorize $100.00 Rental Cost', ${o.gatewayLabel} checkout`
+          : `flight · 4. consent page: no other terms, the four rows, 'Confirm & pay $100.00 Rental Cost', ${o.gatewayLabel} checkout`,
       5: `flight · 5. ${key === "trip" ? "PayPal approve → capture webhooks" : "Stripe authorization (AUTHORIZED email: 'Rental Cost On Hold') → capture"} → confirmation with flight terms only; AXXXYY saved and resent under 'PNR' in the top block, ONCE (no PNR row)`,
       6: `flight · 6. order page cards from GET /api/orders/[id]: 'Airline / Supplier', the itinerary, the flight rows (no PNR row), 'PNR' AXXXYY`,
     };
@@ -1223,8 +1235,14 @@ const TITLES: Record<Kind, (key: OrgKey) => Record<1 | 2 | 3 | 4 | 5 | 6, string
         key === "trip"
           ? "hotel · 2. PayPal is asked for exactly '300.00' — never the $50.00 balance or $350.00 — described as the 'Prepayment' of the stay at Harbour View Hotel, never by the supplier's key"
           : "hotel · 2. Stripe is asked for exactly unit_amount 30000 — never the $50.00 balance or $350.00 — the line item names the supplier 'Harbour Stays' (never its key), the description says 'Prepayment'",
-      3: `hotel · 3. composer preview + sent payment request: ${o.brandName}'s hotel terms only, the stay rows, 'Amount payable now' / 'Amount due at the property' / 'Total hotel cost', no car words, ${o.gatewayLabel} named`,
-      4: `hotel · 4. consent page: no other terms, the stay rows (calendar days, room preference), the property balance, ${o.gatewayLabel} checkout`,
+      3:
+        o.captureMode === CaptureMode.MANUAL
+          ? `hotel · 3. composer preview + sent payment request: ${o.brandName}'s hotel terms only, the stay rows, 'Card hold today' / 'Amount due at the property' / 'Total hotel cost', no car words, ${o.gatewayLabel} named`
+          : `hotel · 3. composer preview + sent payment request: ${o.brandName}'s hotel terms only, the stay rows, 'Amount payable now' / 'Amount due at the property' / 'Total hotel cost', no car words, ${o.gatewayLabel} named`,
+      4:
+        o.captureMode === CaptureMode.MANUAL
+          ? `hotel · 4. consent page: no other terms, the stay rows (calendar days, room preference), the property balance, the HOLD and 'Confirm & Authorize Card', ${o.gatewayLabel} checkout`
+          : `hotel · 4. consent page: no other terms, the stay rows (calendar days, room preference), the property balance, ${o.gatewayLabel} checkout`,
       5: `hotel · 5. ${key === "trip" ? "PayPal approve → capture webhooks" : "Stripe authorization (AUTHORIZED email) → capture"} → confirmation with hotel terms only; HC-55120 saved and resent under 'Hotel confirmation number', shown once`,
       6: `hotel · 6. order page cards from GET /api/orders/[id]: 'Hotel / Supplier', the stay rows, room preference and guest notes, the property breakdown, 'Hotel confirmation number' HC-55120`,
     };
@@ -1235,6 +1253,9 @@ for (const key of ORG_KEYS) {
   const org = ORG[key];
   const foe: OrgKey = key === "trip" ? "other" : "trip";
   const isPayPal = org.gateway === PaymentGatewayKey.PAYPAL;
+  // A MANUAL brand's checkout only AUTHORIZES the card: every surface before
+  // the capture names a hold, never a payment taken now.
+  const hold = org.captureMode === CaptureMode.MANUAL;
 
   describe(ORG_TITLE[key], () => {
     for (const kind of KINDS) {
@@ -1417,7 +1438,9 @@ for (const key of ORG_KEYS) {
         expect(mailto).toContain(`Hi ${org.brandName} team,`);
         for (const html of [preview, request.email.html]) {
           expect(visibleText(html)).toContain(
-            `Payment processed securely via ${org.gatewayLabel}. Your card details are encrypted end-to-end`,
+            hold
+              ? `Card authorized securely via ${org.gatewayLabel} — a hold, not a charge. Your card details are encrypted end-to-end`
+              : `Payment processed securely via ${org.gatewayLabel}. Your card details are encrypted end-to-end`,
           );
           expect(visibleText(html)).toContain(`Powered by ${org.gatewayLabel}.`);
         }
@@ -1439,15 +1462,20 @@ for (const key of ORG_KEYS) {
         switch (kind) {
           case "car": {
             // brand-leak.test.ts' car pins, verbatim — the real send adds only
-            // its link's "Due …" line after the order number.
+            // its link's "Due …" line after the order number. A MANUAL brand's
+            // email is the same email, every money line worded for the HOLD.
             expect(request.email.subject).toBe(`Complete your Budget payment • ${on}`);
-            const rows =
-              "What you're paying Rental cost $249.99 Deposit (due at counter) $100.00 " +
-              "Amount paid online $249.99 Amount due at counter $100.00 Total rental cost $349.99";
+            const rows = hold
+              ? "What you'll be charged Rental cost $249.99 Deposit (due at counter) $100.00 " +
+                "Card hold today $249.99 Amount due at counter $100.00 Total rental cost $349.99"
+              : "What you're paying Rental cost $249.99 Deposit (due at counter) $100.00 " +
+                "Amount paid online $249.99 Amount due at counter $100.00 Total rental cost $349.99";
             for (const html of [preview, request.email.html]) {
               expect(visibleText(html)).toContain(rows);
               expect(visibleText(html)).toContain(
-                `You pay today $249.99 Order ${on} Due ${due} Review & Confirm Booking`,
+                hold
+                  ? `Card hold today $249.99 A hold on your card, not a charge — we charge it only once your rental is confirmed with Budget. Order ${on} Due ${due} Review & Confirm Booking`
+                  : `You pay today $249.99 Order ${on} Due ${due} Review & Confirm Booking`,
               );
               expect(visibleText(html)).toContain(
                 `Booking details Type New booking Provider Budget Vehicle Toyota • Camry ` +
@@ -1456,37 +1484,50 @@ for (const key of ORG_KEYS) {
               );
             }
             expect(read).toContain(
-              `Hi Ada Lovelace, Thanks for booking with Budget. Your new booking is reserved — please complete payment using the secure link below to confirm it.`,
+              hold
+                ? `Hi Ada Lovelace, Thanks for booking with Budget. Your new booking is reserved — please authorize your card using the secure link below to confirm it. You won't be charged until your rental is confirmed.`
+                : `Hi Ada Lovelace, Thanks for booking with Budget. Your new booking is reserved — please complete payment using the secure link below to confirm it.`,
             );
             // Once consented: the pay button names the brand's processor.
             expect(visibleText(previewAfterConsent)).toContain(
-              `Order ${on} Due ${due} Pay $249.99 securely with ${org.gatewayLabel} → ` +
+              `Order ${on} Due ${due} ${hold ? "Authorize" : "Pay"} $249.99 securely with ${org.gatewayLabel} → ` +
                 `You already confirmed this booking — this opens ${org.gatewayLabel} Checkout.`,
             );
+            if (hold) {
+              for (const [where, content] of Object.entries({ ...parts, "composer preview after consent": previewAfterConsent })) {
+                expect(everything(content), where).not.toMatch(/You pay today|Amount paid online|What you're paying|Pay \$249\.99/);
+              }
+            }
             expectNoWords(NOT_CAR_WORDS, parts, false);
             break;
           }
           case "flight": {
-            const rows = `Price breakdown ${emailMoney(FLIGHT_CHARGE, "Amount Payable Now")}`;
+            // What the link takes: payable now — or, on MANUAL, held.
+            const settled = hold ? `${FLIGHT_CHARGE} On Hold` : "Amount Payable Now";
+            const rows = `Price breakdown ${emailMoney(FLIGHT_CHARGE, settled)}`;
             expect(moneyBlock(preview), "composer preview").toBe(rows);
             expect(moneyBlock(request.email.html), "payment request as sent").toBe(rows);
             expect(moneyBlock(previewAfterConsent), "preview after consent").toBe(rows);
-            expect(plainText(request.email.text)).toContain(emailMoney(FLIGHT_CHARGE, "Amount Payable Now"));
+            expect(plainText(request.email.text)).toContain(emailMoney(FLIGHT_CHARGE, settled));
             // The subject and the button name the charge — never the airline.
             expect(request.email.subject).toBe(`Complete your ${FLIGHT_CHARGE} payment • ${on}`);
             for (const html of [preview, request.email.html]) {
               expect(visibleText(html)).toContain(
-                `Amount Payable Now $100.00 ${FLIGHT_CHARGE} Order ${on} Due ${due} Review & pay $100.00 ${FLIGHT_CHARGE}`,
+                hold
+                  ? `${FLIGHT_CHARGE} On Hold $100.00 ${FLIGHT_CHARGE} A hold on your card, not a charge — we charge it only once your flight is confirmed with ${AIRLINE}. Order ${on} Due ${due} Review & authorize $100.00 ${FLIGHT_CHARGE}`
+                  : `Amount Payable Now $100.00 ${FLIGHT_CHARGE} Order ${on} Due ${due} Review & pay $100.00 ${FLIGHT_CHARGE}`,
               );
               expect(visibleText(html)).toContain(
                 `Booking details Type New booking Airline / Supplier ${AIRLINE} ${FLIGHT_ROWS} Flight itinerary`,
               );
             }
             expect(read).toContain(
-              `Thanks for booking with ${AIRLINE}. Your new booking is reserved — please pay the ${FLIGHT_CHARGE} using the secure link below to confirm it.`,
+              hold
+                ? `Thanks for booking with ${AIRLINE}. Your new booking is reserved — please authorize the ${FLIGHT_CHARGE} using the secure link below to confirm it. You won't be charged until your flight is confirmed.`
+                : `Thanks for booking with ${AIRLINE}. Your new booking is reserved — please pay the ${FLIGHT_CHARGE} using the secure link below to confirm it.`,
             );
             expect(visibleText(previewAfterConsent)).toContain(
-              `Pay the $100.00 ${FLIGHT_CHARGE} securely with ${org.gatewayLabel} →`,
+              `${hold ? "Authorize" : "Pay"} the $100.00 ${FLIGHT_CHARGE} securely with ${org.gatewayLabel} →`,
             );
             // The "Confirm by email" fallback lists the same four rows.
             expect(mailto).toContain(
@@ -1494,19 +1535,26 @@ for (const key of ORG_KEYS) {
                 "Airline Charge: 400.00 USD (not collected through this payment link)",
                 `${FLIGHT_CHARGE}: 100.00 USD`,
                 "Total Booking Value: 500.00 USD",
-                "Amount Payable Now: 100.00 USD",
+                `${settled}: 100.00 USD`,
               ].join("\n"),
             );
             expect(read).not.toContain("Amount Payable Now $400.00");
             expect(read).not.toContain("Amount Payable Now $500.00");
+            if (hold) {
+              for (const [where, content] of Object.entries({ ...parts, "composer preview after consent": previewAfterConsent })) {
+                expect(everything(content), where).not.toMatch(/Amount Payable Now|Review & pay|Pay the \$100\.00/);
+              }
+            }
             expectNoWords(FLIGHT_FORBIDDEN_CAR_WORDS, parts);
             break;
           }
           case "hotel": {
             expect(request.email.subject).toBe(`Complete your ${HOTEL_SUPPLIER} payment • ${on}`);
-            const money =
-              "What you're paying Room charge $300.00 Resort fee (due at the property) $50.00 " +
-              "Amount payable now $300.00 Amount due at the property $50.00 Total hotel cost $350.00";
+            const money = hold
+              ? "What you'll be charged Room charge $300.00 Resort fee (due at the property) $50.00 " +
+                "Card hold today $300.00 Amount due at the property $50.00 Total hotel cost $350.00"
+              : "What you're paying Room charge $300.00 Resort fee (due at the property) $50.00 " +
+                "Amount payable now $300.00 Amount due at the property $50.00 Total hotel cost $350.00";
             for (const html of [preview, request.email.html]) {
               // The stay: property, destination, the two calendar days (no
               // clock time), rooms, guests, the room preference — then the
@@ -1515,12 +1563,17 @@ for (const key of ORG_KEYS) {
                 `Booking details Type New booking Hotel / Supplier ${HOTEL_SUPPLIER} ${STAY_ROWS} ${money}`,
               );
               expect(visibleText(html)).toContain(
-                `You pay today $300.00 Order ${on} Due ${due} Review & Confirm Booking`,
+                hold
+                  ? `Card hold today $300.00 A hold on your card, not a charge — we charge it only once your hotel is confirmed with ${HOTEL_SUPPLIER}. Order ${on} Due ${due} Review & Confirm Booking`
+                  : `You pay today $300.00 Order ${on} Due ${due} Review & Confirm Booking`,
               );
             }
             expect(plainText(request.email.text)).toContain(
-              "Room charge $300.00 Resort fee (due at the property) $50.00 Amount payable now $300.00 " +
-                "Amount due at the property $50.00 Total hotel cost $350.00",
+              hold
+                ? "Room charge $300.00 Resort fee (due at the property) $50.00 Card hold today $300.00 " +
+                    "Amount due at the property $50.00 Total hotel cost $350.00"
+                : "Room charge $300.00 Resort fee (due at the property) $50.00 Amount payable now $300.00 " +
+                    "Amount due at the property $50.00 Total hotel cost $350.00",
             );
             expect(mailto).toContain(
               [
@@ -1536,8 +1589,13 @@ for (const key of ORG_KEYS) {
               ].join("\n"),
             );
             expect(visibleText(previewAfterConsent)).toContain(
-              `Pay $300.00 securely with ${org.gatewayLabel} →`,
+              `${hold ? "Authorize" : "Pay"} $300.00 securely with ${org.gatewayLabel} →`,
             );
+            if (hold) {
+              for (const [where, content] of Object.entries({ ...parts, "composer preview after consent": previewAfterConsent })) {
+                expect(everything(content), where).not.toMatch(/You pay today|Amount payable now|What you're paying|Pay \$300\.00/);
+              }
+            }
             // Nothing is paid yet, so never "Amount paid online"; and no car.
             for (const [where, content] of Object.entries(parts)) {
               expect(everything(content), where).not.toContain("Amount paid online");
@@ -1561,38 +1619,52 @@ for (const key of ORG_KEYS) {
         expect(page).toContain(
           `you'll continue to ${org.brandName}'s secure ${org.gatewayLabel} checkout.`,
         );
-        expect(page).toContain(`You'll be taken directly to ${org.gatewayLabel} Checkout to complete payment.`);
+        expect(page).toContain(
+          hold
+            ? `You'll be taken directly to ${org.gatewayLabel} Checkout to authorize your card. This places a hold, not a charge — the amount is collected only once your booking is confirmed.`
+            : `You'll be taken directly to ${org.gatewayLabel} Checkout to complete payment.`,
+        );
         expect(page).toContain(`Email ${org.supportEmail} if you need help.`);
         expectOnlyGateway(key, { "consent page": consent });
 
         switch (kind) {
           case "car":
             expect(page).toContain(
-              "Booking summary You are paying today $249.99 New booking Paid online today $249.99 " +
+              (hold
+                ? "Booking summary Card hold today $249.99 New booking Card hold today $249.99 "
+                : "Booking summary You are paying today $249.99 New booking Paid online today $249.99 ") +
                 "Remaining balance due at rental counter $100.00 Total rental cost $349.99 " +
                 `Customer ${created.customer.name} Email ${created.customer.email} Provider Budget Vehicle Toyota • Camry Pick-up`,
             );
-            expect(page).toContain("Confirm & Continue to Payment");
+            expect(page).toContain(hold ? "Confirm & Authorize Card" : "Confirm & Continue to Payment");
+            if (hold) expect(page).not.toMatch(/paying today|Paid online today|Continue to Payment|complete payment/);
             break;
-          case "flight":
+          case "flight": {
+            const settled = hold ? `${FLIGHT_CHARGE} On Hold` : "Amount Payable Now";
             expect(moneyBlock(consent, "Booking summary")).toBe(
-              `Booking summary Amount Payable Now $100.00 ${FLIGHT_CHARGE} New booking ${pageMoney(FLIGHT_CHARGE, "Amount Payable Now")}`,
+              `Booking summary ${settled} $100.00 ${FLIGHT_CHARGE} New booking ${pageMoney(FLIGHT_CHARGE, settled)}`,
             );
             expect(page).toContain(
               `Customer ${created.customer.name} Email ${created.customer.email} Airline / Supplier ${AIRLINE} ${FLIGHT_ROWS} Itinerary`,
             );
-            expect(page).toContain(`Confirm & pay $100.00 ${FLIGHT_CHARGE}`);
+            expect(page).toContain(`Confirm & ${hold ? "authorize" : "pay"} $100.00 ${FLIGHT_CHARGE}`);
             expect(page).not.toContain("Confirm & Continue to Payment");
+            if (hold) expect(page).not.toMatch(/Amount Payable Now|Confirm & pay|complete payment/);
             expectNoWords(FLIGHT_FORBIDDEN_CAR_WORDS, { "consent page": consent });
             break;
+          }
           case "hotel":
             expect(page).toContain(
-              "Booking summary You are paying today $300.00 New booking Paid online today $300.00 " +
-                "Remaining balance due at the property $50.00 Total hotel cost $350.00",
+              hold
+                ? "Booking summary Card hold today $300.00 New booking Card hold today $300.00 " +
+                    "Remaining balance due at the property $50.00 Total hotel cost $350.00"
+                : "Booking summary You are paying today $300.00 New booking Paid online today $300.00 " +
+                    "Remaining balance due at the property $50.00 Total hotel cost $350.00",
             );
             // The stay frozen into the consent record, as every surface shows it.
             expect(page).toContain(STAY_ROWS);
-            expect(page).toContain("Confirm & Continue to Payment");
+            expect(page).toContain(hold ? "Confirm & Authorize Card" : "Confirm & Continue to Payment");
+            if (hold) expect(page).not.toMatch(/paying today|Paid online today|Continue to Payment|complete payment/);
             expect(page).not.toMatch(/\d{1,2}:\d{2}\s?(AM|PM)/);
             expect(page).not.toContain(GUEST_NOTES);
             expectNoWords(CAR_WORDS, { "consent page": consent });

@@ -57,7 +57,7 @@ import { applyCheckoutPaid } from "./webhook.service";
  *
  *  2. IT CANNOT DOUBLE-CHARGE. The AUTHORIZED → CAPTURE_PENDING transition
  *     is a conditional update that exactly one caller can win, and the
- *     Stripe call carries a per-order idempotency key on top. An operator
+ *     Stripe call carries a per-hold idempotency key on top. An operator
  *     double-clicking "Capture payment" charges the customer once.
  *
  * Booking status and payment status are kept strictly separate, as the
@@ -65,6 +65,13 @@ import { applyCheckoutPaid } from "./webhook.service";
  * (`bookingStatus: CONFIRMED`) and separately settles the PAYMENT
  * (`status: PAID`, via the shared `applyCheckoutPaid`).
  */
+
+/**
+ * The `cancellation_reason` an operator's release sends to Stripe. Stripe's
+ * own lapsed-hold cancellations carry "automatic" or "expired" instead, which
+ * is how the payment_intent.canceled webhook tells the two apart.
+ */
+const OPERATOR_RELEASE_REASON = "abandoned";
 
 interface CaptureOptions {
   /** Major units. Omitted = capture the full authorized amount. */
@@ -214,9 +221,11 @@ export async function capturePayment(
         requested !== null
           ? toMinorUnits(requested, doc.pricing.currency)
           : null,
-      // Per-order key: a retry after a network timeout replays Stripe's
-      // original capture rather than issuing a second one.
-      idempotencyKey: `order:${String(doc._id)}:capture`,
+      // Per-HOLD key: a retry after a network timeout replays Stripe's
+      // original capture rather than issuing a second one, while a NEW hold
+      // on the same order (released, re-linked, authorized again) gets a key
+      // of its own — Stripe refuses a key reused with different parameters.
+      idempotencyKey: `order:${String(doc._id)}:capture:${paymentIntentId}`,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -395,8 +404,9 @@ export async function cancelAuthorization(
   let result;
   try {
     result = await gateway.cancelPayment(paymentIntentId, {
-      reason: "abandoned",
-      idempotencyKey: `order:${String(doc._id)}:cancel`,
+      reason: OPERATOR_RELEASE_REASON,
+      // Per-HOLD key, for the same reason as the capture key.
+      idempotencyKey: `order:${String(doc._id)}:cancel:${paymentIntentId}`,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -413,14 +423,30 @@ export async function cancelAuthorization(
   const updated = await Order.findOneAndUpdate(
     {
       _id: doc._id,
-      "payment.capture.status": {
-        $in: [
-          PaymentCaptureStatus.PENDING_AUTHORIZATION,
-          PaymentCaptureStatus.AUTHORIZED,
-          PaymentCaptureStatus.CAPTURE_PENDING,
-          PaymentCaptureStatus.CAPTURE_FAILED,
-        ],
-      },
+      // The hold this release voided: a regeneration that landed meanwhile
+      // has re-armed the record for a new one, which must stay untouched.
+      "payment.paymentIntentId": paymentIntentId,
+      $or: [
+        {
+          "payment.capture.status": {
+            $in: [
+              PaymentCaptureStatus.PENDING_AUTHORIZATION,
+              PaymentCaptureStatus.AUTHORIZED,
+              PaymentCaptureStatus.CAPTURE_PENDING,
+              PaymentCaptureStatus.CAPTURE_FAILED,
+            ],
+          },
+        },
+        // Stripe's payment_intent.canceled for THIS release can be processed
+        // before this write lands; the webhook then records the release with
+        // Stripe's code — the reason sent above. Matching it lets the
+        // operator's reason, audit and evidence still land on top. (A release
+        // of an already-released hold returned early, above.)
+        {
+          "payment.capture.status": PaymentCaptureStatus.CANCELLED,
+          "payment.capture.cancelReason": OPERATOR_RELEASE_REASON,
+        },
+      ],
     },
     {
       $set: {

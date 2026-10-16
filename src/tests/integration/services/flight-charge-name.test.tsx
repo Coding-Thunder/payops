@@ -1619,9 +1619,28 @@ describe("review follow-ups", () => {
       expect(confirmationText).toContain("We've received your payment for");
       expect(confirmationText).not.toContain(`received your ${name} payment`);
       expect(authorizedText).toContain("Your card has been authorized for $95.00 — this is a hold");
-      expect(authorizedText).toContain(
-        "Once it's confirmed we charge exactly $95.00 — not a penny more",
-      );
+      // …and it is collected on the booking type's own condition: a change
+      // once the change is confirmed, a cancellation charge once the
+      // cancellation is processed — never "once your flight is confirmed",
+      // and no "if it can't be confirmed" promise for a cancellation.
+      if (bookingType === BookingType.CANCELLATION_CHARGE) {
+        expect(authorizedText).toContain(
+          "We'll charge it only once your cancellation is processed.",
+        );
+        expect(authorizedText).toContain("We're processing your cancellation.");
+        expect(authorizedText).toContain(
+          "Once it's processed we charge exactly $95.00 — not a penny more",
+        );
+        expect(authorizedText).not.toMatch(/can't be confirmed|can't confirm|is confirmed with/);
+      } else {
+        expect(authorizedText).toContain(
+          "We'll charge it only once the change to your flight is confirmed with",
+        );
+        expect(authorizedText).toContain("We're confirming the change to your flight with");
+        expect(authorizedText).toContain(
+          "Once it's confirmed we charge exactly $95.00 — not a penny more",
+        );
+      }
       expect(authorizedText).toContain("Your bank may show $95.00 as pending until then.");
 
       // The payment request's BUTTON names the charge it asks the customer

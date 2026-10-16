@@ -7,9 +7,9 @@ import {
 } from "@react-email/components";
 import * as React from "react";
 
-import { flightAmountLabels } from "@/lib/charges";
+import { flightAmountLabels, holdCondition } from "@/lib/charges";
 import { BookingTypeLabel } from "@/lib/constants/labels";
-import { ServiceType, type BookingType } from "@/lib/constants/enums";
+import { BookingType, ServiceType } from "@/lib/constants/enums";
 import type { ProviderSnapshot } from "@/lib/constants/providers";
 import type { FlightItineraryView } from "@/lib/flight-itinerary";
 import { serviceNoun, type ServiceRow } from "@/lib/service-summary";
@@ -177,6 +177,17 @@ export function PaymentAuthorizedEmail({
     ? serviceRows
     : rentalBookingRows(vehicle, trip);
   const wording = chargeWordingFor(serviceType);
+  // A change or a cancellation charge is not collected "once your booking is
+  // confirmed" — a cancellation charge has no booking left to confirm. Their
+  // sentences name their own condition; a new booking reads exactly as it
+  // always has.
+  const holdTerms =
+    bookingType === BookingType.NEW_BOOKING
+      ? null
+      : {
+          when: holdCondition(bookingType, noun, provider.name),
+          cancellation: bookingType === BookingType.CANCELLATION_CHARGE,
+        };
 
   return (
     <EmailLayout preview={preview}>
@@ -186,7 +197,21 @@ export function PaymentAuthorizedEmail({
         label="Card authorized — not charged"
         title={`Thank you, ${customerName}.`}
         description={
-          serviceChargeModel ? (
+          holdTerms ? (
+            <>
+              {`Your card has been authorized for ${serviceChargeModel ? "the " : ""}`}
+              <strong style={{ color: COLOR.textPrimary }}>{amount}</strong>
+              {`${serviceChargeModel ? ` ${chargeName}` : ""} — this is a hold, and `}
+              <strong style={{ color: COLOR.textPrimary }}>
+                no money has been taken yet
+              </strong>
+              {`. We'll charge it only once ${holdTerms.when}.${
+                holdTerms.cancellation
+                  ? ""
+                  : " If it can't be confirmed, we release the hold in full and you are never charged."
+              }`}
+            </>
+          ) : serviceChargeModel ? (
             <>
               Your card has been authorized for the{" "}
               <strong style={{ color: COLOR.textPrimary }}>{amount}</strong>
@@ -280,14 +305,26 @@ export function PaymentAuthorizedEmail({
           >
             What happens next
           </Text>
-          <NextStep>
-            We&apos;re confirming your {noun} with {provider.name}.
-          </NextStep>
+          {holdTerms ? (
+            <NextStep>
+              {holdTerms.cancellation
+                ? "We're processing your cancellation."
+                : `We're confirming the change to your ${noun} with ${provider.name}.`}
+            </NextStep>
+          ) : (
+            <NextStep>
+              We&apos;re confirming your {noun} with {provider.name}.
+            </NextStep>
+          )}
           {serviceChargeModel ? (
             <NextStep>
-              {`Once it's confirmed we charge exactly the ${amount} ${chargeName} — not a penny more — and email you the confirmation.${
+              {`Once it's ${holdTerms?.cancellation ? "processed" : "confirmed"} we charge exactly the ${amount} ${chargeName} — not a penny more — and email you the confirmation.${
                 showsAirlineCharge ? " The Airline Charge is not part of it." : ""
               }`}
+            </NextStep>
+          ) : holdTerms?.cancellation ? (
+            <NextStep>
+              {`Once it's processed we charge exactly ${amount} — not a penny more — and email you the confirmation.`}
             </NextStep>
           ) : (
             <NextStep>
@@ -295,10 +332,12 @@ export function PaymentAuthorizedEmail({
               more — and email you the confirmation.
             </NextStep>
           )}
-          <NextStep>
-            If it can&apos;t be confirmed, the hold is released in full and
-            nothing is ever taken from your account.
-          </NextStep>
+          {holdTerms?.cancellation ? null : (
+            <NextStep>
+              If it can&apos;t be confirmed, the hold is released in full and
+              nothing is ever taken from your account.
+            </NextStep>
+          )}
           {holdExpiresOn ? (
             <NextStep>
               If we haven&apos;t confirmed by {holdExpiresOn}, the hold

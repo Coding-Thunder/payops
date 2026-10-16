@@ -64,6 +64,9 @@ interface BuildPaymentPreviewArgs {
   /** Payment request only: the statement under the button — the one the
    *  previewed service's customers confirm. */
   consentMessage?: string;
+  /** Payment request only: the previewed brand's links only AUTHORIZE the
+   *  card (manual capture on Stripe), so the request speaks of a hold. */
+  authorizationHold?: boolean;
 }
 
 /** The confirmation preview's sample receipt link, for a processor that
@@ -351,7 +354,11 @@ export function buildPaymentRequestPreviewProps(
     ...termsFields(args.terms),
     primaryCta: {
       url: `${args.appUrl.replace(/\/$/, "")}/consent/preview-token`,
-      label: consentCtaLabel(args.consentRequired ?? false, namedCharge),
+      label: consentCtaLabel(
+        args.consentRequired ?? false,
+        namedCharge,
+        args.authorizationHold ?? false,
+      ),
       helperText:
         args.consentMessage ??
         "You'll see a one-screen summary, confirm, then continue to secure payment.",
@@ -359,6 +366,9 @@ export function buildPaymentRequestPreviewProps(
     gatewayLabel: args.gatewayLabel ?? null,
     consentMailto: "mailto:support@example.com?subject=Order%20acknowledgement",
     consentRequired: args.consentRequired ?? false,
+    // Only for a brand on manual capture, so every other preview's props —
+    // and its HTML — stay exactly as they were.
+    ...(args.authorizationHold ? { authorizationHold: true } : {}),
   };
   return { ...props, ...sample };
 }

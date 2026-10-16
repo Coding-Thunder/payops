@@ -8,6 +8,8 @@ import { FlightItinerary } from "@/components/common/flight-itinerary";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   flightMoneyWording,
+  HOLD_TODAY_LABEL,
+  holdCondition,
   HOTEL_CHARGE_WORDING,
   LEGACY_FLIGHT_AMOUNT_LABELS,
   showsAirlineCharge,
@@ -156,6 +158,7 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
         fallbackUrl={fallbackUrl}
         branding={branding}
         gatewayLabel={view.gatewayLabel}
+        hold={view.authorizationHold === true}
       />
     );
   }
@@ -247,12 +250,14 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
               Confirming…
             </>
           ) : (
-            submitLabel(view.snapshot)
+            submitLabel(view.snapshot, view.authorizationHold === true)
           )}
         </button>
 
         <p className="text-center text-[11px] text-slate-500">
-          {`You'll be taken directly to ${checkoutName(view.gatewayLabel)} to complete payment. Your timestamp and IP are recorded against this booking as evidence of consent.`}
+          {view.authorizationHold
+            ? `You'll be taken directly to ${checkoutName(view.gatewayLabel)} to authorize your card. This places a hold, not a charge — the amount is collected only once ${holdCondition(view.snapshot.bookingType, "booking")}. Your timestamp and IP are recorded against this booking as evidence of consent.`
+            : `You'll be taken directly to ${checkoutName(view.gatewayLabel)} to complete payment. Your timestamp and IP are recorded against this booking as evidence of consent.`}
           {/* A brand that publishes no support address gets no dead link. */}
           {branding.supportEmail ? (
             <>
@@ -298,7 +303,7 @@ function SummaryBlock({ view }: { view: PublicConsentView }) {
       <div className="mt-3 flex items-baseline justify-between gap-3">
         <div>
           <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-            You are paying today
+            {view.authorizationHold ? HOLD_TODAY_LABEL : "You are paying today"}
           </p>
           <span className="text-2xl font-semibold tracking-tight tabular-nums text-slate-900">
             {formatCurrency(snapshot.amount, currency)}
@@ -312,7 +317,9 @@ function SummaryBlock({ view }: { view: PublicConsentView }) {
       {hasCounterDue ? (
         <div className="mt-3 space-y-1 rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-3 text-sm">
           <div className="flex items-center justify-between">
-            <span className="text-slate-500">Paid online today</span>
+            <span className="text-slate-500">
+              {view.authorizationHold ? HOLD_TODAY_LABEL : "Paid online today"}
+            </span>
             <span className="tabular-nums text-slate-900">
               {formatCurrency(snapshot.amount, currency)}
             </span>
@@ -428,7 +435,7 @@ function FlightSummaryBlock({
         <div className="mt-3 flex items-baseline justify-between gap-3">
           <div>
             <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-              {labels.payableNow}
+              {view.authorizationHold ? labels.heldNow : labels.payableNow}
             </p>
             <span className="text-2xl font-semibold tracking-tight tabular-nums text-slate-900">
               {formatCurrency(snapshot.amount, currency)}
@@ -477,7 +484,7 @@ function FlightSummaryBlock({
             </span>
           </div>
           <div className="flex items-center justify-between gap-3 font-semibold">
-            <span className="text-slate-900">{labels.payableNow}</span>
+            <span className="text-slate-900">{view.authorizationHold ? labels.heldNow : labels.payableNow}</span>
             <span className="tabular-nums text-slate-900">
               {formatCurrency(snapshot.amount, currency)}
             </span>
@@ -523,7 +530,10 @@ function FlightSummaryBlock({
  * never named (or that was frozen before itineraries), keeps "Confirm &
  * Continue to Payment".
  */
-function submitLabel(snapshot: PaymentConsentSnapshot): string {
+function submitLabel(
+  snapshot: PaymentConsentSnapshot,
+  authorizationHold = false,
+): string {
   if (snapshot.serviceType === ServiceType.FLIGHT) {
     const { chargeName } = flightMoneyWording(
       snapshot.flight,
@@ -531,10 +541,13 @@ function submitLabel(snapshot: PaymentConsentSnapshot): string {
       snapshot.charges,
     );
     if (chargeName) {
-      return `Confirm & pay ${formatCurrency(snapshot.amount, snapshot.currency)} ${chargeName}`;
+      return `Confirm & ${authorizationHold ? "authorize" : "pay"} ${formatCurrency(snapshot.amount, snapshot.currency)} ${chargeName}`;
     }
   }
-  return "Confirm & Continue to Payment";
+  // A manual-capture checkout places a hold; it takes nothing yet.
+  return authorizationHold
+    ? "Confirm & Authorize Card"
+    : "Confirm & Continue to Payment";
 }
 
 /**
@@ -550,10 +563,13 @@ function RedirectingShell({
   fallbackUrl,
   branding,
   gatewayLabel,
+  hold = false,
 }: {
   fallbackUrl: string | null;
   branding: BrandingDTO;
   gatewayLabel: string | null;
+  /** The checkout only authorizes the card (manual capture). */
+  hold?: boolean;
 }) {
   return (
     <div
@@ -567,7 +583,9 @@ function RedirectingShell({
           Opening secure payment…
         </h1>
         <p className="mt-1.5 max-w-md text-sm text-slate-600">
-          {`We've recorded your acknowledgement. You're being taken straight to ${checkoutName(gatewayLabel)} to complete payment.`}
+          {hold
+            ? `We've recorded your acknowledgement. You're being taken straight to ${checkoutName(gatewayLabel)} to authorize your card — you won't be charged yet.`
+            : `We've recorded your acknowledgement. You're being taken straight to ${checkoutName(gatewayLabel)} to complete payment.`}
         </p>
         {fallbackUrl ? (
           <div className="mt-6 w-full max-w-sm rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-left">

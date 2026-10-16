@@ -9,12 +9,16 @@ import {
 } from "@react-email/components";
 import * as React from "react";
 
-import { flightAmountLabels } from "@/lib/charges";
+import {
+  flightAmountLabels,
+  HOLD_TODAY_LABEL,
+  holdCondition,
+} from "@/lib/charges";
 import { BookingTypeLabel } from "@/lib/constants/labels";
 import { ServiceType, type BookingType } from "@/lib/constants/enums";
 import type { ProviderSnapshot } from "@/lib/constants/providers";
 import type { FlightItineraryView } from "@/lib/flight-itinerary";
-import type { ServiceRow } from "@/lib/service-summary";
+import { serviceNoun, type ServiceRow } from "@/lib/service-summary";
 
 import { chargeWordingFor } from "../components/charge-breakdown";
 import { providerRowLabel, rentalBookingRows } from "./payment-confirmation";
@@ -148,6 +152,13 @@ export interface PaymentRequestEmailProps {
   };
   consentMailto?: string | null;
   consentRequired?: boolean;
+  /**
+   * The order's checkout only AUTHORIZES the card (manual capture): a hold
+   * an operator captures later. Every sentence that would otherwise say
+   * money is taken now speaks of the hold instead. Absent for an
+   * automatic-capture order, whose email renders exactly as it always has.
+   */
+  authorizationHold?: boolean;
 }
 
 /** A flight's collected charge — formatted amount and the operator's name
@@ -171,13 +182,19 @@ export interface PaymentRequestNamedCharge {
 export function consentCtaLabel(
   consentRequired: boolean,
   charge?: PaymentRequestNamedCharge | null,
+  authorizationHold = false,
 ): string {
   if (charge?.name) {
-    return `${consentRequired ? "Agree" : "Review"} & pay ${charge.amount} ${charge.name}`;
+    return `${consentRequired ? "Agree" : "Review"} & ${
+      authorizationHold ? "authorize" : "pay"
+    } ${charge.amount} ${charge.name}`;
   }
-  return consentRequired
-    ? "Agree & Continue to Payment"
-    : "Review & Confirm Booking";
+  if (consentRequired) {
+    return authorizationHold
+      ? "Agree & Continue to Authorization"
+      : "Agree & Continue to Payment";
+  }
+  return "Review & Confirm Booking";
 }
 
 /**
@@ -191,11 +208,14 @@ export function payCtaLabel(
   amount: string,
   gatewayLabel: string | null | undefined,
   chargeName?: string | null,
+  authorizationHold = false,
 ): string {
   const via = gatewayLabel ?? "our secure checkout";
+  // A manual-capture checkout places a hold; it takes nothing yet.
+  const verb = authorizationHold ? "Authorize" : "Pay";
   return chargeName
-    ? `Pay the ${amount} ${chargeName} securely with ${via} →`
-    : `Pay ${amount} securely with ${via} →`;
+    ? `${verb} the ${amount} ${chargeName} securely with ${via} →`
+    : `${verb} ${amount} securely with ${via} →`;
 }
 
 /**
@@ -244,6 +264,7 @@ export function PaymentRequestEmail({
   consentMailto,
   consentRequired,
   gatewayLabel,
+  authorizationHold = false,
 }: PaymentRequestEmailProps) {
   // An itinerary flight's payment link collects its service charge only;
   // every amount and every sentence about it says so. A flight created
@@ -257,9 +278,16 @@ export function PaymentRequestEmail({
   // sentence that names it.
   const chargeName = flightAmounts?.chargeName ?? "";
   const flightLabels = flightAmountLabels(isFlight ? chargeName : null);
-  const preview = serviceChargeModel
-    ? `Complete payment for ${orderNumber} — ${amount} ${chargeName}`
-    : `Complete payment for ${orderNumber} — ${amount}`;
+  // A manual-capture checkout only authorizes the card: nothing in this
+  // email may say money is taken before an operator captures it.
+  const noun = serviceNoun({ serviceType });
+  const preview = authorizationHold
+    ? `Authorize your card for ${orderNumber} — ${amount}${
+        serviceChargeModel ? ` ${chargeName}` : ""
+      } on hold, not charged yet`
+    : serviceChargeModel
+      ? `Complete payment for ${orderNumber} — ${amount} ${chargeName}`
+      : `Complete payment for ${orderNumber} — ${amount}`;
   const policyParagraphs = cancellationPolicy
     ? cancellationPolicy.split(/\n+/).filter((p) => p.trim().length > 0)
     : [];
@@ -275,13 +303,19 @@ export function PaymentRequestEmail({
   const introLine =
     intro && intro.trim().length > 0
       ? intro
-      : serviceChargeModel
+      : authorizationHold
         ? `Thanks for booking with ${provider.name}. Your ${BookingTypeLabel[
             bookingType
-          ].toLowerCase()} is reserved — please pay the ${chargeName} using the secure link below to confirm it.`
-        : `Thanks for booking with ${provider.name}. Your ${BookingTypeLabel[
-            bookingType
-          ].toLowerCase()} is reserved — please complete payment using the secure link below to confirm it.`;
+          ].toLowerCase()} is reserved — please authorize ${
+            serviceChargeModel ? `the ${chargeName}` : "your card"
+          } using the secure link below to confirm it. You won't be charged until ${holdCondition(bookingType, noun)}.`
+        : serviceChargeModel
+          ? `Thanks for booking with ${provider.name}. Your ${BookingTypeLabel[
+              bookingType
+            ].toLowerCase()} is reserved — please pay the ${chargeName} using the secure link below to confirm it.`
+          : `Thanks for booking with ${provider.name}. Your ${BookingTypeLabel[
+              bookingType
+            ].toLowerCase()} is reserved — please complete payment using the secure link below to confirm it.`;
 
   return (
     <EmailLayout preview={preview}>
@@ -309,7 +343,13 @@ export function PaymentRequestEmail({
                 textTransform: "uppercase",
               }}
             >
-              {isFlight ? flightLabels.payableNow : "You pay today"}
+              {authorizationHold
+                ? isFlight
+                  ? flightLabels.heldNow
+                  : HOLD_TODAY_LABEL
+                : isFlight
+                  ? flightLabels.payableNow
+                  : "You pay today"}
             </Text>
             <Text
               style={{
@@ -332,6 +372,20 @@ export function PaymentRequestEmail({
                 }}
               >
                 {flightLabels.serviceCharge}
+              </Text>
+            ) : null}
+            {authorizationHold ? (
+              <Text
+                style={{
+                  ...typeStyle("legal"),
+                  margin: 0,
+                  marginTop: 6,
+                  color: COLOR.textSecondary,
+                  fontSize: 12,
+                  lineHeight: "17px",
+                }}
+              >
+                {`A hold on your card, not a charge — we charge it only once ${holdCondition(bookingType, noun, provider.name)}.`}
               </Text>
             ) : null}
           </Column>
@@ -452,7 +506,9 @@ export function PaymentRequestEmail({
                 fontSize: 11,
               }}
             >
-              Confirmation is required before payment can be completed.
+              {authorizationHold
+                ? "Confirmation is required before your card can be authorized."
+                : "Confirmation is required before payment can be completed."}
             </Text>
           ) : null}
           {consentMailto ? (
@@ -543,17 +599,20 @@ export function PaymentRequestEmail({
       {isFlight && flightAmounts ? (
         <FlightChargeBreakdown
           amounts={flightAmounts}
-          settledLabel={flightLabels.payableNow}
+          settledLabel={
+            authorizationHold ? flightLabels.heldNow : flightLabels.payableNow
+          }
         />
       ) : chargeBreakdown ? (
         <ChargeBreakdown
           breakdown={chargeBreakdown}
-          title="What you're paying"
+          title={authorizationHold ? "What you'll be charged" : "What you're paying"}
           topPadding={SPACE.md}
           {...(serviceType === ServiceType.CAR_RENTAL ? {} : wording)}
           {...(serviceType === ServiceType.HOTEL
             ? { prepaidLabel: HOTEL_REQUEST_PREPAID_LABEL }
             : {})}
+          {...(authorizationHold ? { prepaidLabel: HOLD_TODAY_LABEL } : {})}
         />
       ) : null}
 
@@ -608,9 +667,11 @@ export function PaymentRequestEmail({
             lineHeight: "16px",
           }}
         >
-          {gatewayLabel
-            ? `Payment processed securely via ${gatewayLabel}. Your card details are encrypted end-to-end and never stored on our servers.`
-            : "Payment processed securely. Your card details are encrypted end-to-end and never stored on our servers."}
+          {authorizationHold
+            ? `Card authorized securely${gatewayLabel ? ` via ${gatewayLabel}` : ""} — a hold, not a charge. Your card details are encrypted end-to-end and never stored on our servers.`
+            : gatewayLabel
+              ? `Payment processed securely via ${gatewayLabel}. Your card details are encrypted end-to-end and never stored on our servers.`
+              : "Payment processed securely. Your card details are encrypted end-to-end and never stored on our servers."}
         </Text>
       </Section>
 
@@ -675,6 +736,12 @@ export function PaymentRequestEmail({
         brandName={brandName}
         supportEmail={supportEmail}
         gatewayLabel={gatewayLabel}
+        // Not a "receipt" — nothing has been paid, and on a hold nothing
+        // will be until an operator captures it. Automatic requests keep the
+        // footer they have always printed.
+        {...(authorizationHold
+          ? { disclosure: "Automated payment request — replies route to our support team." }
+          : {})}
       />
     </EmailLayout>
   );

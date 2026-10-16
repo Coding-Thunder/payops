@@ -13,6 +13,7 @@ import {
   OrderEvidenceEventType,
   OrderStatus,
   PaymentCaptureStatus,
+  PaymentGatewayKey,
 } from "@/lib/constants/enums";
 import { DomainEventType } from "@/lib/constants/events";
 import { logger } from "@/lib/logger";
@@ -27,6 +28,7 @@ import {
 import { connectMongo } from "@/server/db/mongoose";
 import { publishEvent } from "@/server/events/bus";
 import type { VerifiedPaymentEvent } from "@/server/payments/gateway";
+import { getGatewayForOrganization } from "@/server/payments/resolve-gateway";
 import {
   sessionOpt,
   tryClaimGatewayEvent,
@@ -777,50 +779,88 @@ async function handlePaymentFailed(
   //
   // `payment.capture` is null for every automatic-capture order, so
   // `failOrder` runs byte-for-byte as it always has for those orders.
+  //
+  // Every state in which the hold still stands counts — CAPTURE_FAILED too:
+  // the operator's own failed attempt usually writes it before Stripe's
+  // event for the same decline arrives.
   const captureStatus = order.payment?.capture?.status;
-  if (
-    captureStatus === PaymentCaptureStatus.AUTHORIZED ||
-    captureStatus === PaymentCaptureStatus.CAPTURE_PENDING
-  ) {
-    await Order.updateOne(
-      { _id: order._id, "payment.capture.method": CaptureMode.MANUAL },
-      {
-        $set: {
-          "payment.capture.status": PaymentCaptureStatus.CAPTURE_FAILED,
-          "payment.capture.lastError": reason.slice(0, 512),
+  const holdStatuses: PaymentCaptureStatus[] = [
+    PaymentCaptureStatus.AUTHORIZED,
+    PaymentCaptureStatus.CAPTURE_PENDING,
+    PaymentCaptureStatus.CAPTURE_FAILED,
+  ];
+  if (captureStatus && holdStatuses.includes(captureStatus)) {
+    const recorded = await withTx(async (session) => {
+      const claimed = await tryClaimGatewayEvent(
+        {
+          gatewayEventId: event.eventId,
+          gateway: order.payment.gateway ?? "STRIPE",
+          orderId: String(order._id),
         },
-      },
-    );
-    await recordAudit({
-      action: AuditAction.PAYMENT_CAPTURE_FAILED,
-      entityType: AuditEntity.PAYMENT,
-      entityId: String(order._id),
-      organizationId: order.organizationId ?? null,
-      metadata: {
-        orderNumber: order.orderNumber,
-        reason,
-        eventId: event.eventId,
-      },
+        session,
+      );
+      if (!claimed) return false;
+      const res = await Order.updateOne(
+        {
+          _id: order._id,
+          "payment.capture.method": CaptureMode.MANUAL,
+          // Re-checked at write time: a capture that completed after the
+          // read above must not be turned back into a failure.
+          "payment.capture.status": { $in: holdStatuses },
+        },
+        {
+          $set: {
+            "payment.capture.status": PaymentCaptureStatus.CAPTURE_FAILED,
+            "payment.capture.lastError": reason.slice(0, 512),
+          },
+        },
+        sessionOpt(session),
+      );
+      // Captured (or released) meanwhile: nothing failed any more, and the
+      // trail must not say a settled charge was declined.
+      if (res.matchedCount === 0) return false;
+      await recordAudit(
+        {
+          action: AuditAction.PAYMENT_CAPTURE_FAILED,
+          entityType: AuditEntity.PAYMENT,
+          entityId: String(order._id),
+          organizationId: order.organizationId ?? null,
+          metadata: {
+            orderNumber: order.orderNumber,
+            reason,
+            eventId: event.eventId,
+          },
+        },
+        session,
+      );
+      await captureEvidenceSafe(
+        {
+          orderId: String(order._id),
+          orderNumber: order.orderNumber,
+          eventType: OrderEvidenceEventType.PAYMENT_CAPTURE_FAILED,
+          occurredAt: new Date(event.occurredAtMs),
+          actor: { type: OrderEvidenceActorType.GATEWAY, name: "webhook" },
+          payload: {
+            gatewayEventId: event.eventId,
+            paymentIntentId: event.paymentIntentId ?? null,
+            reason,
+            note: "Capture was declined. The order is NOT marked failed.",
+          },
+          refs: {
+            gatewayEventId: event.eventId,
+            paymentIntentId: event.paymentIntentId ?? null,
+            customerEmail: order.customer.email,
+          },
+        },
+        session,
+      );
+      return true;
     });
-    await captureEvidenceSafe({
+    return {
+      handled: true,
+      duplicate: !recorded,
       orderId: String(order._id),
-      orderNumber: order.orderNumber,
-      eventType: OrderEvidenceEventType.PAYMENT_CAPTURE_FAILED,
-      occurredAt: new Date(event.occurredAtMs),
-      actor: { type: OrderEvidenceActorType.GATEWAY, name: "webhook" },
-      payload: {
-        gatewayEventId: event.eventId,
-        paymentIntentId: event.paymentIntentId ?? null,
-        reason,
-        note: "Capture was declined. The order is NOT marked failed.",
-      },
-      refs: {
-        gatewayEventId: event.eventId,
-        paymentIntentId: event.paymentIntentId ?? null,
-        customerEmail: order.customer.email,
-      },
-    });
-    return { handled: true, duplicate: false, orderId: String(order._id) };
+    };
   }
 
   return failOrder(order, event, reason);
@@ -1251,6 +1291,11 @@ async function handlePaymentCaptured(
           PaymentCaptureStatus.AUTHORIZED,
           PaymentCaptureStatus.CAPTURE_PENDING,
           PaymentCaptureStatus.PENDING_AUTHORIZATION,
+          // An operator capture whose Stripe call errored or timed out is
+          // recorded CAPTURE_FAILED; if Stripe in fact captured, this event
+          // is the truth and the order must end CAPTURED, not PAID with a
+          // failed capture still showing.
+          PaymentCaptureStatus.CAPTURE_FAILED,
         ],
       },
     },
@@ -1293,6 +1338,58 @@ async function handlePaymentCaptured(
 }
 
 /**
+ * Whether a payment-intent event concerns an intent the order has since
+ * replaced — and if so, what the order holds now (for the audit trail).
+ *
+ * An order that knows its intent compares directly. Before its authorization
+ * lands it does not — a Checkout Session has no intent until the customer
+ * pays — so the order's current session is asked which intent it holds. A
+ * lookup that fails throws, so the webhook answers 500 and Stripe retries
+ * rather than the hold being cancelled on a guess. An event or an order
+ * without the ids to compare keeps the previous behaviour.
+ */
+async function supersededIntent(
+  order: OrderDocument,
+  event: VerifiedPaymentEvent,
+): Promise<{
+  currentPaymentIntentId: string | null;
+  currentSessionId: string | null;
+} | null> {
+  const eventIntent = event.paymentIntentId ?? null;
+  if (!eventIntent) return null;
+  const currentSessionId = order.payment.stripeSessionId ?? null;
+  const knownIntent = order.payment.paymentIntentId ?? null;
+  if (knownIntent) {
+    return knownIntent === eventIntent
+      ? null
+      : { currentPaymentIntentId: knownIntent, currentSessionId };
+  }
+  if (!currentSessionId) return null;
+  const gateway = await getGatewayForOrganization(
+    order.organizationId ? String(order.organizationId) : null,
+    (order.payment.gateway as PaymentGatewayKey | null) ?? PaymentGatewayKey.STRIPE,
+  );
+  const status = await gateway.getSessionStatus(currentSessionId);
+  return status.paymentIntentId === eventIntent
+    ? null
+    : { currentPaymentIntentId: status.paymentIntentId, currentSessionId };
+}
+
+/** The write-time half of `supersededIntent`: pin the hold the read saw. */
+function currentHoldFilter(
+  order: OrderDocument,
+  event: VerifiedPaymentEvent,
+): Record<string, string> {
+  if (!event.paymentIntentId) return {};
+  if (order.payment.paymentIntentId) {
+    return { "payment.paymentIntentId": event.paymentIntentId };
+  }
+  return order.payment.stripeSessionId
+    ? { "payment.stripeSessionId": order.payment.stripeSessionId }
+    : {};
+}
+
+/**
  * `payment_intent.canceled` on a manual-capture intent — the hold was
  * released without ever being charged.
  *
@@ -1318,8 +1415,70 @@ async function handlePaymentCancelled(
     return { handled: false, duplicate: false, reason: "not_manual_capture" };
   }
 
+  // ONLY THE ORDER'S CURRENT HOLD CAN BE CANCELLED BY THIS EVENT.
+  //
+  // Regenerating a link replaces the order's session and re-arms
+  // `payment.capture` for it — then retires the previous session at the
+  // gateway, which cancels that session's intent. Its
+  // `payment_intent.canceled` still finds this order through the order id in
+  // its metadata; applied here it would cancel the NEW hold before the
+  // customer has even used it, so their authorization would be dropped when
+  // it lands and the operator's Capture refused. An event about an intent
+  // that is not the current one is history: claimed (once), audited, order
+  // untouched — exactly like a superseded session's expiry.
+  const superseded = await supersededIntent(order, event);
+  if (superseded) {
+    const recorded = await withTx(async (session) => {
+      const claimed = await tryClaimGatewayEvent(
+        {
+          gatewayEventId: event.eventId,
+          gateway: order.payment.gateway ?? "STRIPE",
+          orderId: String(order._id),
+        },
+        session,
+      );
+      if (!claimed) return false;
+      await recordAudit(
+        {
+          action: AuditAction.PAYMENT_SESSION_SUPERSEDED,
+          entityType: AuditEntity.PAYMENT,
+          entityId: String(order._id),
+          organizationId: order.organizationId ?? null,
+          metadata: {
+            orderNumber: order.orderNumber,
+            eventId: event.eventId,
+            type: event.type,
+            paymentIntentId: event.paymentIntentId,
+            currentPaymentIntentId: superseded.currentPaymentIntentId,
+            currentSessionId: superseded.currentSessionId,
+          },
+        },
+        session,
+      );
+      return true;
+    });
+    if (!recorded) {
+      return { handled: true, duplicate: true, orderId: String(order._id) };
+    }
+    logger.info("payments.superseded_intent_cancel_ignored", {
+      orderId: String(order._id),
+      eventId: event.eventId,
+      paymentIntentId: event.paymentIntentId,
+      currentPaymentIntentId: superseded.currentPaymentIntentId,
+    });
+    return {
+      handled: true,
+      duplicate: false,
+      orderId: String(order._id),
+      reason: "superseded_payment_intent",
+    };
+  }
+
   const reason = event.authorization?.cancellationReason ?? null;
-  const expired = reason === "automatic" || reason === "abandoned";
+  // Only Stripe's OWN cancellations mean the hold lapsed. "abandoned" is
+  // what an operator's release sends (payment-capture.service.ts), and the
+  // other reasons are chosen by a person cancelling it — a release.
+  const expired = reason === "automatic" || reason === "expired";
   const nextStatus = expired
     ? PaymentCaptureStatus.AUTHORIZATION_EXPIRED
     : PaymentCaptureStatus.CANCELLED;
@@ -1347,6 +1506,9 @@ async function handlePaymentCancelled(
             PaymentCaptureStatus.CAPTURE_FAILED,
           ],
         },
+        // The check above, re-asserted at the write: a regeneration that
+        // lands in between has re-armed the record for another hold.
+        ...currentHoldFilter(order, event),
       },
       {
         $set: {

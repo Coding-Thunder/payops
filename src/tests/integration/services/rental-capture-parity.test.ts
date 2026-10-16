@@ -1148,7 +1148,7 @@ const CAPTURE_CALL: StripeCall = {
   target: "<PI_1>",
   onTheOrdersPaymentIntent: true,
   params: {},
-  idempotencyKey: "order:<ID>:capture",
+  idempotencyKey: "order:<ID>:capture:<PI_1>",
 };
 
 const CANCEL_CALL: StripeCall = {
@@ -1156,7 +1156,7 @@ const CANCEL_CALL: StripeCall = {
   target: "<PI_1>",
   onTheOrdersPaymentIntent: true,
   params: { cancellation_reason: "abandoned" },
-  idempotencyKey: "order:<ID>:cancel",
+  idempotencyKey: "order:<ID>:cancel:<PI_1>",
 };
 
 function emails(counts: Partial<Record<EmailKind, number>>): Record<string, number> {
@@ -1577,7 +1577,7 @@ describe("the parity matrix — Rental on MANUAL runs exactly the reference's li
       return { steps: [captured], trail: await trailOf(handle) };
     }
 
-    it("S3 capture (ADMIN): 200 and exactly ONE paymentIntents.capture on the order's intent (params {}, key order:<ID>:capture) — PAID, CAPTURED, booking CONFIRMED, $249.99 captured and received, ONE receipt, audit PAYMENT_CAPTURED", async () => {
+    it("S3 capture (ADMIN): 200 and exactly ONE paymentIntents.capture on the order's intent (params {}, key order:<ID>:capture:<PI>) — PAID, CAPTURED, booking CONFIRMED, $249.99 captured and received, ONE receipt, audit PAYMENT_CAPTURED", async () => {
       const { reference, rental } = await onBoth(s3);
       expect(rental).toEqual(reference);
 
@@ -1700,7 +1700,7 @@ describe("the parity matrix — Rental on MANUAL runs exactly the reference's li
       return { steps: [released], emailsBefore, trail: await trailOf(handle) };
     }
 
-    it("S6 release (ADMIN, 'Supplier could not confirm'): 200 and exactly ONE paymentIntents.cancel (cancellation_reason 'abandoned', key order:<ID>:cancel) — CANCELLED, booking CANCELLED, the typed reason kept, still LINK_GENERATED, no email", async () => {
+    it("S6 release (ADMIN, 'Supplier could not confirm'): 200 and exactly ONE paymentIntents.cancel (cancellation_reason 'abandoned', key order:<ID>:cancel:<PI>) — CANCELLED, booking CANCELLED, the typed reason kept, still LINK_GENERATED, no email", async () => {
       const { reference, rental } = await onBoth(s6);
       expect(rental).toEqual(reference);
 
@@ -2321,7 +2321,10 @@ describe("the parity matrix — Rental on MANUAL runs exactly the reference's li
         onTheOrdersPaymentIntent: true,
         params: { cancellation_reason: "abandoned" },
       });
-      expect(releasedAgain.stripe[0]!.idempotencyKey).toMatch(/^order:<ID>:cancel(:|$)/);
+      // Keyed per HOLD: the second hold's release carries its own key, never
+      // the first release's (Stripe refuses a key reused with different
+      // parameters, and would replay the first release instead).
+      expect(releasedAgain.stripe[0]!.idempotencyKey).toBe("order:<ID>:cancel:<PI_2>");
       expect(releasedAgain.stripeAccount).toBe("OWN");
       expect(releasedAgain.order).toEqual({
         ...RELEASED_ORDER,

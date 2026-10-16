@@ -78,6 +78,7 @@ import {
 import { recordAudit } from "./audit.service";
 import { captureEvidenceSafe, type EvidenceActorInput } from "./evidence.service";
 import { getBranding } from "./branding.service";
+import { paysByAuthorization } from "./capture-mode.service";
 import { getActiveTemplateContent } from "./email-template.service";
 import { acknowledgementFor } from "./organization-legal.service";
 import { requestConsent } from "./consent.service";
@@ -914,11 +915,15 @@ export async function composePaymentRequestProps(
   const effectiveConsentMessage =
     consent?.consentMessage ??
     acknowledgementFor(serviceTypeOf(order), settings.consentMessage);
+  // Whether this order's checkout only authorizes the card — every money
+  // sentence below, the mailto fallback's included, follows it.
+  const authorizationHold = await paysByAuthorization(order, composeOrgId);
   const consentMailto = buildConsentMailto({
     toEmail: identity.supportEmail,
     brandName: identity.brandName,
     order,
     consentMessage: effectiveConsentMessage,
+    ...(authorizationHold ? { authorizationHold: true } : {}),
   });
 
   // Pick the single primary CTA. Consent-first by default; jump straight
@@ -982,7 +987,9 @@ export async function composePaymentRequestProps(
           .chargeName
       : "";
   const namedCharge = chargeName ? { amount, name: chargeName } : null;
-  const payLabel = payCtaLabel(amount, gatewayLabel, chargeName);
+  // A manual-capture checkout only places a hold: the buttons and every
+  // money sentence must not say the customer pays now.
+  const payLabel = payCtaLabel(amount, gatewayLabel, chargeName, authorizationHold);
   const primaryCta = alreadyConsented && checkoutUrl
     ? {
         url: checkoutUrl,
@@ -994,7 +1001,7 @@ export async function composePaymentRequestProps(
     : consentUrl
       ? {
           url: consentUrl,
-          label: consentCtaLabel(consentRequired, namedCharge),
+          label: consentCtaLabel(consentRequired, namedCharge, authorizationHold),
           helperText: effectiveConsentMessage,
         }
       : checkoutUrl
@@ -1040,6 +1047,9 @@ export async function composePaymentRequestProps(
     primaryCta: primaryCta ?? undefined,
     consentMailto,
     consentRequired,
+    // Only on a hold, so an automatic-capture request's props — and the
+    // email rendered from them — stay exactly what they have always been.
+    ...(authorizationHold ? { authorizationHold: true } : {}),
   };
 }
 

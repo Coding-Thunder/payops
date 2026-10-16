@@ -104,6 +104,7 @@ import {
 import { getBranding } from "./branding.service";
 import { applyCheckoutPaid } from "./webhook.service";
 import { sendPaymentConfirmationEmail } from "./email.service";
+import { getOrganizationCaptureMode } from "./capture-mode.service";
 
 const ZERO_DECIMAL_CURRENCIES = new Set([
   "BIF",
@@ -384,41 +385,10 @@ interface CreateOrderResult {
  *   - edit booking details before payment kicks off
  *   - keep Stripe rate-limit + idempotency surface tight
  */
-/**
- * Whether an organization's payments authorize-then-capture.
- *
- * `?? AUTOMATIC` is load-bearing: the resolvers read organizations with
- * `.lean()`, which does NOT apply Mongoose defaults, so a document stored
- * before `captureMode` existed — i.e. both incumbent brands' rows — arrives
- * with no such key and must read as AUTOMATIC.
- *
- * Manual capture is only ever enabled by an explicit, stored,
- * per-organization decision (`scripts/set-organization-capture-mode.ts`).
- * A null organizationId — an order stored before organizations existed —
- * takes the DEFAULT organization's decision: such an order belongs to the
- * default organization everywhere else too (it pays through the deployment
- * gateway, only the default organization's scope sees it, and the
- * deployment webhook endpoint accepts it), so a default organization on
- * MANUAL runs ONE lifecycle for all of its orders. With no default
- * organization, or none stored, it is AUTOMATIC.
- */
-export async function getOrganizationCaptureMode(
-  organizationId: string | null,
-): Promise<CaptureMode> {
-  if (!organizationId) {
-    const def = await Organization.findOne({ isDefault: true })
-      .select("payments.captureMode")
-      .lean<{ payments?: { captureMode?: CaptureMode } } | null>();
-    return def?.payments?.captureMode ?? CaptureMode.AUTOMATIC;
-  }
-  if (!Types.ObjectId.isValid(organizationId)) {
-    return CaptureMode.AUTOMATIC;
-  }
-  const org = await Organization.findById(organizationId)
-    .select("payments.captureMode")
-    .lean<{ payments?: { captureMode?: CaptureMode } } | null>();
-  return org?.payments?.captureMode ?? CaptureMode.AUTOMATIC;
-}
+// Whether an organization authorizes-then-captures: one definition, shared
+// with the email and consent surfaces (which this module cannot be imported
+// by without a cycle). Re-exported so every existing caller keeps working.
+export { getOrganizationCaptureMode } from "./capture-mode.service";
 
 interface ResolvedLegal {
   termsAndConditions: string;
@@ -1714,12 +1684,15 @@ export async function regeneratePaymentLink(
   // customer stays out of pocket until Stripe expires the old hold ~7 days
   // later, and a second successful payment would charge them twice.
   //
-  // Release the authorization first, then regenerate. `payment.capture` is
-  // null on every automatic-capture order, so none can reach this branch.
+  // Release the authorization first, then regenerate. A failed capture
+  // leaves the hold standing (or Stripe took the money after all), so it
+  // counts too. `payment.capture` is null on every automatic-capture order,
+  // so none can reach this branch.
   const liveCapture = doc.payment?.capture?.status;
   if (
     liveCapture === PaymentCaptureStatus.AUTHORIZED ||
-    liveCapture === PaymentCaptureStatus.CAPTURE_PENDING
+    liveCapture === PaymentCaptureStatus.CAPTURE_PENDING ||
+    liveCapture === PaymentCaptureStatus.CAPTURE_FAILED
   ) {
     throw new ConflictError(
       "This order has a live authorization. Release the authorization before generating a new payment link.",
@@ -1749,7 +1722,8 @@ export async function regeneratePaymentLink(
     if (
       current?.status === OrderStatus.PAID ||
       captureStatus === PaymentCaptureStatus.AUTHORIZED ||
-      captureStatus === PaymentCaptureStatus.CAPTURE_PENDING
+      captureStatus === PaymentCaptureStatus.CAPTURE_PENDING ||
+      captureStatus === PaymentCaptureStatus.CAPTURE_FAILED
     ) {
       throw new ConflictError(
         "The customer has already completed checkout on the existing payment link, so no new link was issued. Refresh the order to see it.",
@@ -1874,6 +1848,7 @@ export async function regeneratePaymentLink(
           $nin: [
             PaymentCaptureStatus.AUTHORIZED,
             PaymentCaptureStatus.CAPTURE_PENDING,
+            PaymentCaptureStatus.CAPTURE_FAILED,
           ],
         },
         "payment.stripeSessionId": previousSessionId,
@@ -1911,7 +1886,13 @@ export async function regeneratePaymentLink(
                 },
                 bookingStatus: BookingStatus.PENDING,
               }
-            : {}),
+            : doc.payment?.capture
+              ? // The organization charges at checkout now (it was switched
+                // back to AUTOMATIC): the new session is an automatic one, so
+                // the old manual record must go — a paid checkout would
+                // otherwise be recorded as a mere authorization.
+                { "payment.capture": null, bookingStatus: null }
+              : {}),
         },
       },
       { ...sessionOpt(txSession), returnDocument: "after" },

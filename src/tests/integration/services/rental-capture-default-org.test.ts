@@ -1089,7 +1089,7 @@ describe("D1. MERCHANT ACCOUNT — Rental's manual lifecycle runs on the DEPLOYM
       {
         id: rcCapture.order.payment.paymentIntentId,
         params: {},
-        options: { idempotencyKey: `order:${rcCapture.created.id}:capture` },
+        options: { idempotencyKey: `order:${rcCapture.created.id}:capture:${rcCapture.order.payment.paymentIntentId}` },
       },
     ]);
     expect(rcCaptured.order!.status).toBe(OrderStatus.PAID);
@@ -1113,7 +1113,7 @@ describe("D1. MERCHANT ACCOUNT — Rental's manual lifecycle runs on the DEPLOYM
       {
         id: rcRelease.order.payment.paymentIntentId,
         params: { cancellation_reason: "abandoned" },
-        options: { idempotencyKey: `order:${rcRelease.created.id}:cancel` },
+        options: { idempotencyKey: `order:${rcRelease.created.id}:cancel:${rcRelease.order.payment.paymentIntentId}` },
       },
     ]);
     expect(rcReleased.order!.payment.capture?.status).toBe(PaymentCaptureStatus.CANCELLED);
@@ -1142,7 +1142,7 @@ describe("D1. MERCHANT ACCOUNT — Rental's manual lifecycle runs on the DEPLOYM
       {
         id: tripLink.order!.payment.paymentIntentId,
         params: {},
-        options: { idempotencyKey: `order:${tripCapture.id}:capture` },
+        options: { idempotencyKey: `order:${tripCapture.id}:capture:${tripLink.order!.payment.paymentIntentId}` },
       },
     ]);
     expect(tripCaptured.order!.status).toBe(OrderStatus.PAID);
@@ -1163,7 +1163,7 @@ describe("D1. MERCHANT ACCOUNT — Rental's manual lifecycle runs on the DEPLOYM
       {
         id: tripLink2.order!.payment.paymentIntentId,
         params: { cancellation_reason: "abandoned" },
-        options: { idempotencyKey: `order:${tripRelease.id}:cancel` },
+        options: { idempotencyKey: `order:${tripRelease.id}:cancel:${tripLink2.order!.payment.paymentIntentId}` },
       },
     ]);
     expect(tripReleased.order!.payment.capture?.status).toBe(PaymentCaptureStatus.CANCELLED);
@@ -1536,7 +1536,7 @@ describe("D3. LEGACY ORDERS — an order stored with organizationId null follows
       {
         id: linked.payment.paymentIntentId,
         params: {},
-        options: { idempotencyKey: `order:${legacy.id}:capture` },
+        options: { idempotencyKey: `order:${legacy.id}:capture:${linked.payment.paymentIntentId}` },
       },
     ]);
     const settled = captured.order!;
@@ -1717,7 +1717,7 @@ describe("D3. LEGACY ORDERS — an order stored with organizationId null follows
       {
         id: linked.payment.paymentIntentId,
         params: {},
-        options: { idempotencyKey: `order:${noKey.id}:capture` },
+        options: { idempotencyKey: `order:${noKey.id}:capture:${linked.payment.paymentIntentId}` },
       },
     ]);
     expect(captured.order!.status).toBe(OrderStatus.PAID);
@@ -1992,7 +1992,7 @@ describe("D5. CAR REGRESSION — Rental on AUTOMATIC, as production runs today",
     expect(await legalOf(onManual.id)).toEqual(seeded);
   }, 60_000);
 
-  it("D5c. the payment request for a Rental car order is the SAME email under AUTOMATIC and MANUAL: composer preview, sent HTML, plain text and subject identical once the order's own values (number, id, session, consent token, due date) are neutralised, same sender and transport — the AUTOMATIC one being the car request as pinned (car rows, 'You pay today $249.99', 'Review & Confirm Booking', Rental Confirmation, Stripe). Recorded finding: being identical, the MANUAL request also says 'You pay today $249.99' / 'Amount paid online $249.99' for a checkout that only AUTHORIZES", async () => {
+  it("D5c. the payment request for a Rental car order: AUTOMATIC is the car request as pinned (car rows, 'You pay today $249.99', 'Review & Confirm Booking', Rental Confirmation, Stripe); MANUAL is that SAME email — composer preview, sent HTML and plain text — with exactly its money words re-worded for a HOLD ('Card hold today $249.99', 'What you'll be charged', 'authorize your card', 'a hold, not a charge', 'payment request' footer) and nothing else changed: same subject, sender, transport, rows and frozen car terms", async () => {
     // Both bookings on the SAME fixed dates — far from any due date the
     // neutralising below rewrites — so only order-specific values vary.
     const trip = {
@@ -2015,22 +2015,24 @@ describe("D5. CAR REGRESSION — Rental on AUTOMATIC, as production runs today",
     const previewB = await composerPreview("rc", onManual.id);
     const sentB = await sendRequest("rc", onManual.id);
 
-    /** Everything that is the ORDER's own and not the capture mode's. */
+    /** Everything that is the ORDER's own and not the capture mode's —
+     *  bracketed, since angle brackets would read as tags once the HTML is
+     *  reduced to the text a reader sees. */
     const neutral = (content: string, order: OrderDTO, consentToken: string) => {
       let out = content;
       const swap = (needle: string | null | undefined, label: string) => {
         if (needle) out = out.split(needle).join(label);
       };
-      swap(consentToken, "<CONSENT_TOKEN>");
-      swap(encodeURIComponent(consentToken), "<CONSENT_TOKEN>");
-      swap(order.payment.paymentSessionId, "<SESSION_ID>");
-      swap(order.payment.paymentIntentId, "<PAYMENT_INTENT_ID>");
-      swap(order.id, "<ORDER_ID>");
-      swap(order.orderNumber, "<ORDER_NUMBER>");
+      swap(consentToken, "[CONSENT_TOKEN]");
+      swap(encodeURIComponent(consentToken), "[CONSENT_TOKEN]");
+      swap(order.payment.paymentSessionId, "[SESSION_ID]");
+      swap(order.payment.paymentIntentId, "[PAYMENT_INTENT_ID]");
+      swap(order.id, "[ORDER_ID]");
+      swap(order.orderNumber, "[ORDER_NUMBER]");
       if (order.payment.expiresAt) {
         const due = formatEmailDate(order.payment.expiresAt);
-        swap(due, "<DUE>");
-        swap(encodeURIComponent(due), "<DUE>");
+        swap(due, "[DUE]");
+        swap(encodeURIComponent(due), "[DUE]");
       }
       return out;
     };
@@ -2055,30 +2057,100 @@ describe("D5. CAR REGRESSION — Rental on AUTOMATIC, as production runs today",
     expect(sentA.email.transport).toBe("deployment");
     expect(sentA.email.to).toBe("ada@payops.test");
 
-    // …and the MANUAL one is that same email. (The raw emails DO differ —
-    // order number, session, consent link — so this is not comparing a
-    // string with itself, and neutralising keeps every word of the body.)
+    /**
+     * The MANUAL request is the AUTOMATIC one with exactly these words
+     * changed — each found where the car request has always printed it —
+     * and nothing else: a checkout that only AUTHORIZES must never tell the
+     * customer they pay today, nor call its email a receipt.
+     */
+    const HOLD_WORDING: { from: string; to: string; inText: boolean }[] = [
+      // The inbox preview line (hidden in the body; not in the text part).
+      {
+        from: "Complete payment for [ORDER_NUMBER] — $249.99",
+        to: "Authorize your card for [ORDER_NUMBER] — $249.99 on hold, not charged yet",
+        inText: false,
+      },
+      {
+        from: "please complete payment using the secure link below to confirm it.",
+        to: "please authorize your card using the secure link below to confirm it. You won't be charged until your rental is confirmed.",
+        inText: true,
+      },
+      {
+        from: "You pay today $249.99",
+        to: `Card hold today $249.99 A hold on your card, not a charge — we charge it only once your rental is confirmed with ${CAR_SUPPLIER}.`,
+        inText: true,
+      },
+      { from: "What you're paying", to: "What you'll be charged", inText: true },
+      { from: "Amount paid online $249.99", to: "Card hold today $249.99", inText: true },
+      {
+        from: "Payment processed securely via Stripe.",
+        to: "Card authorized securely via Stripe — a hold, not a charge.",
+        inText: true,
+      },
+      {
+        from: "Automated payment receipt — replies route to our support team.",
+        to: "Automated payment request — replies route to our support team.",
+        inText: true,
+      },
+    ];
+    // The text part upper-cases headings ("WHAT YOU'RE PAYING"); a heading
+    // re-worded there is re-worded in capitals too.
+    const reworded = (read: string, part: "html" | "text", where: string) => {
+      let out = read;
+      for (const { from, to, inText } of HOLD_WORDING) {
+        if (part === "text" && !inText) continue;
+        const needle = part === "text" && !out.includes(from) ? from.toUpperCase() : from;
+        expect(out.split(needle).length - 1, `${where}: '${from}' printed once`).toBe(1);
+        out = out.replace(needle, needle === from ? to : to.toUpperCase());
+      }
+      return out;
+    };
+
+    // The raw emails DO differ — order number, session, consent link — so
+    // nothing here compares a string with itself.
     expect(sentB.email.html).not.toBe(sentA.email.html);
-    expect(visibleText(b(sentB.email.html))).toContain(CAR_REQUEST_ROWS);
-    expect(firstDifference(a(previewA), b(previewB)), "composer preview").toBe("(identical)");
-    expect(firstDifference(a(sentA.email.html), b(sentB.email.html)), "sent HTML").toBe("(identical)");
-    expect(firstDifference(a(sentA.email.text), b(sentB.email.text)), "sent text").toBe("(identical)");
+    expect(
+      firstDifference(reworded(visibleText(a(previewA)), "html", "composer preview"), visibleText(b(previewB))),
+      "composer preview",
+    ).toBe("(identical)");
+    expect(
+      firstDifference(reworded(visibleText(a(sentA.email.html)), "html", "sent HTML"), visibleText(b(sentB.email.html))),
+      "sent HTML",
+    ).toBe("(identical)");
+    expect(
+      firstDifference(reworded(plainText(a(sentA.email.text)), "text", "sent text"), plainText(b(sentB.email.text))),
+      "sent text",
+    ).toBe("(identical)");
     expect(b(sentB.email.subject)).toBe(a(sentA.email.subject));
     expect(sentB.email.from).toBe(sentA.email.from);
     expect(sentB.email.replyTo).toBe(sentA.email.replyTo);
     expect(sentB.email.transport).toBe(sentA.email.transport);
     expect(sentB.email.to).toBe(sentA.email.to);
 
-    // THE RECORDED FINDING (copy, not mode-aware): the payment request is
-    // the same for an order whose checkout only places a hold, so a MANUAL
-    // customer is told they pay today — and later receives "card authorized
-    // — not yet charged". Pinned here so a mode-aware request is a visible,
-    // deliberate change to this test.
     const manualRead = visibleText(sentB.email.html);
-    expect(manualRead).toContain(`You pay today $249.99 Order ${onManual.orderNumber}`);
-    expect(manualRead).toContain("Amount paid online $249.99");
+    expect(manualRead).toContain(`Card hold today $249.99 A hold on your card, not a charge`);
+    expect(manualRead).toContain(
+      "What you'll be charged Rental cost $249.99 Deposit (due at counter) $100.00 " +
+        "Card hold today $249.99 Amount due at counter $100.00 Total rental cost $349.99",
+    );
+    for (const said of ["You pay today", "Amount paid online", "What you're paying", "Payment processed securely", "payment receipt"]) {
+      expect(manualRead, said).not.toContain(said);
+      expect(plainText(sentB.email.text), said).not.toContain(said);
+    }
+    // NOT re-worded, by design: the car Terms & Conditions are the
+    // operator's legal text, frozen on the order. The deployment default
+    // still says the prepaid amount "is charged today" — changing that is a
+    // legal-copy decision for the owner (Settings → Terms & Conditions),
+    // never a side effect of the capture mode.
     expect(manualRead).toContain("The prepaid amount is charged today to secure your reservation.");
-    expect(manualRead).not.toMatch(/authori[sz]|not yet charged|\bhold\b|(?<!licence-)\bheld\b/i);
+    const frozen = async (id: string) => {
+      const doc = await storedOrder(id);
+      return {
+        terms: { text: doc.terms.text, version: doc.terms.version },
+        policy: { text: doc.policy.text, version: doc.policy.version },
+      };
+    };
+    expect(await frozen(onManual.id)).toEqual(await frozen(onAutomatic.id));
   }, 60_000);
 });
 

@@ -37,7 +37,12 @@ import {
 import { useOrderQuery } from "@/hooks/use-order-query";
 import { useReconcilePayment } from "@/hooks/use-reconcile-payment";
 import { ApiClientError } from "@/lib/api-client";
-import { ConsentStatus, OrderStatus, RecordState } from "@/lib/constants/enums";
+import {
+  ConsentStatus,
+  OrderStatus,
+  PaymentCaptureStatus,
+  RecordState,
+} from "@/lib/constants/enums";
 import type { UserRole } from "@/lib/constants/enums";
 import { Permission, roleHasPermission } from "@/lib/constants/permissions";
 
@@ -138,11 +143,19 @@ export function OrderDetailPageContent({
   );
 
   const needsPaymentLink = order.status === OrderStatus.NOT_INITIATED;
+  // A manual-capture order past its checkout has no request left to re-send:
+  // its hold is captured or released from the payment card, and a released
+  // one needs a new link first. `capture` is null on every automatic-capture
+  // order, so the banner is unchanged for one.
+  const pastCheckout =
+    order.payment.capture != null &&
+    order.payment.capture.status !== PaymentCaptureStatus.PENDING_AUTHORIZATION;
   const inFlight =
-    needsPaymentLink ||
-    order.status === OrderStatus.PAYMENT_PENDING ||
-    order.status === OrderStatus.FAILED ||
-    order.status === OrderStatus.EXPIRED;
+    !pastCheckout &&
+    (needsPaymentLink ||
+      order.status === OrderStatus.PAYMENT_PENDING ||
+      order.status === OrderStatus.FAILED ||
+      order.status === OrderStatus.EXPIRED);
 
   return (
     <div className="space-y-6">

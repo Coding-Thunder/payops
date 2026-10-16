@@ -45,15 +45,16 @@ import { validCreateOrderInput } from "@/tests/fixtures/order-input.fixture";
 /**
  * Manual capture (authorize → capture), end to end at the service layer.
  *
- * THE INVARIANT THIS FILE EXISTS TO PIN: manual capture is a GlobeVista-only
- * behaviour. RentalConfirmation and TripReservations are automatic-capture
- * organizations, every order they have ever created carries
- * `payment.capture === null`, and none of the machinery below is reachable
- * for them. Where a shared code path exists, the assertion is that the
- * incumbent's side of it is BYTE-IDENTICAL — not merely equivalent. The
- * clearest example is requirement 13: the outgoing Stripe payload for a
- * RentalConfirmation checkout must not carry `capture_method` at all, not
- * even `capture_method: "automatic"`.
+ * THE INVARIANT THIS FILE EXISTS TO PIN: manual capture is an opt-in,
+ * per-organization behaviour (GlobeVista here). An organization on
+ * automatic capture — RentalConfirmation, as this file configures it —
+ * creates every order with `payment.capture === null`, and none of the
+ * machinery below is reachable for it. Where a shared code path exists, the
+ * assertion is that the automatic side of it is BYTE-IDENTICAL — not merely
+ * equivalent. The clearest example is requirement 13: the outgoing Stripe
+ * payload for an automatic-capture checkout must not carry `capture_method`
+ * at all, not even `capture_method: "automatic"`. (Rental on MANUAL is
+ * covered by rental-capture-parity.test.ts.)
  *
  * Requirements covered here: 13, 14 (service level), 15, 16, 17, 18, plus
  * the RBAC on the two new money-moving operations.
@@ -430,9 +431,10 @@ describe("16 — capturePayment() converts the hold into a charge", () => {
       authorized.payment.paymentIntentId,
     );
     // A double-click retried over a flaky network must replay Stripe's
-    // original capture, not issue a second one.
+    // original capture, not issue a second one — keyed per HOLD, so a later
+    // hold on the same order (released, re-linked) gets a key of its own.
     expect(stripe.capturesRequested[0]!.options?.idempotencyKey).toBe(
-      `order:${order.id}:capture`,
+      `order:${order.id}:capture:${authorized.payment.paymentIntentId}`,
     );
 
     const doc = await reload(order.id);

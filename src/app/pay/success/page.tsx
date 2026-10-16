@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { cache } from "react";
 
 import { FlightItinerary } from "@/components/common/flight-itinerary";
 import { PublicBrandChrome } from "@/components/public/public-brand-chrome";
@@ -25,6 +26,8 @@ import {
   type FlightAmountSummary,
   flightCollection,
   flightMoneyWording,
+  HOLD_TODAY_LABEL,
+  holdCondition,
   showsAirlineCharge,
   summarizeCharges,
   summarizeFlightAmounts,
@@ -65,16 +68,134 @@ function awaitingGateway(order: Pick<OrderDTO, "status"> | null): boolean {
 /**
  * A manual-capture hold: the card is authorized and the money HELD, not
  * taken — whether the request email went out (PAYMENT_PENDING) or the
- * customer paid from a copied link (LINK_GENERATED). The page and its tab
- * title read this one predicate, so they can never disagree about it.
- * `capture` is null on every automatic-capture order, so it is false for
- * both incumbent brands.
+ * customer paid from a copied link (LINK_GENERATED). That stays true while
+ * an operator's capture is in flight or was refused (the hold still stands)
+ * until the order is PAID. The page and its tab title read this one
+ * predicate, so they can never disagree about it. `capture` is null on
+ * every automatic-capture order, so it is false for one.
  */
 function isAuthorizationHold(order: OrderDTO | null): boolean {
+  const status = order?.payment.capture?.status;
   return (
-    order?.payment.capture?.status === PaymentCaptureStatus.AUTHORIZED &&
-    order.status !== OrderStatus.PAID
+    (status === PaymentCaptureStatus.AUTHORIZED ||
+      status === PaymentCaptureStatus.CAPTURE_PENDING ||
+      status === PaymentCaptureStatus.CAPTURE_FAILED) &&
+    order?.status !== OrderStatus.PAID
   );
+}
+
+/**
+ * A manual-capture hold that was let go — released by an operator, or
+ * lapsed at the gateway — without the card ever being charged. The customer
+ * must hear exactly that, never "payment received" nor "still confirming".
+ */
+function isReleasedHold(order: OrderDTO | null): boolean {
+  const status = order?.payment.capture?.status;
+  return (
+    (status === PaymentCaptureStatus.CANCELLED ||
+      status === PaymentCaptureStatus.AUTHORIZATION_EXPIRED) &&
+    order?.status !== OrderStatus.PAID
+  );
+}
+
+/**
+ * A manual-capture order the customer has just authorized, whose hold the
+ * gateway has not confirmed yet: the wait is for a HOLD to land, not a
+ * charge, so nothing on the page may say money moved either way.
+ */
+function isConfirmingHold(order: OrderDTO | null): boolean {
+  return (
+    awaitingGateway(order) &&
+    Boolean(order?.payment.paymentSessionId) &&
+    order?.payment.capture?.status === PaymentCaptureStatus.PENDING_AUTHORIZATION
+  );
+}
+
+/** What a released hold's amount is called on this page. */
+const RELEASED_HOLD_LABEL = "Hold released — not charged";
+
+/**
+ * The order this page is about — read, paired with the session the gateway
+ * sent the customer back with, and reconciled — ONCE per request, shared by
+ * the page and its tab title. Next renders the metadata alongside the page,
+ * so two separate reads disagreed: a title read before the page's reconcile
+ * said "Payment received" over a body that had just recorded a card hold,
+ * and a title read without the pairing check named the state of an order
+ * the page itself refused to show.
+ */
+const loadReturningOrder = cache(
+  async (
+    orderNumber: string | undefined,
+    returnedSessionId: string | null,
+  ): Promise<OrderDTO | null> => {
+    // Defensive: require BOTH the order number and the gateway session id,
+    // and verify the pair matches before rendering anything. Anyone arriving
+    // here legitimately has both. Without this pairing check, a curl loop
+    // over order-number space pulls full PII for every paid order on the
+    // platform.
+    let order = orderNumber ? await getOrderByNumber(orderNumber) : null;
+    if (order && order.payment.paymentSessionId !== returnedSessionId) {
+      order = null;
+    }
+
+    // Self-heal the local-dev / dropped-webhook case at first render.
+    // The gateway just sent the customer here, which means the session
+    // SHOULD be settled. Ask the gateway directly; if confirmed, drive the
+    // same atomic transition the webhook uses. By the time the page paints,
+    // the order reflects the gateway's truth even if the webhook never
+    // reached us.
+    //
+    // `reconcileOrderPayment` resolves the gateway from the order, so this
+    // works for both. Note PayPal's APPROVED (buyer agreed, nothing
+    // captured) correctly maps to "open", so a PayPal order that is only
+    // approved stays pending here and the auto-refresh waits for the webhook
+    // to capture.
+    //
+    // A manual-capture order is reconciled only while there is still
+    // something to record: its authorization has not landed yet, or a
+    // capture is in flight or failed — the gateway may have taken money the
+    // app has not recorded, and for a manual order reconcile only ever
+    // accepts a gateway-reported "paid". A held, released or lapsed hold is
+    // the gateway's truth already. `payment.capture` is null on every
+    // automatic-capture order, so this guard never fires for one.
+    //
+    // A LINK_GENERATED order is reconciled exactly like a PAYMENT_PENDING
+    // one: a customer paying from a copied link arrives before any request
+    // email moved the order on (`awaitingGateway`).
+    const captureStatus = order?.payment.capture?.status ?? null;
+    if (
+      order &&
+      awaitingGateway(order) &&
+      (captureStatus === null ||
+        captureStatus === PaymentCaptureStatus.PENDING_AUTHORIZATION ||
+        captureStatus === PaymentCaptureStatus.CAPTURE_PENDING ||
+        captureStatus === PaymentCaptureStatus.CAPTURE_FAILED) &&
+      order.payment.paymentSessionId &&
+      returnedSessionId
+    ) {
+      try {
+        const result = await reconcileOrderPayment(order.id, undefined, {
+          sessionId: returnedSessionId,
+        });
+        order = result.order;
+      } catch (err) {
+        logger.warn("pay_success.reconcile_failed", {
+          orderId: order.id,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    return order;
+  },
+);
+
+/** Whichever gateway sent the customer back, the id of the session it
+ *  created. Both gateways store it in `payment.paymentSessionId`. */
+function returnedSessionIdOf(params: {
+  session_id?: string;
+  token?: string;
+}): string | null {
+  return params.session_id ?? params.token ?? null;
 }
 
 /**
@@ -82,21 +203,31 @@ function isAuthorizationHold(order: OrderDTO | null): boolean {
  *
  * `title.absolute` opts out of the root layout's `"%s • <deployment name>"`
  * template so a FlightBizz customer's tab never reads another brand's name.
- * And an order sitting on an AUTHORIZATION has not been paid — telling that
- * customer "Payment received" in the tab title contradicts the page itself.
+ * It reads the very order the page renders (`loadReturningOrder`), so the
+ * two always agree: an order on a card HOLD — being confirmed, held, or let
+ * go — has not been paid, and a session that matches no order names none.
  */
 export async function generateMetadata({
   searchParams,
 }: SuccessPageProps) {
-  const { order: orderNumber } = await searchParams;
+  const params = await searchParams;
   const brand = await resolvePublicBrandForOrderNumber(
-    orderNumber,
+    params.order,
     await getBranding(),
   );
-  const order = orderNumber ? await getOrderByNumber(orderNumber) : null;
-  const headline = isAuthorizationHold(order)
-    ? "Card authorized"
-    : "Payment received";
+  const order = await loadReturningOrder(
+    params.order,
+    returnedSessionIdOf(params),
+  );
+  const headline = !order
+    ? "Payment status"
+    : isAuthorizationHold(order)
+      ? "Card authorized"
+      : isReleasedHold(order)
+        ? "Hold released"
+        : isConfirmingHold(order)
+          ? "Confirming your card"
+          : "Payment received";
   return { title: { absolute: `${headline} • ${brand.brandName}` } };
 }
 export const dynamic = "force-dynamic";
@@ -119,80 +250,40 @@ interface SuccessPageProps {
 export default async function PaymentSuccessPage({
   searchParams,
 }: SuccessPageProps) {
-  const {
-    order: orderNumber,
-    session_id: sessionId,
-    token: paypalToken,
-  } = await searchParams;
+  const params = await searchParams;
+  const orderNumber = params.order;
   const branding = await getBranding();
+  const order = await loadReturningOrder(
+    orderNumber,
+    returnedSessionIdOf(params),
+  );
 
-  // Whichever gateway sent the customer back, this is the id of the session
-  // it created. Both gateways store it in `payment.paymentSessionId`.
-  const returnedSessionId = sessionId ?? paypalToken ?? null;
-
-  // Defensive: require BOTH the order number and the gateway session id, and
-  // verify the pair matches before rendering anything. Anyone arriving here
-  // legitimately has both. Without this pairing check, a curl loop over
-  // order-number space pulls full PII for every paid order on the platform.
-  let order = orderNumber ? await getOrderByNumber(orderNumber) : null;
-  if (order && order.payment.paymentSessionId !== returnedSessionId) {
-    order = null;
-  }
-
-  // Self-heal the local-dev / dropped-webhook case at first render.
-  // The gateway just sent the customer here, which means the session SHOULD
-  // be settled. Ask the gateway directly; if confirmed, drive the same atomic
-  // transition the webhook uses. By the time the page paints, the order
-  // reflects the gateway's truth even if the webhook never reached us.
-  //
-  // `reconcileOrderPayment` resolves the gateway from the order, so this
-  // works for both. Note PayPal's APPROVED (buyer agreed, nothing captured)
-  // correctly maps to "open", so a PayPal order that is only approved stays
-  // pending here and the auto-refresh waits for the webhook to capture.
-  //
-  // An order sitting on a manual-capture AUTHORIZATION is deliberately
-  // excluded: the hold is already the gateway's truth, there is nothing
-  // half-finished to self-heal, and re-reconciling it would only risk
-  // reading an authorized session as a completed one. `payment.capture` is
-  // null on every automatic-capture order, so this guard never fires for
-  // one.
-  //
-  // A LINK_GENERATED order is reconciled exactly like a PAYMENT_PENDING one:
-  // a customer paying from a copied link arrives before any request email
-  // moved the order on (`awaitingGateway`).
-  if (
-    order &&
-    awaitingGateway(order) &&
-    order.payment.capture?.status !== PaymentCaptureStatus.AUTHORIZED &&
-    order.payment.paymentSessionId &&
-    returnedSessionId
-  ) {
-    try {
-      const result = await reconcileOrderPayment(order.id, undefined, {
-        sessionId: returnedSessionId,
-      });
-      order = result.order;
-    } catch (err) {
-      logger.warn("pay_success.reconcile_failed", {
-        orderId: order.id,
-        err: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
   // Manual capture: the card was authorized and the money is being HELD,
   // not taken. The customer must not be told the payment succeeded, and the
   // "we're still confirming" spinner is wrong too — nothing is in flight.
-  // `capture` is null on every automatic-capture order, so `isAuthorized`
-  // is false for both incumbent brands and this page renders exactly as it
-  // does today for them.
+  // `capture` is null on every automatic-capture order, so `isAuthorized`,
+  // `isReleased` and `confirmingHold` are all false for one and this page
+  // renders exactly as it always has.
   const capture = order?.payment.capture ?? null;
   const isAuthorized = isAuthorizationHold(order);
+  const isReleased = isReleasedHold(order);
+  const holdExpired =
+    isReleased && capture?.status === PaymentCaptureStatus.AUTHORIZATION_EXPIRED;
   // Still waiting on the gateway — never "Payment confirmed" before it has
-  // confirmed, whether the order was emailed or its link copied.
+  // confirmed, whether the order was emailed or its link copied. A released
+  // hold is settled: nothing more will happen to it.
   const stillPending =
     awaitingGateway(order) &&
     Boolean(order?.payment.paymentSessionId) &&
-    !isAuthorized;
+    !isAuthorized &&
+    !isReleased;
+  // The same wait on a manual-capture order is for a HOLD to land, not a
+  // charge — the copy must not promise money moved either way.
+  const confirmingHold = stillPending && isConfirmingHold(order);
+  // No order matched this session (a stale or hand-edited link — e.g. one
+  // whose hold was released and a new link issued since): there is no
+  // payment status to state, least of all "Payment received".
+  const unmatched = !order;
   // Brand from the ORDER's organization — resolved from the order number even
   // when the pairing check nulled `order`, because the header, the hero copy
   // and the support footer all render outside that guard.
@@ -209,7 +300,7 @@ export default async function PaymentSuccessPage({
   const providerMeta = order ? resolveProvider(order.provider) : null;
   const amount = order
     ? formatCurrency(
-        isAuthorized
+        isAuthorized || isReleased
           ? (capture?.amountAuthorized ?? order.pricing.amount)
           : (order.payment.amountReceived ?? order.pricing.amount),
         order.pricing.currency,
@@ -263,7 +354,14 @@ export default async function PaymentSuccessPage({
   const flightMoney = order && flightLabels ? flightCollection(order) : null;
   const flightSettled =
     order && flightLabels && flightMoney && flightAmounts
-      ? flightMoney.status === "COLLECTED"
+      ? isReleased
+        ? {
+            label: RELEASED_HOLD_LABEL,
+            amount: capture?.amountAuthorized ?? order.pricing.amount,
+          }
+        : confirmingHold
+        ? { label: flightLabels.heldNow, amount: order.pricing.amount }
+        : flightMoney.status === "COLLECTED"
         ? {
             label: flightLabels.paidNow,
             amount: flightMoney.amount ?? order.pricing.amount,
@@ -279,9 +377,13 @@ export default async function PaymentSuccessPage({
   // itinerary flight's hero names WHAT the amount is — the service charge.
   const flightHeroLabel =
     flightLabels && flightSettled
-      ? flightMoney?.status === "NOT_COLLECTED" && serviceChargeModel
-        ? flightLabels.serviceCharge
-        : flightSettled.label
+      ? isReleased
+        ? RELEASED_HOLD_LABEL
+        : confirmingHold
+          ? flightLabels.heldNow
+          : flightMoney?.status === "NOT_COLLECTED" && serviceChargeModel
+          ? flightLabels.serviceCharge
+          : flightSettled.label
       : null;
   const itinerary = flightAmounts ? buildFlightItinerary(order?.flight) : null;
 
@@ -294,12 +396,29 @@ export default async function PaymentSuccessPage({
             className={
               isAuthorized
                 ? "mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-sky-100 text-sky-700"
-                : stillPending
+                : isReleased || unmatched
+                  ? "mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-600"
+                  : stillPending
                   ? "mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700"
                   : "mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"
             }
           >
-            {isAuthorized ? (
+            {unmatched ? (
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-7 w-7"
+                aria-hidden
+              >
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 16v-4" />
+                <path d="M12 8h.01" />
+              </svg>
+            ) : isAuthorized || isReleased ? (
               <svg
                 viewBox="0 0 24 24"
                 fill="none"
@@ -345,42 +464,71 @@ export default async function PaymentSuccessPage({
             className={
               isAuthorized
                 ? "mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-sky-700"
-                : stillPending
+                : isReleased || unmatched
+                  ? "mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-slate-600"
+                  : stillPending
                   ? "mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700"
                   : "mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700"
             }
           >
-            {isAuthorized
+            {unmatched
+              ? "Payment status"
+              : isAuthorized
               ? "Card authorized"
-              : stillPending
-                ? `Confirming with ${gatewayLabel ?? "your bank"}`
-                : "Payment confirmed"}
+              : isReleased
+                ? "Hold released"
+                : stillPending
+                  ? `Confirming with ${gatewayLabel ?? "your bank"}`
+                  : "Payment confirmed"}
           </p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
-            {isAuthorized
+            {unmatched
+              ? "We couldn’t match this payment"
+              : isAuthorized
               ? "Your card has been authorized"
-              : stillPending
-                ? "We’re confirming your payment"
-                : "Payment received"}
+              : isReleased
+                ? "You have not been charged"
+                : confirmingHold
+                  ? "We’re confirming your card"
+                  : stillPending
+                    ? "We’re confirming your payment"
+                    : "Payment received"}
           </h1>
           <p className="mt-2 text-sm text-slate-600">
-            {serviceChargeModel
+            {unmatched
+              ? `This link doesn’t match a current ${brand} payment, so there is no payment status to show here. Your latest email from ${brand} has the up-to-date details of your booking.`
+              : serviceChargeModel
               ? flightHeroCopy({
                   chargeName: flightWording?.chargeName ?? "",
+                  bookingType: order?.bookingType ?? null,
                   brand,
                   amount,
                   gatewayLabel,
                   isAuthorized,
+                  isReleased,
+                  holdExpired,
+                  confirmingHold,
                   stillPending,
                 })
               : isAuthorized
-                ? `${brand} has placed a hold on your card${amount ? ` for ${amount}` : ""}. You have not been charged yet — the amount is released to us only once your ${noun} is confirmed, and you’ll get a receipt then.`
-                : stillPending
-                  ? `${brand} is waiting for ${gatewayLabel ?? "the payment provider"} to finalise this charge. This page refreshes automatically.`
-                  : `Thank you. ${brand} has confirmed your payment and a receipt is on its way to your inbox.`}
+                ? `${brand} has placed a hold on your card${amount ? ` for ${amount}` : ""}. You have not been charged yet — the amount is collected only once ${holdCondition(order?.bookingType, noun)}, and you’ll get a receipt then.`
+                : isReleased
+                  ? releasedHoldCopy({
+                      brand,
+                      held: amount ? ` for ${amount}` : "",
+                      expired: holdExpired,
+                    })
+                  : confirmingHold
+                    ? `${brand} is waiting for ${gatewayLabel ?? "the payment provider"} to confirm the hold on your card. You won’t be charged until ${holdCondition(order?.bookingType, noun)}. This page refreshes automatically.`
+                    : stillPending
+                      ? `${brand} is waiting for ${gatewayLabel ?? "the payment provider"} to finalise this charge. This page refreshes automatically.`
+                      : `Thank you. ${brand} has confirmed your payment and a receipt is on its way to your inbox.`}
           </p>
           {stillPending ? (
-            <PaymentSuccessAutoRefresh gatewayLabel={gatewayLabel} />
+            <PaymentSuccessAutoRefresh
+              gatewayLabel={gatewayLabel}
+              {...(confirmingHold ? { hold: true } : {})}
+            />
           ) : null}
         </div>
 
@@ -394,7 +542,11 @@ export default async function PaymentSuccessPage({
                     ? flightHeroLabel
                     : isAuthorized
                       ? "Amount on hold"
-                      : "Amount paid"}
+                      : isReleased
+                        ? RELEASED_HOLD_LABEL
+                        : confirmingHold
+                          ? HOLD_TODAY_LABEL
+                          : "Amount paid"}
                 </p>
                 <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums text-slate-900">
                   {amount}
@@ -433,7 +585,11 @@ export default async function PaymentSuccessPage({
                     <dt className="text-slate-500">
                       {isAuthorized
                         ? "Authorized online today"
-                        : "Paid online today"}
+                        : isReleased
+                          ? RELEASED_HOLD_LABEL
+                          : confirmingHold
+                            ? HOLD_TODAY_LABEL
+                            : "Paid online today"}
                     </dt>
                     <dd className="tabular-nums text-slate-900">
                       {formatCurrency(
@@ -540,9 +696,13 @@ export default async function PaymentSuccessPage({
                 ? gatewayLabel
                   ? `Card authorized securely by ${gatewayLabel} — PCI-DSS Level 1 certified.`
                   : "Card authorized securely."
-                : gatewayLabel
-                  ? `Payment processed securely by ${gatewayLabel} — PCI-DSS Level 1 certified.`
-                  : "Payment processed securely."}
+                : isReleased || confirmingHold
+                  ? gatewayLabel
+                    ? `Card details handled securely by ${gatewayLabel} — PCI-DSS Level 1 certified.`
+                    : "Card details handled securely."
+                  : gatewayLabel
+                    ? `Payment processed securely by ${gatewayLabel} — PCI-DSS Level 1 certified.`
+                    : "Payment processed securely."}
             </div>
           </>
         ) : null}
@@ -594,27 +754,71 @@ function balanceDueLabel(order: OrderDTO): string {
  */
 function flightHeroCopy({
   chargeName,
+  bookingType,
   brand,
   amount,
   gatewayLabel,
   isAuthorized,
+  isReleased,
+  holdExpired,
+  confirmingHold,
   stillPending,
 }: {
   /** The operator's name for the collected charge. */
   chargeName: string;
+  /** What the hold is for — a change or a cancellation charge is not
+   *  collected "once your flight is confirmed". */
+  bookingType: string | null;
   brand: string;
   amount: string | null;
   gatewayLabel: string | null;
   isAuthorized: boolean;
+  isReleased: boolean;
+  holdExpired: boolean;
+  confirmingHold: boolean;
   stillPending: boolean;
 }): string {
   if (isAuthorized) {
-    return `${brand} has placed a hold on your card for the ${chargeName}${amount ? ` of ${amount}` : ""}. You have not been charged yet — the amount is released to us only once your flight is confirmed, and you’ll get a receipt then.`;
+    return `${brand} has placed a hold on your card for the ${chargeName}${amount ? ` of ${amount}` : ""}. You have not been charged yet — the amount is collected only once ${holdCondition(bookingType, "flight")}, and you’ll get a receipt then.`;
+  }
+  if (isReleased) {
+    return releasedHoldCopy({
+      brand,
+      held: ` for the ${chargeName}${amount ? ` of ${amount}` : ""}`,
+      expired: holdExpired,
+    });
+  }
+  if (confirmingHold) {
+    return `${brand} is waiting for ${gatewayLabel ?? "the payment provider"} to confirm the hold on your card for the ${chargeName}. You won’t be charged until ${holdCondition(bookingType, "flight")}. This page refreshes automatically.`;
   }
   if (stillPending) {
     return `${brand} is waiting for ${gatewayLabel ?? "the payment provider"} to finalise your ${chargeName} payment. This page refreshes automatically.`;
   }
   return `Thank you. ${brand} has confirmed your ${chargeName} payment and a receipt is on its way to your inbox.`;
+}
+
+/**
+ * Hero copy for a manual-capture hold that ended without a charge —
+ * released by the operator, or lapsed at the gateway. It promises only what
+ * is true of THIS hold: a cancelled authorization can never be captured. It
+ * claims nothing about the booking (a lapsed hold says nothing about whether
+ * it was confirmed, and the business may still ask for a new payment), and
+ * only the bank decides how fast the pending line leaves the statement.
+ */
+function releasedHoldCopy({
+  brand,
+  held,
+  expired,
+}: {
+  brand: string;
+  /** " for $480.00", " for the Service Charge of $50.00", or "". */
+  held: string;
+  expired: boolean;
+}): string {
+  const lead = expired
+    ? `The hold on your card${held} has expired and been released.`
+    : `${brand} has released the hold on your card${held}.`;
+  return `${lead} You have not been charged, and this hold will never be collected. Your bank may take a few days to remove the pending amount from your statement.`;
 }
 
 /**

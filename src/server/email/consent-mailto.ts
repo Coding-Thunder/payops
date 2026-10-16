@@ -99,8 +99,12 @@ function flightLines(order: OrderDTO): string[] {
  * "Amount" would read as the price of the trip. A flight created before
  * itineraries usually charged its whole fare, so its labels are the
  * neutral legacy set. Every other service keeps its historic line.
+ *
+ * On a manual-capture checkout the last figure is a HOLD, so it carries
+ * the hold's label ("… On Hold") — never "Payable Now" for money the link
+ * only authorizes.
  */
-function amountLines(order: OrderDTO): string[] {
+function amountLines(order: OrderDTO, authorizationHold: boolean): string[] {
   const currency = order.pricing.currency;
   if (serviceTypeOf(order) !== ServiceType.FLIGHT) {
     return [`Amount: ${order.pricing.amount.toFixed(2)} ${currency}`];
@@ -123,7 +127,7 @@ function amountLines(order: OrderDTO): string[] {
   }
   lines.push(
     `${labels.bookingTotal}: ${a.bookingTotal.toFixed(2)} ${currency}`,
-    `${labels.payableNow}: ${order.pricing.amount.toFixed(2)} ${currency}`,
+    `${authorizationHold ? labels.heldNow : labels.payableNow}: ${order.pricing.amount.toFixed(2)} ${currency}`,
   );
   return lines;
 }
@@ -146,6 +150,8 @@ export function buildConsentMailto(args: {
   brandName: string;
   order: OrderDTO;
   consentMessage: string;
+  /** The order's checkout only authorizes the card (manual capture). */
+  authorizationHold?: boolean;
 }): string {
   const { order } = args;
   const subject = `Acknowledgement • Order ${order.orderNumber}`;
@@ -159,7 +165,7 @@ export function buildConsentMailto(args: {
     `Order: ${order.orderNumber}`,
     `${providerLabel}: ${order.provider?.name ?? "—"}`,
     ...serviceLines(order),
-    ...amountLines(order),
+    ...amountLines(order, args.authorizationHold ?? false),
     order.payment.paymentUrl
       ? `Payment link: ${order.payment.paymentUrl}`
       : "",

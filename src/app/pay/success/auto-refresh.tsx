@@ -15,6 +15,9 @@ interface PaymentSuccessAutoRefreshProps {
   /** How often we reload the page to re-query the server (which
    *  reconciles with the gateway on each render). */
   intervalSeconds?: number;
+  /** The wait is for a manual-capture HOLD, which is never a charge — the
+   *  fallback hint must not call it one. */
+  hold?: boolean;
 }
 
 /**
@@ -37,6 +40,7 @@ export function PaymentSuccessAutoRefresh({
   gatewayLabel = null,
   capSeconds = 30,
   intervalSeconds = 3,
+  hold = false,
 }: PaymentSuccessAutoRefreshProps) {
   const [elapsed, setElapsed] = useState(0);
 
@@ -68,7 +72,7 @@ export function PaymentSuccessAutoRefresh({
       {refreshes > 0 ? <RefreshPage times={refreshes} /> : null}
       {exhausted ? (
         <>
-          {`Still confirming with ${processor}. Try refreshing this page in a minute, or contact support if the charge appears on your card.`}
+          {`Still confirming with ${processor}. Try refreshing this page in a minute, or contact support if the ${hold ? "hold" : "charge"} appears on your card.`}
         </>
       ) : (
         <>{`Confirming with ${processor}…`}</>

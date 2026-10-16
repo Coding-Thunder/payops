@@ -5,7 +5,7 @@ import { sendPaymentRequestSchema } from "@/lib/validation";
 import { getRequestContext } from "@/server/api/request-context";
 import { jsonOk, withApi } from "@/server/api/respond";
 import { requirePermission } from "@/server/auth/session";
-import { OrderStatus } from "@/lib/constants/enums";
+import { OrderStatus, PaymentCaptureStatus } from "@/lib/constants/enums";
 import { ConflictError } from "@/lib/errors";
 import { Order } from "@/server/db/models";
 import {
@@ -70,6 +70,24 @@ export const POST = withApi(async (req: NextRequest, { params }: Params) => {
   ) {
     throw new ConflictError(
       `Cannot send a request — order is ${order.status.toLowerCase()}.`,
+    );
+  }
+
+  // A manual-capture order past its checkout has nothing left to ask the
+  // customer for: a live hold is captured or released by the operator, and a
+  // released or lapsed one needs a new link first — the old checkout is
+  // spent. `payment.capture` is null on every automatic-capture order, so
+  // none is refused here.
+  const captureStatus = order.payment.capture?.status ?? null;
+  if (
+    captureStatus &&
+    captureStatus !== PaymentCaptureStatus.PENDING_AUTHORIZATION
+  ) {
+    throw new ConflictError(
+      captureStatus === PaymentCaptureStatus.CANCELLED ||
+        captureStatus === PaymentCaptureStatus.AUTHORIZATION_EXPIRED
+        ? "This order's card hold was released. Generate a new payment link before sending another request."
+        : "The customer has already authorized this payment. Capture or release the hold instead of sending another request.",
     );
   }
 

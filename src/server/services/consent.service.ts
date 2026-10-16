@@ -6,6 +6,7 @@ import {
   AuditAction,
   AuditEntity,
   type BookingType,
+  CaptureMode,
   ConsentMethod,
   ConsentStatus,
   type Currency,
@@ -656,6 +657,13 @@ export async function getPublicConsentView(
     paymentUrl: order?.payment?.checkoutUrl ?? null,
     gatewayLabel: gateway ? PaymentGatewayLabel[gateway] : null,
     alreadyConfirmedAt: doc.receivedAt ? doc.receivedAt.toISOString() : null,
+    // Read live from the order, beside the link it describes: a manual-
+    // capture checkout only places a hold. Consent is requested only once a
+    // link exists, so the order's own capture record is always there to
+    // read. Absent for automatic orders, whose payload is unchanged.
+    ...(order?.payment?.capture?.method === CaptureMode.MANUAL
+      ? { authorizationHold: true as const }
+      : {}),
   };
 }
 
