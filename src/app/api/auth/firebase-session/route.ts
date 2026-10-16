@@ -100,10 +100,18 @@ export const POST = withApi(
         firebaseUid: decoded.uid,
       },
       ctx,
-      // Net-new provisioning is allowed only when the private-beta gate is
-      // off or the visitor presented a valid invite. Existing users are
-      // unaffected (their branch never provisions).
-      { allowSignup: signupInviteAccepted(inviteCode) },
+      {
+        // Net-new provisioning is allowed only when the visitor presented a
+        // valid invite. Existing users are unaffected (their branch never
+        // provisions).
+        allowSignup: signupInviteAccepted(inviteCode),
+        // What the visitor was trying to do, so a refusal can say something
+        // true. /login sends no inviteCode, so it is a sign-in: telling that
+        // visitor "signups are invite-only" sent a returning user off to
+        // request an invitation they did not need. /signup presents a code,
+        // so a refusal there really is the beta gate.
+        intent: inviteCode ? "signup" : "signin",
+      },
     );
     await setSessionCookie(token);
 

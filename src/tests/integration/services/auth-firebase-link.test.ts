@@ -86,7 +86,7 @@ describe("firebaseExchange — email-verification gate (takeover prevention)", (
     expect(after?.externalAuth?.firebaseUid).toBe("google-uid-abc");
   });
 
-  it("REFUSES a net-new account when signup is closed, in invite-only wording", async () => {
+  it("REFUSES a net-new account on a SIGNUP attempt, in invite-only wording", async () => {
     // Unknown email + allowSignup:false is the only branch that would have
     // provisioned a workspace. It must refuse, and the message must not
     // point at the removed public beta application.
@@ -98,12 +98,12 @@ describe("firebaseExchange — email-verification gate (takeover prevention)", (
         displayName: null,
       },
       null,
-      { allowSignup: false },
+      { allowSignup: false, intent: "signup" },
     );
 
     await expect(attempt).rejects.toBeInstanceOf(ForbiddenError);
     await expect(attempt).rejects.toThrow(/invite-only/i);
-    await expect(attempt).rejects.toThrow(/use an invitation/i);
+    await expect(attempt).rejects.toThrow(/invitation link/i);
     await expect(attempt).rejects.not.toThrow(/join the beta/i);
 
     expect(await User.countDocuments({ email: "stranger@example.com" })).toBe(

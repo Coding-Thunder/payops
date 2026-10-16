@@ -199,7 +199,7 @@ export interface FirebaseExchangeResult extends AuthenticateResult {
 export async function firebaseExchange(
   input: FirebaseExchangeInput,
   ctx?: RequestContext | null,
-  opts?: { allowSignup?: boolean },
+  opts?: { allowSignup?: boolean; intent?: "signin" | "signup" },
 ): Promise<FirebaseExchangeResult> {
   await connectMongo();
   const email = input.email.toLowerCase().trim();
@@ -213,6 +213,10 @@ export async function firebaseExchange(
     "+passwordHash name email role status primaryOrgId externalAuth",
   );
   let isNewUser = false;
+  // Set when an existing row was found by email and still has to be bound to
+  // this Firebase UID. The write is deferred until every authorization check
+  // below has passed — see the note at the lookup.
+  let needsUidLink = false;
 
   if (!user) {
     // No returning (uid-linked) user. Before we either LINK this Firebase UID
@@ -232,27 +236,72 @@ export async function firebaseExchange(
     user = await User.findOne({ email }).select(
       "+passwordHash name email role status primaryOrgId externalAuth",
     );
-    if (user) {
-      // Link the legacy / pre-Firebase user to this Firebase UID so the
-      // fast path hits on next sign-in. Set the whole `externalAuth` object
-      // rather than the dotted path: legacy users default `externalAuth` to
-      // null, and `$set: { "externalAuth.firebaseUid": … }` errors on a null
-      // parent ("Cannot create field 'firebaseUid' in element …").
-      await User.updateOne(
-        { _id: user._id },
-        { $set: { externalAuth: { firebaseUid: input.firebaseUid } } },
-      );
-    }
+    // Deliberately only FLAGGED here, not written. The link used to happen
+    // on this line, which is before the account-status gate below — so a
+    // DISABLED or ARCHIVED user whose sign-in was about to be refused still
+    // had their row permanently bound to the presented Firebase UID. A
+    // refused authentication must not mutate the account it refused.
+    if (user) needsUidLink = true;
   }
 
   if (!user) {
     // Private-beta gate: this is the ONLY branch that creates a net-new
-    // account/org. Refuse it unless the caller confirmed an accepted
-    // invite. Existing users never reach here, so sign-in is unaffected.
-    if (opts?.allowSignup === false) {
-      throw new ForbiddenError(
-        "TraceTxn is in private beta — signups are invite-only. Please use an invitation to create an account.",
-      );
+    // account/org. Refuse it unless the caller EXPLICITLY confirmed an
+    // accepted invite. Existing users never reach here, so sign-in is
+    // unaffected.
+    //
+    // `!== true`, not `=== false`. The old form meant a caller that simply
+    // omitted the option provisioned a brand-new tenant — the opposite of
+    // the closed-by-default contract `signup-gate.ts` documents. Only one
+    // route calls this today and it always passes the flag, so nothing was
+    // exploitable; the next caller is the one this protects.
+    if (opts?.allowSignup !== true) {
+      // Two different situations end up here, and answering both with
+      // "signups are invite-only" is why a returning user was told to go
+      // and get an invitation:
+      //
+      //   signup intent  → a net-new account really was being requested,
+      //                    and the beta gate really is the reason.
+      //   signin intent  → the visitor authenticated successfully with a
+      //                    provider, so they hold a real identity, and that
+      //                    identity has no TraceTxn account. The usual cause
+      //                    is signing in as the wrong one — the Google
+      //                    chooser offers every account in the browser, and
+      //                    nothing in the popup is scoped to a work domain.
+      //
+      // The sign-in message names the address the TOKEN carried. That is the
+      // visitor's own verified identity, so it discloses nothing about
+      // anyone else and no account's existence — and it is the one fact that
+      // makes a wrong-account mix-up obvious. It deliberately does NOT say
+      // whether any account exists for any other address.
+      const refusal =
+        opts?.intent === "signup"
+          ? new ForbiddenError(
+              "TraceTxn is in private beta — new accounts are invite-only. Please use your invitation link to create an account.",
+            )
+          : new ForbiddenError(
+              `No TraceTxn account is linked to ${email}. If you have more than one Google or email identity, sign in with the one your workspace was created for. If you believe this address should have access, contact your workspace owner or get in touch with us.`,
+            );
+
+      // Audit the refusal. Every neighbouring rejection in this file records
+      // one; this branch recorded nothing, so the only trace of a locked-out
+      // user was their own screenshot. `userId` is null because, by
+      // definition, there is no user row to attribute it to.
+      await recordAudit({
+        action: AuditAction.USER_LOGIN_FAILED,
+        entityType: AuditEntity.USER,
+        entityId: input.firebaseUid,
+        actor: { userId: null, name: null, email, role: null },
+        request: ctx ?? null,
+        metadata: {
+          reason: "no_account_for_firebase_identity",
+          source: "firebase",
+          intent: opts?.intent ?? "signin",
+          firebaseUid: input.firebaseUid,
+        },
+      });
+
+      throw refusal;
     }
     // First-time Firebase sign-in for this email → provision a User +
     // Organization. Delegates to the founder-signup path so we get the
@@ -293,6 +342,18 @@ export async function firebaseExchange(
       metadata: { reason: `status_${user.status}`, source: "firebase" },
     });
     throw new UnauthorizedError("Account is not active");
+  }
+
+  // Authorization has passed, so it is now safe to persist the identity
+  // link. Setting the whole `externalAuth` object rather than the dotted
+  // path is required: legacy users default it to null, and
+  // `$set: { "externalAuth.firebaseUid": … }` errors on a null parent
+  // ("Cannot create field 'firebaseUid' in element …").
+  if (needsUidLink) {
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { externalAuth: { firebaseUid: input.firebaseUid } } },
+    );
   }
 
   // Mirror the JWT-resolution path from authenticate() so downstream
