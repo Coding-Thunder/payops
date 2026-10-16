@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signOut,
   type AuthError,
 } from "firebase/auth";
 
@@ -67,6 +68,16 @@ export function FirebaseAuthForm({
   const [busy, setBusy] = useState<null | "email" | "google">(null);
   const [error, setError] = useState<string | null>(null);
   const [cfToken, setCfToken] = useState<string | null>(null);
+  // Bumped after every failed attempt so the Turnstile widget mints a new
+  // token. Without it the single-use token cleared below is never replaced,
+  // `captchaReady` stays false, and both buttons are disabled until the
+  // visitor reloads — so the one screen that just told them something went
+  // wrong also refused to let them try again.
+  const [captchaNonce, setCaptchaNonce] = useState(0);
+  // True once /api/auth/firebase-session has returned 2xx, i.e. the app
+  // session cookie is set. A failure after that point is a navigation
+  // problem, not a refused identity, and must not trigger a sign-out.
+  const sessionEstablished = useRef(false);
 
   const requiresToken = Boolean(turnstileSiteKey);
   const captchaReady = !requiresToken || Boolean(cfToken);
@@ -104,6 +115,43 @@ export function FirebaseAuthForm({
     );
   }
 
+  /**
+   * Put the page back into a state the visitor can retry from.
+   *
+   * Two things have to happen after the server refuses an exchange:
+   *  - a new captcha token, or the form stays disabled (see `captchaNonce`);
+   *  - sign out of Firebase. The provider sign-in itself SUCCEEDED, so the
+   *    browser is left holding a session for an identity this app rejected.
+   *    Leaving it signed in is both misleading and, for the common case of
+   *    picking the wrong Google account, actively unhelpful: the next attempt
+   *    should start from a clean chooser rather than silently re-presenting
+   *    the identity that was just refused.
+   */
+  function recoverFromRefusal(): void {
+    setCaptchaNonce((n) => n + 1);
+
+    // Only when the exchange itself failed. `window.location.assign` is
+    // inside the same try, so a throw from the navigation would otherwise
+    // land here AFTER the session cookie was set and sign the visitor out of
+    // Firebase while they hold a perfectly valid app session.
+    if (sessionEstablished.current) return;
+
+    const auth = getFirebaseAuth();
+    if (!auth) return;
+    // Deliberately NOT awaited. The caller's `finally` re-enables the form,
+    // and awaiting a network sign-out here would hold the buttons disabled
+    // for its duration — re-creating, for as long as it hangs, the stuck
+    // form this function exists to prevent.
+    // `Promise.resolve(...)` rather than `signOut(auth).catch(...)`: this runs
+    // inside a catch block, so a sync throw here — or any build where signOut
+    // does not return a promise — would reject the handler with nothing left
+    // to catch it, replacing the error the visitor needs to read with an
+    // unhandled rejection.
+    void Promise.resolve(signOut(auth)).catch(() => {
+      // Best-effort; a failed sign-out is not worth surfacing.
+    });
+  }
+
   async function exchangeIdTokenForSession(idToken: string): Promise<void> {
     try {
       await api.post<FirebaseSessionResponse>(
@@ -118,6 +166,8 @@ export function FirebaseAuthForm({
           inviteCode: inviteCode ?? undefined,
         },
       );
+      // The cookie is set from here on; see `recoverFromRefusal`.
+      sessionEstablished.current = true;
       /**
        * Conversion event, fired only on a successful session exchange —
        * the request above throws for a failed sign-in, a rejected Turnstile
@@ -182,6 +232,7 @@ export function FirebaseAuthForm({
       // Raw technical detail goes to the console for debugging ONLY — never
       // to the UI (it exposed code-level errors to end users).
       console.error("[auth] sign-in error:", dumpErrorForUi(err));
+      recoverFromRefusal();
     } finally {
       setBusy(null);
     }
@@ -207,6 +258,7 @@ export function FirebaseAuthForm({
       // Raw technical detail goes to the console for debugging ONLY — never
       // to the UI (it exposed code-level errors to end users).
       console.error("[auth] sign-in error:", dumpErrorForUi(err));
+      recoverFromRefusal();
     } finally {
       setBusy(null);
     }
@@ -299,6 +351,7 @@ export function FirebaseAuthForm({
         {requiresToken ? (
           <TurnstileWidget
             siteKey={turnstileSiteKey}
+            resetSignal={captchaNonce}
             onVerify={(t) => setCfToken(t)}
             onExpire={() => setCfToken(null)}
             onError={() => setCfToken(null)}

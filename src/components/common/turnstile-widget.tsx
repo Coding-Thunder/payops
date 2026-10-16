@@ -50,6 +50,16 @@ interface TurnstileWidgetProps {
   theme?: "light" | "dark" | "auto";
   /** Cosmetic className for the wrapper div. */
   className?: string;
+  /**
+   * Increment to force a fresh challenge.
+   *
+   * A Turnstile token is single-use: once it has been spent on a request, the
+   * widget holds nothing and `onVerify` will not fire again by itself. A form
+   * that clears its token after a failed submit therefore disables its own
+   * submit button forever, and the only way back is a page reload. Bump this
+   * after a failed attempt and the widget issues a new token.
+   */
+  resetSignal?: number;
 }
 
 export function TurnstileWidget({
@@ -59,6 +69,7 @@ export function TurnstileWidget({
   onError,
   theme = "auto",
   className,
+  resetSignal = 0,
 }: TurnstileWidgetProps) {
   const wrapperId = useId();
   const widgetId = useRef<string | null>(null);
@@ -112,6 +123,22 @@ export function TurnstileWidget({
       }
     };
   }, [siteKey, theme]);
+
+  // Fresh challenge on demand. Skipped on first render (resetSignal starts at
+  // 0 and render() has just produced a token) and whenever the widget is not
+  // mounted yet, in which case the mount effect above will deliver one.
+  const lastReset = useRef(resetSignal);
+  useEffect(() => {
+    if (resetSignal === lastReset.current) return;
+    lastReset.current = resetSignal;
+    if (!widgetId.current || !window.turnstile) return;
+    try {
+      window.turnstile.reset(widgetId.current);
+    } catch {
+      // Turnstile throws if the widget was torn down between the bump and
+      // this effect; there is nothing to reset in that case.
+    }
+  }, [resetSignal]);
 
   if (!siteKey) return null;
 
