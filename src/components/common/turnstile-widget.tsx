@@ -62,6 +62,13 @@ interface TurnstileWidgetProps {
   resetSignal?: number;
 }
 
+/**
+ * Ceiling on automatic re-arms per mount. High enough that a visitor who
+ * genuinely fails, lets a token lapse, and retries a few times never meets it;
+ * low enough that a deterministic widget error cannot spin.
+ */
+const MAX_RESETS = 10;
+
 export function TurnstileWidget({
   siteKey,
   onVerify,
@@ -127,11 +134,21 @@ export function TurnstileWidget({
   // Fresh challenge on demand. Skipped on first render (resetSignal starts at
   // 0 and render() has just produced a token) and whenever the widget is not
   // mounted yet, in which case the mount effect above will deliver one.
+  //
+  // BOUNDED. A caller that re-arms from its own `onError` closes a loop:
+  // reset() restarts the challenge, a deterministic failure (a blocked CDN, a
+  // site key that does not match the domain) fires `error-callback` again, and
+  // that bumps the signal again. The cap breaks it. Past the cap the widget
+  // simply stops re-arming, which leaves the submit button disabled — correct,
+  // because without a token the server would reject the request anyway.
   const lastReset = useRef(resetSignal);
+  const resetCount = useRef(0);
   useEffect(() => {
     if (resetSignal === lastReset.current) return;
     lastReset.current = resetSignal;
+    if (resetCount.current >= MAX_RESETS) return;
     if (!widgetId.current || !window.turnstile) return;
+    resetCount.current += 1;
     try {
       window.turnstile.reset(widgetId.current);
     } catch {

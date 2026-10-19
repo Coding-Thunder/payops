@@ -127,7 +127,7 @@ export function FirebaseAuthForm({
    *    should start from a clean chooser rather than silently re-presenting
    *    the identity that was just refused.
    */
-  function recoverFromRefusal(): void {
+  function recoverFromRefusal(err?: unknown): void {
     setCaptchaNonce((n) => n + 1);
 
     // Only when the exchange itself failed. `window.location.assign` is
@@ -135,6 +135,14 @@ export function FirebaseAuthForm({
     // land here AFTER the session cookie was set and sign the visitor out of
     // Firebase while they hold a perfectly valid app session.
     if (sessionEstablished.current) return;
+
+    // And only when the IDENTITY was refused. Signing out costs the visitor a
+    // full re-walk of the provider — the Google chooser, 2FA, the consent
+    // screen — so it is the right response to "this identity has no account"
+    // and the wrong one for everything else. A lapsed captcha, the 10-per-60s
+    // ceiling on this route, or a 5xx are all transient: the credential that
+    // just succeeded is still good, and retry should be one click.
+    if (!identityWasRefused(err)) return;
 
     const auth = getFirebaseAuth();
     if (!auth) return;
@@ -232,7 +240,7 @@ export function FirebaseAuthForm({
       // Raw technical detail goes to the console for debugging ONLY — never
       // to the UI (it exposed code-level errors to end users).
       console.error("[auth] sign-in error:", dumpErrorForUi(err));
-      recoverFromRefusal();
+      recoverFromRefusal(err);
     } finally {
       setBusy(null);
     }
@@ -258,7 +266,7 @@ export function FirebaseAuthForm({
       // Raw technical detail goes to the console for debugging ONLY — never
       // to the UI (it exposed code-level errors to end users).
       console.error("[auth] sign-in error:", dumpErrorForUi(err));
-      recoverFromRefusal();
+      recoverFromRefusal(err);
     } finally {
       setBusy(null);
     }
@@ -353,8 +361,21 @@ export function FirebaseAuthForm({
             siteKey={turnstileSiteKey}
             resetSignal={captchaNonce}
             onVerify={(t) => setCfToken(t)}
-            onExpire={() => setCfToken(null)}
-            onError={() => setCfToken(null)}
+            // Expiry and widget errors must ask for a NEW challenge, not just
+            // drop the token. A Turnstile token is single-use and lapses after
+            // ~5 minutes, so a visitor who opens /login and then takes their
+            // time found both buttons disabled with nothing on screen
+            // explaining why and no way back but a reload. Clearing without
+            // re-arming is a dead end exactly like the one the server-refusal
+            // path had.
+            onExpire={() => {
+              setCfToken(null);
+              setCaptchaNonce((n) => n + 1);
+            }}
+            onError={() => {
+              setCfToken(null);
+              setCaptchaNonce((n) => n + 1);
+            }}
             className="flex justify-center"
           />
         ) : null}
@@ -391,6 +412,29 @@ export function FirebaseAuthForm({
       ) : null}
     </div>
   );
+}
+
+/**
+ * Whether a failed exchange means "this identity has no account here", as
+ * opposed to something transient.
+ *
+ * Only an identity refusal justifies dropping the provider session. Captcha
+ * failures, rate limiting and server errors say nothing about the identity, and
+ * treating them the same way turns a one-click retry into a full re-walk of
+ * the provider's sign-in flow.
+ *
+ * Unknown shapes are treated as NOT an identity refusal: the cost of keeping a
+ * provider session that should have been dropped is that the next attempt
+ * re-presents the same identity, which the server will refuse again with an
+ * accurate message. The cost of the opposite mistake is making a legitimate
+ * visitor sign in from scratch to recover from a hiccup.
+ */
+function identityWasRefused(err: unknown): boolean {
+  if (!(err instanceof ApiClientError)) return false;
+  if (err.status >= 500) return false;
+  if (err.code === "BOT_CHECK_FAILED") return false;
+  if (err.code === "RATE_LIMITED") return false;
+  return err.status === 401 || err.status === 403;
 }
 
 function safeNext(value?: string): string {

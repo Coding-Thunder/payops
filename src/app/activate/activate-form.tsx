@@ -25,6 +25,12 @@ export function ActivateForm({
   const [name, setName] = useState(defaultName);
   const [password, setPassword] = useState("");
   const [cfToken, setCfToken] = useState<string | null>(null);
+  // Bumped whenever the held token stops being usable, so the widget mints a
+  // replacement. A Turnstile token is single-use and expires after ~5 minutes;
+  // clearing it without re-arming leaves `ready` false and the submit button
+  // dead until a page reload. This is the activation screen, so that dead end
+  // lands on a brand-new user's very first interaction.
+  const [captchaNonce, setCaptchaNonce] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,6 +65,7 @@ export function ActivateForm({
           : "Couldn't activate your account. Please try again.",
       );
       setCfToken(null);
+      setCaptchaNonce((n) => n + 1);
       setSubmitting(false);
     }
   }
@@ -105,9 +112,16 @@ export function ActivateForm({
       {requiresToken ? (
         <TurnstileWidget
           siteKey={turnstileSiteKey}
+          resetSignal={captchaNonce}
           onVerify={(t) => setCfToken(t)}
-          onExpire={() => setCfToken(null)}
-          onError={() => setCfToken(null)}
+          onExpire={() => {
+            setCfToken(null);
+            setCaptchaNonce((n) => n + 1);
+          }}
+          onError={() => {
+            setCfToken(null);
+            setCaptchaNonce((n) => n + 1);
+          }}
         />
       ) : null}
 

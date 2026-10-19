@@ -23,6 +23,14 @@ import { cleanup } from "@testing-library/react";
  * the integration project instead.
  */
 
+// React checks this flag inside `act()`. RTL sets it for its own helpers, but
+// a test that drives a component's callbacks directly through `act` — the only
+// way to deliver a mocked widget's onVerify/onExpire — trips the
+// "not configured to support act(...)" warning on every call. Set once here so
+// that noise never buries a real warning.
+(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean })
+  .IS_REACT_ACT_ENVIRONMENT = true;
+
 afterEach(() => {
   cleanup();
 });

@@ -106,6 +106,29 @@ describe("TurnstileWidget — resetSignal", () => {
     expect(() => unmount()).not.toThrow();
   });
 
+  it("stops re-arming after a bounded number of resets", async () => {
+    const { rerender } = renderWithUser(
+      <TurnstileWidget siteKey="1x0000" onVerify={() => {}} resetSignal={0} />,
+    );
+    await waitFor(() => expect(render).toHaveBeenCalledTimes(1));
+
+    // A caller that re-arms from its own onError closes a loop: reset()
+    // restarts the challenge, a deterministic failure fires error-callback
+    // again, which bumps again. Without a ceiling that spins forever.
+    for (let i = 1; i <= 25; i += 1) {
+      rerender(
+        <TurnstileWidget
+          siteKey="1x0000"
+          onVerify={() => {}}
+          resetSignal={i}
+        />,
+      );
+    }
+
+    await waitFor(() => expect(reset.mock.calls.length).toBeGreaterThan(0));
+    expect(reset.mock.calls.length).toBeLessThanOrEqual(10);
+  });
+
   it("renders nothing, and never touches the API, without a site key", () => {
     renderWithUser(<TurnstileWidget siteKey={null} onVerify={() => {}} />);
     expect(render).not.toHaveBeenCalled();

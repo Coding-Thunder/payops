@@ -233,6 +233,60 @@ describe("Google sign-in", () => {
     expect(alert).not.toHaveTextContent(/create an account/i);
   });
 
+  it("does NOT sign out on a captcha failure — the identity is still good", async () => {
+    // Signing out costs a full re-walk of the Google chooser, 2FA and consent.
+    // A lapsed or rejected captcha says nothing about the identity, so the
+    // credential that just succeeded must survive and retry must be one click.
+    const { ApiClientError } = await import("@/lib/api-client");
+    signInWithPopup.mockResolvedValue(credential);
+    apiPost.mockRejectedValue(
+      new ApiClientError(403, {
+        code: "BOT_CHECK_FAILED",
+        message: "Captcha verification failed, please retry.",
+      }),
+    );
+
+    const { user } = renderWithUser(<FirebaseAuthForm mode="signin" />);
+    await user.click(
+      screen.getByRole("button", { name: /continue with google/i }),
+    );
+
+    await waitFor(() => expect(apiPost).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/captcha/i);
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it("does NOT sign out on a rate limit or a server error", async () => {
+    const { ApiClientError } = await import("@/lib/api-client");
+    for (const body of [
+      { status: 429, code: "RATE_LIMITED", message: "Too many requests" },
+      { status: 500, code: "INTERNAL_ERROR", message: "Server error" },
+    ]) {
+      signOut.mockClear();
+      apiPost.mockReset();
+      signInWithPopup.mockResolvedValue(credential);
+      apiPost.mockRejectedValue(
+        new ApiClientError(body.status, {
+          code: body.code,
+          message: body.message,
+        }),
+      );
+
+      const { user, unmount } = renderWithUser(
+        <FirebaseAuthForm mode="signin" />,
+      );
+      await user.click(
+        screen.getByRole("button", { name: /continue with google/i }),
+      );
+      await waitFor(() => expect(apiPost).toHaveBeenCalledTimes(1));
+      expect(
+        signOut,
+        `a ${body.status} is transient and must not drop the provider session`,
+      ).not.toHaveBeenCalled();
+      unmount();
+    }
+  });
+
   it("does NOT sign out when the session was already established", async () => {
     // The navigation sits inside the same try as the exchange, so a throw
     // from it lands in the catch AFTER the session cookie is set. Signing the

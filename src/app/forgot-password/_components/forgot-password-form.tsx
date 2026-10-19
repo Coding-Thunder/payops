@@ -30,6 +30,10 @@ export function ForgotPasswordForm({ turnstileSiteKey }: Props) {
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cfToken, setCfToken] = useState<string | null>(null);
+  // See the note in activate-form: a single-use token cleared without a
+  // replacement disables the submit button until a reload. This is the screen
+  // a locked-out user reaches, so it must never be the second dead end.
+  const [captchaNonce, setCaptchaNonce] = useState(0);
 
   const form = useForm<ForgotPasswordInput>({
     resolver: zodResolver(forgotPasswordSchema),
@@ -57,6 +61,7 @@ export function ForgotPasswordForm({ turnstileSiteKey }: Props) {
       setSent(true);
     } catch (err) {
       setCfToken(null);
+      setCaptchaNonce((n) => n + 1);
       if (err instanceof ApiClientError) {
         setError(err.message);
       } else {
@@ -111,9 +116,16 @@ export function ForgotPasswordForm({ turnstileSiteKey }: Props) {
         {requiresToken ? (
           <TurnstileWidget
             siteKey={turnstileSiteKey}
+            resetSignal={captchaNonce}
             onVerify={(token) => setCfToken(token)}
-            onExpire={() => setCfToken(null)}
-            onError={() => setCfToken(null)}
+            onExpire={() => {
+              setCfToken(null);
+              setCaptchaNonce((n) => n + 1);
+            }}
+            onError={() => {
+              setCfToken(null);
+              setCaptchaNonce((n) => n + 1);
+            }}
             className="flex justify-center"
           />
         ) : null}
