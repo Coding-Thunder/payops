@@ -103,11 +103,27 @@ export function OrderPaymentCard({
   // Note this is keyed off the ORDER, never off the selected organization:
   // an operator with memberships in a manual-capture org and an automatic
   // one must not see a Capture button after switching tenants.
-  const capture = order.payment.capture;
+  // A PAID manual order's money WAS taken: a capture record that still
+  // reads as a hold (its bookkeeping lands in a second write, or the order
+  // was reconciled to PAID before reconcile settled the record) is shown —
+  // and gated — as captured, never "needs capture".
+  const recorded = order.payment.capture;
+  const capture =
+    recorded &&
+    isPaid &&
+    (recorded.status === PaymentCaptureStatus.PENDING_AUTHORIZATION ||
+      recorded.status === PaymentCaptureStatus.AUTHORIZED ||
+      recorded.status === PaymentCaptureStatus.CAPTURE_PENDING ||
+      recorded.status === PaymentCaptureStatus.CAPTURE_FAILED)
+      ? { ...recorded, status: PaymentCaptureStatus.CAPTURED, lastError: null }
+      : recorded;
   const captureStatus = capture?.status ?? null;
+  // A PAID order is settled whatever its capture record still says (the
+  // money can land through reconcile before the capture bookkeeping does).
   const awaitingCapture =
-    captureStatus === PaymentCaptureStatus.AUTHORIZED ||
-    captureStatus === PaymentCaptureStatus.CAPTURE_FAILED;
+    !isPaid &&
+    (captureStatus === PaymentCaptureStatus.AUTHORIZED ||
+      captureStatus === PaymentCaptureStatus.CAPTURE_FAILED);
   const showCapture = canCapture && awaitingCapture;
   // Before the customer authorizes there is nothing to release: Stripe only
   // creates the PaymentIntent at checkout, and the server refuses a release
@@ -122,7 +138,8 @@ export function OrderPaymentCard({
   // the link would only invite a second hold), and once it is released or
   // lapsed only a NEW link can collect.
   const liveHold =
-    awaitingCapture || captureStatus === PaymentCaptureStatus.CAPTURE_PENDING;
+    awaitingCapture ||
+    (!isPaid && captureStatus === PaymentCaptureStatus.CAPTURE_PENDING);
   const spentHold =
     captureStatus === PaymentCaptureStatus.CANCELLED ||
     captureStatus === PaymentCaptureStatus.AUTHORIZATION_EXPIRED;
@@ -451,7 +468,7 @@ export function OrderPaymentCard({
           </div>
         ) : null}
 
-        {(isFailedOrExpired || spentHold) && canRegenerate ? (
+        {(isFailedOrExpired || spentHold) && !liveHold && !isPaid && canRegenerate ? (
           <LoadingButton
             variant="outline"
             size="sm"

@@ -339,11 +339,17 @@ export function PaymentAuthorizedEmail({
             </NextStep>
           )}
           {holdExpiresOn ? (
-            <NextStep>
-              If we haven&apos;t confirmed by {holdExpiresOn}, the hold
-              expires on its own and the funds return to your available
-              balance.
-            </NextStep>
+            holdTerms?.cancellation ? (
+              <NextStep>
+                {`If it hasn't been processed by ${holdExpiresOn}, the hold expires on its own and the funds return to your available balance.`}
+              </NextStep>
+            ) : (
+              <NextStep>
+                If we haven&apos;t confirmed by {holdExpiresOn}, the hold
+                expires on its own and the funds return to your available
+                balance.
+              </NextStep>
+            )
           ) : null}
           <Text
             style={{

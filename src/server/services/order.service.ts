@@ -1620,13 +1620,108 @@ export async function archiveOrder(
   if (doc.status === OrderStatus.PAID) {
     throw new ConflictError("Paid orders cannot be archived");
   }
-
-  doc.state = RecordState.ARCHIVED;
-  if (doc.status === OrderStatus.PAYMENT_PENDING) {
-    doc.status = OrderStatus.EXPIRED;
-    doc.payment.status = OrderStatus.EXPIRED;
+  // An archived order can be neither captured nor released, so archiving a
+  // live hold would strand the customer's money until the gateway lets it
+  // lapse. `payment.capture` is null on every automatic-capture order.
+  const holdStatus = doc.payment?.capture?.status;
+  if (
+    holdStatus === PaymentCaptureStatus.AUTHORIZED ||
+    holdStatus === PaymentCaptureStatus.CAPTURE_PENDING ||
+    holdStatus === PaymentCaptureStatus.CAPTURE_FAILED
+  ) {
+    throw new ConflictError(
+      "This order has a live card hold. Capture or release it before archiving.",
+    );
   }
-  await doc.save();
+  // …nor may the customer place one after the archive: a manual-capture
+  // checkout still open would take an authorization onto an order that can
+  // then be neither captured nor released. Retire it first; if the customer
+  // has just completed it, the hold is landing — refuse, so the operator
+  // captures or releases it instead.
+  let archived: (OrderDoc & { _id: Types.ObjectId }) | null = null;
+  if (
+    holdStatus === PaymentCaptureStatus.PENDING_AUTHORIZATION &&
+    doc.payment.stripeSessionId
+  ) {
+    const sessionId = doc.payment.stripeSessionId;
+    const gateway = await resolveGatewayForOrder(doc, null);
+    const completedMessage =
+      "The customer has completed checkout on this order. Refresh it, then capture or release the hold before archiving.";
+    // The session as the provider sees it now; null when the provider no
+    // longer knows it at all (it can take no payment either way).
+    const lookup = async (): Promise<SessionStatus | null> => {
+      try {
+        return await gateway.getSessionStatus(sessionId);
+      } catch (err) {
+        if ((err as { code?: unknown } | null)?.code === "resource_missing") return null;
+        logger.warn("orders.archive_session_lookup_failed", {
+          orderId: String(doc._id),
+          sessionId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+        throw new ConflictError(
+          "Could not check this order's checkout with the payment provider. Try again in a moment.",
+        );
+      }
+    };
+    const session = await lookup();
+    if (session?.status === "complete") throw new ConflictError(completedMessage);
+    if (session?.status === "open") {
+      // Whether the adapter throws on a refused expiry or (as Stripe's does)
+      // logs and swallows it, ask again: only a session the provider now
+      // reports expired can take no authorization.
+      try {
+        await gateway.expireSession(sessionId);
+      } catch (err) {
+        logger.warn("orders.archive_expire_session_failed", {
+          orderId: String(doc._id),
+          sessionId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+      const after = await lookup();
+      if (after && after.status !== "expired") {
+        throw new ConflictError(completedMessage);
+      }
+    }
+    // Archive exactly the order that was checked — still awaiting its
+    // authorization, never one an authorization or a decline changed during
+    // the round-trips above. EXPIRED is accepted too: retiring the checkout
+    // makes the gateway announce the expiry, and that webhook often lands
+    // before this write.
+    archived = await Order.findOneAndUpdate(
+      {
+        _id: doc._id,
+        state: RecordState.ACTIVE,
+        status: { $in: [doc.status, OrderStatus.EXPIRED] },
+        "payment.capture.status": PaymentCaptureStatus.PENDING_AUTHORIZATION,
+      },
+      {
+        $set: {
+          state: RecordState.ARCHIVED,
+          ...(doc.status === OrderStatus.PAYMENT_PENDING
+            ? {
+                status: OrderStatus.EXPIRED,
+                "payment.status": OrderStatus.EXPIRED,
+              }
+            : {}),
+        },
+      },
+      { returnDocument: "after" },
+    ).lean<OrderDoc & { _id: Types.ObjectId }>();
+    if (!archived) {
+      throw new ConflictError(
+        "This order changed while it was being archived. Refresh it and try again.",
+      );
+    }
+  } else {
+    doc.state = RecordState.ARCHIVED;
+    if (doc.status === OrderStatus.PAYMENT_PENDING) {
+      doc.status = OrderStatus.EXPIRED;
+      doc.payment.status = OrderStatus.EXPIRED;
+    }
+    await doc.save();
+  }
 
   await recordAudit({
     action: AuditAction.ORDER_ARCHIVED,
@@ -1648,7 +1743,9 @@ export async function archiveOrder(
     },
   });
 
-  return orderToDTO(doc.toObject() as OrderDoc & { _id: Types.ObjectId });
+  return orderToDTO(
+    archived ?? (doc.toObject() as OrderDoc & { _id: Types.ObjectId }),
+  );
 }
 
 interface RegenerateLinkResult {
@@ -2538,9 +2635,19 @@ export async function reconcileOrderPayment(
     status.status === "complete" &&
     status.paymentStatus === "unpaid"
   ) {
-    // Authorized but uncaptured. Record it idempotently under a namespace
-    // disjoint from both real Stripe event ids and the reconcile key, then
-    // report the authorization rather than a payment.
+    // Authorized but uncaptured. Already recorded (held, capturing, a
+    // failed capture): nothing to add — and no duplicate-event trail on
+    // every visit to the success page.
+    if (doc.payment.capture?.status !== PaymentCaptureStatus.PENDING_AUTHORIZATION) {
+      return {
+        order: orderToDTO(doc.toObject({ getters: false }) as OrderDoc & { _id: Types.ObjectId }),
+        changed: false,
+        stripeStatus: "unpaid",
+      };
+    }
+    // Record it idempotently under a namespace disjoint from both real
+    // Stripe event ids and the reconcile key, then report the authorization
+    // rather than a payment.
     await applyPaymentAuthorized(doc, {
       eventId: `authorize:${doc.payment.stripeSessionId}`,
       paymentIntentId: status.paymentIntentId,
@@ -2569,6 +2676,37 @@ export async function reconcileOrderPayment(
       paidAtMs: Date.now(),
       source: "reconcile",
     });
+    // For a manual-capture order the gateway reports "paid" only once the
+    // hold was CAPTURED (a capture whose response or webhook never reached
+    // us): settle the capture record and the booking as the capture webhook
+    // would, so no operator surface offers Capture on a paid order.
+    if (manual) {
+      await Order.updateOne(
+        {
+          _id: doc._id,
+          "payment.capture.status": {
+            $in: [
+              PaymentCaptureStatus.PENDING_AUTHORIZATION,
+              PaymentCaptureStatus.AUTHORIZED,
+              PaymentCaptureStatus.CAPTURE_PENDING,
+              PaymentCaptureStatus.CAPTURE_FAILED,
+            ],
+          },
+        },
+        {
+          $set: {
+            "payment.capture.status": PaymentCaptureStatus.CAPTURED,
+            "payment.capture.capturedAt": new Date(),
+            "payment.capture.amountCaptured":
+              typeof status.amountTotalMinor === "number"
+                ? status.amountTotalMinor / 100
+                : doc.pricing.amount,
+            "payment.capture.lastError": null,
+            bookingStatus: BookingStatus.CONFIRMED,
+          },
+        },
+      );
+    }
     const refreshed = await Order.findById(id).lean<
       OrderDoc & { _id: Types.ObjectId }
     >();

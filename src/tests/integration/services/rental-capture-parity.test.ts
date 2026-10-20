@@ -217,6 +217,8 @@ const MSG = {
   notFound: "Order not found",
   liveAuthorization:
     "This order has a live authorization. Release the authorization before generating a new payment link.",
+  liveHoldArchive:
+    "This order has a live card hold. Capture or release it before archiving.",
   forbidden: "You do not have permission to perform this action",
   unauthenticated: "Authentication required",
   cannotCapture: (status: string) => `Cannot capture — the payment is ${status}.`,
@@ -2339,9 +2341,9 @@ describe("the parity matrix — Rental on MANUAL runs exactly the reference's li
         audit: [
           ...AUTHORIZED_AUDIT,
           AuditAction.AUTHORIZATION_RELEASED,
-          // regenerate's reconcile found <CS_1> complete/unpaid: the released
-          // authorization is not recorded again.
-          AuditAction.WEBHOOK_DUPLICATE,
+          // regenerate's reconcile found <CS_1> complete/unpaid on a hold
+          // already released: nothing is recorded again — not even a
+          // duplicate-event row.
           AuditAction.ORDER_PAYMENT_LINK_REGENERATED,
           AuditAction.PAYMENT_AUTHORIZED,
           AuditAction.AUTHORIZATION_RELEASED,
@@ -2357,26 +2359,54 @@ describe("the parity matrix — Rental on MANUAL runs exactly the reference's li
     }, 60_000);
 
     async function s19(lane: Lane) {
-      const handle = await authorizedCarOrder(lane);
-      const steps = [
-        await archive(lane, handle),
-        await capture(lane, handle),
-        await release(lane, handle),
+      // A LIVE hold: archiving is refused until the hold is released.
+      const held = await authorizedCarOrder(lane);
+      const heldSteps = [
+        await archive(lane, held),
+        await release(lane, held),
+        await archive(lane, held),
       ];
-      return { steps, trail: await trailOf(handle) };
+      // An order archived BEFORE its authorization landed: capture and
+      // release are refused on it.
+      const { handle: pending } = await linkedCarOrder(lane);
+      const pendingSteps = [
+        await archive(lane, pending),
+        await capture(lane, pending),
+        await release(lane, pending),
+      ];
+      return {
+        steps: [...heldSteps, ...pendingSteps],
+        trail: await trailOf(held),
+        pendingTrail: await trailOf(pending),
+      };
     }
 
-    it("S19 an archived order → 409 'Cannot act on an archived order' for capture (and for release)", async () => {
+    it("S19 archive: a LIVE hold is refused (409 'This order has a live card hold…', order untouched — an archived order could be neither captured nor released) and archives once released; an order archived before its authorization → 409 'Cannot act on an archived order' for capture and release", async () => {
       const { reference, rental } = await onBoth(s19);
       expect(rental).toEqual(reference);
 
-      const archivedOrder: OrderState = { ...AUTHORIZED_ORDER, state: RecordState.ARCHIVED };
-      const [archived, captureStep, releaseStep] = reference.steps;
-      expect(archived.status).toBe(200);
-      expect(archived.order).toEqual(archivedOrder);
-      expectRefused(captureStep, 409, MSG.archived, archivedOrder);
-      expectRefused(releaseStep, 409, MSG.archived, archivedOrder);
-      expect(reference.trail.audit).toEqual([...AUTHORIZED_AUDIT, AuditAction.ORDER_ARCHIVED]);
+      const [refused, released, archivedReleased, archivedPending, captureStep, releaseStep] =
+        reference.steps;
+      expectRefused(refused, 409, MSG.liveHoldArchive, AUTHORIZED_ORDER);
+      expect(released.status).toBe(200);
+      expect(released.order).toEqual(RELEASED_ORDER);
+      expect(archivedReleased.status).toBe(200);
+      expect(archivedReleased.order).toEqual({ ...RELEASED_ORDER, state: RecordState.ARCHIVED });
+      expect(reference.trail.audit).toEqual([
+        ...AUTHORIZED_AUDIT,
+        AuditAction.AUTHORIZATION_RELEASED,
+        AuditAction.ORDER_ARCHIVED,
+      ]);
+
+      const archivedBeforeAuthorization: OrderState = {
+        ...AUTHORIZED_ORDER,
+        state: RecordState.ARCHIVED,
+        capture: PENDING_CAPTURE,
+      };
+      expect(archivedPending.status).toBe(200);
+      expect(archivedPending.order).toEqual(archivedBeforeAuthorization);
+      expectRefused(captureStep, 409, MSG.archived, archivedBeforeAuthorization);
+      expectRefused(releaseStep, 409, MSG.archived, archivedBeforeAuthorization);
     }, 60_000);
 
     async function s20(lane: Lane) {

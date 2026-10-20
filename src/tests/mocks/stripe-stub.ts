@@ -221,7 +221,19 @@ export function createStripeStub(opts: StripeStubOptions = {}): StripeStub {
         },
         expire: async (sessionId: string) => {
           sessionsExpired.push(sessionId);
-          return { id: sessionId, status: "expired" } as Stripe.Checkout.Session;
+          const found = sessionsCreated.find((s) => s.result.id === sessionId);
+          if (!found) {
+            return { id: sessionId, status: "expired" } as Stripe.Checkout.Session;
+          }
+          // As Stripe: only an OPEN session can be expired, and once expired
+          // a later retrieve reports it so.
+          if (found.result.status !== "open") {
+            throw new Error(
+              'Only Checkout Sessions with a status in ["open"] can be expired.',
+            );
+          }
+          (found.result as { status: string }).status = "expired";
+          return found.result;
         },
         retrieve: async (sessionId: string) => {
           const found = sessionsCreated.find((s) => s.result.id === sessionId);

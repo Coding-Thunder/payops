@@ -126,10 +126,16 @@ export function OrderDetailPageContent({
     role,
     Permission.ORDER_REGENERATE_LINK,
   );
+  // Never on a live card hold: an archived order can be neither captured
+  // nor released (the server refuses it too).
+  const liveHoldStatus = order.payment.capture?.status;
   const canArchive =
     roleHasPermission(role, Permission.ORDER_ARCHIVE) &&
     order.state === RecordState.ACTIVE &&
-    order.status !== OrderStatus.PAID;
+    order.status !== OrderStatus.PAID &&
+    liveHoldStatus !== PaymentCaptureStatus.AUTHORIZED &&
+    liveHoldStatus !== PaymentCaptureStatus.CAPTURE_PENDING &&
+    liveHoldStatus !== PaymentCaptureStatus.CAPTURE_FAILED;
   const canFlagRisk = roleHasPermission(role, Permission.ORDER_UPDATE);
   // Role half of the manual-capture affordances. The other half — whether
   // this ORDER has an authorization at all — is decided inside the payment

@@ -549,7 +549,9 @@ async function handleCheckoutExpired(
   // order, so this branch is provably never taken for one.
   if (
     order.payment?.capture?.status === PaymentCaptureStatus.AUTHORIZED ||
-    order.payment?.capture?.status === PaymentCaptureStatus.CAPTURE_PENDING
+    order.payment?.capture?.status === PaymentCaptureStatus.CAPTURE_PENDING ||
+    // A refused capture leaves the hold standing too.
+    order.payment?.capture?.status === PaymentCaptureStatus.CAPTURE_FAILED
   ) {
     logger.info("payments.checkout_expired_ignored_live_authorization", {
       orderId: String(order._id),
@@ -766,6 +768,20 @@ async function handlePaymentFailed(
   if (!order) {
     return { handled: false, duplicate: false, reason: "order_not_found" };
   }
+  // A decline on a link the order has since REPLACED is history. Stripe
+  // retries an unacknowledged delivery for days, so the old session's
+  // `payment_intent.payment_failed` can land after the operator regenerated
+  // the link; failing the order on it would block the new link (and the
+  // hold) the customer was just sent. Same rule — and same audit — as a
+  // superseded cancel. Manual-capture orders only: an automatic-capture
+  // order (`capture` null) handles its declines exactly as it always has.
+  if (order.payment?.capture?.method === CaptureMode.MANUAL) {
+    const superseded = await supersededIntent(order, event);
+    if (superseded) {
+      return recordSupersededIntentEvent(order, event, superseded);
+    }
+  }
+
   const reason =
     event.reason ??
     `Payment intent ${event.paymentIntentId ?? "?"} failed`;
@@ -897,6 +913,18 @@ async function failOrder(
         _id: order._id,
         status: { $ne: OrderStatus.PAID },
         "payment.processedWebhookEventIds": { $ne: event.eventId },
+        // A hold that landed after the decline was read (the customer
+        // retried with another card on the same checkout) must not be
+        // marked failed. Matches every automatic-capture order: their
+        // `payment.capture` is null.
+        "payment.capture.status": {
+          $nin: [
+            PaymentCaptureStatus.AUTHORIZED,
+            PaymentCaptureStatus.CAPTURE_PENDING,
+            PaymentCaptureStatus.CAPTURE_FAILED,
+            PaymentCaptureStatus.CAPTURED,
+          ],
+        },
       },
       {
         $set: {
@@ -1091,6 +1119,31 @@ export async function applyPaymentAuthorized(
 
     if (!updated) return { duplicate: true };
 
+    // A card declined earlier on this same checkout drove the order to
+    // FAILED; the customer then authorized another card on the session that
+    // stayed open. The hold now stands, so the order is back in progress —
+    // left FAILED it read "payment failed", offered a new link beside
+    // Capture and refused the request flow, for money that IS held.
+    let current = updated;
+    if (updated.status === OrderStatus.FAILED) {
+      const recovered = await Order.findOneAndUpdate(
+        {
+          _id: updated._id,
+          status: OrderStatus.FAILED,
+          "payment.capture.status": PaymentCaptureStatus.AUTHORIZED,
+        },
+        {
+          $set: {
+            status: OrderStatus.PAYMENT_PENDING,
+            "payment.status": OrderStatus.PAYMENT_PENDING,
+            "payment.failureReason": null,
+          },
+        },
+        { ...sessionOpt(session), returnDocument: "after" },
+      ).lean<OrderDoc & { _id: Types.ObjectId }>();
+      if (recovered) current = recovered;
+    }
+
     await recordAudit(
       {
         action: AuditAction.PAYMENT_AUTHORIZED,
@@ -1153,7 +1206,7 @@ export async function applyPaymentAuthorized(
       session,
     );
 
-    return { duplicate: false, updated };
+    return { duplicate: false, updated: current };
   });
 
   if (outcome.duplicate) {
@@ -1375,6 +1428,66 @@ async function supersededIntent(
     : { currentPaymentIntentId: status.paymentIntentId, currentSessionId };
 }
 
+/**
+ * Record a payment-intent event about a superseded intent — claimed once
+ * (a replay is a duplicate), audited against the order's tenant, order
+ * untouched.
+ */
+async function recordSupersededIntentEvent(
+  order: OrderDocument,
+  event: VerifiedPaymentEvent,
+  superseded: {
+    currentPaymentIntentId: string | null;
+    currentSessionId: string | null;
+  },
+): Promise<ProcessEventResult> {
+  const recorded = await withTx(async (session) => {
+    const claimed = await tryClaimGatewayEvent(
+      {
+        gatewayEventId: event.eventId,
+        gateway: order.payment.gateway ?? "STRIPE",
+        orderId: String(order._id),
+      },
+      session,
+    );
+    if (!claimed) return false;
+    await recordAudit(
+      {
+        action: AuditAction.PAYMENT_SESSION_SUPERSEDED,
+        entityType: AuditEntity.PAYMENT,
+        entityId: String(order._id),
+        organizationId: order.organizationId ?? null,
+        metadata: {
+          orderNumber: order.orderNumber,
+          eventId: event.eventId,
+          type: event.type,
+          paymentIntentId: event.paymentIntentId,
+          currentPaymentIntentId: superseded.currentPaymentIntentId,
+          currentSessionId: superseded.currentSessionId,
+        },
+      },
+      session,
+    );
+    return true;
+  });
+  if (!recorded) {
+    return { handled: true, duplicate: true, orderId: String(order._id) };
+  }
+  logger.info("payments.superseded_intent_event_ignored", {
+    orderId: String(order._id),
+    eventId: event.eventId,
+    type: event.type,
+    paymentIntentId: event.paymentIntentId,
+    currentPaymentIntentId: superseded.currentPaymentIntentId,
+  });
+  return {
+    handled: true,
+    duplicate: false,
+    orderId: String(order._id),
+    reason: "superseded_payment_intent",
+  };
+}
+
 /** The write-time half of `supersededIntent`: pin the hold the read saw. */
 function currentHoldFilter(
   order: OrderDocument,
@@ -1428,50 +1541,7 @@ async function handlePaymentCancelled(
   // untouched — exactly like a superseded session's expiry.
   const superseded = await supersededIntent(order, event);
   if (superseded) {
-    const recorded = await withTx(async (session) => {
-      const claimed = await tryClaimGatewayEvent(
-        {
-          gatewayEventId: event.eventId,
-          gateway: order.payment.gateway ?? "STRIPE",
-          orderId: String(order._id),
-        },
-        session,
-      );
-      if (!claimed) return false;
-      await recordAudit(
-        {
-          action: AuditAction.PAYMENT_SESSION_SUPERSEDED,
-          entityType: AuditEntity.PAYMENT,
-          entityId: String(order._id),
-          organizationId: order.organizationId ?? null,
-          metadata: {
-            orderNumber: order.orderNumber,
-            eventId: event.eventId,
-            type: event.type,
-            paymentIntentId: event.paymentIntentId,
-            currentPaymentIntentId: superseded.currentPaymentIntentId,
-            currentSessionId: superseded.currentSessionId,
-          },
-        },
-        session,
-      );
-      return true;
-    });
-    if (!recorded) {
-      return { handled: true, duplicate: true, orderId: String(order._id) };
-    }
-    logger.info("payments.superseded_intent_cancel_ignored", {
-      orderId: String(order._id),
-      eventId: event.eventId,
-      paymentIntentId: event.paymentIntentId,
-      currentPaymentIntentId: superseded.currentPaymentIntentId,
-    });
-    return {
-      handled: true,
-      duplicate: false,
-      orderId: String(order._id),
-      reason: "superseded_payment_intent",
-    };
+    return recordSupersededIntentEvent(order, event, superseded);
   }
 
   const reason = event.authorization?.cancellationReason ?? null;

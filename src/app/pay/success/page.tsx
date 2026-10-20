@@ -57,11 +57,20 @@ import { PaymentSuccessAutoRefresh } from "./auto-refresh";
  * or put a hold on their card — and land here before the order ever moved
  * to PAYMENT_PENDING. Reading that order as settled told them "Payment
  * confirmed" before the gateway had confirmed anything.
+ *
+ * So does a manual-capture order a decline drove to FAILED while its hold
+ * was still pending: Checkout keeps the session open, the customer pays
+ * with another card and lands here before that authorization is recorded.
+ * It is waiting on a hold, not settled — never "Payment received".
  */
-function awaitingGateway(order: Pick<OrderDTO, "status"> | null): boolean {
+function awaitingGateway(
+  order: Pick<OrderDTO, "status" | "payment"> | null,
+): boolean {
   return (
     order?.status === OrderStatus.PAYMENT_PENDING ||
-    order?.status === OrderStatus.LINK_GENERATED
+    order?.status === OrderStatus.LINK_GENERATED ||
+    (order?.status === OrderStatus.FAILED &&
+      order.payment.capture?.status === PaymentCaptureStatus.PENDING_AUTHORIZATION)
   );
 }
 
@@ -111,6 +120,22 @@ function isConfirmingHold(order: OrderDTO | null): boolean {
   );
 }
 
+/**
+ * A manual-capture order that is neither paid, held, let go nor still
+ * awaiting the gateway — its link expired, or the order was archived,
+ * before any hold: no money moved and none is held. Never "Payment
+ * received". `capture` is null on every automatic-capture order.
+ */
+function isUnchargedManual(order: OrderDTO | null): boolean {
+  return (
+    order?.payment.capture != null &&
+    order.status !== OrderStatus.PAID &&
+    !isAuthorizationHold(order) &&
+    !isReleasedHold(order) &&
+    !(awaitingGateway(order) && Boolean(order.payment.paymentSessionId))
+  );
+}
+
 /** What a released hold's amount is called on this page. */
 const RELEASED_HOLD_LABEL = "Hold released — not charged";
 
@@ -134,7 +159,13 @@ const loadReturningOrder = cache(
     // over order-number space pulls full PII for every paid order on the
     // platform.
     let order = orderNumber ? await getOrderByNumber(orderNumber) : null;
-    if (order && order.payment.paymentSessionId !== returnedSessionId) {
+    // No session on either side is no pairing at all: an order without a
+    // session (a draft) must not match a link that carries none.
+    if (
+      order &&
+      (!returnedSessionId ||
+        order.payment.paymentSessionId !== returnedSessionId)
+    ) {
       order = null;
     }
 
@@ -219,7 +250,8 @@ export async function generateMetadata({
     params.order,
     returnedSessionIdOf(params),
   );
-  const headline = !order
+  const headline =
+    !order || isUnchargedManual(order)
     ? "Payment status"
     : isAuthorizationHold(order)
       ? "Card authorized"
@@ -284,6 +316,7 @@ export default async function PaymentSuccessPage({
   // whose hold was released and a new link issued since): there is no
   // payment status to state, least of all "Payment received".
   const unmatched = !order;
+  const notCharged = isUnchargedManual(order);
   // Brand from the ORDER's organization — resolved from the order number even
   // when the pairing check nulled `order`, because the header, the hero copy
   // and the support footer all render outside that guard.
@@ -359,6 +392,8 @@ export default async function PaymentSuccessPage({
             label: RELEASED_HOLD_LABEL,
             amount: capture?.amountAuthorized ?? order.pricing.amount,
           }
+        : notCharged
+        ? { label: "Not charged", amount: order.pricing.amount }
         : confirmingHold
         ? { label: flightLabels.heldNow, amount: order.pricing.amount }
         : flightMoney.status === "COLLECTED"
@@ -379,7 +414,9 @@ export default async function PaymentSuccessPage({
     flightLabels && flightSettled
       ? isReleased
         ? RELEASED_HOLD_LABEL
-        : confirmingHold
+        : notCharged
+          ? "Not charged"
+          : confirmingHold
           ? flightLabels.heldNow
           : flightMoney?.status === "NOT_COLLECTED" && serviceChargeModel
           ? flightLabels.serviceCharge
@@ -396,14 +433,14 @@ export default async function PaymentSuccessPage({
             className={
               isAuthorized
                 ? "mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-sky-100 text-sky-700"
-                : isReleased || unmatched
+                : isReleased || unmatched || notCharged
                   ? "mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-600"
                   : stillPending
                   ? "mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700"
                   : "mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"
             }
           >
-            {unmatched ? (
+            {unmatched || notCharged ? (
               <svg
                 viewBox="0 0 24 24"
                 fill="none"
@@ -464,14 +501,14 @@ export default async function PaymentSuccessPage({
             className={
               isAuthorized
                 ? "mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-sky-700"
-                : isReleased || unmatched
+                : isReleased || unmatched || notCharged
                   ? "mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-slate-600"
                   : stillPending
                   ? "mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700"
                   : "mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700"
             }
           >
-            {unmatched
+            {unmatched || notCharged
               ? "Payment status"
               : isAuthorized
               ? "Card authorized"
@@ -484,6 +521,8 @@ export default async function PaymentSuccessPage({
           <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
             {unmatched
               ? "We couldn’t match this payment"
+              : notCharged
+              ? "You have not been charged"
               : isAuthorized
               ? "Your card has been authorized"
               : isReleased
@@ -497,6 +536,8 @@ export default async function PaymentSuccessPage({
           <p className="mt-2 text-sm text-slate-600">
             {unmatched
               ? `This link doesn’t match a current ${brand} payment, so there is no payment status to show here. Your latest email from ${brand} has the up-to-date details of your booking.`
+              : notCharged
+              ? `This payment link is no longer active, and nothing was charged to your card. Your latest email from ${brand} has the up-to-date details of your booking.`
               : serviceChargeModel
               ? flightHeroCopy({
                   chargeName: flightWording?.chargeName ?? "",
@@ -546,7 +587,9 @@ export default async function PaymentSuccessPage({
                         ? RELEASED_HOLD_LABEL
                         : confirmingHold
                           ? HOLD_TODAY_LABEL
-                          : "Amount paid"}
+                          : notCharged
+                            ? "Not charged"
+                            : "Amount paid"}
                 </p>
                 <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums text-slate-900">
                   {amount}
@@ -589,7 +632,9 @@ export default async function PaymentSuccessPage({
                           ? RELEASED_HOLD_LABEL
                           : confirmingHold
                             ? HOLD_TODAY_LABEL
-                            : "Paid online today"}
+                            : notCharged
+                              ? "Not charged"
+                              : "Paid online today"}
                     </dt>
                     <dd className="tabular-nums text-slate-900">
                       {formatCurrency(
@@ -696,7 +741,7 @@ export default async function PaymentSuccessPage({
                 ? gatewayLabel
                   ? `Card authorized securely by ${gatewayLabel} — PCI-DSS Level 1 certified.`
                   : "Card authorized securely."
-                : isReleased || confirmingHold
+                : isReleased || confirmingHold || notCharged
                   ? gatewayLabel
                     ? `Card details handled securely by ${gatewayLabel} — PCI-DSS Level 1 certified.`
                     : "Card details handled securely."

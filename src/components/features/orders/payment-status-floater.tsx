@@ -46,6 +46,20 @@ const TONE_ICONS: Record<FloaterDescriptor["tone"], React.ElementType> = {
 };
 
 function describeOrder(order: OrderDTO): FloaterDescriptor {
+  // A hold that still stands outranks the order status: a decline earlier on
+  // the same checkout (FAILED) must not read "Payment failed" while the
+  // customer's money is held. `capture` is null on every automatic-capture
+  // order, so nothing changes for one.
+  const holdStatus = order.payment.capture?.status;
+  if (
+    order.status !== OrderStatus.PAID &&
+    (holdStatus === PaymentCaptureStatus.AUTHORIZED ||
+      holdStatus === PaymentCaptureStatus.CAPTURE_PENDING ||
+      holdStatus === PaymentCaptureStatus.CAPTURE_FAILED)
+  ) {
+    const held = describeCapture(order.payment.capture, heldNoun(order));
+    if (held) return held;
+  }
   switch (order.status) {
     case OrderStatus.PAID:
       return {
