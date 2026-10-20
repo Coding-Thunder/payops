@@ -29,7 +29,7 @@ import {
   showsAirlineCharge,
   summarizeFlightAmounts,
 } from "@/lib/charges";
-import { ServiceType } from "@/lib/constants/enums";
+import { CaptureMode, ServiceType } from "@/lib/constants/enums";
 import { BookingTypeLabel, providerLabelFor } from "@/lib/constants/labels";
 import { formatCurrency } from "@/lib/format";
 import { defaultPaymentRequestSubject } from "@/lib/payment-request-subject";
@@ -240,7 +240,11 @@ export function EmailComposePageContent({
       <EmailComposer
         order={order}
         initialHtml=""
-        defaultSubject={defaultPaymentRequestSubject(order, serviceNoun(order))}
+        defaultSubject={defaultPaymentRequestSubject(
+          order,
+          serviceNoun(order),
+          order.payment.capture?.method === CaptureMode.MANUAL,
+        )}
         onSent={(at) => setSentAt(at)}
       />
 

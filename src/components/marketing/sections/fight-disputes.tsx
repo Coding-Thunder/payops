@@ -108,7 +108,7 @@ export function FightDisputes() {
             Every order persists a compliance-grade record. The moment a
             dispute webhook fires, PayOps freezes the chain, auto-flags
             risk, and prepares an exportable packet — long before the
-            bank's evidence deadline.
+            bank&apos;s evidence deadline.
           </p>
 
           <ul className="mt-8 grid grid-cols-1 gap-2.5 sm:grid-cols-2">

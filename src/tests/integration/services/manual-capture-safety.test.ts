@@ -303,9 +303,16 @@ describe("a decline reported after the capture already landed", () => {
     const linked = await linkedOrder();
     const held = await authorize(linked.id);
     const pi = held.payment.paymentIntentId!;
+    // The operator's capture is in flight (CAPTURE_PENDING) — the only state
+    // a decline can be a declined capture in (on a plain AUTHORIZED hold it
+    // is an earlier card's checkout decline, and changes nothing).
+    await Order.collection.updateOne(
+      { _id: new Types.ObjectId(linked.id) },
+      { $set: { "payment.capture.status": PaymentCaptureStatus.CAPTURE_PENDING } },
+    );
 
-    // The handler reads the order (still AUTHORIZED), then the operator's
-    // capture lands before the handler's write.
+    // The handler reads the order (capture in flight), then the capture
+    // lands before the handler's write.
     const realUpdateOne = Order.updateOne.bind(Order);
     let raced = false;
     vi.spyOn(Order, "updateOne").mockImplementation(((

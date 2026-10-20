@@ -79,9 +79,7 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
    *  occasionally stall (background tab, low-power mode). A 5 s timer
    *  surfaces a manual link in that case so the customer is never
    *  stranded on a "loading…" screen. */
-  const startRedirect = useCallback((url: string) => {
-    setRedirecting(true);
-    setError(null);
+  const navigate = useCallback((url: string) => {
     if (fallbackTimer.current) window.clearTimeout(fallbackTimer.current);
     fallbackTimer.current = window.setTimeout(() => {
       setFallbackUrl(url);
@@ -90,19 +88,29 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
       window.location.replace(url);
     } catch {
       // Synchronous throw is exotic but possible (sandboxed iframes,
-      // ancient browsers). Reveal the manual CTA immediately.
-      setFallbackUrl(url);
+      // ancient browsers). Reveal the manual CTA straight away.
+      if (fallbackTimer.current) window.clearTimeout(fallbackTimer.current);
+      fallbackTimer.current = window.setTimeout(() => setFallbackUrl(url), 0);
     }
   }, []);
+  const startRedirect = useCallback(
+    (url: string) => {
+      setRedirecting(true);
+      setError(null);
+      navigate(url);
+    },
+    [navigate],
+  );
 
   // Refresh-after-consent path: if the record already shows RECEIVED
   // and we have a checkout URL, redirect immediately. No form, no
-  // "you're confirmed" intermediate state.
+  // "you're confirmed" intermediate state — the redirect screen is derived
+  // from the record, and the effect only performs the navigation.
+  const autoRedirect = Boolean(view.alreadyConfirmedAt && view.paymentUrl);
   useEffect(() => {
-    if (!view.alreadyConfirmedAt) return;
-    if (!view.paymentUrl) return;
-    startRedirect(view.paymentUrl);
-  }, [view.alreadyConfirmedAt, view.paymentUrl, startRedirect]);
+    if (!view.alreadyConfirmedAt || !view.paymentUrl) return;
+    navigate(view.paymentUrl);
+  }, [view.alreadyConfirmedAt, view.paymentUrl, navigate]);
 
   useEffect(() => {
     return () => {
@@ -112,7 +120,7 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
-    if (submitting || redirecting) return;
+    if (submitting || redirecting || autoRedirect) return;
 
     const trimmed = signature.trim();
     if (trimmed.length < 2) {
@@ -152,7 +160,7 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
     }
   }
 
-  if (redirecting) {
+  if (redirecting || autoRedirect) {
     return (
       <RedirectingShell
         fallbackUrl={fallbackUrl}
@@ -241,7 +249,7 @@ export function ConsentForm({ token, initialView, branding }: ConsentFormProps) 
 
         <button
           type="submit"
-          disabled={submitting || redirecting}
+          disabled={submitting || redirecting || autoRedirect}
           className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-slate-300"
         >
           {submitting ? (
@@ -580,7 +588,7 @@ function RedirectingShell({
       <div className="flex flex-col items-center px-6 py-12 text-center sm:px-8">
         <Spinner large />
         <h1 className="mt-5 text-lg font-semibold tracking-tight text-slate-900">
-          Opening secure payment…
+          {hold ? "Opening secure checkout…" : "Opening secure payment…"}
         </h1>
         <p className="mt-1.5 max-w-md text-sm text-slate-600">
           {hold
@@ -599,7 +607,7 @@ function RedirectingShell({
               href={fallbackUrl}
               className="mt-3 inline-flex w-full items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
             >
-              Continue to secure payment →
+              {hold ? "Continue to secure checkout →" : "Continue to secure payment →"}
             </a>
           </div>
         ) : null}

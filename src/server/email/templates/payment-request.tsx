@@ -319,7 +319,10 @@ export function PaymentRequestEmail({
 
   return (
     <EmailLayout preview={preview}>
-      <EmailHeader brandName={brandName} eyebrow="Payment requested" />
+      <EmailHeader
+        brandName={brandName}
+        eyebrow={authorizationHold ? "Card authorization requested" : "Payment requested"}
+      />
 
       <SuccessBanner
         label="Action required"
@@ -714,8 +717,14 @@ export function PaymentRequestEmail({
                   letterSpacing: "0.04em",
                 }}
               >
-                Policy version {cancellationPolicyVersion} • applied at
-                payment
+                {authorizationHold ? (
+                  `Policy version ${cancellationPolicyVersion} • applied at authorization`
+                ) : (
+                  <>
+                    Policy version {cancellationPolicyVersion} • applied at
+                    payment
+                  </>
+                )}
               </Text>
             ) : null}
           </SummaryCard>

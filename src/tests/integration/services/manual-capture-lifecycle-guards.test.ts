@@ -949,7 +949,7 @@ describe("1 · payment_intent.canceled releases only the order's CURRENT hold", 
 });
 
 describe("2 · payment_intent.payment_failed while the hold still stands is a declined capture, never a failed order", () => {
-  it("on an AUTHORIZED hold: CAPTURE_FAILED, the order NOT failed — and the event is claimed, so Stripe's retry of it (which finds CAPTURE_FAILED) is a duplicate that records nothing more", async () => {
+  it("on a plain AUTHORIZED hold no capture was attempted, so the decline is an earlier card's checkout decline delivered late: claimed as a duplicate, the hold intact (never CAPTURE_FAILED, never FAILED), nothing audited; its retry is a duplicate too; Capture then takes the money", async () => {
     const linked = await linkedOrder();
     const held = await authorize(linked.id);
     const decline = buildPaymentIntentFailed({
@@ -960,21 +960,22 @@ describe("2 · payment_intent.payment_failed while the hold still stands is a de
     expect(await deliver(decline)).toEqual({
       received: true,
       handled: true,
-      duplicate: false,
+      duplicate: true,
       orderId: linked.id,
     });
-    const declined = await reload(linked.id);
-    expect(declined.status).toBe(OrderStatus.LINK_GENERATED);
-    expect(declined.payment.capture?.status).toBe(PaymentCaptureStatus.CAPTURE_FAILED);
-
-    expect(await deliver(decline)).toMatchObject({ handled: true, duplicate: true });
-    const rows = await auditsOf(linked.id, AuditAction.PAYMENT_CAPTURE_FAILED);
-    expect(rows.map((row) => meta(row).eventId)).toEqual([decline.id]);
+    const after = await reload(linked.id);
+    expect(after.status).toBe(OrderStatus.LINK_GENERATED);
+    expect(after.payment).toEqual(held.payment);
+    expect(after.payment.capture?.status).toBe(PaymentCaptureStatus.AUTHORIZED);
+    expect(after.payment.capture?.lastError ?? null).toBeNull();
+    expect(await auditsOf(linked.id, AuditAction.PAYMENT_CAPTURE_FAILED)).toHaveLength(0);
+    expect(await auditsOf(linked.id, AuditAction.PAYMENT_FAILED)).toHaveLength(0);
     expect(
       await evidenceOf(linked.id, OrderEvidenceEventType.PAYMENT_CAPTURE_FAILED, decline.id),
-    ).toBe(1);
-    expect((await reload(linked.id)).payment).toEqual(declined.payment);
-    expect(await auditsOf(linked.id, AuditAction.PAYMENT_FAILED)).toHaveLength(0);
+    ).toBe(0);
+
+    expect(await deliver(decline)).toMatchObject({ handled: true, duplicate: true });
+    expect((await reload(linked.id)).payment).toEqual(held.payment);
   });
 
   it("on a CAPTURE_FAILED hold (the operator's own declined attempt wrote it first): CAPTURE_FAILED with Stripe's reason, the order NOT failed, exactly one PAYMENT_CAPTURE_FAILED audit row and evidence entry for the event; a replay adds nothing; Retry capture then takes the money", async () => {

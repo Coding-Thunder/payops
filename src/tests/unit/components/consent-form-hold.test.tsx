@@ -441,7 +441,8 @@ describe("the redirect screen on the way to checkout", () => {
     await user.click(screen.getByRole("button", { name: "Confirm & Authorize Card" }));
 
     const shell = await screen.findByRole("status");
-    expect(shell).toHaveTextContent("Opening secure payment…");
+    expect(shell).toHaveTextContent("Opening secure checkout…");
+    expect(shell).not.toHaveTextContent("Opening secure payment…");
     expect(shell).toHaveTextContent(HOLD_REDIRECT);
     expect(shell).not.toHaveTextContent("complete payment");
     expect(fetchMock).toHaveBeenCalledWith(

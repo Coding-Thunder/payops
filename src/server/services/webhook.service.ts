@@ -800,8 +800,32 @@ async function handlePaymentFailed(
   // the operator's own failed attempt usually writes it before Stripe's
   // event for the same decline arrives.
   const captureStatus = order.payment?.capture?.status;
+  //
+  // A decline on a plain AUTHORIZED hold cannot be a declined capture: every
+  // capture this app makes passes through CAPTURE_PENDING first. It is the
+  // late (or retried) delivery of an earlier card's decline on the same
+  // Checkout — the customer then authorized another card, and that hold
+  // stands. Recording it as a failed capture would offer "Retry capture" on
+  // a healthy hold, so it is claimed and changes nothing.
+  if (captureStatus === PaymentCaptureStatus.AUTHORIZED) {
+    await withTx((session) =>
+      tryClaimGatewayEvent(
+        {
+          gatewayEventId: event.eventId,
+          gateway: order.payment.gateway ?? "STRIPE",
+          orderId: String(order._id),
+        },
+        session,
+      ),
+    );
+    logger.info("payments.stale_decline_ignored_live_hold", {
+      orderId: String(order._id),
+      eventId: event.eventId,
+      paymentIntentId: event.paymentIntentId ?? null,
+    });
+    return { handled: true, duplicate: true, orderId: String(order._id) };
+  }
   const holdStatuses: PaymentCaptureStatus[] = [
-    PaymentCaptureStatus.AUTHORIZED,
     PaymentCaptureStatus.CAPTURE_PENDING,
     PaymentCaptureStatus.CAPTURE_FAILED,
   ];

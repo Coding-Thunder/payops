@@ -235,6 +235,20 @@ export function createStripeGateway(
             ? { capture_method: "manual" as const }
             : {}),
         },
+        // A manual-capture checkout only AUTHORIZES the card, so its page
+        // must not read like a payment: "Book" instead of "Pay", and a line
+        // under the button saying it is a hold. Same conditional as above —
+        // an automatic checkout's payload is unchanged.
+        ...(input.captureMethod === "manual"
+          ? {
+              submit_type: "book" as const,
+              custom_text: {
+                submit: {
+                  message: `This places a hold on your card, not a charge. ${input.metadata.appName ?? "We"} ${input.metadata.appName ? "collects" : "collect"} the amount later and emails you a receipt when it does.`,
+                },
+              },
+            }
+          : {}),
       },
       {
         // Stable idempotency key: re-running this for the same order

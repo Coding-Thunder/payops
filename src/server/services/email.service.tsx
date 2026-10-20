@@ -5,13 +5,14 @@ import { render } from "@react-email/render";
 import {
   AuditAction,
   AuditEntity,
+  CaptureMode,
   ConsentMode,
   ConsentStatus,
   EmailKind,
   OrderEvidenceActorType,
   OrderEvidenceEventType,
-  ServiceType,
   type PaymentGatewayKey,
+  ServiceType,
   type UserRole,
 } from "@/lib/constants/enums";
 import {
@@ -1113,7 +1114,11 @@ export async function sendPaymentRequestEmail(
   const subject =
     overrides.subject?.trim() ||
     tpl?.subject?.trim() ||
-    defaultPaymentRequestSubject(order, subjectBrand.brandName);
+    defaultPaymentRequestSubject(
+      order,
+      subjectBrand.brandName,
+      order.payment.capture?.method === CaptureMode.MANUAL,
+    );
 
   if (context?.actor) {
     try {

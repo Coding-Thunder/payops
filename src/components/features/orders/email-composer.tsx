@@ -139,6 +139,12 @@ export function EmailComposer({
   const [draft, setDraft] = React.useState<DraftState>(() =>
     buildDraft(order, defaultSubject),
   );
+  // An untouched subject follows the default: generating the link can turn
+  // a payment request into a card-authorization request (manual capture).
+  // Derived, not synced — what the operator typed wins once they type.
+  const [subjectEdited, setSubjectEdited] = React.useState(false);
+  const subject = subjectEdited ? draft.subject : defaultSubject;
+  const outgoing = React.useMemo(() => ({ ...draft, subject }), [draft, subject]);
   const [html, setHtml] = React.useState(initialHtml);
   const [previewLoading, setPreviewLoading] = React.useState(false);
   const [previewError, setPreviewError] = React.useState<string | null>(null);
@@ -184,7 +190,7 @@ export function EmailComposer({
       setPreviewLoading(true);
       setPreviewError(null);
       try {
-        const body = buildPayload(draft, order);
+        const body = buildPayload(outgoing, order);
         const { html: rendered } = await api.post<{ html: string }>(
           `/api/orders/${order.id}/payment-request-preview`,
           body,
@@ -206,12 +212,12 @@ export function EmailComposer({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [draft, order, sentAt]);
+  }, [outgoing, order, sentAt]);
 
   async function handleSend() {
     setSending(true);
     try {
-      const body = buildPayload(draft, order);
+      const body = buildPayload(outgoing, order);
       await api.post(`/api/orders/${order.id}/send-payment-request`, body);
       const at = new Date().toISOString();
       setSentAt(at);
@@ -294,10 +300,11 @@ export function EmailComposer({
           <CardContent className="space-y-4">
             <Field label="Subject">
               <Input
-                value={draft.subject}
-                onChange={(e) =>
-                  setDraft((d) => ({ ...d, subject: e.target.value }))
-                }
+                value={subject}
+                onChange={(e) => {
+                  setSubjectEdited(true);
+                  setDraft((d) => ({ ...d, subject: e.target.value }));
+                }}
                 disabled={sending || !!sentAt}
               />
             </Field>

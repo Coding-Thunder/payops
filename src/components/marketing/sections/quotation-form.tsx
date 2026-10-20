@@ -345,7 +345,7 @@ export function QuotationForm({ turnstileSiteKey }: QuotationFormProps = {}) {
                   name="useCase"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Use case · what you'd ship first</FormLabel>
+                      <FormLabel>Use case · what you&apos;d ship first</FormLabel>
                       <FormControl>
                         <Textarea
                           rows={4}

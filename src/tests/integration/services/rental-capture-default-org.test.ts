@@ -538,12 +538,19 @@ function carSessionExpectation(brandName: string) {
 }
 
 /** The same car session asked to AUTHORIZE: the characterization payload
- *  with `capture_method: "manual"` added, and nothing else changed. */
+ *  with `capture_method: "manual"` added, and Stripe's page told it is a
+ *  hold ("Book", and a line under the button) — nothing else changed. */
 function manualCarSessionExpectation(brandName: string) {
   const automatic = carSessionExpectation(brandName);
   return {
     ...automatic,
     payment_intent_data: { ...automatic.payment_intent_data, capture_method: "manual" },
+    submit_type: "book",
+    custom_text: {
+      submit: {
+        message: `This places a hold on your card, not a charge. ${brandName} collects the amount later and emails you a receipt when it does.`,
+      },
+    },
   };
 }
 
@@ -1992,7 +1999,7 @@ describe("D5. CAR REGRESSION — Rental on AUTOMATIC, as production runs today",
     expect(await legalOf(onManual.id)).toEqual(seeded);
   }, 60_000);
 
-  it("D5c. the payment request for a Rental car order: AUTOMATIC is the car request as pinned (car rows, 'You pay today $249.99', 'Review & Confirm Booking', Rental Confirmation, Stripe); MANUAL is that SAME email — composer preview, sent HTML and plain text — with exactly its money words re-worded for a HOLD ('Card hold today $249.99', 'What you'll be charged', 'authorize your card', 'a hold, not a charge', 'payment request' footer) and nothing else changed: same subject, sender, transport, rows and frozen car terms", async () => {
+  it("D5c. the payment request for a Rental car order: AUTOMATIC is the car request as pinned (car rows, 'You pay today $249.99', 'Review & Confirm Booking', Rental Confirmation, Stripe); MANUAL is that SAME email — composer preview, sent HTML and plain text — with exactly its money words re-worded for a HOLD ('Card hold today $249.99', 'What you'll be charged', 'authorize your card', 'a hold, not a charge', 'Card authorization requested', 'applied at authorization', 'payment request' footer) and an authorization subject ('Authorize your card for your Budget booking'); nothing else changed: same sender, transport, rows and frozen car terms", async () => {
     // Both bookings on the SAME fixed dates — far from any due date the
     // neutralising below rewrites — so only order-specific values vary.
     const trip = {
@@ -2081,6 +2088,8 @@ describe("D5. CAR REGRESSION — Rental on AUTOMATIC, as production runs today",
         inText: true,
       },
       { from: "What you're paying", to: "What you'll be charged", inText: true },
+      { from: "Payment requested", to: "Card authorization requested", inText: true },
+      { from: "applied at payment", to: "applied at authorization", inText: true },
       { from: "Amount paid online $249.99", to: "Card hold today $249.99", inText: true },
       {
         from: "Payment processed securely via Stripe.",
@@ -2121,7 +2130,11 @@ describe("D5. CAR REGRESSION — Rental on AUTOMATIC, as production runs today",
       firstDifference(reworded(plainText(a(sentA.email.text)), "text", "sent text"), plainText(b(sentB.email.text))),
       "sent text",
     ).toBe("(identical)");
-    expect(b(sentB.email.subject)).toBe(a(sentA.email.subject));
+    // The subject asks for an authorization, never a payment.
+    expect(a(sentA.email.subject)).toBe(`Complete your ${CAR_SUPPLIER} payment • [ORDER_NUMBER]`);
+    expect(b(sentB.email.subject)).toBe(
+      `Authorize your card for your ${CAR_SUPPLIER} booking • [ORDER_NUMBER]`,
+    );
     expect(sentB.email.from).toBe(sentA.email.from);
     expect(sentB.email.replyTo).toBe(sentA.email.replyTo);
     expect(sentB.email.transport).toBe(sentA.email.transport);

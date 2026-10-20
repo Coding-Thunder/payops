@@ -1464,7 +1464,11 @@ for (const key of ORG_KEYS) {
             // brand-leak.test.ts' car pins, verbatim — the real send adds only
             // its link's "Due …" line after the order number. A MANUAL brand's
             // email is the same email, every money line worded for the HOLD.
-            expect(request.email.subject).toBe(`Complete your Budget payment • ${on}`);
+            expect(request.email.subject).toBe(
+              hold
+                ? `Authorize your card for your Budget booking • ${on}`
+                : `Complete your Budget payment • ${on}`,
+            );
             const rows = hold
               ? "What you'll be charged Rental cost $249.99 Deposit (due at counter) $100.00 " +
                 "Card hold today $249.99 Amount due at counter $100.00 Total rental cost $349.99"
@@ -1510,7 +1514,11 @@ for (const key of ORG_KEYS) {
             expect(moneyBlock(previewAfterConsent), "preview after consent").toBe(rows);
             expect(plainText(request.email.text)).toContain(emailMoney(FLIGHT_CHARGE, settled));
             // The subject and the button name the charge — never the airline.
-            expect(request.email.subject).toBe(`Complete your ${FLIGHT_CHARGE} payment • ${on}`);
+            expect(request.email.subject).toBe(
+              hold
+                ? `Authorize your card for the ${FLIGHT_CHARGE} • ${on}`
+                : `Complete your ${FLIGHT_CHARGE} payment • ${on}`,
+            );
             for (const html of [preview, request.email.html]) {
               expect(visibleText(html)).toContain(
                 hold
@@ -1549,7 +1557,11 @@ for (const key of ORG_KEYS) {
             break;
           }
           case "hotel": {
-            expect(request.email.subject).toBe(`Complete your ${HOTEL_SUPPLIER} payment • ${on}`);
+            expect(request.email.subject).toBe(
+              hold
+                ? `Authorize your card for your ${HOTEL_SUPPLIER} booking • ${on}`
+                : `Complete your ${HOTEL_SUPPLIER} payment • ${on}`,
+            );
             const money = hold
               ? "What you'll be charged Room charge $300.00 Resort fee (due at the property) $50.00 " +
                 "Card hold today $300.00 Amount due at the property $50.00 Total hotel cost $350.00"

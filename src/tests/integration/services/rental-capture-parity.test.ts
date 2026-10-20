@@ -1070,12 +1070,28 @@ function manualCarSession() {
       metadata: { orderId: "<ID>", orderNumber: "<ORDER_NUMBER>" },
       capture_method: "manual",
     },
+    // A hold reads as one on Stripe's page too: "Book", and a line under it.
+    submit_type: "book",
+    custom_text: {
+      submit: {
+        message:
+          "This places a hold on your card, not a charge. <BRAND> collects the amount later and emails you a receipt when it does.",
+      },
+    },
   };
 }
 
 /** The same session as a charge-at-checkout link sends it: no capture_method. */
 function automaticCarSession() {
-  const { payment_intent_data: intentData, ...rest } = manualCarSession();
+  // Neither the capture method nor the hold copy on Stripe's page.
+  const {
+    payment_intent_data: intentData,
+    submit_type: _submitType,
+    custom_text: _customText,
+    ...rest
+  } = manualCarSession();
+  void _submitType;
+  void _customText;
   return {
     ...rest,
     payment_intent_data: { description: intentData.description, metadata: intentData.metadata },
@@ -2099,7 +2115,7 @@ describe("the parity matrix — Rental on MANUAL runs exactly the reference's li
       return { steps: [declined, captured], trailAfterDecline, trail: await trailOf(handle) };
     }
 
-    it("S15 payment_intent.payment_failed on an AUTHORIZED order: CAPTURE_FAILED with the decline — status NOT FAILED; a capture afterwards succeeds", async () => {
+    it("S15 payment_intent.payment_failed on an AUTHORIZED order (no capture was attempted: an earlier card's checkout decline, delivered late) changes nothing — claimed as a duplicate, the hold intact, never CAPTURE_FAILED or FAILED; a capture afterwards succeeds", async () => {
       const { reference, rental } = await onBoth(s15);
       expect(rental).toEqual(reference);
 
@@ -2108,24 +2124,12 @@ describe("the parity matrix — Rental on MANUAL runs exactly the reference's li
       expect(declined.reply).toEqual({
         received: true,
         handled: true,
-        duplicate: false,
+        duplicate: true,
         orderId: "<ID>",
       });
       expect(declined.stripeAccount).toBe("OWN");
-      expect(declined.order).toEqual({
-        ...AUTHORIZED_ORDER,
-        capture: {
-          ...AUTHORIZED_CAPTURE,
-          status: PaymentCaptureStatus.CAPTURE_FAILED,
-          lastError: CARD_DECLINED,
-        },
-      });
-      expect(declined.order.status).not.toBe(OrderStatus.FAILED);
-      expect(declined.order.paymentStatus).not.toBe(OrderStatus.FAILED);
-      expect(reference.trailAfterDecline.audit).toEqual([
-        ...AUTHORIZED_AUDIT,
-        AuditAction.PAYMENT_CAPTURE_FAILED,
-      ]);
+      expect(declined.order).toEqual(AUTHORIZED_ORDER);
+      expect(reference.trailAfterDecline.audit).toEqual(AUTHORIZED_AUDIT);
 
       expect(captured.status).toBe(200);
       expect(captured.stripe).toEqual([CAPTURE_CALL]);
@@ -2135,13 +2139,11 @@ describe("the parity matrix — Rental on MANUAL runs exactly the reference's li
         emails: emails({ [EmailKind.PAYMENT_AUTHORIZED]: 1, [EmailKind.PAYMENT_CONFIRMATION]: 1 }),
         audit: [
           ...AUTHORIZED_AUDIT,
-          AuditAction.PAYMENT_CAPTURE_FAILED,
           AuditAction.PAYMENT_SUCCEEDED,
           AuditAction.PAYMENT_CAPTURED,
         ],
         evidence: [
           ...AUTHORIZED_EVIDENCE,
-          OrderEvidenceEventType.PAYMENT_CAPTURE_FAILED,
           OrderEvidenceEventType.PAYMENT_COMPLETED,
           OrderEvidenceEventType.PAYMENT_CAPTURED,
         ],

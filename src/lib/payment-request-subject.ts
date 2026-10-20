@@ -40,6 +40,9 @@ export interface PaymentRequestSubjectSource {
 export function defaultPaymentRequestSubject(
   order: PaymentRequestSubjectSource,
   fallbackName: string,
+  /** The order's checkout only authorizes the card (manual capture): the
+   *  subject asks for an authorization, never a payment. */
+  authorizationHold = false,
 ): string {
   const service = { serviceType: order.serviceType };
   if (
@@ -51,8 +54,13 @@ export function defaultPaymentRequestSubject(
       order.bookingType,
       order.charges,
     );
-    return `Complete your ${chargeName || serviceNoun(service)} payment • ${order.orderNumber}`;
+    const named = chargeName || serviceNoun(service);
+    return authorizationHold
+      ? `Authorize your card for the ${named} • ${order.orderNumber}`
+      : `Complete your ${named} payment • ${order.orderNumber}`;
   }
   const providerName = order.provider?.name ?? fallbackName;
-  return `Complete your ${providerName} payment • ${order.orderNumber}`;
+  return authorizationHold
+    ? `Authorize your card for your ${providerName} booking • ${order.orderNumber}`
+    : `Complete your ${providerName} payment • ${order.orderNumber}`;
 }
