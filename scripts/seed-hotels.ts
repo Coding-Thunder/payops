@@ -40,9 +40,12 @@
  * about a tenant. Nothing here carries an `organizationId`, and a hotel row
  * grants access to nothing — tenancy lives on the ORDER.
  *
- * NON-REGRESSION: RentalConfirmation and TripReservations are CAR_RENTAL-only
- * brands. They never read `hotels`, so rows added here cannot appear on any of
- * their surfaces. Nothing existing is read-modified-written by this script.
+ * WHO SEES THESE ROWS: every brand that sells HOTEL (`serviceTypes`) — the
+ * catalog is shared, so that is FlightBizz today and Rental Confirmation once
+ * hotels are enabled for it. A brand that does not sell hotel stays never
+ * reads `hotels`. The placeholder warning above therefore applies to every
+ * hotel-selling brand's operators. Nothing existing is read-modified-written
+ * by this script.
  *
  * Properties:
  *   idempotent      each hotel is upserted on its natural key — name +
