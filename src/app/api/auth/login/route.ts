@@ -1,9 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { AppError } from "@/lib/errors";
 import { loginSchema } from "@/lib/validation";
 import { getRequestContext } from "@/server/api/request-context";
 import { jsonOk, withApi } from "@/server/api/respond";
 import { setSessionCookie } from "@/server/auth/cookies";
+import { passwordLoginEnabled } from "@/server/auth/password-login-gate";
 import { verifyTurnstile } from "@/server/auth/turnstile";
 import { authenticate } from "@/server/services/auth.service";
 
@@ -12,6 +14,17 @@ export const dynamic = "force-dynamic";
 
 export const POST = withApi(
   async (req: NextRequest) => {
+    // Closed by default. See server/auth/password-login-gate.ts: this route
+    // checks Mongo bcrypt, not Firebase, so it can admit an identity Firebase
+    // would refuse. The smoke suite is the only legitimate caller and sets the
+    // flag explicitly.
+    if (!passwordLoginEnabled()) {
+      throw new AppError(
+        "NOT_FOUND",
+        "This sign-in method is not available.",
+        404,
+      );
+    }
     const body = await req.json();
     const input = loginSchema.parse(body);
     const ctx = await getRequestContext();

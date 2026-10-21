@@ -69,6 +69,16 @@ export default defineConfig({
       ...loadEnvFile(SMOKE_ENV_FILE),
       NODE_ENV: process.env.PLAYWRIGHT_USE_DEV ? "development" : "production",
       PLAYWRIGHT: "1",
+      // The smoke suite signs in through POST /api/auth/login, which is now
+      // closed by default (see server/auth/password-login-gate.ts: it checks
+      // the Mongo bcrypt hash rather than Firebase, so it can admit an
+      // identity Firebase would refuse). It is the suite's only front door,
+      // because a real Firebase popup cannot be driven from a test browser.
+      //
+      // Declared HERE, in the committed config, rather than relying on
+      // .env.smoke — that file is gitignored, so a flag living only there
+      // would work on one machine and 404 for everyone else, including CI.
+      PASSWORD_LOGIN_ENABLED: "true",
     },
   },
 });

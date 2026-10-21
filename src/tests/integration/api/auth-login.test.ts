@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { POST as loginRoute } from "@/app/api/auth/login/route";
 import { buildRequest, expectErr, expectOk, jsonBody } from "@/tests/utils/api";
@@ -28,6 +28,21 @@ afterEach(async () => {
 });
 
 describe("POST /api/auth/login", () => {
+  // This route is CLOSED BY DEFAULT (server/auth/password-login-gate.ts): it
+  // authenticates against Mongo bcrypt rather than Firebase, so it can admit
+  // an identity Firebase would refuse. The Playwright smoke suite is its only
+  // legitimate caller. Declared here rather than left to an env file, because
+  // the integration global setup loads .env.test in its own process and that
+  // does not reach the worker running this file.
+  const savedGate = process.env.PASSWORD_LOGIN_ENABLED;
+  beforeAll(() => {
+    process.env.PASSWORD_LOGIN_ENABLED = "true";
+  });
+  afterAll(() => {
+    if (savedGate === undefined) delete process.env.PASSWORD_LOGIN_ENABLED;
+    else process.env.PASSWORD_LOGIN_ENABLED = savedGate;
+  });
+
   it("returns 200 + sets the session cookie on valid credentials", async () => {
     await createUser({
       email: "ada@tracetxn.test",
@@ -95,5 +110,71 @@ describe("POST /api/auth/login", () => {
     const { status, body } = await jsonBody(res);
     expect(status).toBe(401);
     expectErr(body as never);
+  });
+});
+
+describe("POST /api/auth/login — closed by default", () => {
+  // The suite above opens the gate to prove the route still works for its
+  // legitimate caller, the Playwright smoke suite. This block proves the other
+  // half, which is the security property: with the flag absent the route is
+  // not reachable at all. Without this, removing the gate entirely would leave
+  // every test green.
+  const savedGate = process.env.PASSWORD_LOGIN_ENABLED;
+
+  beforeAll(() => {
+    delete process.env.PASSWORD_LOGIN_ENABLED;
+  });
+  afterAll(() => {
+    if (savedGate === undefined) delete process.env.PASSWORD_LOGIN_ENABLED;
+    else process.env.PASSWORD_LOGIN_ENABLED = savedGate;
+  });
+
+  it("is NOT reachable when the flag is unset", async () => {
+    const req = buildRequest("/api/auth/login", {
+      method: "POST",
+      body: { email: "whoever@example.test", password: "whatever-it-is" },
+    });
+    const res = await loginRoute(req as never);
+    // 404, not 403: a route that should not exist in this deployment should
+    // not advertise that it exists and is merely switched off.
+    expect(res.status).toBe(404);
+  });
+
+  it("refuses before touching credentials, so it cannot be used as an oracle", async () => {
+    // A valid password must get the same answer as an invalid one: the gate
+    // runs before authenticate(), so the route reveals nothing about any
+    // account while closed.
+    const a = await loginRoute(
+      buildRequest("/api/auth/login", {
+        method: "POST",
+        body: { email: "whoever@example.test", password: "wrong" },
+      }) as never,
+    );
+    const b = await loginRoute(
+      buildRequest("/api/auth/login", {
+        method: "POST",
+        body: {
+          email: "whoever@example.test",
+          password: "also-wrong-but-different",
+        },
+      }) as never,
+    );
+    expect(a.status).toBe(404);
+    expect(b.status).toBe(404);
+    expect(await a.clone().text()).toBe(await b.clone().text());
+  });
+
+  it("is explicitly opt-in: only the exact string \"true\" opens it", async () => {
+    for (const value of ["", "false", "1", "yes", "TRUE"]) {
+      process.env.PASSWORD_LOGIN_ENABLED = value;
+      const res = await loginRoute(
+        buildRequest("/api/auth/login", {
+          method: "POST",
+          body: { email: "whoever@example.test", password: "whatever-it-is" },
+        }) as never,
+      );
+      expect(res.status, `"${value}" must not open the route`).toBe(404);
+    }
+    delete process.env.PASSWORD_LOGIN_ENABLED;
   });
 });
