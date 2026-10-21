@@ -164,6 +164,19 @@ export async function listAuditLogs(query: ListAuditQuery = {}) {
   if (query.entityType) filter.entityType = query.entityType;
   if (query.entityId) filter.entityId = query.entityId;
   if (query.action) filter.action = query.action;
+  // `null` is a BUG, `undefined` is a choice. Both used to skip the filter,
+  // so "the caller had no active organization" was indistinguishable from
+  // "the caller deliberately wants every tenant" — and the first silently got
+  // the second. The cross-tenant mode stays available for the platform views
+  // this file documents, but it now has to be expressed by omitting the field
+  // rather than by passing a value that happens to be falsy.
+  if (query.orgId === null) {
+    throw new Error(
+      "listAuditLogs: orgId was null. Pass a valid org id to scope the query, " +
+        "or omit the field entirely for a deliberate cross-tenant read " +
+        "(// SCOPE_OK:).",
+    );
+  }
   if (query.orgId && Types.ObjectId.isValid(query.orgId)) {
     // Strict per-org filter. Tenants only see their own audit trail.
     // Migration script backfilled orgId onto every legacy row in

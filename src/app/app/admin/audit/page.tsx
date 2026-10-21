@@ -31,6 +31,21 @@ export default async function AdminAuditPage({ searchParams }: AuditPageProps) {
   // workspace's audit trail (never other tenants'). The service leaves
   // orgId optional for platform-side cross-tenant views; this page must
   // always pin it.
+  // A session with no active organization cannot be scoped, and the service
+  // now refuses a null rather than silently widening to every tenant. Say so
+  // here rather than letting an error boundary catch it, so the operator sees
+  // a cause instead of a crash.
+  if (!actor.orgId) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Audit log"
+          description="This session has no active workspace, so there is no audit trail to scope to. Re-open the app from your workspace, or contact your workspace owner."
+        />
+      </div>
+    );
+  }
+
   const data = await listAuditLogs({
     page,
     pageSize: PAGE_SIZE,

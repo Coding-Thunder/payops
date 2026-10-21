@@ -13,6 +13,7 @@ import {
   type WorkspaceRole,
 } from "@/lib/constants/permissions";
 import { UserRole } from "@/lib/constants/enums";
+import { logger } from "@/lib/logger";
 import { OrgMember, User } from "@/server/db/models";
 import { connectMongo } from "@/server/db/mongoose";
 
@@ -151,6 +152,24 @@ async function validatedUserFromPayload(
     effectiveRole = member.role ?? user.role;
     permissionMode = member.permissionMode ?? "full";
     customGrants = member.permissions ?? [];
+  } else if (orgId) {
+    // CONTAINMENT, NOT A FIX. With no ACTIVE OrgMember for this org the
+    // effective role falls back to the global `User.role` — so a revoked
+    // membership does not revoke permissions, and a console-provisioned user
+    // carries SUPER_ADMIN. The fallback is deliberate: legacy rows that
+    // pre-date the multi-tenant migration have no membership, and removing it
+    // would lock out exactly that population.
+    //
+    // It cannot be tightened until every ACTIVE user × primaryOrgId pair has
+    // an OrgMember row, and nobody knows how many lack one. This line makes
+    // that measurable in production without changing behaviour: count the
+    // warnings, backfill until it is zero, then change the fallback to deny.
+    // No email, no org id — a user id and a role are enough to size it.
+    logger.warn("session.role_fallback_no_membership", {
+      userId: String(payload.sub),
+      role: user.role,
+      reason: "no ACTIVE OrgMember for the session's active org",
+    });
   }
 
   const permissions = resolveEffectivePermissions({

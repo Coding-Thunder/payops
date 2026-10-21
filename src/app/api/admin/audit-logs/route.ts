@@ -29,6 +29,13 @@ export const dynamic = "force-dynamic";
 
 export const GET = withApi(async (req: NextRequest) => {
   const actor = await requirePermission(Permission.AUDIT_VIEW);
+  // The same guard DELETE has, and for the same reason. `listAuditLogs` only
+  // applies its org filter when `orgId` is truthy, so passing null does not
+  // narrow the query — it REMOVES the tenant boundary and returns every
+  // tenant's audit trail. A user with no active organization is exactly the
+  // case the permission check cannot catch, because AUDIT_VIEW says what they
+  // may read, not whose.
+  if (!actor.orgId) throw new ForbiddenError("Active organization required");
   const url = new URL(req.url);
   const query = querySchema.parse(
     Object.fromEntries(url.searchParams.entries()),
