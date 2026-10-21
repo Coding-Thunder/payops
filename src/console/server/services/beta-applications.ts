@@ -202,7 +202,15 @@ export async function approveBetaApplication(
     usedAt: null,
   };
 
-  // Atomically CLAIM the right to send. Exactly one caller can win, because
+  /**
+ * How long an activation claim may sit before an operator may reissue. Long
+ * enough that no real activation is still running (the route's own work is
+ * seconds), short enough that a stuck applicant is not waiting on a human to
+ * notice.
+ */
+const STUCK_INVITE_AFTER_MS = 10 * 60 * 1000;
+
+// Atomically CLAIM the right to send. Exactly one caller can win, because
   // the filter only matches a state the claim itself destroys:
   //   - a first approval matches PENDING, and the claim sets APPROVED;
   //   - a retry of a failed send matches APPROVED with a non-null
@@ -217,6 +225,26 @@ export async function approveBetaApplication(
       $or: [
         { status: "PENDING" },
         { status: "APPROVED", lastInviteError: { $ne: null } },
+        // A STUCK INVITATION. activateFromToken claims the invite by setting
+        // invite.usedAt BEFORE provisioning, and releases it if provisioning
+        // throws. If the process dies between those two points — or the
+        // release itself fails — the row is left INVITED with usedAt set, and
+        // nothing matched it here: the applicant's link was dead and no
+        // operator action could revive it. Their only route in was gone.
+        //
+        // The ten-minute floor is what keeps single-use intact. An activation
+        // genuinely in flight holds a fresh claim, so it cannot be re-minted
+        // out from under the applicant; only a claim old enough to be
+        // definitively abandoned qualifies. Re-approving mints a NEW token and
+        // mails it to the APPLICATION's address, so this cannot hand an
+        // invitation to a different identity — it reissues to the same one.
+        {
+          status: "INVITED",
+          "invite.usedAt": {
+            $ne: null,
+            $lt: new Date(now.getTime() - STUCK_INVITE_AFTER_MS),
+          },
+        },
       ],
     },
     {

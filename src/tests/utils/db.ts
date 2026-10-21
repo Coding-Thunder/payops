@@ -23,9 +23,35 @@ export async function ensureMongo(): Promise<void> {
  */
 export async function resetDatabase(): Promise<void> {
   await ensureMongo();
-  const collections = await mongoose.connection.db?.collections();
-  if (!collections) return;
-  await Promise.all(collections.map((c) => c.deleteMany({})));
+  const db = mongoose.connection.db;
+  if (!db) return;
+  const collections = await db.collections();
+
+  // Only sweep collections that actually hold something.
+  //
+  // This used to issue one `deleteMany({})` per collection unconditionally.
+  // Most are empty in most tests, and `integration.setup.ts` also resets in
+  // `afterEach`, so a single test paid two full sweeps across every
+  // collection in the database — the overwhelming majority of them no-ops
+  // that still cost a round trip each.
+  //
+  // `estimatedDocumentCount` reads collection metadata rather than scanning,
+  // so the check is far cheaper than the delete it avoids. The semantics are
+  // identical: a collection with no documents has nothing to delete. This is
+  // a throughput change, not an isolation change — nothing is skipped that
+  // would otherwise have been removed.
+  //
+  // Why it matters: under load these hooks were exceeding the 60s
+  // `hookTimeout` and failing a different integration file on each run
+  // (customers-lookup, email-template-org-isolation,
+  // email-send-failure-contract — all hook timeouts, never assertions, all
+  // passing in isolation).
+  const counts = await Promise.all(
+    collections.map(async (c) => [c, await c.estimatedDocumentCount()] as const),
+  );
+  await Promise.all(
+    counts.filter(([, n]) => n > 0).map(([c]) => c.deleteMany({})),
+  );
 }
 
 /**
