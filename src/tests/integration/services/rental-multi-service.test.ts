@@ -1,5 +1,8 @@
 import { execFile } from "node:child_process";
+import { createElement, type ReactElement } from "react";
 
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import mongoose, { Types } from "mongoose";
 import type Stripe from "stripe";
@@ -11,6 +14,7 @@ import { POST as captureRoute } from "@/app/api/orders/[id]/capture/route";
 import { POST as generateLinkRoute } from "@/app/api/orders/[id]/generate-payment-link/route";
 import { POST as sendRequestRoute } from "@/app/api/orders/[id]/send-payment-request/route";
 import { POST as deploymentStripeWebhookRoute } from "@/app/api/webhooks/stripe/route";
+import CreateOrderPage from "@/app/app/orders/create/page";
 import {
   BookingStatus,
   CaptureMode,
@@ -93,7 +97,9 @@ import type { OrderDTO } from "@/types";
  * it. Everything downstream runs on the document the real script writes.
  *
  *   0. world        the stored shape above, verified
- *   1. switch       before (car only) / dry run / apply / re-run
+ *   1. switch       before (car only) / dry run / apply / re-run; the
+ *                   create page: the car form alone → Car rental | Flight |
+ *                   Hotel, car first and open
  *   2. T&C          flight → built-in flight, hotel → built-in hotel, car →
  *                   deployment car; Rental's own CAR text reaches only car
  *   3. payments     a held flight captured, a held hotel released — on the
@@ -101,6 +107,24 @@ import type { OrderDTO } from "@/types";
  *   4. emails       the payment requests: deployment identity, an
  *                   authorization subject, the service's own terms
  */
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    refresh: () => {},
+    push: () => {},
+    replace: () => {},
+    back: () => {},
+    prefetch: () => {},
+  }),
+  usePathname: () => "/",
+  useSearchParams: () => new URLSearchParams(),
+  notFound: () => {
+    throw new Error("notFound");
+  },
+  redirect: (url: string) => {
+    throw new Error(`NEXT_REDIRECT ${url}`);
+  },
+}));
 
 const { sentMail } = vi.hoisted(() => ({
   sentMail: [] as Array<Record<string, unknown>>,
@@ -665,6 +689,38 @@ function visibleText(html: string): string {
     .trim();
 }
 
+/** The create-order page itself, as Rental's operator opens it. */
+async function createPage(): Promise<string> {
+  await actingAs("rc");
+  const page = (await CreateOrderPage()) as ReactElement;
+  return renderToStaticMarkup(
+    createElement(QueryClientProvider, { client: new QueryClient() }, page),
+  );
+}
+
+/** The create page's service selector: each tab's label, and which is open. */
+function tabsOf(html: string): { label: string; selected: boolean }[] {
+  return [...html.matchAll(/<button\b([^>]*\brole="tab"[^>]*)>([\s\S]*?)<\/button>/g)].map((m) => ({
+    label: visibleText(m[2]!),
+    selected: /aria-selected="true"/.test(m[1]!),
+  }));
+}
+
+/** One service's panel on the create page (up to the next panel). */
+function panelOf(html: string, serviceType: ServiceType): { active: boolean; text: string } {
+  const starts = [...html.matchAll(/<div\b[^>]*\brole="tabpanel"[^>]*>/g)].map((m) => ({
+    at: m.index!,
+    tag: m[0],
+  }));
+  const i = starts.findIndex((st) => st.tag.includes(`-content-${serviceType}"`));
+  expect(i, `no ${serviceType} panel on the create page`).toBeGreaterThanOrEqual(0);
+  const end = i + 1 < starts.length ? starts[i + 1]!.at : html.length;
+  return {
+    active: !/\bhidden=""/.test(starts[i]!.tag) && /data-state="active"/.test(starts[i]!.tag),
+    text: visibleText(html.slice(starts[i]!.at, end)),
+  };
+}
+
 function expectNone(surface: string, markers: string[], what: string) {
   for (const marker of markers) {
     expect(surface.includes(marker), `${what} must not contain «${marker}»`).toBe(false);
@@ -727,6 +783,12 @@ describe("1. SWITCH — scripts/set-organization-services.ts gives Rental flight
     expect(await Order.countDocuments({ serviceType: { $ne: ServiceType.CAR_RENTAL } })).toBe(0);
     const car = await submitOrder("rc", carBody());
     expect(car.serviceType).toBe(ServiceType.CAR_RENTAL);
+
+    // The create page: the car form alone — no service selector.
+    const page = await createPage();
+    expect(page).not.toContain('role="tablist"');
+    expect(visibleText(page)).toContain("Rental provider & vehicle");
+    expect(visibleText(page)).not.toContain(AIRLINE);
   });
 
   it("1b. the dry run writes nothing; APPLY=1 stores [CAR_RENTAL, FLIGHT, HOTEL] and nothing else; a re-run changes nothing", async () => {
@@ -760,6 +822,27 @@ describe("1. SWITCH — scripts/set-organization-services.ts gives Rental flight
     expect(again.exitCode, `${again.stdout}\n${again.stderr}`).toBe(0);
     expect(again.stdout).toContain("nothing to change: no writes made");
     expect(await rawOrg("rc")).toEqual(after);
+  }, 120_000);
+
+  it("1c. after the switch Rental's create page offers Car rental | Flight | Hotel — car first and open — and each panel picks from its own suppliers", async () => {
+    await enableFlightAndHotel();
+    const page = await createPage();
+    expect(page).toContain('role="tablist"');
+    expect(tabsOf(page)).toEqual([
+      { label: "Car rental", selected: true },
+      { label: "Flight", selected: false },
+      { label: "Hotel", selected: false },
+    ]);
+    const car = panelOf(page, ServiceType.CAR_RENTAL);
+    const flight = panelOf(page, ServiceType.FLIGHT);
+    const hotel = panelOf(page, ServiceType.HOTEL);
+    expect([car.active, flight.active, hotel.active]).toEqual([true, false, false]);
+    expect(car.text).toContain("Budget");
+    expect(car.text).not.toContain(AIRLINE);
+    expect(flight.text).toContain(AIRLINE);
+    expect(flight.text).not.toContain(HOTEL_SUPPLIER);
+    expect(hotel.text).toContain(HOTEL_SUPPLIER);
+    expect(hotel.text).not.toContain(AIRLINE);
   }, 120_000);
 });
 

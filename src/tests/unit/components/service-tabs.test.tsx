@@ -162,6 +162,20 @@ describe("tabs follow the organization's stored service order", () => {
     expect(panel("Stay")).not.toHaveAttribute("hidden");
   });
 
+  it("[CAR_RENTAL, FLIGHT] — no hotel capability — offers no Hotel tab and renders no hotel form", () => {
+    renderTabs([ServiceType.CAR_RENTAL, ServiceType.FLIGHT]);
+    expect(tabNames()).toEqual(["Car rental", "Flight"]);
+    expect(screen.queryByRole("tab", { name: "Hotel" })).toBeNull();
+    expect(() => panel("Stay")).toThrow(/no panel/);
+  });
+
+  it("[CAR_RENTAL, HOTEL] — no flight capability — offers no Flight tab and renders no flight form", () => {
+    renderTabs([ServiceType.CAR_RENTAL, ServiceType.HOTEL]);
+    expect(tabNames()).toEqual(["Car rental", "Hotel"]);
+    expect(screen.queryByRole("tab", { name: "Flight" })).toBeNull();
+    expect(() => panel("Flights")).toThrow(/no panel/);
+  });
+
   it("lists a service stored twice once", () => {
     renderTabs([ServiceType.HOTEL, ServiceType.CAR_RENTAL, ServiceType.HOTEL]);
     expect(tabNames()).toEqual(["Hotel", "Car rental"]);
