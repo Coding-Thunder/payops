@@ -116,15 +116,29 @@ function shouldCheckBody(req: Request): boolean {
   );
 }
 
-/** Compose a rate-limit key from forwarded IP + the auth cookie value.
- *  Cookie content is hashed-by-prefix so it stays inside the in-process
- *  map without leaking session material on a Set-Cookie dump. */
+/**
+ * Compose a rate-limit key from the forwarded client IP ONLY.
+ *
+ * It used to append `cookie.slice(0, 16)`, meaning the bucket was chosen in
+ * part by a header the caller sends. On an unauthenticated endpoint — every
+ * route that needs this most — nothing stops a caller varying it: one junk
+ * Cookie per request yields one fresh bucket per request, so the ceiling on
+ * /api/auth/login, /api/auth/firebase-session, /api/auth/signup and the rest
+ * could be lifted entirely by rotating a value the attacker makes up. That
+ * inverted the purpose of the limiter.
+ *
+ * The key must derive only from something the caller cannot freely choose.
+ * `clientIp` reads the forwarding chain the platform controls, so that is the
+ * one usable signal here.
+ *
+ * What this gives up: callers behind one NAT now share a bucket. That is the
+ * correct trade for a pre-authentication limiter — per-user separation belongs
+ * on authenticated routes, where the session has actually been verified by the
+ * time a handler runs, not in a pre-handler guard that has to trust a raw
+ * header to tell users apart.
+ */
 function rateLimitKey(req: Request): string {
-  const headers = req.headers;
-  const fwd = clientIp(headers) ?? "unknown";
-  const cookie = headers.get("cookie") ?? "";
-  const sessionMarker = cookie.length > 0 ? cookie.slice(0, 16) : "anon";
-  return `${fwd}|${sessionMarker}`;
+  return clientIp(req.headers) ?? "unknown";
 }
 
 function shouldEnforceOrigin(

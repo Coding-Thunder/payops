@@ -6,6 +6,7 @@ import {
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  sendEmailVerification,
   signInWithPopup,
   signOut,
   type AuthError,
@@ -74,10 +75,18 @@ export function FirebaseAuthForm({
   // visitor reloads — so the one screen that just told them something went
   // wrong also refused to let them try again.
   const [captchaNonce, setCaptchaNonce] = useState(0);
+  // Set once a verification mail has gone out, so the form is replaced by the
+  // one instruction that moves the signup forward.
+  const [verificationSentTo, setVerificationSentTo] = useState<string | null>(
+    null,
+  );
   // True once /api/auth/firebase-session has returned 2xx, i.e. the app
   // session cookie is set. A failure after that point is a navigation
   // problem, not a refused identity, and must not trigger a sign-out.
   const sessionEstablished = useRef(false);
+  // Set immediately before the exchange POST. Distinguishes "the captcha token
+  // never left the browser" from "it may already be spent".
+  const exchangeAttempted = useRef(false);
 
   const requiresToken = Boolean(turnstileSiteKey);
   const captchaReady = !requiresToken || Boolean(cfToken);
@@ -128,7 +137,23 @@ export function FirebaseAuthForm({
    *    the identity that was just refused.
    */
   function recoverFromRefusal(err?: unknown): void {
-    setCaptchaNonce((n) => n + 1);
+    // Re-arm exactly when the token may have been SPENT, which is a question
+    // about how far the attempt got — not about the error's type.
+    //
+    // A client-side Firebase throw (wrong password, popup closed) happens
+    // BEFORE the exchange, so the held token is untouched and burning one of
+    // the widget's bounded resets on it is pure loss. Anything at or after
+    // the POST may have reached Cloudflare, so the token must be replaced.
+    //
+    // Keying this on `err instanceof ApiClientError` was wrong: a network
+    // failure mid-POST throws something else entirely, yet the request may
+    // well have been sent and the token consumed. That left the form with a
+    // spent token and no replacement — the precise dead end this whole
+    // mechanism exists to prevent, reintroduced for the flakiest case.
+    if (exchangeAttempted.current) {
+      setCaptchaNonce((n) => n + 1);
+    }
+    void err;
 
     // Only when the exchange itself failed. `window.location.assign` is
     // inside the same try, so a throw from the navigation would otherwise
@@ -160,7 +185,41 @@ export function FirebaseAuthForm({
     });
   }
 
+  // Signup is mid-flight: the account exists in Firebase but is unverified, so
+  // the server will refuse it until the link is clicked. Replacing the form
+  // rather than showing an alert beside it, because re-submitting the same
+  // credentials would only create the same dead end again.
+  if (verificationSentTo) {
+    return (
+      <Alert>
+        <AlertTitle>Confirm your email to finish</AlertTitle>
+        <AlertDescription>
+          <span className="block">
+            We sent a confirmation link to{" "}
+            <span className="font-medium text-foreground">
+              {verificationSentTo}
+            </span>
+            . Open it, and you&apos;ll come straight back here to finish
+            setting up your workspace.
+          </span>
+          <span className="mt-2 block">
+            The link can take a minute to arrive, and it may land in spam. If
+            it does not turn up,{" "}
+            <Link
+              href="/contact"
+              className="font-medium text-foreground underline underline-offset-4"
+            >
+              get in touch
+            </Link>
+            .
+          </span>
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
   async function exchangeIdTokenForSession(idToken: string): Promise<void> {
+    exchangeAttempted.current = true;
     try {
       await api.post<FirebaseSessionResponse>(
         "/api/auth/firebase-session",
@@ -221,6 +280,7 @@ export function FirebaseAuthForm({
   async function handleEmailSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    exchangeAttempted.current = false;
     if (!captchaGate()) return;
     const auth = getFirebaseAuth();
     if (!auth) {
@@ -233,6 +293,52 @@ export function FirebaseAuthForm({
         mode === "signup"
           ? await createUserWithEmailAndPassword(auth, email, password)
           : await signInWithEmailAndPassword(auth, email, password);
+
+      // A brand-new email/password identity is born with emailVerified=false,
+      // and `firebaseExchange` refuses an unverified email BEFORE it reaches
+      // the invite check — so posting this token could only ever return
+      // "Please verify your email address with your sign-in provider before
+      // continuing." Nothing in the app sent a verification mail, so there was
+      // no way to satisfy that: a validly invited user was refused, and the
+      // Firebase identity they had just created was left orphaned.
+      //
+      // Send the verification instead, and bring them back HERE afterwards —
+      // the invite code lives in this page's URL and provisioning needs it, so
+      // returning to /login would refuse them for lack of an invite. The
+      // emailVerified gate itself is untouched: it is the guard against
+      // stamping a stranger's UID onto an existing account, and this path now
+      // satisfies it honestly rather than routing around it.
+      if (mode === "signup" && !credential.user.emailVerified) {
+        // Returning the visitor to this exact URL is the good outcome: the
+        // invite code lives in it, and provisioning needs that code. But a
+        // continue URL must be on Firebase's authorized-domains list, and an
+        // environment whose origin is not on it answers
+        // `auth/unauthorized-continue-uri`. Falling back to the plain mail
+        // keeps the flow working everywhere — the visitor then returns to the
+        // invite link themselves — instead of turning a configuration gap into
+        // "Could not create your account."
+        try {
+          await sendEmailVerification(credential.user, {
+            url: window.location.href,
+            handleCodeInApp: false,
+          });
+        } catch (linkErr) {
+          const code = (linkErr as { code?: string } | null)?.code;
+          if (code !== "auth/unauthorized-continue-uri") throw linkErr;
+          console.warn(
+            "[auth] continue URL is not allowlisted in Firebase; sending the " +
+              "plain verification mail. Add this origin under Authentication " +
+              "→ Settings → Authorized domains to restore the round trip.",
+          );
+          await sendEmailVerification(credential.user);
+        }
+        // Do not leave them holding a session for an identity the server will
+        // refuse until it is verified.
+        await signOut(auth).catch(() => {});
+        setVerificationSentTo(email);
+        return;
+      }
+
       const idToken = await credential.user.getIdToken();
       await exchangeIdTokenForSession(idToken);
     } catch (err) {
@@ -248,6 +354,7 @@ export function FirebaseAuthForm({
 
   async function handleGoogle() {
     setError(null);
+    exchangeAttempted.current = false;
     if (!captchaGate()) return;
     const auth = getFirebaseAuth();
     if (!auth) {
@@ -432,8 +539,21 @@ export function FirebaseAuthForm({
 function identityWasRefused(err: unknown): boolean {
   if (!(err instanceof ApiClientError)) return false;
   if (err.status >= 500) return false;
-  if (err.code === "BOT_CHECK_FAILED") return false;
-  if (err.code === "RATE_LIMITED") return false;
+  // Classify on the CODE, not the status. Several of our own 403s have
+  // nothing to do with the identity: the same-origin guard rejects a
+  // cross-origin POST with FORBIDDEN, and INTERNAL_ERROR is what the API
+  // client reports when a response carried no parseable envelope at all —
+  // never "this identity was refused". Signing the visitor out for either
+  // costs them a full re-walk of the provider for a problem on our side.
+  const IDENTITY_CODES = new Set(["UNAUTHORIZED", "FORBIDDEN"]);
+  const NOT_IDENTITY = new Set([
+    "BOT_CHECK_FAILED",
+    "RATE_LIMITED",
+    "INTERNAL_ERROR",
+    "CROSS_ORIGIN_BLOCKED",
+  ]);
+  if (NOT_IDENTITY.has(err.code)) return false;
+  if (!IDENTITY_CODES.has(err.code)) return false;
   return err.status === 401 || err.status === 403;
 }
 
@@ -540,6 +660,10 @@ export function humanizeAuthError(
       return "Unable to connect. Please check your internet connection and try again.";
     case "auth/too-many-requests":
       return "Too many failed attempts. Wait a moment and try again.";
+    case "auth/unauthorized-continue-uri":
+      // Only reachable if the fallback above was removed; mapped so the
+      // visitor is never shown the catch-all for a configuration problem.
+      return "We couldn't send the confirmation email because this site isn't authorized in the sign-in provider. Please contact us.";
     case "auth/unauthorized-domain":
       return "This domain is not authorized in the Firebase project. Add it to Authentication → Settings → Authorized domains.";
     case "auth/operation-not-allowed":

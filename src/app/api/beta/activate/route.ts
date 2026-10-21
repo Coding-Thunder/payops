@@ -5,6 +5,7 @@ import { getRequestContext } from "@/server/api/request-context";
 import { jsonOk, withApi } from "@/server/api/respond";
 import { setSessionCookie } from "@/server/auth/cookies";
 import { signSession } from "@/server/auth/jwt";
+import { strongPassword } from "@/lib/validation/password";
 import { verifyTurnstile } from "@/server/auth/turnstile";
 import { activateFromToken } from "@/server/services/beta-application.service";
 
@@ -21,13 +22,8 @@ export const dynamic = "force-dynamic";
 const schema = z.object({
   token: z.string().min(16).max(512),
   name: z.string().trim().max(120).optional(),
-  password: z
-    .string()
-    .min(10, "Use at least 10 characters")
-    .max(200)
-    .regex(/[A-Z]/, "Include an uppercase letter")
-    .regex(/[a-z]/, "Include a lowercase letter")
-    .regex(/[0-9]/, "Include a number"),
+  // Shared with the client gate in activate-form, so the two cannot drift.
+  password: strongPassword,
   cfToken: z.string().max(2048).optional(),
 });
 

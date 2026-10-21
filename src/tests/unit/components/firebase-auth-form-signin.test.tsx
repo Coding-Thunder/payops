@@ -233,6 +233,63 @@ describe("Google sign-in", () => {
     expect(alert).not.toHaveTextContent(/create an account/i);
   });
 
+  it("re-arms the captcha when the exchange fails with a NETWORK error", async () => {
+    // The token's fate depends on how far the attempt got, not on the error's
+    // type. A fetch that throws mid-POST is not an ApiClientError, yet the
+    // request may well have reached Cloudflare and spent the token. Keying the
+    // re-arm on the error type left exactly this case with a spent token and
+    // no replacement — the dead end the mechanism exists to prevent,
+    // reintroduced for the flakiest class of failure.
+    signInWithEmailAndPassword.mockResolvedValue(credential);
+    apiPost.mockRejectedValue(new TypeError("Failed to fetch"));
+
+    const { user } = renderWithUser(
+      <FirebaseAuthForm mode="signin" turnstileSiteKey={SITE_KEY} />,
+    );
+    const before = lastResetSignal();
+    emitToken("token-1");
+    const submit = () => screen.getByRole("button", { name: /^sign in$/i });
+    await waitFor(() => expect(submit()).toBeEnabled());
+
+    await user.type(screen.getByLabelText(/work email/i), "dana@acme.test");
+    await user.type(screen.getByLabelText(/password/i), "Hunter2!x");
+    await user.click(submit());
+
+    await waitFor(() => expect(apiPost).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(lastResetSignal()).toBeGreaterThan(before));
+
+    // And the visitor can actually retry once a new token lands.
+    emitToken("token-2");
+    await waitFor(() => expect(submit()).toBeEnabled());
+  });
+
+  it("does NOT re-arm when the failure happened BEFORE the exchange", async () => {
+    // A client-side Firebase throw never reached the server, so the held token
+    // is untouched. Spending one of the widget's bounded re-arms on it is pure
+    // loss, and enough such failures would exhaust the budget.
+    signInWithEmailAndPassword.mockRejectedValue({
+      code: "auth/invalid-credential",
+    });
+
+    const { user } = renderWithUser(
+      <FirebaseAuthForm mode="signin" turnstileSiteKey={SITE_KEY} />,
+    );
+    emitToken("token-1");
+    const submit = () => screen.getByRole("button", { name: /^sign in$/i });
+    await waitFor(() => expect(submit()).toBeEnabled());
+    const before = lastResetSignal();
+
+    await user.type(screen.getByLabelText(/work email/i), "dana@acme.test");
+    await user.type(screen.getByLabelText(/password/i), "wrong-one");
+    await user.click(submit());
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(apiPost).not.toHaveBeenCalled();
+    expect(lastResetSignal()).toBe(before);
+    // The untouched token still gates submission, so the form stays usable.
+    await waitFor(() => expect(submit()).toBeEnabled());
+  });
+
   it("does NOT sign out on a captcha failure — the identity is still good", async () => {
     // Signing out costs a full re-walk of the Google chooser, 2FA and consent.
     // A lapsed or rejected captcha says nothing about the identity, so the

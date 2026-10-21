@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { LoadingButton } from "@/components/ui/loading-button";
 import { TurnstileWidget } from "@/components/common/turnstile-widget";
 import { api, ApiClientError } from "@/lib/api-client";
+import { describePasswordProblems } from "@/lib/validation/password";
 
 interface ActivateFormProps {
   token: string;
@@ -44,8 +45,12 @@ export function ActivateForm({
       setError("Please complete the verification challenge first.");
       return;
     }
-    if (password.length < 10) {
-      setError("Password must be at least 10 characters.");
+    // Every rule the server enforces, from the same module, so a submit that
+    // the form accepts cannot come back a 422 — which would spend a
+    // rate-limit attempt and a Turnstile re-arm for nothing.
+    const problems = describePasswordProblems(password);
+    if (problems.length > 0) {
+      setError(`Password needs: ${problems.join(", ").toLowerCase()}.`);
       return;
     }
     setSubmitting(true);

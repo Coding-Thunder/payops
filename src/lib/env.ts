@@ -232,6 +232,33 @@ function parseServer(): ServerEnv {
       .join("\n");
     throw new Error(`Invalid server environment variables:\n${formatted}`);
   }
+
+  // Turnstile: a secret with no site key is a TOTAL AUTHENTICATION OUTAGE.
+  //
+  // The two vars are independently optional, and that one combination is
+  // fatal: with no site key the widget never renders, so no token is ever
+  // produced, so `verifyTurnstile` throws BOT_CHECK_FAILED on every request to
+  // every protected endpoint — sign-in, signup, activation, password reset.
+  // Nothing detected it; the deployment simply stopped authenticating anyone.
+  //
+  // Deliberately ONE-DIRECTIONAL. The reverse (site key, no secret) renders a
+  // widget the server does not check: degraded, not an outage, and worth
+  // allowing because a NEXT_PUBLIC_ var is inlined at build time while this
+  // schema runs at request time — a symmetric rule could fail a boot for a
+  // value that was simply not present in the build environment. Both unset
+  // stays legal, which is what local dev and the test suites rely on.
+  if (
+    parsed.data.TURNSTILE_SECRET_KEY?.trim() &&
+    !process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim()
+  ) {
+    throw new Error(
+      "Invalid server environment variables:\n" +
+        " - TURNSTILE_SECRET_KEY is set but NEXT_PUBLIC_TURNSTILE_SITE_KEY is not.\n" +
+        "   Every captcha-protected endpoint would reject every request, because\n" +
+        "   no widget renders to produce a token. Set the site key too, or unset\n" +
+        "   the secret to disable Turnstile.",
+    );
+  }
   cachedServer = parsed.data;
   return parsed.data;
 }
