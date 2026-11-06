@@ -284,8 +284,17 @@ describe("existing Firebase identity WITHOUT an app account is denied", () => {
   });
 });
 
-describe("private beta still closed to genuinely new accounts", () => {
-  it("refuses a net-new signup when no invite was accepted", async () => {
+/**
+ * The SERVICE contract, which did not change when public signup opened.
+ *
+ * `signupAllowed()` is now open by default, but that decision belongs to the
+ * route: `firebaseExchange` provisions only when its caller says so, and an
+ * omitted flag still means no. Keeping the service closed-by-default is what
+ * makes the next caller safe — a new route that forgets the flag refuses
+ * instead of silently minting a tenant.
+ */
+describe("firebaseExchange provisions only when the caller allows it", () => {
+  it("refuses a net-new signup when the caller withholds allowSignup", async () => {
     const attempt = firebaseExchange(
       {
         email: "stranger@example.test",

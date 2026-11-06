@@ -37,13 +37,26 @@ const serverSchema = z.object({
    *  disabled (the /api/impersonate/start route refuses). MUST be distinct
    *  from JWT_SECRET and identical to the console's IMPERSONATION_SECRET. */
   IMPERSONATION_SECRET: z.string().min(32).optional(),
-  /** Private-beta signup gate. When set, self-serve account creation is
-   *  invite-only: only requests presenting this exact code (via the
-   *  `/signup?invite=…` link) may create a workspace; everyone else is
-   *  redirected to the beta waitlist. When UNSET, signup is open (current
-   *  behaviour) — so this is an explicit, reversible switch the founder
-   *  flips to turn the private beta on. Existing users always sign in
-   *  normally regardless. */
+  /** Who may create a workspace. `invite_only` closes self-serve signup to
+   *  everyone without a matching `SIGNUP_INVITE_CODE`; any other value, and
+   *  an unset variable, mean public signup. Existing users sign in normally
+   *  either way — this only governs account CREATION.
+   *
+   *  This key exists because the previous arrangement did the opposite of
+   *  what it documented. The comment here used to say "when UNSET, signup is
+   *  open", but the gate was `signupInviteAccepted()`, which compares the
+   *  presented code against `SIGNUP_INVITE_CODE` — and with no code
+   *  configured that comparison is false for everybody. So an unset variable
+   *  closed signup rather than opening it, and every visitor to `/signup`
+   *  was redirected to `/waitlist`. The access decision is now a named mode
+   *  instead of an inference from a secret's absence. See
+   *  `src/server/auth/signup-gate.ts`. */
+  SIGNUP_MODE: z.enum(["public", "invite_only"]).optional(),
+  /** The code that opens signup while `SIGNUP_MODE=invite_only`, presented
+   *  as `/signup?invite=…`. Unset + `invite_only` means nobody may sign up,
+   *  which is a valid (if blunt) way to close registration entirely. Also
+   *  the gate on `POST /api/auth/signup`, which stays invite-only in every
+   *  mode because it marks a merely-typed address as verified. */
   SIGNUP_INVITE_CODE: z.string().min(1).optional(),
   COOKIE_NAME: z.string().default("tracetxn_session"),
   COOKIE_DOMAIN: z.string().optional(),

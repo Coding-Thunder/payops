@@ -220,6 +220,25 @@ services:
         scope: RUN_AND_BUILD_TIME
         value: ""
 
+      # ──── OPTIONAL — signup access ──────────────────────────────────
+      # Who may create a workspace. Leave this OUT (or "public") and
+      # anyone can register; set "invite_only" and only visitors
+      # presenting SIGNUP_INVITE_CODE via /signup?invite=… may, with
+      # everyone else redirected to /waitlist. Existing users sign in
+      # normally either way — this governs account CREATION only.
+      #
+      # Any other value fails env validation at boot, on purpose: a typo
+      # in this key should break the deploy, not quietly change who can
+      # register. See src/server/auth/signup-gate.ts.
+      #
+      # - key: SIGNUP_MODE
+      #   scope: RUN_AND_BUILD_TIME
+      #   value: "invite_only"
+      # - key: SIGNUP_INVITE_CODE
+      #   scope: RUN_AND_BUILD_TIME
+      #   type: SECRET
+      #   value: ""
+
       # ──── OPTIONAL — Cloudflare Turnstile ───────────────────────────
       - key: NEXT_PUBLIC_TURNSTILE_SITE_KEY
         scope: RUN_AND_BUILD_TIME

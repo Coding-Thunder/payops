@@ -170,6 +170,79 @@ describe("J3 — invited new user, email + password", () => {
     expect(sendEmailVerification).not.toHaveBeenCalled();
   });
 
+  /**
+   * The RETURN TRIP, which is where the flow above used to stop.
+   *
+   * The verification mail's continue URL lands the visitor back on /signup
+   * with no session, so the only thing they can do is re-enter the same
+   * credentials. Firebase answers `auth/email-already-in-use`, and the form
+   * showed "Sign-up failed — an account with that email already exists" on a
+   * signup that had in fact succeeded. The account existed, the address was
+   * verified, and the one way forward was to spot the small "Sign in" link
+   * under the form.
+   *
+   * These pin the fallback that finishes the trip in place. Nothing is
+   * weakened: the password must still be correct, and the server still
+   * refuses to provision an address that is not verified.
+   */
+  describe("returning after clicking the verification link", () => {
+    const alreadyInUse = Object.assign(new Error("email already in use"), {
+      code: "auth/email-already-in-use",
+    });
+
+    it("signs the visitor in and provisions, instead of 'Sign-up failed'", async () => {
+      createUserWithEmailAndPassword.mockRejectedValue(alreadyInUse);
+      signInWithEmailAndPassword.mockResolvedValue(verified);
+      apiPost.mockResolvedValue({ user: { id: "u1" }, isNewUser: true });
+      const { user } = await renderSignup();
+      await submitSignup(user);
+
+      await waitFor(() => expect(apiPost).toHaveBeenCalledTimes(1));
+      const body = apiPost.mock.calls[0]![1] as Record<string, unknown>;
+      // Still a signup as far as the server is concerned, and the invite code
+      // still travels — provisioning needs both.
+      expect(body.intent).toBe("signup");
+      expect(body.inviteCode).toBe("CODE-123");
+      expect(
+        screen.queryByText(/already exists/i),
+      ).not.toBeInTheDocument();
+    });
+
+    it("re-sends the mail when they return still unverified", async () => {
+      // The only reachable resend. Without this the visitor whose mail never
+      // arrived held an identity with no account and no way to ask again.
+      createUserWithEmailAndPassword.mockRejectedValue(alreadyInUse);
+      signInWithEmailAndPassword.mockResolvedValue(unverified);
+      const { user } = await renderSignup();
+      await submitSignup(user);
+
+      await waitFor(() =>
+        expect(sendEmailVerification).toHaveBeenCalledTimes(1),
+      );
+      expect(signOut).toHaveBeenCalledTimes(1);
+      expect(apiPost).not.toHaveBeenCalled();
+    });
+
+    it("refuses a wrong password rather than signing anyone in", async () => {
+      // The fallback must not become a way past the password. Firebase
+      // collapses wrong-password into invalid-credential.
+      createUserWithEmailAndPassword.mockRejectedValue(alreadyInUse);
+      signInWithEmailAndPassword.mockRejectedValue(
+        Object.assign(new Error("bad creds"), {
+          code: "auth/invalid-credential",
+        }),
+      );
+      const { user } = await renderSignup();
+      await submitSignup(user);
+
+      expect(
+        await screen.findByText(/incorrect email or password/i),
+      ).toBeInTheDocument();
+      expect(apiPost).not.toHaveBeenCalled();
+      expect(sendEmailVerification).not.toHaveBeenCalled();
+    });
+  });
+
   it("leaves sign-in mode untouched", async () => {
     signInWithEmailAndPassword.mockResolvedValue(unverified);
     apiPost.mockResolvedValue({ user: { id: "u1" }, isNewUser: false });

@@ -6,7 +6,7 @@ import { FirebaseAuthForm } from "@/components/auth/firebase-auth-form";
 import { LogoLockup, LogoMark } from "@/components/brand/logo";
 import { env } from "@/lib/env";
 import { getCurrentUser } from "@/server/auth/session";
-import { signupInviteAccepted } from "@/server/auth/signup-gate";
+import { signupAllowed } from "@/server/auth/signup-gate";
 import { turnstileSiteKey } from "@/server/auth/turnstile";
 
 import { pageMetadata } from "@/lib/seo";
@@ -15,7 +15,7 @@ import type { Metadata } from "next";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = pageMetadata({
   title: "Create your TraceTxn account",
-  description: "Create a TraceTxn workspace. Self-serve signup is invite-only during the private beta.",
+  description: "Create a TraceTxn workspace in a minute. Free while we're in beta — no card required.",
   path: "/signup",
   noindex: true,
 });
@@ -28,13 +28,16 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
   const user = await getCurrentUser();
   if (user) redirect("/app/dashboard");
 
-  // Private-beta gate: during the beta, self-serve signup is invite-only.
-  // A visitor without a valid invite is sent to the beta waitlist instead
-  // of being able to create an account. No-op when SIGNUP_INVITE_CODE is
-  // unset (gate off → open signup, unchanged).
+  // Signup is public. In `invite_only` mode this still redirects, and an
+  // `?invite=` link already in circulation keeps working — see signup-gate.
+  //
+  // Note the old comment claimed an unset SIGNUP_INVITE_CODE meant "gate off
+  // → open signup". It meant the opposite: `codesMatch` returns false when no
+  // code is configured, so with the variable unset — which it was everywhere —
+  // EVERY visitor was redirected and the form never rendered at all.
   const sp = await searchParams;
   const invite = typeof sp.invite === "string" ? sp.invite : undefined;
-  if (!signupInviteAccepted(invite)) redirect("/waitlist");
+  if (!signupAllowed(invite)) redirect("/waitlist");
 
   const brand = env.server.APP_NAME;
 

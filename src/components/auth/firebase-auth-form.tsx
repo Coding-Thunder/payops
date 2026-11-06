@@ -10,6 +10,7 @@ import {
   signInWithPopup,
   signOut,
   type AuthError,
+  type UserCredential,
 } from "firebase/auth";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -225,12 +226,18 @@ export function FirebaseAuthForm({
         "/api/auth/firebase-session",
         // Turnstile token is single-use, so we always clear it after the
         // attempt regardless of outcome (see the catch/finally below).
-        // inviteCode lets the server permit net-new provisioning during
-        // the private beta; harmless (ignored) for existing-user sign-in.
+        // inviteCode only matters when signups are closed again
+        // (SIGNUP_MODE=invite_only); harmless (ignored) otherwise and for
+        // existing-user sign-in. `intent` tells the server which of the two
+        // this was, because only a signup may provision.
         {
           idToken,
           cfToken: cfToken ?? undefined,
           inviteCode: inviteCode ?? undefined,
+          // Say which half of the product this is. A public signup carries no
+          // invite code, so the server can no longer infer it — without this
+          // a brand-new user is told "No TraceTxn account is linked to …".
+          intent: mode,
         },
       );
       // The cookie is set from here on; see `recoverFromRefusal`.
@@ -249,11 +256,14 @@ export function FirebaseAuthForm({
        * document unloads. Ads tags send via a beacon, which browsers
        * generally complete during unload, but delivery is not guaranteed.
        *
-       * That is an acceptable trade here because signup is NOT the ad-driven
-       * conversion during the private beta: self-serve signup is invite-only
-       * (`signupInviteAccepted`), so no ad click reaches this form. The
-       * reliable, ad-facing conversion is `beta_application_submitted` on
-       * /waitlist, which fires on a page that does not navigate away.
+       * This WAS an acceptable trade when self-serve signup was invite-only,
+       * because no ad click could reach this form. `signupAllowed()` is now
+       * open by default, so an ad-driven signup does land here and this push
+       * is the conversion — on the one code path where delivery is not
+       * guaranteed. Nothing is done about it here: fixing it means moving the
+       * push off the unload path (a server-side conversion, or an
+       * interstitial), which is an analytics change, not a signup change.
+       * Treat `signup_completed` counts as a floor, not a total.
        */
       if (mode === "signup") {
         pushDataLayerEvent(DATA_LAYER_EVENTS.SIGNUP_COMPLETED);
@@ -289,10 +299,42 @@ export function FirebaseAuthForm({
     }
     setBusy("email");
     try {
-      const credential =
-        mode === "signup"
-          ? await createUserWithEmailAndPassword(auth, email, password)
-          : await signInWithEmailAndPassword(auth, email, password);
+      // A signup creates the identity — except when it already exists, which
+      // is the ordinary SECOND HALF of this very flow. The verification mail
+      // returns the visitor to this page signed out (the `signOut` below), so
+      // their natural next move is to re-enter the same credentials. Firebase
+      // answers `auth/email-already-in-use`, and the form used to show a red
+      // "Sign-up failed — an account with that email already exists" on a
+      // signup that had actually succeeded, with no way forward but noticing
+      // the small "Sign in" link at the foot of the page.
+      //
+      // Falling back to a sign-in with the SAME credentials finishes the round
+      // trip here. It weakens nothing: the password still has to be right, and
+      // the server still refuses to provision an unverified address. If the
+      // address is verified by now, the exchange below creates the workspace;
+      // if it is not, the branch underneath re-sends the mail — otherwise
+      // unreachable, which left an undelivered verification with no way to ask
+      // for another one.
+      let credential: UserCredential;
+      if (mode === "signup") {
+        try {
+          credential = await createUserWithEmailAndPassword(
+            auth,
+            email,
+            password,
+          );
+        } catch (createErr) {
+          if (
+            (createErr as { code?: string } | null)?.code !==
+            "auth/email-already-in-use"
+          ) {
+            throw createErr;
+          }
+          credential = await signInWithEmailAndPassword(auth, email, password);
+        }
+      } else {
+        credential = await signInWithEmailAndPassword(auth, email, password);
+      }
 
       // A brand-new email/password identity is born with emailVerified=false,
       // and `firebaseExchange` refuses an unverified email BEFORE it reaches

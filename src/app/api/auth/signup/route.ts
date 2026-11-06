@@ -26,11 +26,17 @@ export const dynamic = "force-dynamic";
  *
  * That stops SCRIPTED abuse. It does nothing about disposable addresses —
  * neither check ever looks at the domain, so one person with a throwaway
- * inbox open walks straight through. This comment previously claimed the
- * opposite and `yopmail.com` was accepted. Disposable domains are now
- * rejected in `signupSchema` itself (see
- * `@/lib/validation/disposable-email`), which is server-side and shared by
- * every signup path rather than bolted onto this one route.
+ * inbox open walks straight through. Disposable domains are rejected in
+ * `signupSchema` itself (see `@/lib/validation/disposable-email`), which is
+ * server-side rather than bolted onto this one route.
+ *
+ * NOT, however, shared by every signup path, which this comment used to
+ * claim. `signupSchema` guards THIS route, and this route is invite-gated
+ * and has no production caller. The public path — the Firebase exchange at
+ * `/api/auth/firebase-session` — never evaluates the denylist, so
+ * `anything@yopmail.com` is accepted at /signup while the identical address
+ * is rejected here. See `@/server/auth/signup-gate` for why that gap is
+ * recorded rather than closed in the same change that opened signup.
  *
  * Phase 4 is the FIRST public-write endpoint. Everything else is
  * either auth-gated or signature-gated. The rate limit + Turnstile
@@ -39,9 +45,19 @@ export const dynamic = "force-dynamic";
 export const POST = withApi(
   async (req: NextRequest) => {
     const body = await req.json();
-    // Private-beta gate: no-op when SIGNUP_INVITE_CODE is unset, invite-only
-    // when it's set. Mirrors the /signup page + firebase-session gate so no
-    // signup path can create a workspace without an accepted invite.
+    // DELIBERATELY NOT PUBLIC, even though signup itself now is.
+    //
+    // This route provisions through `signupFounder`, which calls
+    // `syncFirebasePassword` and therefore marks the Firebase identity
+    // `emailVerified: true` for an address the caller merely typed — there is
+    // no mailbox round trip anywhere on this path. Behind a code that is
+    // contained; open to the internet it would let anyone squat an address
+    // AND mint an identity that `firebaseExchange` later trusts for account
+    // LINKING, because the anti-takeover guard reads that same flag.
+    //
+    // The public door is the Firebase client flow behind /signup, which proves
+    // control of the address before provisioning. So the check here stays
+    // `signupInviteAccepted` (the code) rather than `signupAllowed` (the mode).
     const invite =
       body && typeof body.invite === "string" ? body.invite : undefined;
     if (!signupInviteAccepted(invite)) {

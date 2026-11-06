@@ -7,7 +7,7 @@ import { logger } from "@/lib/logger";
 import { getRequestContext } from "@/server/api/request-context";
 import { jsonOk, withApi } from "@/server/api/respond";
 import { setSessionCookie } from "@/server/auth/cookies";
-import { signupInviteAccepted } from "@/server/auth/signup-gate";
+import { signupAllowed } from "@/server/auth/signup-gate";
 import { verifyTurnstile } from "@/server/auth/turnstile";
 import { firebaseExchange } from "@/server/services/auth.service";
 
@@ -36,9 +36,22 @@ const bodySchema = z.object({
   // no-ops when TURNSTILE_SECRET_KEY is unset and throws when it IS
   // set but the token is missing or invalid.
   cfToken: z.string().optional(),
-  // Private-beta invite code. Only matters when a net-new user is being
-  // provisioned; existing-user sign-in ignores it.
+  // Break-glass invite code. Only matters in `invite_only` mode when a
+  // net-new user is being provisioned; existing-user sign-in ignores it.
   inviteCode: z.string().optional(),
+  // What the visitor was doing, as the form knows it.
+  //
+  // This used to be inferred from `inviteCode ? "signup" : "signin"`, which
+  // was only ever correct because /signup always carried a code. Now that
+  // signup is public a registration arrives with NO code, so the inference
+  // called it a sign-in and a brand-new user was told "No TraceTxn account is
+  // linked to …" — true, unhelpful, and the wrong half of the product. The
+  // form states its own mode instead.
+  //
+  // It only selects the WORDING of a refusal. Authorization is decided by
+  // `allowSignup` from the server-side mode, so a client claiming
+  // intent:"signup" cannot thereby be allowed to sign up.
+  intent: z.enum(["signin", "signup"]).optional(),
 });
 
 export const POST = withApi(
@@ -56,7 +69,7 @@ export const POST = withApi(
     }
 
     const body = await req.json();
-    const { idToken, cfToken, inviteCode } = bodySchema.parse(body);
+    const { idToken, cfToken, inviteCode, intent } = bodySchema.parse(body);
 
     // Bot-check BEFORE the Firebase verify call so we don't burn
     // Identity Toolkit quota / latency on a request that's about to
@@ -89,6 +102,12 @@ export const POST = withApi(
       );
     }
 
+    // The form states its own mode; fall back to the old inference for a
+    // client that does not send one (a cached bundle mid-deploy, or a direct
+    // caller). "signin" is the safe default: it cannot provision.
+    const effectiveIntent = intent ?? (inviteCode ? "signup" : "signin");
+    const wantsSignup = effectiveIntent === "signup";
+
     const { token, user, isNewUser, orgId } = await firebaseExchange(
       {
         email: decoded.email,
@@ -101,16 +120,31 @@ export const POST = withApi(
       },
       ctx,
       {
-        // Net-new provisioning is allowed only when the visitor presented a
-        // valid invite. Existing users are unaffected (their branch never
-        // provisions).
-        allowSignup: signupInviteAccepted(inviteCode),
-        // What the visitor was trying to do, so a refusal can say something
-        // true. /login sends no inviteCode, so it is a sign-in: telling that
-        // visitor "signups are invite-only" sent a returning user off to
-        // request an invitation they did not need. /signup presents a code,
-        // so a refusal there really is the beta gate.
-        intent: inviteCode ? "signup" : "signin",
+        // Net-new provisioning requires BOTH that the visitor was trying to
+        // register and that the mode allows it.
+        //
+        // The mode alone is not enough. /login posts through this same route
+        // with no invite code, so `signupAllowed(inviteCode)` on its own —
+        // true for everyone once signup went public — turned the SIGN-IN page
+        // into a provisioning surface. A returning customer who picked the
+        // wrong account from the Google chooser (the case auth.service.ts
+        // calls the usual cause) would then be handed a brand-new empty
+        // workspace and dropped into it, instead of being told "No TraceTxn
+        // account is linked to …". They would conclude their data was gone.
+        //
+        // Conjoining the two can only ever REFUSE, never grant: a client
+        // claiming intent:"signup" still has to get past the mode, and
+        // nothing a client sends can widen what `signupAllowed` permits.
+        // Absent intent reads as "signin", so an unknown caller gets the
+        // safe answer rather than a tenant.
+        //
+        // This is the ownership-proving door: email+password arrives here
+        // UNVERIFIED and `firebaseExchange` refuses to provision until the
+        // visitor has clicked the verification mail, while Google arrives
+        // pre-verified by the provider. So opening signup does not let anyone
+        // claim an address they do not control.
+        allowSignup: wantsSignup && signupAllowed(inviteCode),
+        intent: effectiveIntent,
       },
     );
     await setSessionCookie(token);
