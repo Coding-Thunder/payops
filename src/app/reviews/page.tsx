@@ -210,7 +210,7 @@ export default async function ReviewsPage() {
                   No reviews published yet.
                 </h2>
                 <p className="mt-2.5 max-w-[52ch] text-[14px] leading-relaxed text-muted-foreground">
-                  TraceTxn is in a private beta, and we would rather show
+                  TraceTxn is new, and we would rather show
                   nothing than show something we wrote ourselves. When people
                   using it send reviews, they will appear here as written.
                 </p>

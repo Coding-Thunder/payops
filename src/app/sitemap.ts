@@ -86,8 +86,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ),
     entry("/features", 0.9, "monthly"),
     entry("/pricing", 0.8, "monthly"),
-    // Conversion. During the private beta this is the public front door —
-    // /signup is gated, so the waitlist is what a search visitor can act on.
+    // Conversion. This was the public front door while /signup was gated and
+    // bounced every visitor here. /signup is open now and this page points at
+    // it; the entry stays because the URL is in circulation and indexed.
     entry("/waitlist", 0.7, "monthly"),
     // Trust surfaces. Real ranking value for "is this safe to put client
     // data in", which is the objection this product has to clear.

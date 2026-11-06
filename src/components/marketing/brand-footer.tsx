@@ -14,8 +14,8 @@ import { LogoLockup } from "@/components/brand/logo";
  * fall into. We keep it to the few links that matter.
  *
  * NOTE: /refunds is intentionally not linked here while TraceTxn is a
- * free private beta (see the Terms manual-review flags). Re-add it to
- * the Legal column if paid plans / paying customers exist.
+ * free beta (see the Terms manual-review flags). Re-add it to the Legal
+ * column if paid plans / paying customers exist.
  */
 import { LINKEDIN_URL } from "@/components/marketing/seo/structured-data";
 
@@ -45,7 +45,7 @@ export function BrandFooter() {
                 style={{ background: "var(--brand-emerald)" }}
               />
               <span className="font-mono uppercase tracking-[0.12em]">
-                Private beta
+                Free beta
               </span>
             </div>
           </div>

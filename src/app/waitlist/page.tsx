@@ -7,27 +7,31 @@ import { BrandNav } from "@/components/marketing/brand-nav";
 import { pageMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = pageMetadata({
-  title: "Invite-only access",
+  title: "Create your workspace",
   description:
-    "TraceTxn is in private beta and access is invite-only. There is no public application; if you already have an invitation, activate it from the link in your email.",
+    "Create a TraceTxn workspace — free while we're in beta. If you already have an invitation, activate it from the link in your email.",
   path: "/waitlist",
-  socialTitle: "Invite-only access • TraceTxn",
+  socialTitle: "Create your workspace • TraceTxn",
 });
 
 /**
- * Invite-only notice.
+ * Signup pointer.
  *
- * This route used to host the public "Join the Beta" application. The form is
- * gone: there is no longer a public way to apply, so the page states the
- * access model and stops.
+ * This route has been three things. It hosted the public "Join the Beta"
+ * application; then the form was removed and it became the invite-only
+ * notice; now signup is public and it points at `/signup`.
  *
  * ── Why the route still exists ───────────────────────────────────────────
  *
- * `src/app/signup/page.tsx` redirects here when a visitor has no accepted
- * invite (`signupInviteAccepted()`), and `src/proxy.ts` lists `/waitlist` in
- * its public allow-list. Deleting the route would turn that redirect into a
- * 404, so it stays and answers the question the redirect implies: you need an
- * invitation, and here is what to do if you have one.
+ * `src/app/signup/page.tsx` redirects here when `signupAllowed()` says no,
+ * which now only happens if someone sets `SIGNUP_MODE=invite_only`, and
+ * `src/proxy.ts` lists `/waitlist` in its public allow-list. Live links also
+ * still point here from older emails and posts. Deleting the route would turn
+ * that redirect and those links into 404s, so it stays.
+ *
+ * It is written for the open case, because that is the one visitors arrive
+ * in. If signups are ever re-closed, this copy needs revisiting — see
+ * `src/server/auth/signup-gate.ts`.
  *
  * Nothing here posts anywhere. `/api/beta/apply` is untouched and still
  * serves the admin-side application records; it simply has no public caller.
@@ -53,21 +57,29 @@ export default function WaitlistPage() {
               className="size-1.5 rounded-full"
               style={{ background: "var(--brand-emerald)" }}
             />
-            Private beta
+            Free beta
           </p>
 
           <h1 className="mt-7 font-display text-[clamp(2rem,5vw,3.2rem)] font-medium leading-[1.08] tracking-[-0.025em]">
             TraceTxn is{" "}
             <span className="font-semibold text-[color:var(--brand-emerald)]">
-              invite-only.
+              open to everyone.
             </span>
           </h1>
 
           <p className="mx-auto mt-6 max-w-lg text-[15px] leading-relaxed text-muted-foreground">
-            We&apos;re working with a small group of agencies and freelancers
-            while we build the product. There is no public application at the
-            moment.
+            You no longer need an invitation. Create a workspace and keep every
+            client&apos;s record in one place — free while we&apos;re in beta.
           </p>
+
+          <div className="mt-8">
+            <Link
+              href="/signup"
+              className="inline-flex h-11 items-center justify-center rounded-md bg-[color:var(--ink-navy)] px-5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
+            >
+              Create your workspace
+            </Link>
+          </div>
 
           <div className="mx-auto mt-10 max-w-md rounded-xl border border-border bg-white p-6 text-left">
             <p className="font-display text-[14px] font-semibold text-foreground">
@@ -86,7 +98,7 @@ export default function WaitlistPage() {
           </div>
 
           <p className="mx-auto mt-10 max-w-md text-[13px] leading-relaxed text-muted-foreground">
-            Want to know when access opens up more widely?{" "}
+            Questions before you start?{" "}
             <Link
               href="/contact"
               className="font-medium text-foreground underline-offset-4 hover:underline"

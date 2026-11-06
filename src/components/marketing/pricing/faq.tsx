@@ -11,13 +11,13 @@ import { Reveal, Eyebrow } from "@/components/marketing/home/primitives";
 /**
  * Beta-focused FAQ. Same accordion mechanics and dark styling as the homepage
  * FAQ, but the questions are the ones a prospect actually has about a free
- * private beta: is it really free, who can join, do I have to migrate
+ * beta: is it really free, who can join, do I have to migrate
  * everything, can I use real data, will it stay free, can I get my data out.
  */
 const FAQS: { q: string; a: ReactNode }[] = [
   {
     q: "Is the beta really free?",
-    a: "Yes. TraceTxn is free while we're in private beta. No credit card is required.",
+    a: "Yes. TraceTxn is free while we're in beta. No credit card is required.",
   },
   {
     q: "Who can join?",

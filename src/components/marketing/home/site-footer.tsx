@@ -129,7 +129,7 @@ export function SiteFooter() {
               check; real status belongs behind /api/health, not in a footer
               string. */}
           <p className="text-[12.5px] text-[#64748B]">
-            Private beta · client management for service businesses
+            Free beta · client management for service businesses
           </p>
         </div>
       </div>

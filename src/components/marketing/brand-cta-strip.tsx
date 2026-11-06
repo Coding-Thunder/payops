@@ -52,7 +52,7 @@ export function BrandCtaStrip() {
                 <Link href="/login">Sign in</Link>
               </Button>
               <p className="text-[12.5px] text-white/60">
-                In private beta and currently invite-only.
+                Free while we&apos;re in beta. No card required.
               </p>
             </div>
           </div>

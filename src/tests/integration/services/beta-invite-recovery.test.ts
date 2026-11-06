@@ -14,7 +14,7 @@ import { ensureMongo, resetDatabase } from "@/tests/utils/db";
  * left `INVITED` with `usedAt` set. The console's re-approve claim filter
  * matched only PENDING and APPROVED-with-error, so nothing matched that row:
  * the applicant's link was dead, and no operator action could revive it. For
- * a private beta whose ONLY account-creation path is this one, that is the
+ * a beta whose only account-creation path was this one, that is the
  * whole door.
  *
  * The fix adds one disjunct, floored at ten minutes. The floor is what keeps

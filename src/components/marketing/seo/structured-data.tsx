@@ -29,7 +29,7 @@ import { DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/seo";
  *
  *  - `offers` declared `price: "0"` with `availability: "InStock"` while also
  *    describing quote-based pricing. Those contradict each other, and neither
- *    matches reality: the product is a closed private beta with no purchasable
+ *    matches reality: the product is a free beta with no purchasable
  *    plan (/pricing renders no tier table). Emitting a zero-price Offer for
  *    something you cannot buy is a misrepresentation, so the product carries
  *    no pricing claim at all until plans exist.

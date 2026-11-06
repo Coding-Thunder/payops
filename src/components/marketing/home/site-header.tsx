@@ -32,10 +32,12 @@ import { cn } from "@/lib/utils";
  *
  * ── On the CTA ───────────────────────────────────────────────────────────
  *
- * One action: the on-page walkthrough (`#demo`). There is no public sign-up
- * or beta application to point at — TraceTxn is invite-only — so the header
- * does not pretend otherwise. The anchor is not labelled "live demo" because
- * there is no hosted sandbox behind it; it scrolls to the product itself.
+ * One action: the on-page walkthrough (`#demo`). Signup is public now, so
+ * the header COULD point at `/signup` instead; it deliberately does not. A
+ * visitor who has not seen the product yet is not ready to create a
+ * workspace, and `Sign in` beside it already covers the returning customer.
+ * The anchor is not labelled "live demo" because there is no hosted sandbox
+ * behind it; it scrolls to the product itself.
  */
 
 // Root-relative anchors, not bare fragments. SiteHeader is shared chrome —

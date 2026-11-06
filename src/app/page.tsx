@@ -60,7 +60,8 @@ export const metadata: Metadata = pageMetadata({
  * the code cannot back them: priced subscription tiers (there is no
  * subscription billing) and a "multi-gateway framework" (`PaymentProcessor`
  * has exactly one member, Stripe). There is also no sign-up or beta
- * application CTA anywhere on this page: access is invite-only.
+ * application CTA anywhere on this page: there is no application to make,
+ * since signup is public.
  * `seo-claims.test.ts` fails the build if the surfaces drift.
  */
 export default function LandingPage() {

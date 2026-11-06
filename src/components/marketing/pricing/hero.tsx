@@ -7,8 +7,7 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 /**
  * Pricing hero. Light ground, matching the homepage and the rest of the
  * site, tuned to a single centred column. Three things land in the first
- * screen: it's a private beta, it's free, and it's for agencies and
- * freelancers.
+ * screen: it's a beta, it's free, and it's for agencies and freelancers.
  */
 export function PricingHero() {
   return (
@@ -37,7 +36,7 @@ export function PricingHero() {
             <span className="absolute inline-flex size-full animate-ping rounded-full bg-[var(--brand-emerald)] opacity-60" />
             <span className="relative inline-flex size-1.5 rounded-full bg-[var(--brand-emerald)]" />
           </span>
-          Private beta
+          Free beta
         </motion.div>
 
         <motion.h1
@@ -55,9 +54,9 @@ export function PricingHero() {
           transition={{ duration: 0.6, delay: 0.14, ease: EASE }}
           className="mx-auto mt-6 max-w-xl text-[16.5px] leading-relaxed text-[#4A5568]"
         >
-          We&apos;re working with a small group of agencies and freelancers
-          while we build TraceTxn. Access is invite-only while we do, so there
-          is nothing to buy and nothing to sign up for.
+          We&apos;re still building TraceTxn, and it is free to use while we
+          do. There are no tiers to compare and nothing to buy — create a
+          workspace and start putting client records in it.
         </motion.p>
 
         <motion.p
@@ -66,7 +65,8 @@ export function PricingHero() {
           transition={{ duration: 0.6, delay: 0.22 }}
           className="mt-8 text-[13px] text-[#64748B]"
         >
-          Already have an invitation? Activate it from the link in your email.
+          Already have an invitation? Activate it from the link in your email
+          instead.
         </motion.p>
       </div>
     </section>

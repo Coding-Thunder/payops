@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { CheckIcon } from "lucide-react";
 
@@ -135,7 +136,14 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             turnstileSiteKey={turnstileSiteKey()}
           />
           <p className="text-center text-[11px] leading-relaxed text-muted-foreground/80">
-            TraceTxn is in private beta and access is invite-only.
+            New to TraceTxn?{" "}
+            <Link
+              href="/signup"
+              className="font-medium text-foreground underline underline-offset-4"
+            >
+              Create a workspace
+            </Link>{" "}
+            — free while we&apos;re in beta.
           </p>
         </div>
       </section>

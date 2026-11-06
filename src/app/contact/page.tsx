@@ -269,9 +269,9 @@ export default function ContactPage() {
                   uptime monitoring wired up, so it was an unsupported claim.
                   Replaced with a fact about the product, not its uptime. */}
               <p className="mt-3 text-[14px] text-foreground">
-                Private beta{" "}
+                Free beta{" "}
                 <span className="text-muted-foreground">
-                  — invite-only, and free while it lasts.
+                  — free while it lasts.
                 </span>
               </p>
             </div>

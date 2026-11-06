@@ -1,6 +1,7 @@
 "use client";
 
 import { CheckIcon } from "lucide-react";
+import Link from "next/link";
 
 import { Reveal } from "@/components/marketing/home/primitives";
 
@@ -50,7 +51,7 @@ export function PricingPlan() {
 
             <div className="relative">
               <span className="inline-flex items-center rounded-full border border-[var(--brand-emerald-border)] bg-[var(--brand-emerald-soft)] px-3 py-1 text-[11.5px] font-semibold uppercase tracking-[0.14em] text-[#047857]">
-                Private Beta
+                Free Beta
               </span>
 
               <div className="mt-6 flex items-baseline gap-2">
@@ -60,12 +61,19 @@ export function PricingPlan() {
               </div>
               <p className="mt-2 text-[14px] text-[#64748B]">Free during beta</p>
 
-              {/* No action here: the beta is invite-only, so a button would
-                  promise something a visitor cannot complete. The card states
-                  the terms and stops. */}
-              <p className="mt-7 rounded-xl border border-[#E9EFF6] bg-[#F8FAFC] px-4 py-3 text-center text-[12.5px] leading-relaxed text-[#64748B]">
-                Invite-only while TraceTxn is in private beta. No card, no
-                charge.
+              {/* The card carries an action again. It used to stop at the
+                  terms because the beta was invite-only and a button would
+                  have promised something a visitor could not complete;
+                  signup is public now, so the price and the way to take it
+                  sit together. */}
+              <Link
+                href="/signup"
+                className="mt-7 inline-flex h-11 w-full items-center justify-center rounded-xl bg-[#0A1128] px-5 text-[14.5px] font-semibold text-white transition-opacity hover:opacity-90"
+              >
+                Create your workspace
+              </Link>
+              <p className="mt-3 text-center text-[12.5px] leading-relaxed text-[#64748B]">
+                Free while TraceTxn is in beta. No card, no charge.
               </p>
 
               <div className="mt-8 border-t border-[#E9EFF6] pt-7">

@@ -5,10 +5,10 @@ import { Reveal } from "@/components/marketing/home/primitives";
 
 /**
  * Closing panel for the pricing page. Restates the whole product in one line.
- * There is no action on it: the beta is invite-only, so the panel closes the
- * page rather than asking for a sign-up that cannot happen. Same dark card,
- * radial glow and dotted mask as the homepage final CTA so the two pages read
- * as one surface.
+ * There is no action on it — the plan card above already carries the only one
+ * worth having, and a second "create your workspace" twenty pixels later just
+ * dilutes it. Same dark card, radial glow and dotted mask as the homepage
+ * final CTA so the two pages read as one surface.
  */
 export function PricingFinalCta() {
   return (
@@ -46,7 +46,7 @@ export function PricingFinalCta() {
               </p>
 
               <p className="mt-8 text-[13px] text-white/50">
-                TraceTxn is in private beta and currently invite-only.
+                Free while we&apos;re in beta. No card, no invitation needed.
               </p>
             </div>
           </div>

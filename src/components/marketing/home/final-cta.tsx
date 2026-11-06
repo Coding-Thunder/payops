@@ -9,7 +9,8 @@ import { Reveal } from "@/components/marketing/home/primitives";
  *
  * Same action as the hero, same destination. A closing section that offers
  * something the hero did not is one that was hiding the real offer — and
- * since access is invite-only there is nothing to sign up for here.
+ * the header and the pricing card carry the sign-up, so this one closes the
+ * page rather than repeating it a third time.
  */
 export function FinalCta() {
   return (
@@ -39,7 +40,7 @@ export function FinalCta() {
             </div>
 
             <p className="mt-5 text-[12.5px] text-white/50">
-              TraceTxn is in private beta and currently invite-only.
+              Free while we&apos;re in beta. No card, no invitation needed.
             </p>
           </div>
         </Reveal>

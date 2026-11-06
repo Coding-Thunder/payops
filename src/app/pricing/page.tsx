@@ -11,19 +11,20 @@ import { pageMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = pageMetadata({
   title: "Pricing",
-  description: "TraceTxn is free during private beta \u2014 no card, no tiers. One searchable record per client: orders, invoices, payments and the full relationship timeline.",
+  description: "TraceTxn is free while we're in beta \u2014 no card, no tiers. One searchable record per client: orders, invoices, payments and the full relationship timeline.",
   path: "/pricing",
-  socialTitle: "Free while we're in private beta \u2022 TraceTxn",
+  socialTitle: "Free while we're in beta \u2022 TraceTxn",
 });
 
 /**
- * Pricing — private beta.
+ * Pricing — free beta.
  *
- * TraceTxn is in private beta and the beta is free, so this page is not a
- * tier table. It says three things immediately: it's a private beta, it's
- * free, and it's built for agencies and freelancers. One plan card, an honest
- * note about what happens after beta, and a short beta FAQ. No action: the
- * beta is invite-only, so the page informs rather than asks.
+ * TraceTxn is in beta and the beta is free, so this page is not a tier
+ * table. It says three things immediately: it's a beta, it's free, and it's
+ * built for agencies and freelancers. One plan card, an honest note about
+ * what happens after beta, and a short beta FAQ. The beta has one free plan,
+ * so the page informs first and asks once — the plan card carries the only
+ * action, now that signup is open and there is something to ask for.
  *
  * Shares the redesigned marketing shell (light ground, emerald for state and
  * electric blue for intent, SiteHeader / SiteFooter) with the homepage so the

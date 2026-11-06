@@ -83,7 +83,7 @@ export default function ClientManagementSoftwarePage() {
 
       <Section title="How it is priced and run">
         <p>
-          TraceTxn is in private beta and free to use during it. Payments run
+          TraceTxn is in beta and free to use during it. Payments run
           through your own Stripe account, so money moves directly between you
           and your client — TraceTxn records the transaction, it does not sit
           in the middle of it. You can read the current terms on the{" "}

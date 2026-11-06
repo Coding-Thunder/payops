@@ -259,7 +259,7 @@ export function Sidebar({ permissions, brand, variant = "full" }: SidebarProps) 
         <div className="flex items-center gap-2 border-t border-sidebar-border px-4 py-2.5">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-success-soft px-2 py-0.5 text-[10.5px] font-medium text-success ring-1 ring-inset ring-success-border/60">
             <span className="size-1.5 rounded-full bg-success" />
-            Private Beta
+            Free Beta
           </span>
         </div>
       ) : null}

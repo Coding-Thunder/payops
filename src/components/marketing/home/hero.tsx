@@ -87,11 +87,11 @@ export function Hero() {
             </a>
           </div>
 
-          {/* No "no credit card required" claim: there is no card at all,
-              because the beta is free and billing is not wired up. And no
-              invitation to sign up, because access is invite-only. */}
+          {/* Still no "no credit card required" claim: there is no card at
+              all, because the beta is free and billing is not wired up.
+              Signup is open now, so this no longer says invite-only. */}
           <p className="mt-4 text-[13px] text-[#64748B]">
-            TraceTxn is in private beta and currently invite-only.
+            Free while we&apos;re in beta. No card, no invitation needed.
           </p>
 
           {/* ── Micro-proof: everything stays attached to the client ──── */}

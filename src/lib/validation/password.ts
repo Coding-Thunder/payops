@@ -9,7 +9,7 @@ import { z } from "zod";
  * `length >= 10` while the route additionally required an uppercase, a
  * lowercase and a digit, so a password like "aaaaaaaaaa" sailed past the form
  * and came back a 422. That lands on a first-time user's very first
- * interaction, on the only account-creation path the private beta has, and it
+ * interaction, on what was then the only account-creation path, and it
  * costs more than a confusing message: the rejected submit spends one of the
  * route's rate-limit attempts and one of the Turnstile widget's bounded
  * re-arms, both of which are finite.

@@ -269,8 +269,8 @@ export function ContactEnquiryForm({
       </LoadingButton>
 
       <p className="text-[11.5px] leading-relaxed text-muted-foreground">
-        TraceTxn is in private beta and currently invite-only — this is an
-        enquiry, not a sign-up.
+        TraceTxn is free while we&apos;re in beta. This is an enquiry,
+        not a sign-up — you can create a workspace yourself at any time.
       </p>
     </form>
   );

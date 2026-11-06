@@ -16,8 +16,10 @@ export const dynamic = "force-dynamic";
  * Beta account activation. The single-use invitation token is the ONLY
  * authorization — the email is taken from the bound application, never from
  * the request, and the token is atomically consumed inside the service. This
- * is the sole account-creation path enabled during the private beta; public
- * self-serve signup stays closed.
+ * was the sole account-creation path while public self-serve signup was
+ * closed. Signup is open now (see `@/server/auth/signup-gate`), so this is
+ * one of two paths; it stays because invitations already issued must keep
+ * working, and it is the only path that activates a bound application.
  */
 const schema = z.object({
   token: z.string().min(16).max(512),
